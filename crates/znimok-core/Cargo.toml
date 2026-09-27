@@ -1,0 +1,12 @@
+[package]
+name = "znimok-core"
+description = "Document model, commands and library of Znimok — no OS or GPU dependencies"
+version.workspace = true
+edition.workspace = true
+license-file.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true

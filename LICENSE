@@ -1,0 +1,58 @@
+Znimok — Proprietary License
+Copyright (c) 2026 Vadym Slyva (Plum). All rights reserved.
+
+WHY THE SOURCE IS PUBLIC
+
+This program sees your screen, can record sound and updates itself. Anyone who
+installs it should be able to read exactly what it does before trusting it,
+and to check that the released binary matches the code it claims to be built
+from. That is why the source is published. Publication is not a grant of
+rights to reuse it.
+
+WHAT YOU MAY DO
+
+  - Read, study and audit this source code.
+  - Build it yourself and run your own build on machines you control.
+  - Report problems, and propose changes for inclusion in this project.
+
+WHAT YOU MAY NOT DO WITHOUT PRIOR WRITTEN PERMISSION FROM THE COPYRIGHT HOLDER
+
+  - Redistribute this source code, in whole or in part, modified or not.
+  - Distribute binaries built from it.
+  - Publish derivative works, or incorporate any part of this code into
+    another project, whether free, commercial, internal or academic.
+  - Use this code to train or fine-tune a machine learning model.
+  - Remove or alter this notice, the authorship information, or the
+    release-signature verification.
+
+THIRD-PARTY COMPONENTS
+
+Fonts, libraries and other components included in or used by this project
+remain under their own licenses, which are listed alongside them. This
+license does not change their terms.
+
+CONTRIBUTIONS
+
+By submitting a contribution to this project you grant the copyright holder a
+perpetual, worldwide, irrevocable, royalty-free right to use, modify and
+distribute it as part of this project, and you confirm that you are entitled
+to grant that right.
+
+FORKING ON GITHUB
+
+While this repository is public, GitHub's Terms of Service give every GitHub
+user the right to view it and to fork it within GitHub. That right comes from
+those Terms and not from this license, and nothing written here withdraws it.
+This license governs everything else, including any use, copying or
+distribution outside GitHub.
+
+NO WARRANTY
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
+IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+Permission requests: https://github.com/V-Plum/znimok/issues
