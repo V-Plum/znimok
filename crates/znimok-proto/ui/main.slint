@@ -1,0 +1,172 @@
+// P1 shell: a canvas texture inside a minimal editor frame. Not the product UI — only what
+// the measurement needs (tool choice, a text field, export, and the numbers).
+
+import { LineEdit } from "std-widgets.slint";
+
+export struct Handle { x: length, y: length, cursor: int }
+
+component ToolButton inherits Rectangle {
+    in property <string> label;
+    in property <bool> active;
+    callback clicked;
+    width: 40px;
+    height: 36px;
+    border-radius: 10px;
+    background: active ? #2A2F38 : (ta.has-hover ? #1E2229 : transparent);
+    Text {
+        text: label;
+        color: active ? #E8EAEE : #A7ADB8;
+        font-size: 14px;
+        font-weight: 600;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+    ta := TouchArea { clicked => { root.clicked(); } }
+}
+
+export component MainWindow inherits Window {
+    title: "Znimok P1";
+    preferred-width: 1440px;
+    preferred-height: 900px;
+    min-width: 800px;
+    min-height: 560px;
+    background: #0F1115;
+    default-font-family: "Segoe UI";
+
+    in-out property <image> canvas;
+    in-out property <int> tool: 0;
+    in-out property <string> status: "";
+    in-out property <string> stats: "";
+    in-out property <string> doc-title: "";
+    in-out property <int> frame: 0;
+    // Text editing overlay
+    in-out property <bool> editing: false;
+    in-out property <length> edit-x;
+    in-out property <length> edit-y;
+    in-out property <length> edit-w;
+    in-out property <string> edit-text;
+
+    callback tool-chosen(int);
+    callback pointer(int /*kind: 0 down 1 move 2 up*/, length, length, int /*button*/, bool /*shift*/, bool /*alt*/);
+    callback wheel(length, length, length /*dy*/, bool /*alt*/);
+    callback key(string, bool /*ctrl*/, bool /*shift*/);
+    callback commit-text(string);
+    callback cancel-text();
+    callback export-clicked();
+    callback zoom-fit();
+    callback zoom-100();
+
+    pure function canvas-w() -> length { return canvas-area.width; }
+    pure function canvas-h() -> length { return canvas-area.height; }
+    out property <length> canvas-width: canvas-area.width;
+    out property <length> canvas-height: canvas-area.height;
+
+    VerticalLayout {
+        // toolbar
+        Rectangle {
+            height: 52px;
+            background: #171A20;
+            HorizontalLayout {
+                padding-left: 12px;
+                padding-right: 12px;
+                spacing: 8px;
+                alignment: start;
+                Text { text: "Znimok · P1"; color: #E8EAEE; font-size: 14px; font-weight: 700; vertical-alignment: center; }
+                Text { text: root.doc-title; color: #6F7682; font-size: 12px; vertical-alignment: center; }
+                Rectangle { horizontal-stretch: 1; }
+                Rectangle {
+                    width: 96px; height: 32px; border-radius: 8px; background: #3D7BF5;
+                    Text { text: "Експорт 1:1"; color: white; font-size: 13px; font-weight: 600; horizontal-alignment: center; vertical-alignment: center; }
+                    TouchArea { clicked => { root.export-clicked(); } }
+                }
+            }
+        }
+        HorizontalLayout {
+            // tool rail
+            Rectangle {
+                width: 56px;
+                background: #171A20;
+                VerticalLayout {
+                    padding: 8px;
+                    spacing: 4px;
+                    alignment: start;
+                    for t[i] in ["V", "R", "E", "L", "P", "T", "H", "M", "N", "S"]: ToolButton {
+                        label: t;
+                        active: root.tool == i;
+                        clicked => { root.tool-chosen(i); }
+                    }
+                }
+            }
+            // canvas
+            canvas-area := Rectangle {
+                background: #0B0D11;
+                clip: true;
+                Image {
+                    x: 0; y: 0;
+                    width: parent.width;
+                    height: parent.height;
+                    source: root.canvas;
+                    image-fit: fill;
+                    image-rendering: pixelated;
+                }
+                fs := FocusScope {
+                    key-pressed(e) => {
+                        if (root.editing) { return reject; }
+                        root.key(e.text, e.modifiers.control, e.modifiers.shift);
+                        return accept;
+                    }
+                    ta := TouchArea {
+                        mouse-cursor: root.tool == 0 ? default : crosshair;
+                        pointer-event(e) => {
+                            if (!root.editing) { fs.focus(); }
+                            if (e.kind == PointerEventKind.down) {
+                                root.pointer(0, self.mouse-x, self.mouse-y, e.button == PointerEventButton.left ? 0 : (e.button == PointerEventButton.right ? 1 : 2), e.modifiers.shift, e.modifiers.alt);
+                            } else if (e.kind == PointerEventKind.up) {
+                                root.pointer(2, self.mouse-x, self.mouse-y, e.button == PointerEventButton.left ? 0 : 1, e.modifiers.shift, e.modifiers.alt);
+                            } else if (e.kind == PointerEventKind.move) {
+                                root.pointer(1, self.mouse-x, self.mouse-y, 0, e.modifiers.shift, e.modifiers.alt);
+                            }
+                        }
+                        scroll-event(e) => {
+                            root.wheel(self.mouse-x, self.mouse-y, e.delta-y, e.modifiers.alt);
+                            return accept;
+                        }
+                    }
+                }
+                if root.editing: Rectangle {
+                    x: root.edit-x; y: root.edit-y;
+                    width: max(root.edit-w, 160px); height: 34px;
+                    edit := LineEdit {
+                        width: parent.width; height: parent.height;
+                        text <=> root.edit-text;
+                        font-size: 16px;
+                        accepted(t) => { root.commit-text(t); }
+                        key-pressed(e) => {
+                            if (e.text == Key.Escape) { root.cancel-text(); return accept; }
+                            return reject;
+                        }
+                    }
+                    init => { edit.focus(); edit.select-all(); }
+                }
+            }
+        }
+        // status bar
+        Rectangle {
+            height: 30px;
+            background: #171A20;
+            HorizontalLayout {
+                padding-left: 12px; padding-right: 12px; spacing: 16px;
+                Text { text: root.status; color: #A7ADB8; font-size: 12px; font-family: "JetBrains Mono"; vertical-alignment: center; }
+                Rectangle { horizontal-stretch: 1; }
+                Text { text: root.stats; color: #8FB6FF; font-size: 12px; font-family: "JetBrains Mono"; vertical-alignment: center; }
+                Rectangle { width: 60px; height: 22px; border-radius: 6px; background: #1E2229;
+                    Text { text: "Вписати"; color: #A7ADB8; font-size: 11px; horizontal-alignment: center; vertical-alignment: center; }
+                    TouchArea { clicked => { root.zoom-fit(); } } }
+                Rectangle { width: 44px; height: 22px; border-radius: 6px; background: #1E2229;
+                    Text { text: "100%"; color: #A7ADB8; font-size: 11px; font-family: "JetBrains Mono"; horizontal-alignment: center; vertical-alignment: center; }
+                    TouchArea { clicked => { root.zoom-100(); } } }
+                Text { text: root.frame; color: #0F1115; font-size: 1px; }
+            }
+        }
+    }
+}

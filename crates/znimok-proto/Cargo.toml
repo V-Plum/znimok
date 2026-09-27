@@ -1,0 +1,21 @@
+[package]
+name = "znimok-proto"
+description = "Phase 1 prototypes (P1 canvas, P2 capture, P4 playback) - throwaway measurement code"
+version.workspace = true
+edition.workspace = true
+license-file.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+znimok-core = { path = "../znimok-core" }
+znimok-render = { path = "../znimok-render" }
+slint = { version = "~1.18", default-features = false, features = ["std", "compat-1-2", "backend-winit", "renderer-femtovg-wgpu", "unstable-wgpu-30"] }
+image = { version = "0.25", default-features = false, features = ["png"] }
+
+[build-dependencies]
+slint-build = "~1.18"

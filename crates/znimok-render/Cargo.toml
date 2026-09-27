@@ -1,0 +1,18 @@
+[package]
+name = "znimok-render"
+description = "Document renderer of Znimok: objects to pixels through Vello and Parley, CPU path"
+version.workspace = true
+edition.workspace = true
+license-file.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+znimok-core = { path = "../znimok-core" }
+vello_cpu = { version = "0.2", features = ["multithreading"] }
+vello_common = "0.2"
+parley = "0.11"
