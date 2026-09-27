@@ -798,7 +798,7 @@ pub fn run(opts: Options) -> Result<(), Box<dyn std::error::Error>> {
                         } => {
                             let n = orig;
                             let anchor = match handle {
-                                0 | 1 | 2
+                                0..=2
                                     if !matches!(
                                         s.doc.objects[index].kind(),
                                         Kind::Line | Kind::Text

@@ -149,8 +149,7 @@ impl Renderer {
         let frame = doc.frame();
         let src = self.bank_pixmap(doc, doc.source as usize);
         self.ctx.set_transform(base);
-        self.ctx
-            .push_clip_layer(&Rect::from(irect(frame)).to_path(0.1));
+        self.ctx.push_clip_layer(&irect(frame).to_path(0.1));
         let (iw, ih) = doc.image_size();
         self.draw_pixmap(
             src,
@@ -215,7 +214,7 @@ impl Renderer {
     ) {
         let kind = obj.kind();
         let b = obj.bounds();
-        let rect = Rect::from(irect(b));
+        let rect = irect(b);
         let rot = if kind.can_rotate() && obj.rot != 0 {
             Affine::rotate_about((obj.rot as f64).to_radians(), rect.center())
         } else {
@@ -825,7 +824,7 @@ fn stamp_path(id: u32, c: Point, d: f64) -> BezPath {
 pub fn raster_to_pixmap(r: &Raster) -> Pixmap {
     let mut pix = Pixmap::new(r.width as u16, r.height as u16);
     let mut transparent = false;
-    for (dst, src) in pix.data_mut().iter_mut().zip(r.rgba.chunks_exact(4)) {
+    for (dst, src) in pix.data_mut().iter_mut().zip(r.rgba.as_chunks::<4>().0) {
         let a = src[3] as u16;
         transparent |= a != 255;
         let m = |c: u8| ((c as u16 * a) / 255) as u8;

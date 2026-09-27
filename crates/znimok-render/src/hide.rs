@@ -19,8 +19,8 @@ pub fn pixelate(src: &Raster, strength: u8) -> Raster {
             for y in by..by + bh {
                 for x in bx..bx + bw {
                     let i = ((y * w + x) * 4) as usize;
-                    for c in 0..4 {
-                        acc[c] += src.rgba[i + c] as u32;
+                    for (a, &v) in acc.iter_mut().zip(&src.rgba[i..i + 4]) {
+                        *a += v as u32;
                     }
                 }
             }

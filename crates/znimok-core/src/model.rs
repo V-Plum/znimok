@@ -8,7 +8,7 @@ use std::collections::BTreeMap;
 
 /// Integer rectangle in screenshot pixels. For [`Kind::Line`] the sign of `w`/`h` carries the
 /// direction from (x, y) to (x + w, y + h) and is never normalised.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub struct IRect {
     pub x: i32,
     pub y: i32,
@@ -230,7 +230,7 @@ pub enum Align {
     Right,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default, Hash)]
 pub enum HideMode {
     #[default]
     Blur,
