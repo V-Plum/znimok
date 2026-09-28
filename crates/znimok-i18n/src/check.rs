@@ -374,6 +374,14 @@ pub fn check_sources(files: &[(&str, &str)]) -> Report {
         }
     }
     for (lang, src) in files {
+        if crate::is_banned(lang) {
+            report.err(
+                lang,
+                None,
+                "російська мова заборонена назавжди (рішення власника 29.09.2026)",
+            );
+            continue;
+        }
         let (msgs, _, header) = if *lang == "en" {
             // Parsed above; parse again without re-reporting syntax errors.
             parse(lang, src, &mut Report::default())
