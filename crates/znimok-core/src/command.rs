@@ -788,11 +788,25 @@ mod tests {
         assert!(s.contains("add_object") && s.contains("Adds a mark on top"));
         let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("schema");
         std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(dir.join("command.schema.json"), s + "\n").unwrap();
-        std::fs::write(
-            dir.join("query.schema.json"),
-            serde_json::to_string_pretty(&query_schema()).unwrap() + "\n",
-        )
-        .unwrap();
+        // Rewritten only when the content changes (line endings ignored), so a test run does
+        // not dirty the working tree on Windows checkouts with CRLF.
+        let put = |name: &str, text: String| {
+            let path = dir.join(name);
+            let (cr, lf) = (char::from(13u8), char::from(10u8));
+            let old: String = std::fs::read_to_string(&path)
+                .unwrap_or_default()
+                .chars()
+                .filter(|c| *c != cr)
+                .collect();
+            let new = format!("{text}{lf}");
+            if old != new {
+                std::fs::write(&path, new).unwrap();
+            }
+        };
+        put("command.schema.json", s);
+        put(
+            "query.schema.json",
+            serde_json::to_string_pretty(&query_schema()).unwrap(),
+        );
     }
 }
