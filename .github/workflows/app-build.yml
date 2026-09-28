@@ -1,0 +1,26 @@
+# On-demand build of the prototype app for manual testing (ZK-46): a standalone Windows exe
+# (static CRT, no VC++ Redistributable needed). Run: gh workflow run app-build.yml
+name: app-build
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    runs-on: windows-2025
+    env:
+      RUSTFLAGS: -C target-feature=+crt-static
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: build
+        run: cargo build --release -p znimok-app
+      - uses: actions/upload-artifact@v4
+        with:
+          name: znimok-app-windows
+          path: target/release/znimok-app.exe
+          retention-days: 14
