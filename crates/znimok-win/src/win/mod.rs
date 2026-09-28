@@ -10,6 +10,7 @@ use windows::Win32::Graphics::Direct3D11::{
     D3D11_BOX, D3D11_CPU_ACCESS_READ, D3D11_MAP_READ, D3D11_MAPPED_SUBRESOURCE,
     D3D11_TEXTURE2D_DESC, D3D11_USAGE_STAGING, ID3D11Device, ID3D11DeviceContext, ID3D11Texture2D,
 };
+use windows::Win32::System::Com::CoIncrementMTAUsage;
 use windows::Win32::System::WinRT::{RO_INIT_MULTITHREADED, RoInitialize};
 use windows::Win32::UI::HiDpi::{
     DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2, SetProcessDpiAwarenessContext,
@@ -33,10 +34,20 @@ pub fn init_process() {
     });
 }
 
-/// Join the multithreaded apartment on the calling thread, once per thread, and stay in it.
-/// Every entry point that touches WinRT/COM calls this: relying on another thread's MTA crashed
-/// (ACCESS_VIOLATION) when that thread ended while this one still held WinRT objects.
+/// Keep the multithreaded apartment alive for the whole process, then join it on this thread.
+/// Every entry point that touches WinRT/COM calls this.
+///
+/// Why: windows-rs caches WinRT activation factories in process-wide statics. When the thread that
+/// created the MTA ended (a test thread, a worker), the MTA went down with it and the next thread
+/// used a cached factory of a dead apartment → ACCESS_VIOLATION. `CoIncrementMTAUsage` pins the MTA
+/// until the process exits (the cookie is never released on purpose).
 pub(crate) fn com_thread() {
+    static PIN: Once = Once::new();
+    PIN.call_once(|| {
+        // SAFETY: no arguments besides the out-cookie; failure only means no pin (then each thread's
+        // own RoInitialize below still gives it an apartment).
+        let _ = unsafe { CoIncrementMTAUsage() };
+    });
     thread_local! {
         static JOINED: () = {
             // SAFETY: plain apartment init; S_FALSE (already in MTA) and RPC_E_CHANGED_MODE (an STA
