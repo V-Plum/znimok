@@ -72,10 +72,19 @@ fn log_text() -> String {
 
 // ---- capture ----------------------------------------------------------------------------------
 
+/// Shared with the build account: the owner's app creates it, the agent must be able to clean
+/// it up afterwards, so it is world-writable with the sticky bit off (test data, not secrets).
 fn shots_dir() -> PathBuf {
+    use std::os::unix::fs::PermissionsExt;
     let d = PathBuf::from(INBOX).join("shots");
     let _ = std::fs::create_dir_all(&d);
+    let _ = std::fs::set_permissions(&d, std::fs::Permissions::from_mode(0o777));
     d
+}
+
+fn share(path: &std::path::Path) {
+    use std::os::unix::fs::PermissionsExt;
+    let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o666));
 }
 
 fn save_png(img: &CGImage, tag: &str) -> Result<PathBuf, String> {
@@ -84,6 +93,7 @@ fn save_png(img: &CGImage, tag: &str) -> Result<PathBuf, String> {
     let path = shots_dir().join(format!("{}-{tag}-{w}x{h}.png", stamp().replace('.', "-")));
     image::save_buffer(&path, &rgba, w, h, image::ExtendedColorType::Rgba8)
         .map_err(|e| format!("png: {e}"))?;
+    share(&path);
     Ok(path)
 }
 
@@ -219,6 +229,7 @@ fn save_rgba(w: u32, h: u32, rgba: &[u8], tag: &str) -> Result<PathBuf, String> 
     let path = shots_dir().join(format!("{}-{tag}-{w}x{h}.png", stamp().replace('.', "-")));
     image::save_buffer(&path, rgba, w, h, image::ExtendedColorType::Rgba8)
         .map_err(|e| format!("png: {e}"))?;
+    share(&path);
     Ok(path)
 }
 
