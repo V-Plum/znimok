@@ -55,6 +55,14 @@ tool, then back to the library), Enter repeats the last action (copy or export),
 thickness, Ctrl+=/− zoom. The full key table is [docs/SHORTCUTS.en.md](docs/SHORTCUTS.en.md); on
 macOS tooltips show ⌘ and ⇧.
 
+Text is typed right on the canvas at its real size: Enter finishes, Shift+Enter starts a new line,
+Esc cancels; double-click a text to edit it. Alignment and block width live in the inspector, and
+the text outline follows the letters' contour. Shift on release in the capture overlay puts the
+shot into the clipboard and the library and shows a card in the corner of the screen: Edit, drag
+the thumbnail into a chat or a folder, save as a file, library. Exported PNG, JPEG and WebP carry
+the title, description, author, rights, tags and the time of the shot (no window names or paths;
+switch it off in the More menu), and the file's time is the time of the shot.
+
 ```sh
 cargo run --release -p znimok-app              # the library
 cargo run --release -p znimok-app -- shot.png  # open an image right away
