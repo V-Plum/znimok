@@ -81,60 +81,70 @@ fn ns_window(ui: &Overlay) -> Option<objc2::rc::Retained<objc2_app_kit::NSWindow
 /// AppKit's `-[NSWindow constrainFrameRect:toScreen:]` keeps a window's top edge below the menu
 /// bar on every `setFrame:` / `setFrameOrigin:` — whatever the level or style mask (Mac
 /// self-tests 28.09: level 1000, borderless, still 1800×1098 on a 1800×1169 screen). winit's
-/// `WinitWindow` does not override it, so the overlay's window is re-classed into a subclass
-/// that returns the requested rect unchanged — the standard way to put a window over the menu
-/// bar. The subclass adds no ivars, so swapping the class of a live window is safe.
+/// `WinitWindow` does not override it, so the override is added to that class at run time:
+/// windows at the screen-saver level (our overlay) get the requested rect unchanged, every
+/// other window (the editor) goes through `NSWindow`'s implementation as before.
+///
+/// The class of the *object* is left alone: winit observes the window through KVO, so its
+/// isa is `NSKVONotifying_WinitWindow`, and swapping that for a subclass broke KVO's
+/// bookkeeping — the next `setStyleMask` delivered a change without the old value and winit's
+/// observer panicked inside an `extern "C"` frame (the crash of 28.09).
 #[cfg(target_os = "macos")]
-fn unconstrain(win: &objc2_app_kit::NSWindow) {
-    use objc2::runtime::{AnyClass, AnyObject, ClassBuilder, Sel};
-    use objc2::sel;
+fn unconstrain() {
+    use objc2::encode::Encode;
+    use objc2::runtime::{AnyClass, AnyObject, Imp, Sel};
+    use objc2::{ClassType, msg_send, sel};
+    use objc2_app_kit::{NSScreenSaverWindowLevel, NSWindow};
     use objc2_foundation::NSRect;
+    use std::sync::Once;
 
-    // Raw pointers keep the signature free of higher-ranked lifetimes, which objc2's
-    // `MethodImplementation` does not accept.
-    extern "C-unwind" fn pass_through(
-        _this: *const AnyObject,
+    unsafe extern "C-unwind" fn constrain(
+        this: *const AnyObject,
         _sel: Sel,
         rect: NSRect,
-        _screen: *const AnyObject,
+        screen: *const AnyObject,
     ) -> NSRect {
-        rect
+        // SAFETY: AppKit calls this on a live WinitWindow (an NSWindow).
+        let win: &NSWindow = unsafe { &*this.cast() };
+        if win.level() >= NSScreenSaverWindowLevel {
+            return rect;
+        }
+        // SAFETY: NSWindow is WinitWindow's superclass; the arguments are AppKit's own.
+        unsafe {
+            msg_send![super(win, NSWindow::class()), constrainFrameRect: rect, toScreen: screen]
+        }
     }
 
-    let obj: &AnyObject = win;
-    let base = obj.class();
-    trace(&format!("class {}", base.name().to_string_lossy()));
-    if base.name().to_bytes().starts_with(b"ZnimokOverlayWindow") {
-        return;
-    }
-    let cls = match AnyClass::get(c"ZnimokOverlayWindow") {
-        Some(c) => c,
-        None => {
-            let Some(mut b) = ClassBuilder::new(c"ZnimokOverlayWindow", base) else {
-                trace("ClassBuilder::new failed");
-                return;
-            };
-            // SAFETY: the signature matches `- (NSRect)constrainFrameRect:(NSRect)toScreen:(NSScreen *)`.
-            unsafe {
-                b.add_method(
-                    sel!(constrainFrameRect:toScreen:),
-                    pass_through
-                        as extern "C-unwind" fn(
-                            *const AnyObject,
-                            Sel,
-                            NSRect,
-                            *const AnyObject,
-                        ) -> NSRect,
-                );
-            }
-            let c = b.register();
-            trace("subclass registered");
-            c
-        }
-    };
-    // SAFETY: `cls` is a subclass of the window's class with no extra ivars.
-    unsafe { AnyObject::set_class(obj, cls) };
-    trace("set_class done");
+    static ONCE: Once = Once::new();
+    ONCE.call_once(|| {
+        let Some(cls) = AnyClass::get(c"WinitWindow") else {
+            trace("WinitWindow class not found");
+            return;
+        };
+        let types = format!("{}@:{}@", NSRect::ENCODING, NSRect::ENCODING);
+        let types = std::ffi::CString::new(types).expect("encoding");
+        // SAFETY: the implementation matches the selector's signature and encoding.
+        let ok = unsafe {
+            objc2::ffi::class_addMethod(
+                (cls as *const AnyClass).cast_mut(),
+                sel!(constrainFrameRect:toScreen:),
+                std::mem::transmute::<
+                    unsafe extern "C-unwind" fn(
+                        *const AnyObject,
+                        Sel,
+                        NSRect,
+                        *const AnyObject,
+                    ) -> NSRect,
+                    Imp,
+                >(constrain),
+                types.as_ptr(),
+            )
+        };
+        trace(&format!(
+            "constrainFrameRect override added: {}",
+            ok.as_bool()
+        ));
+    });
 }
 
 #[cfg(target_os = "macos")]
@@ -173,7 +183,7 @@ fn cover_display(ui: &Overlay) {
             NSScreenSaverWindowLevel, NSWindowCollectionBehavior, NSWindowStyleMask,
         };
         COVER_LOG.with(|l| l.borrow_mut().clear());
-        guarded("unconstrain", || unconstrain(&win));
+        guarded("unconstrain", unconstrain);
         guarded("style", || {
             if win.styleMask() != NSWindowStyleMask::Borderless {
                 win.setStyleMask(NSWindowStyleMask::Borderless);
