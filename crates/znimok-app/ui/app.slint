@@ -4,7 +4,7 @@
 // inspector and a status bar. Strings come from i18n/*.ftl through @tr (ZK-29).
 // Not yet here: tabs, overlay editor, full inspector, settings (see the tickets of Phase 4).
 
-import { LineEdit, ScrollView } from "std-widgets.slint";
+import { LineEdit, ScrollView, TextEdit } from "std-widgets.slint";
 
 export global Theme {
     out property <color> canvas: #0B0D11;
@@ -43,11 +43,366 @@ component Icon inherits Path {
     height: 20px;
 }
 
+// ---------------------------------------------------------------------------------------------
+// Tooltips (owner, 28.09): any control with a `tip` shows it after a short hover, beside the
+// control, fading in. One shared bubble drawn at the end of AppWindow.
+export global Tip {
+    in-out property <string> text;
+    // Anchor in window coordinates and which side of it the bubble goes: 0 below, 1 right, 2 above.
+    in-out property <length> ax;
+    in-out property <length> ay;
+    in-out property <int> side;
+    in-out property <bool> armed;
+    in-out property <int> serial;
+}
+
+// A TouchArea that arms the shared tooltip while hovered.
+component TipTouch inherits TouchArea {
+    in property <string> tip;
+    in property <int> tip-side: 0;
+    property <int> mine: -1;
+    changed has-hover => {
+        if (self.has-hover && root.tip != "") {
+            Tip.text = root.tip;
+            Tip.side = root.tip-side;
+            Tip.ax = root.tip-side == 1 ? self.absolute-position.x + self.width : self.absolute-position.x + self.width / 2;
+            Tip.ay = root.tip-side == 0 ? self.absolute-position.y + self.height : (root.tip-side == 2 ? self.absolute-position.y : self.absolute-position.y + self.height / 2);
+            Tip.serial += 1;
+            root.mine = Tip.serial;
+            Tip.armed = true;
+        } else if (!self.has-hover && Tip.serial == root.mine) {
+            Tip.armed = false;
+        }
+    }
+    changed pressed => {
+        if (self.pressed) { Tip.armed = false; }
+    }
+}
+
+// Small "open menu" chevron, drawn at its real size (not a scaled 24 px icon).
+component Chevron inherits Path {
+    in property <color> tint: Theme.text2;
+    commands: "M1 1.5 L5 5.5 L9 1.5";
+    viewbox-width: 10;
+    viewbox-height: 7;
+    width: 10px;
+    height: 7px;
+    stroke: tint;
+    stroke-width: 1.6px;
+    fill: transparent;
+}
+
+// Top-bar button: optional icon, text, optional chevron; 32 px high, content centred.
+component BarButton inherits Rectangle {
+    in property <string> text;
+    in property <string> icon;
+    in property <bool> chevron;
+    in property <bool> enabled: true;
+    in property <string> tip;
+    callback clicked;
+    height: 32px;
+    width: row.preferred-width;
+    horizontal-stretch: 0;
+    border-radius: 8px;
+    background: ta.has-hover && root.enabled ? Theme.elevated : transparent;
+    animate background { duration: 120ms; easing: ease-out; }
+    transform-origin: { x: self.width / 2, y: self.height / 2 };
+    transform-scale: ta.pressed ? 0.95 : 1.0;
+    animate transform-scale { duration: 140ms; easing: cubic-bezier(0.2, 0.8, 0.2, 1); }
+    accessible-role: button;
+    accessible-label: root.text;
+    row := HorizontalLayout {
+        padding-left: root.icon != "" ? 6px : 10px;
+        padding-right: root.chevron ? 8px : 10px;
+        spacing: 6px;
+        if root.icon != "": VerticalLayout {
+            alignment: center;
+            Icon { d: root.icon; tint: root.enabled ? Theme.text2 : Theme.disabled; }
+        }
+        Text { text: root.text; color: root.enabled ? Theme.text2 : Theme.disabled; font-size: 13px; font-weight: 500; vertical-alignment: center; wrap: no-wrap; }
+        if root.chevron: VerticalLayout {
+            alignment: center;
+            Chevron { }
+        }
+    }
+    ta := TipTouch {
+        tip: root.tip;
+        enabled: root.enabled;
+        clicked => { root.clicked(); }
+    }
+}
+
+// Small status-bar button: the same box for an icon ("Fit") and for text ("100%").
+component SmallButton inherits Rectangle {
+    in property <string> text;
+    in property <string> icon;
+    in property <string> tip;
+    in property <bool> enabled: true;
+    callback clicked;
+    height: 22px;
+    width: root.icon != "" ? 28px : max(28px, label.preferred-width + 14px);
+    horizontal-stretch: 0;
+    border-radius: 6px;
+    background: ta.has-hover && root.enabled ? Theme.control-on : Theme.elevated;
+    animate background { duration: 120ms; easing: ease-out; }
+    transform-origin: { x: self.width / 2, y: self.height / 2 };
+    transform-scale: ta.pressed ? 0.92 : 1.0;
+    animate transform-scale { duration: 140ms; easing: cubic-bezier(0.2, 0.8, 0.2, 1); }
+    if root.icon != "": Icon { width: 14px; height: 14px; d: root.icon; tint: Theme.text2; }
+    label := Text {
+        visible: root.icon == "";
+        text: root.text;
+        color: Theme.text2;
+        font-size: 11px;
+        font-weight: 600;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        width: parent.width;
+        height: parent.height;
+    }
+    ta := TipTouch {
+        tip: root.tip;
+        tip-side: 2;
+        enabled: root.enabled;
+        clicked => { root.clicked(); }
+    }
+}
+
+// One option of a segmented control (thickness, line style, corners, heads, tabs…).
+component SegOption inherits Rectangle {
+    in property <string> text;
+    in property <string> icon;
+    in property <bool> on;
+    in property <string> tip;
+    in property <bool> enabled: true;
+    // Line-thickness preview: a bar this thick instead of text or an icon.
+    in property <length> bar: 0px;
+    callback clicked;
+    height: 28px;
+    horizontal-stretch: 1;
+    border-radius: 7px;
+    background: root.on ? Theme.control-on : (ta.has-hover && root.enabled ? #FFFFFF0D : Theme.elevated);
+    animate background { duration: 140ms; easing: ease-out; }
+    transform-origin: { x: self.width / 2, y: self.height / 2 };
+    transform-scale: ta.pressed ? 0.94 : 1.0;
+    animate transform-scale { duration: 140ms; easing: cubic-bezier(0.2, 0.8, 0.2, 1); }
+    if root.icon != "": Icon { width: 18px; height: 18px; d: root.icon; tint: root.on ? Theme.text : (root.enabled ? Theme.text2 : Theme.disabled); }
+    if root.bar > 0: Rectangle {
+        width: parent.width * 0.55;
+        height: root.bar;
+        border-radius: root.bar / 2;
+        background: root.on ? Theme.text : Theme.text2;
+    }
+    if root.icon == "" && root.bar == 0: Text {
+        text: root.text;
+        color: root.on ? Theme.text : (root.enabled ? Theme.text2 : Theme.disabled);
+        font-size: 12px;
+        font-weight: 600;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        width: parent.width;
+        height: parent.height;
+    }
+    ta := TipTouch {
+        tip: root.tip;
+        enabled: root.enabled;
+        clicked => { root.clicked(); }
+    }
+}
+
+// Colour chip; `none` draws the "no colour" slash.
+component Swatch inherits Rectangle {
+    in property <color> c;
+    in property <bool> on;
+    in property <bool> none;
+    in property <string> tip;
+    callback clicked;
+    width: 24px;
+    height: 24px;
+    border-radius: 7px;
+    background: root.none ? Theme.elevated : root.c;
+    border-width: root.on ? 2px : 1px;
+    border-color: root.on ? Theme.text : #FFFFFF22;
+    animate border-width { duration: 140ms; easing: ease-out; }
+    transform-origin: { x: self.width / 2, y: self.height / 2 };
+    transform-scale: ta.pressed ? 0.88 : (ta.has-hover ? 1.08 : 1.0);
+    animate transform-scale { duration: 140ms; easing: cubic-bezier(0.2, 0.8, 0.2, 1); }
+    if root.none: Path {
+        commands: "M5 19 L19 5";
+        viewbox-width: 24;
+        viewbox-height: 24;
+        width: parent.width;
+        height: parent.height;
+        stroke: #FF5A5F;
+        stroke-width: 1.6px;
+    }
+    ta := TipTouch {
+        tip: root.tip;
+        clicked => { root.clicked(); }
+    }
+}
+
+// Slider 0…1 with a knob that grows under the finger.
+component MiniSlider inherits Rectangle {
+    in-out property <float> value;
+    in property <string> tip;
+    callback moved(float);
+    callback released();
+    height: 22px;
+    min-width: 60px;
+    function set-from(x: length) {
+        root.value = clamp(x / max(1px, root.width), 0, 1);
+        root.moved(root.value);
+    }
+    Rectangle { x: 0; y: (parent.height - 4px) / 2; height: 4px; width: parent.width; border-radius: 2px; background: Theme.control-on; }
+    Rectangle { x: 0; y: (parent.height - 4px) / 2; height: 4px; width: parent.width * root.value; border-radius: 2px; background: Theme.accent; }
+    Rectangle {
+        width: 12px;
+        height: 12px;
+        border-radius: 6px;
+        background: white;
+        x: (parent.width - self.width) * root.value;
+        y: (parent.height - self.height) / 2;
+        drop-shadow-blur: 4px;
+        drop-shadow-color: #00000080;
+        transform-origin: { x: self.width / 2, y: self.height / 2 };
+        transform-scale: ta.pressed ? 1.3 : (ta.has-hover ? 1.12 : 1.0);
+        animate transform-scale { duration: 150ms; easing: cubic-bezier(0.2, 0.8, 0.2, 1); }
+    }
+    ta := TipTouch {
+        tip: root.tip;
+        tip-side: 2;
+        pointer-event(e) => {
+            if (e.kind == PointerEventKind.down) { root.set-from(self.mouse-x); }
+            if (e.kind == PointerEventKind.up) { root.released(); }
+        }
+        moved => {
+            if (self.pressed) { root.set-from(self.mouse-x); }
+        }
+    }
+}
+
+// Numeric field with a label in front (X, Y, W, H).
+component NumField inherits HorizontalLayout {
+    in property <string> label;
+    in-out property <string> value;
+    callback committed(string);
+    spacing: 4px;
+    Text { text: root.label; color: Theme.text3; font-size: 11px; vertical-alignment: center; width: 14px; }
+    Rectangle {
+        height: 26px;
+        horizontal-stretch: 1;
+        border-radius: 6px;
+        background: Theme.elevated;
+        border-width: 1px;
+        border-color: input.has-focus ? Theme.accent : Theme.control-on;
+        animate border-color { duration: 120ms; }
+        input := TextInput {
+            x: 6px;
+            width: parent.width - 12px;
+            height: parent.height;
+            vertical-alignment: center;
+            color: Theme.text;
+            font-size: 12px;
+            input-type: number;
+            text <=> root.value;
+            accepted => { root.committed(self.text); }
+            changed has-focus => { if (!self.has-focus) { root.committed(self.text); } }
+        }
+    }
+}
+
+// Palette shared by the stroke and fill rows.
+global Palette {
+    out property <[color]> colors: [#FF5A5F, #FF8A3D, #FFD23F, #34C48A, #3D7BF5, #9B5CF5, #FFFFFF, #14161A];
+}
+
+export struct LayerRow {
+    id: int,
+    name: string,
+    kind: int,
+    hidden: bool,
+    selected: bool,
+}
+
+// Icons of the mark kinds (layers list), in the order of `prop-kind` / LayerRow.kind:
+// rectangle, ellipse, line, pen, text, hide, marker, counter, stamp, image.
+global KindIcons {
+    out property <[string]> paths: [
+        "M6 5 h12 a2 2 0 0 1 2 2 v10 a2 2 0 0 1 -2 2 H6 a2 2 0 0 1 -2 -2 V7 a2 2 0 0 1 2 -2 z",
+        "M4 12 a8 6 0 1 0 16 0 a8 6 0 1 0 -16 0 z",
+        "M4 20 L20 4 M11 4 h9 v9",
+        "M15.5 4.5 a2.1 2.1 0 0 1 3 3 L8 18 l-4 1 1 -4 z M13.5 6.5 l3 3 M12 20 q2 -3 4 0 t4 0",
+        "M5 6 h14 M12 6 v14",
+        "M3 3 l18 18 M10.6 10.6 a2 2 0 0 0 2.8 2.8 M9.9 5.1 A10 10 0 0 1 21 12 a17 17 0 0 1 -2.8 3.6 M6.6 6.6 A17 17 0 0 0 3 12 s3.5 6 9 6 a9 9 0 0 0 3.6 -0.7",
+        "M14 3.5 L20.5 10 L13 17.5 L6.5 11 Z M6.5 11 L4 16.5 L7.5 20 L13 17.5 M16.5 6 L10 12.5 M3 22.3 h9",
+        "M3 12 a9 9 0 1 0 18 0 a9 9 0 1 0 -18 0 z M10.5 9 l2 -1.2 V16",
+        "M8 12 V7 a4 4 0 0 1 8 0 v5 M5 12 h14 v4 H5 z M7 16 v4 h10 v-4",
+        "M5 5 h14 a2 2 0 0 1 2 2 v10 a2 2 0 0 1 -2 2 H5 a2 2 0 0 1 -2 -2 V7 a2 2 0 0 1 2 -2 z M7 10 a1.5 1.5 0 1 0 3 0 a1.5 1.5 0 1 0 -3 0 M4 17 l5 -5 4 4 3 -3 4 4",
+    ];
+}
+
+// ---------------------------------------------------------------------------------------------
+// Own title bar (owner, 28.09: "the header must be ours and follow the window's theme").
+// Windows: no system frame; our bars carry minimise / maximise / close on the right, the empty
+// part of a bar drags the window, a double click maximises, the edges resize it.
+// macOS: the system traffic lights stay (native), over a transparent title bar; our bars leave
+// room for them on the left.
+
+// Empty part of a bar: drags the window, double click = maximise / restore.
+component DragArea inherits TouchArea {
+    callback drag();
+    callback toggle();
+    pointer-event(e) => {
+        if (e.kind == PointerEventKind.down && e.button == PointerEventButton.left) { root.drag(); }
+    }
+    double-clicked => { root.toggle(); }
+}
+
+component WindowButton inherits Rectangle {
+    in property <string> icon;
+    in property <bool> danger;
+    in property <string> tip;
+    callback clicked;
+    width: 46px;
+    background: ta.has-hover ? (root.danger ? #E81123 : Theme.elevated) : transparent;
+    animate background { duration: 100ms; }
+    Icon { width: 14px; height: 14px; d: root.icon; tint: ta.has-hover && root.danger ? white : Theme.text2; }
+    ta := TipTouch { tip: root.tip; clicked => { root.clicked(); } }
+}
+
+component WindowControls inherits HorizontalLayout {
+    in property <bool> maximized;
+    width: 138px;
+    spacing: 0px;
+    callback minimize();
+    callback toggle();
+    callback close();
+    WindowButton { icon: "M5 12 h14"; clicked => { root.minimize(); } }
+    WindowButton {
+        icon: root.maximized ? "M8 8 h11 v11 H8 z M5 16 V5 h11" : "M5.5 5.5 h13 v13 h-13 z";
+        clicked => { root.toggle(); }
+    }
+    WindowButton { icon: "M6 6 l12 12 M18 6 l-12 12"; danger: true; clicked => { root.close(); } }
+}
+
+// Invisible resize edge of a frameless window (Windows).
+component ResizeEdge inherits TouchArea {
+    in property <int> dir;
+    callback resize(int);
+    pointer-event(e) => {
+        if (e.kind == PointerEventKind.down && e.button == PointerEventButton.left) { root.resize(root.dir); }
+    }
+}
+
 component IconButton inherits Rectangle {
     in property <string> icon;
     in property <bool> enabled: true;
     in property <bool> active: false;
     in property <string> label;
+    // Tooltip text (defaults to the label) and side: 0 below, 1 right, 2 above.
+    in property <string> tip: root.label;
+    in property <int> tip-side: 0;
     callback clicked;
     callback hovered(bool);
     width: 36px;
@@ -66,7 +421,9 @@ component IconButton inherits Rectangle {
         d: icon;
         tint: !enabled ? Theme.disabled : (active ? Theme.text : Theme.text2);
     }
-    ta := TouchArea {
+    ta := TipTouch {
+        tip: root.tip;
+        tip-side: root.tip-side;
         enabled: root.enabled;
         clicked => { root.clicked(); }
         changed has-hover => { root.hovered(self.has-hover); }
@@ -461,6 +818,16 @@ export component AppTray inherits SystemTrayIcon {
 
 export component AppWindow inherits Window {
     title: @tr("app-name" => "Znimok");
+    // Own title bar: Windows draws window buttons; macOS keeps the traffic lights (inset).
+    in property <bool> custom-frame: false;
+    in property <length> lights-inset: 0px;
+    in property <bool> win-maximized: false;
+    no-frame: root.custom-frame;
+    callback window-drag();
+    callback window-toggle();
+    callback window-minimize();
+    callback window-close();
+    callback window-resize(int);
     in property <image> app-icon;
     icon: app-icon;
     preferred-width: 1360px;
@@ -493,6 +860,39 @@ export component AppWindow inherits Window {
     in property <int> thick-index: 1;
     in property <bool> has-selection;
     in property <int> selection-count;
+    // inspector (ZK-54)
+    in-out property <int> insp-tab: 0;
+    // Kind whose properties are shown (-1 none): 0 rect, 1 ellipse, 2 line, 3 pen, 4 text,
+    // 5 hide, 6 marker, 7 counter, 8 stamp, 9 image. For a selection or, without one, for the
+    // current tool's defaults.
+    in property <int> prop-kind: -1;
+    in property <bool> prop-for-selection;
+    in property <string> prop-title;
+    in property <int> fill-index: -1;
+    in property <int> dash-index;
+    in property <int> corners-index;
+    in property <int> head-start;
+    in property <int> head-end: 1;
+    in property <int> text-size-index: 1;
+    in property <bool> text-bold;
+    in property <bool> text-italic;
+    in-out property <float> alpha: 1.0;
+    in-out property <string> geom-x;
+    in-out property <string> geom-y;
+    in-out property <string> geom-w;
+    in-out property <string> geom-h;
+    in property <[LayerRow]> layers;
+    in property <string> info-size;
+    in property <string> info-source;
+    in property <string> info-taken;
+    in property <string> info-path;
+    in-out property <string> meta-title;
+    in-out property <string> meta-description;
+    in-out property <string> meta-author;
+    in-out property <string> meta-rights;
+    in-out property <string> meta-tags;
+    // zoom slider position 0…1 (log scale 6 %…1600 %)
+    in-out property <float> zoom-pos: 0.5;
     in property <string> hint;
     in-out property <string> hover-hint;
 
@@ -526,8 +926,6 @@ export component AppWindow inherits Window {
     callback key(string, bool, bool, bool);
     callback commit-text(string);
     callback cancel-text();
-    callback set-color(int);
-    callback set-thick(int);
     callback arrange(int);
     callback align(int);
     callback distribute(int);
@@ -535,6 +933,13 @@ export component AppWindow inherits Window {
     callback duplicate();
     callback zoom-fit();
     callback zoom-100();
+    callback zoom-to(float);
+    callback set-prop(string, int);
+    callback set-alpha(float, bool);
+    callback set-geom(string, string);
+    callback layer-click(int, bool);
+    callback layer-eye(int);
+    callback meta-edited(string, string);
 
     public function focus-library() { lib-keys.focus(); }
     public function focus-canvas() { keys.focus(); }
@@ -559,14 +964,23 @@ export component AppWindow inherits Window {
             }
             VerticalLayout {
                 Rectangle {
-                    height: 56px;
+                    height: 52px;
                     background: Theme.panel;
+                    DragArea { drag => { root.window-drag(); } toggle => { root.window-toggle(); } }
+                    if root.custom-frame: WindowControls {
+                        x: parent.width - self.width;
+                        height: parent.height;
+                        maximized: root.win-maximized;
+                        minimize => { root.window-minimize(); }
+                        toggle => { root.window-toggle(); }
+                        close => { root.window-close(); }
+                    }
                     HorizontalLayout {
-                        padding-left: 16px;
-                        padding-right: 16px;
+                        padding-left: 16px + root.lights-inset;
+                        padding-right: root.custom-frame ? 146px : 16px;
                         spacing: 12px;
                         Path {
-                            y: 16px;
+                            y: (parent.height - self.height) / 2;
                             width: 24px; height: 24px;
                             viewbox-width: 24; viewbox-height: 24;
                             commands: "M3.5 13.5 h8 L3.5 21 h8";
@@ -584,7 +998,7 @@ export component AppWindow inherits Window {
                         }
                         Rectangle { horizontal-stretch: 1; }
                         TextButton {
-                            y: 12px;
+                            y: (parent.height - self.height) / 2;
                             text: @tr("lib-new-shot" => "New screenshot");
                             icon: "M12 5 v14 M5 12 h14";
                             primary: true;
@@ -592,7 +1006,7 @@ export component AppWindow inherits Window {
                             clicked => { root.new-shot(); }
                         }
                         TextButton {
-                            y: 12px;
+                            y: (parent.height - self.height) / 2;
                             text: @tr("open-file" => "File…");
                             icon: "M3 7 a2 2 0 0 1 2 -2 h4 l2 2 h8 a2 2 0 0 1 2 2 v9 a2 2 0 0 1 -2 2 H5 a2 2 0 0 1 -2 -2 z";
                             clicked => { root.open-file(); }
@@ -661,41 +1075,36 @@ export component AppWindow inherits Window {
         animate opacity { duration: 160ms; easing: ease-in-out; }
         background: Theme.app;
         VerticalLayout {
-            // top bar
+            // ---- top bar: every item 32 px high, centred on one line (no hand-placed y)
             Rectangle {
                 height: 52px;
                 background: Theme.panel;
+                DragArea { drag => { root.window-drag(); } toggle => { root.window-toggle(); } }
+                if root.custom-frame: WindowControls {
+                    x: parent.width - self.width;
+                    height: parent.height;
+                    maximized: root.win-maximized;
+                    minimize => { root.window-minimize(); }
+                    toggle => { root.window-toggle(); }
+                    close => { root.window-close(); }
+                }
                 HorizontalLayout {
-                    padding-left: 12px;
-                    padding-right: 12px;
-                    spacing: 8px;
-                    Rectangle {
-                        y: 10px;
-                        width: back-row.preferred-width + 16px;
-                        height: 32px;
-                        border-radius: 8px;
-                        background: back-ta.has-hover ? Theme.elevated : transparent;
-                        back-row := HorizontalLayout {
-                            x: 6px;
-                            spacing: 4px;
-                            Icon { y: 6px; d: "M15 6 l-6 6 6 6"; }
-                            Text { text: @tr("nav-library" => "Library"); color: Theme.text2; font-weight: 500; vertical-alignment: center; }
-                        }
-                        back-ta := TouchArea { clicked => { root.back(); } }
+                    padding-left: 10px + root.lights-inset;
+                    padding-right: root.custom-frame ? 150px : 12px;
+                    padding-top: 10px;
+                    padding-bottom: 10px;
+                    spacing: 6px;
+                    BarButton {
+                        icon: "M15 6 l-6 6 6 6";
+                        text: @tr("nav-library" => "Library");
+                        tip: @tr("nav-back-to-library" => "Back to library");
+                        clicked => { root.back(); }
                     }
-                    open-btn := Rectangle {
-                        y: 10px;
-                        width: open-row.preferred-width + 16px;
-                        height: 32px;
-                        border-radius: 8px;
-                        background: open-ta.has-hover ? Theme.elevated : transparent;
-                        open-row := HorizontalLayout {
-                            x: 10px;
-                            spacing: 2px;
-                            Text { text: @tr("common-open" => "Open"); color: Theme.text2; font-weight: 500; vertical-alignment: center; }
-                            Icon { y: 8px; width: 16px; height: 16px; d: "M6 9 l6 6 6 -6"; }
-                        }
-                        open-ta := TouchArea { clicked => { open-menu.show(); } }
+                    open-btn := BarButton {
+                        text: @tr("common-open" => "Open");
+                        chevron: true;
+                        tip: @tr("open-file" => "File…") + " · " + @tr("open-clipboard" => "From clipboard");
+                        clicked => { open-menu.show(); }
                         open-menu := PopupWindow {
                             x: 0;
                             y: parent.height + 4px;
@@ -709,36 +1118,44 @@ export component AppWindow inherits Window {
                                     padding: 6px;
                                     MenuItemRow { text: @tr("open-file" => "File…"); shortcut: "Ctrl+O"; clicked => { root.open-file(); } }
                                     MenuItemRow { text: @tr("open-clipboard" => "From clipboard"); shortcut: "Ctrl+V"; clicked => { root.open-clipboard(); } }
-                                    MenuItemRow { text: @tr("open-new-shot" => "New screenshot"); enabled: root.capture-available; clicked => { root.new-shot(); } }
+                                    MenuItemRow { text: @tr("open-new-shot" => "New screenshot"); shortcut: root.capture-key; enabled: root.capture-available; clicked => { root.new-shot(); } }
                                 }
                             }
                         }
                     }
-                    Rectangle { width: 1px; height: 20px; y: 16px; background: Theme.control-on; }
-                    Rectangle {
-                        y: 14px;
-                        height: 24px;
-                        width: kind-row.preferred-width + 16px;
-                        border-radius: 6px;
-                        background: #3D7BF524;
-                        kind-row := HorizontalLayout {
-                            x: 8px;
-                            Text { text: @tr("doc-kind-screenshot" => "Screenshot"); color: Theme.accent-text; font-size: 12px; font-weight: 600; vertical-alignment: center; }
+                    VerticalLayout {
+                        alignment: center;
+                        padding-left: 4px;
+                        padding-right: 4px;
+                        Rectangle { width: 1px; height: 20px; background: Theme.control-on; }
+                    }
+                    VerticalLayout {
+                        alignment: center;
+                        Rectangle {
+                            height: 22px;
+                            width: kind-text.preferred-width + 16px;
+                            border-radius: 6px;
+                            background: #3D7BF524;
+                            kind-text := Text { text: @tr("doc-kind-screenshot" => "Screenshot"); color: Theme.accent-text; font-size: 12px; font-weight: 600; horizontal-alignment: center; vertical-alignment: center; width: parent.width; height: parent.height; }
                         }
                     }
-                    Text { text: root.doc-name; color: Theme.text; font-size: 14px; font-weight: 600; vertical-alignment: center; overflow: elide; max-width: 360px; }
+                    Text { text: root.doc-name; color: Theme.text; font-size: 14px; font-weight: 600; vertical-alignment: center; overflow: elide; max-width: 360px; horizontal-stretch: 0; }
+                    Rectangle { width: 6px; }
                     HorizontalLayout {
                         spacing: 8px;
                         horizontal-stretch: 0;
-                        Switch {
-                            y: 17px;
-                            checked <=> root.autosave;
-                            toggled => { root.autosave-toggled(self.checked); }
+                        VerticalLayout {
+                            alignment: center;
+                            Switch {
+                                checked <=> root.autosave;
+                                toggled => { root.autosave-toggled(self.checked); }
+                            }
                         }
                         Text { text: @tr("doc-autosave" => "Save automatically"); color: Theme.text2; font-size: 12px; vertical-alignment: center; wrap: no-wrap; }
                         Text {
                             text: root.save-state == 0 ? @tr("doc-state-saved" => "saved") : (root.save-state == 2 ? @tr("doc-state-saving" => "saving…") : @tr("doc-state-unsaved" => "unsaved"));
                             color: root.save-state == 1 ? Theme.attention : Theme.text3;
+                            animate color { duration: 200ms; }
                             font-size: 12px;
                             vertical-alignment: center;
                             wrap: no-wrap;
@@ -746,41 +1163,49 @@ export component AppWindow inherits Window {
                     }
                     Rectangle { horizontal-stretch: 1; }
                     Rectangle {
-                        y: 10px;
-                        height: 32px;
-                        width: 72px;
+                        width: 76px;
                         border-radius: 10px;
                         background: Theme.elevated;
                         HorizontalLayout {
-                            IconButton { label: @tr("doc-undo" => "Undo"); icon: "M9 14 L4 9 l5 -5 M4 9 h11 a5 5 0 0 1 0 10 h-3"; enabled: root.can-undo; clicked => { root.undo(); } }
-                            IconButton { label: @tr("doc-redo" => "Redo"); icon: "M15 14 l5 -5 -5 -5 M20 9 H9 a5 5 0 0 0 0 10 h3"; enabled: root.can-redo; clicked => { root.redo(); } }
+                            padding: 2px;
+                            spacing: 0px;
+                            IconButton { width: 36px; height: 28px; label: @tr("doc-undo" => "Undo"); tip: self.label + "  Ctrl+Z"; icon: "M9 14 L4 9 l5 -5 M4 9 h11 a5 5 0 0 1 0 10 h-3"; enabled: root.can-undo; clicked => { root.undo(); } }
+                            IconButton { width: 36px; height: 28px; label: @tr("doc-redo" => "Redo"); tip: self.label + "  Ctrl+Shift+Z"; icon: "M15 14 l5 -5 -5 -5 M20 9 H9 a5 5 0 0 0 0 10 h3"; enabled: root.can-redo; clicked => { root.redo(); } }
                         }
                     }
-                    Rectangle {
-                        y: 10px;
-                        height: 32px;
+                    Rectangle { width: 4px; }
+                    copy-box := Rectangle {
                         width: copy-row.preferred-width;
                         border-radius: 8px;
                         background: Theme.accent;
                         clip: true;
                         copy-row := HorizontalLayout {
                             Rectangle {
-                                width: copy-inner.preferred-width + 26px;
+                                width: copy-inner.preferred-width;
                                 background: copy-ta.has-hover ? #5189F7 : transparent;
+                                animate background { duration: 120ms; }
                                 copy-inner := HorizontalLayout {
-                                    x: 13px;
+                                    padding-left: 12px;
+                                    padding-right: 14px;
                                     spacing: 6px;
-                                    Icon { y: 6px; tint: white; d: "M11 9 h7 a2 2 0 0 1 2 2 v7 a2 2 0 0 1 -2 2 h-7 a2 2 0 0 1 -2 -2 v-7 a2 2 0 0 1 2 -2 z M5 15 V5 a2 2 0 0 1 2 -2 h10"; }
-                                    Text { text: @tr("doc-copy" => "Copy"); color: white; font-weight: 600; vertical-alignment: center; wrap: no-wrap; }
+                                    VerticalLayout {
+                                        alignment: center;
+                                        Icon { width: 18px; height: 18px; tint: white; d: "M11 9 h7 a2 2 0 0 1 2 2 v7 a2 2 0 0 1 -2 2 h-7 a2 2 0 0 1 -2 -2 v-7 a2 2 0 0 1 2 -2 z M5 15 V5 a2 2 0 0 1 2 -2 h10"; }
+                                    }
+                                    Text { text: @tr("doc-copy" => "Copy"); color: white; font-size: 13px; font-weight: 600; vertical-alignment: center; wrap: no-wrap; }
                                 }
-                                copy-ta := TouchArea { clicked => { root.copy(); } }
+                                copy-ta := TipTouch { tip: @tr("share-copy-image" => "Copy image") + "  Ctrl+C"; clicked => { root.copy(); } }
                             }
                             Rectangle { width: 1px; background: #FFFFFF38; }
                             Rectangle {
                                 width: 30px;
                                 background: more-ta.has-hover ? #5189F7 : transparent;
-                                Icon { width: 16px; height: 16px; tint: white; d: "M6 9 l6 6 6 -6"; }
-                                more-ta := TouchArea { clicked => { more-menu.show(); } }
+                                animate background { duration: 120ms; }
+                                VerticalLayout {
+                                    alignment: center;
+                                    HorizontalLayout { alignment: center; Chevron { tint: white; } }
+                                }
+                                more-ta := TipTouch { tip: @tr("doc-other-ways" => "More options"); clicked => { more-menu.show(); } }
                             }
                         }
                         more-menu := PopupWindow {
@@ -806,7 +1231,7 @@ export component AppWindow inherits Window {
             Rectangle { height: 1px; background: Theme.line; }
             HorizontalLayout {
                 vertical-stretch: 1;
-                // tool rail
+                // ---- tool rail (tooltips to the right)
                 Rectangle {
                     width: 56px;
                     background: Theme.panel;
@@ -814,25 +1239,25 @@ export component AppWindow inherits Window {
                         padding: 8px;
                         spacing: 4px;
                         alignment: start;
-                        IconButton { width: 40px; height: 36px; label: @tr("tool-select" => "Select (V)"); icon: "M5 3 l14 8 -6 2 -3 6 -5 -16 z"; active: root.tool == 0 || root.ctrl-held; clicked => { root.tool-chosen(0); } hovered(h) => { root.hover-hint = h ? self.label : ""; } }
-                        IconButton { width: 40px; height: 36px; label: @tr("tool-rect" => "Rectangle (R)"); icon: "M6 5 h12 a2 2 0 0 1 2 2 v10 a2 2 0 0 1 -2 2 H6 a2 2 0 0 1 -2 -2 V7 a2 2 0 0 1 2 -2 z"; active: root.tool == 1 && !root.ctrl-held; clicked => { root.tool-chosen(1); } hovered(h) => { root.hover-hint = h ? self.label : ""; } }
-                        IconButton { width: 40px; height: 36px; label: @tr("tool-ellipse" => "Ellipse (E)"); icon: "M4 12 a8 6 0 1 0 16 0 a8 6 0 1 0 -16 0 z"; active: root.tool == 2 && !root.ctrl-held; clicked => { root.tool-chosen(2); } hovered(h) => { root.hover-hint = h ? self.label : ""; } }
-                        IconButton { width: 40px; height: 36px; label: @tr("tool-arrow" => "Arrow (L)"); icon: "M4 20 L20 4 M11 4 h9 v9"; active: root.tool == 3 && !root.ctrl-held; clicked => { root.tool-chosen(3); } hovered(h) => { root.hover-hint = h ? self.label : ""; } }
-                        IconButton { width: 40px; height: 36px; label: @tr("tool-pen" => "Pen (P)"); icon: "M15.5 4.5 a2.1 2.1 0 0 1 3 3 L8 18 l-4 1 1 -4 z M13.5 6.5 l3 3 M12 20 q2 -3 4 0 t4 0"; active: root.tool == 4 && !root.ctrl-held; clicked => { root.tool-chosen(4); } hovered(h) => { root.hover-hint = h ? self.label : ""; } }
-                        IconButton { width: 40px; height: 36px; label: @tr("tool-text" => "Text (T)"); icon: "M5 6 h14 M12 6 v14"; active: root.tool == 5 && !root.ctrl-held; clicked => { root.tool-chosen(5); } hovered(h) => { root.hover-hint = h ? self.label : ""; } }
+                        IconButton { width: 40px; height: 36px; tip-side: 1; label: @tr("tool-select" => "Select (V)"); icon: "M5 3 l14 8 -6 2 -3 6 -5 -16 z"; active: root.tool == 0 || root.ctrl-held; clicked => { root.tool-chosen(0); } }
+                        IconButton { width: 40px; height: 36px; tip-side: 1; label: @tr("tool-rect" => "Rectangle (R)"); icon: "M6 5 h12 a2 2 0 0 1 2 2 v10 a2 2 0 0 1 -2 2 H6 a2 2 0 0 1 -2 -2 V7 a2 2 0 0 1 2 -2 z"; active: root.tool == 1 && !root.ctrl-held; clicked => { root.tool-chosen(1); } }
+                        IconButton { width: 40px; height: 36px; tip-side: 1; label: @tr("tool-ellipse" => "Ellipse (E)"); icon: "M4 12 a8 6 0 1 0 16 0 a8 6 0 1 0 -16 0 z"; active: root.tool == 2 && !root.ctrl-held; clicked => { root.tool-chosen(2); } }
+                        IconButton { width: 40px; height: 36px; tip-side: 1; label: @tr("tool-arrow" => "Arrow (L)"); icon: "M4 20 L20 4 M11 4 h9 v9"; active: root.tool == 3 && !root.ctrl-held; clicked => { root.tool-chosen(3); } }
+                        IconButton { width: 40px; height: 36px; tip-side: 1; label: @tr("tool-pen" => "Pen (P)"); icon: "M15.5 4.5 a2.1 2.1 0 0 1 3 3 L8 18 l-4 1 1 -4 z M13.5 6.5 l3 3 M12 20 q2 -3 4 0 t4 0"; active: root.tool == 4 && !root.ctrl-held; clicked => { root.tool-chosen(4); } }
+                        IconButton { width: 40px; height: 36px; tip-side: 1; label: @tr("tool-text" => "Text (T)"); icon: "M5 6 h14 M12 6 v14"; active: root.tool == 5 && !root.ctrl-held; clicked => { root.tool-chosen(5); } }
                         Rectangle { height: 9px; Rectangle { y: 4px; height: 1px; x: 8px; width: parent.width - 16px; background: Theme.line; } }
-                        IconButton { width: 40px; height: 36px; label: @tr("tool-hide" => "Hide (B)"); icon: "M3 3 l18 18 M10.6 10.6 a2 2 0 0 0 2.8 2.8 M9.9 5.1 A10 10 0 0 1 21 12 a17 17 0 0 1 -2.8 3.6 M6.6 6.6 A17 17 0 0 0 3 12 s3.5 6 9 6 a9 9 0 0 0 3.6 -0.7"; active: root.tool == 6 && !root.ctrl-held; clicked => { root.tool-chosen(6); } hovered(h) => { root.hover-hint = h ? self.label : ""; } }
-                        IconButton { width: 40px; height: 36px; label: @tr("tool-highlighter" => "Highlighter (H)"); icon: "M14 3.5 L20.5 10 L13 17.5 L6.5 11 Z M6.5 11 L4 16.5 L7.5 20 L13 17.5 M16.5 6 L10 12.5 M3 22.3 h9"; active: root.tool == 7 && !root.ctrl-held; clicked => { root.tool-chosen(7); } hovered(h) => { root.hover-hint = h ? self.label : ""; } }
-                        IconButton { width: 40px; height: 36px; label: @tr("tool-counter" => "Counter (N)"); icon: "M3 12 a9 9 0 1 0 18 0 a9 9 0 1 0 -18 0 z M10.5 9 l2 -1.2 V16"; active: root.tool == 8 && !root.ctrl-held; clicked => { root.tool-chosen(8); } hovered(h) => { root.hover-hint = h ? self.label : ""; } }
-                        IconButton { width: 40px; height: 36px; label: @tr("tool-stamp" => "Stamp (S)"); icon: "M8 12 V7 a4 4 0 0 1 8 0 v5 M5 12 h14 v4 H5 z M7 16 v4 h10 v-4"; active: root.tool == 9 && !root.ctrl-held; clicked => { root.tool-chosen(9); } hovered(h) => { root.hover-hint = h ? self.label : ""; } }
+                        IconButton { width: 40px; height: 36px; tip-side: 1; label: @tr("tool-hide" => "Hide (B)"); icon: "M3 3 l18 18 M10.6 10.6 a2 2 0 0 0 2.8 2.8 M9.9 5.1 A10 10 0 0 1 21 12 a17 17 0 0 1 -2.8 3.6 M6.6 6.6 A17 17 0 0 0 3 12 s3.5 6 9 6 a9 9 0 0 0 3.6 -0.7"; active: root.tool == 6 && !root.ctrl-held; clicked => { root.tool-chosen(6); } }
+                        IconButton { width: 40px; height: 36px; tip-side: 1; label: @tr("tool-highlighter" => "Highlighter (H)"); icon: "M14 3.5 L20.5 10 L13 17.5 L6.5 11 Z M6.5 11 L4 16.5 L7.5 20 L13 17.5 M16.5 6 L10 12.5 M3 22.3 h9"; active: root.tool == 7 && !root.ctrl-held; clicked => { root.tool-chosen(7); } }
+                        IconButton { width: 40px; height: 36px; tip-side: 1; label: @tr("tool-counter" => "Counter (N)"); icon: "M3 12 a9 9 0 1 0 18 0 a9 9 0 1 0 -18 0 z M10.5 9 l2 -1.2 V16"; active: root.tool == 8 && !root.ctrl-held; clicked => { root.tool-chosen(8); } }
+                        IconButton { width: 40px; height: 36px; tip-side: 1; label: @tr("tool-stamp" => "Stamp (S)"); icon: "M8 12 V7 a4 4 0 0 1 8 0 v5 M5 12 h14 v4 H5 z M7 16 v4 h10 v-4"; active: root.tool == 9 && !root.ctrl-held; clicked => { root.tool-chosen(9); } }
                         // Stable layout from v1: tools not implemented yet stay in place, disabled.
-                        IconButton { width: 40px; height: 36px; label: @tr("tool-image" => "Image (I)"); icon: "M5 5 h14 a2 2 0 0 1 2 2 v10 a2 2 0 0 1 -2 2 H5 a2 2 0 0 1 -2 -2 V7 a2 2 0 0 1 2 -2 z M7 10 a1.5 1.5 0 1 0 3 0 a1.5 1.5 0 1 0 -3 0 M4 17 l5 -5 4 4 3 -3 4 4"; enabled: false; hovered(h) => { root.hover-hint = h ? @tr("common-in-development" => "Coming soon") : ""; } }
+                        IconButton { width: 40px; height: 36px; tip-side: 1; label: @tr("tool-image" => "Image (I)"); tip: self.label + " — " + @tr("common-in-development" => "Coming soon"); icon: "M5 5 h14 a2 2 0 0 1 2 2 v10 a2 2 0 0 1 -2 2 H5 a2 2 0 0 1 -2 -2 V7 a2 2 0 0 1 2 -2 z M7 10 a1.5 1.5 0 1 0 3 0 a1.5 1.5 0 1 0 -3 0 M4 17 l5 -5 4 4 3 -3 4 4"; enabled: false; }
                         Rectangle { height: 9px; Rectangle { y: 4px; height: 1px; x: 8px; width: parent.width - 16px; background: Theme.line; } }
-                        IconButton { width: 40px; height: 36px; label: @tr("tool-crop" => "Crop (C)"); icon: "M6 2 v14 a2 2 0 0 0 2 2 h14 M2 6 h14 a2 2 0 0 1 2 2 v14"; enabled: false; hovered(h) => { root.hover-hint = h ? @tr("common-in-development" => "Coming soon") : ""; } }
+                        IconButton { width: 40px; height: 36px; tip-side: 1; label: @tr("tool-crop" => "Crop (C)"); tip: self.label + " — " + @tr("common-in-development" => "Coming soon"); icon: "M6 2 v14 a2 2 0 0 0 2 2 h14 M2 6 h14 a2 2 0 0 1 2 2 v14"; enabled: false; }
                     }
                 }
                 Rectangle { width: 1px; background: Theme.line; }
-                // canvas
+                // ---- canvas
                 canvas-area := Rectangle {
                     horizontal-stretch: 1;
                     background: Theme.canvas;
@@ -903,115 +1328,356 @@ export component AppWindow inherits Window {
                     }
                 }
                 Rectangle { width: 1px; background: Theme.line; }
-                // inspector (Object tab; the other tabs come with ZK-54)
+                // ---- inspector (ZK-54): Object · Layers · Image · Meta
                 Rectangle {
                     width: 284px;
                     background: Theme.panel;
                     VerticalLayout {
-                        padding: 16px;
-                        spacing: 14px;
-                        alignment: start;
-                        HorizontalLayout {
-                            spacing: 4px;
-                            Rectangle { height: 28px; width: 72px; border-radius: 7px; background: Theme.control-on; Text { text: @tr("insp-tab-object" => "Object"); color: Theme.text; font-weight: 600; font-size: 12px; horizontal-alignment: center; vertical-alignment: center; width: parent.width; height: parent.height; } }
-                            Rectangle { height: 28px; width: 60px; Text { text: @tr("insp-tab-layers" => "Layers"); color: Theme.disabled; font-size: 12px; horizontal-alignment: center; vertical-alignment: center; width: parent.width; height: parent.height; } }
-                            Rectangle { height: 28px; width: 60px; Text { text: @tr("insp-tab-shot" => "Image"); color: Theme.disabled; font-size: 12px; horizontal-alignment: center; vertical-alignment: center; width: parent.width; height: parent.height; } }
-                            Rectangle { height: 28px; width: 50px; Text { text: @tr("insp-tab-meta" => "Meta"); color: Theme.disabled; font-size: 12px; horizontal-alignment: center; vertical-alignment: center; width: parent.width; height: parent.height; } }
-                        }
-                        Text {
-                            text: root.has-selection ? "" : (root.mark-count == 0 ? @tr("insp-no-marks" => "No annotations yet. Pick a tool on the left and draw on the screenshot.") : @tr("insp-nothing-selected" => "Select an annotation to change it, or pick a tool on the left."));
-                            color: Theme.text3;
-                            font-size: 12px;
-                            wrap: word-wrap;
-                            visible: self.text != "";
-                        }
-                        Text { text: @tr("insp-stroke" => "Stroke"); color: Theme.text2; font-size: 12px; }
-                        HorizontalLayout {
-                            spacing: 6px;
-                            for c[i] in [#FF5A5F, #FF8A3D, #FFD23F, #34C48A, #3D7BF5, #9B5CF5, #FFFFFF, #14161A]: Rectangle {
-                                width: 26px;
-                                height: 26px;
-                                border-radius: 7px;
-                                background: c;
-                                border-width: root.color-index == i ? 2px : 1px;
-                                animate border-width { duration: 140ms; easing: ease-out; }
-                                border-color: root.color-index == i ? Theme.text : #FFFFFF22;
-                                TouchArea { clicked => { root.set-color(i); } }
-                            }
-                        }
-                        HorizontalLayout {
-                            spacing: 2px;
-                            for t[i] in ["2", "4", "7"]: Rectangle {
-                                height: 28px;
-                                horizontal-stretch: 1;
-                                border-radius: 7px;
-                                background: root.thick-index == i ? Theme.control-on : Theme.elevated;
-                                animate background { duration: 140ms; easing: ease-out; }
-                                Text { text: t; color: root.thick-index == i ? Theme.text : Theme.text2; font-size: 12px; font-weight: 600; horizontal-alignment: center; vertical-alignment: center; width: parent.width; height: parent.height; }
-                                TouchArea { clicked => { root.set-thick(i); } }
-                            }
-                        }
-                        if root.selection-count >= 1: VerticalLayout {
-                            spacing: 6px;
-                            Text { text: @tr("arrange-selected" => "Selected: {0}", root.selection-count); color: Theme.text2; font-size: 12px; }
+                        padding: 14px;
+                        spacing: 12px;
+                        // tabs
+                        Rectangle {
+                            height: 32px;
+                            border-radius: 9px;
+                            background: Theme.elevated;
                             HorizontalLayout {
+                                padding: 2px;
                                 spacing: 2px;
-                                IconButton { label: @tr("arrange-front" => "Bring to front"); icon: "M4 4 h16 M12 20 V8 M7 13 l5 -5 5 5"; clicked => { root.arrange(0); } hovered(h) => { root.hover-hint = h ? self.label : ""; } }
-                                IconButton { label: @tr("layers-up" => "Bring forward"); icon: "M12 19 V5 M6 11 l6 -6 6 6"; clicked => { root.arrange(2); } hovered(h) => { root.hover-hint = h ? self.label : ""; } }
-                                IconButton { label: @tr("layers-down" => "Send backward"); icon: "M12 5 v14 M6 13 l6 6 6 -6"; clicked => { root.arrange(3); } hovered(h) => { root.hover-hint = h ? self.label : ""; } }
-                                IconButton { label: @tr("arrange-back" => "Send to back"); icon: "M4 20 h16 M12 4 v12 M7 11 l5 5 5 -5"; clicked => { root.arrange(1); } hovered(h) => { root.hover-hint = h ? self.label : ""; } }
-                                IconButton { label: @tr("common-duplicate" => "Duplicate"); icon: "M9 9 h11 v11 H9 z M15 9 V4 H4 v11 h5"; clicked => { root.duplicate(); } hovered(h) => { root.hover-hint = h ? self.label : ""; } }
+                                SegOption { text: @tr("insp-tab-object" => "Object"); on: root.insp-tab == 0; clicked => { root.insp-tab = 0; } }
+                                SegOption { text: @tr("insp-tab-layers" => "Layers"); on: root.insp-tab == 1; clicked => { root.insp-tab = 1; } }
+                                SegOption { text: @tr("insp-tab-shot" => "Image"); on: root.insp-tab == 2; clicked => { root.insp-tab = 2; } }
+                                SegOption { text: @tr("insp-tab-meta" => "Meta"); on: root.insp-tab == 3; clicked => { root.insp-tab = 3; } }
                             }
-                            if root.selection-count >= 2: HorizontalLayout {
-                                spacing: 2px;
-                                IconButton { label: @tr("arrange-align-left" => "Align left edges"); icon: "M4 3 v18 M8 7 h9 v3 H8 z M8 14 h13 v3 H8 z"; clicked => { root.align(0); } hovered(h) => { root.hover-hint = h ? self.label : ""; } }
-                                IconButton { label: @tr("arrange-align-hcentre" => "Align vertical centres"); icon: "M12 3 v18 M7 7 h10 v3 H7 z M5 14 h14 v3 H5 z"; clicked => { root.align(1); } hovered(h) => { root.hover-hint = h ? self.label : ""; } }
-                                IconButton { label: @tr("arrange-align-right" => "Align right edges"); icon: "M20 3 v18 M7 7 h9 v3 H7 z M3 14 h13 v3 H3 z"; clicked => { root.align(2); } hovered(h) => { root.hover-hint = h ? self.label : ""; } }
-                                IconButton { label: @tr("arrange-align-top" => "Align top edges"); icon: "M3 4 h18 M7 8 v9 h3 V8 z M14 8 v13 h3 V8 z"; clicked => { root.align(3); } hovered(h) => { root.hover-hint = h ? self.label : ""; } }
-                                IconButton { label: @tr("arrange-align-vcentre" => "Align horizontal centres"); icon: "M3 12 h18 M7 7 v10 h3 V7 z M14 5 v14 h3 V5 z"; clicked => { root.align(4); } hovered(h) => { root.hover-hint = h ? self.label : ""; } }
-                                IconButton { label: @tr("arrange-align-bottom" => "Align bottom edges"); icon: "M3 20 h18 M7 7 v9 h3 V7 z M14 3 v13 h3 V3 z"; clicked => { root.align(5); } hovered(h) => { root.hover-hint = h ? self.label : ""; } }
+                        }
+                        // ---- Object
+                        if root.insp-tab == 0: ScrollView {
+                            vertical-stretch: 1;
+                            VerticalLayout {
+                                spacing: 12px;
+                                alignment: start;
+                                Text {
+                                    text: root.prop-kind >= 0 ? (root.prop-for-selection ? (root.selection-count > 1 ? @tr("arrange-selected" => "Selected: {0}", root.selection-count) : root.prop-title) : root.prop-title) : (root.mark-count == 0 ? @tr("insp-no-marks" => "No annotations yet. Pick a tool on the left and draw on the screenshot.") : @tr("insp-nothing-selected" => "Select an annotation to change it, or pick a tool on the left."));
+                                    color: root.prop-kind >= 0 ? Theme.text : Theme.text3;
+                                    font-size: root.prop-kind >= 0 ? 13px : 12px;
+                                    font-weight: root.prop-kind >= 0 ? 600 : 400;
+                                    wrap: word-wrap;
+                                }
+                                // stroke colour
+                                if root.prop-kind >= 0 && root.prop-kind != 5 && root.prop-kind != 9: VerticalLayout {
+                                    spacing: 6px;
+                                    Text { text: @tr("insp-stroke" => "Stroke"); color: Theme.text2; font-size: 12px; }
+                                    HorizontalLayout {
+                                        spacing: 7px;
+                                        for c[i] in Palette.colors: Swatch { c: c; on: root.color-index == i; clicked => { root.set-prop("color", i); } }
+                                    }
+                                }
+                                // thickness
+                                if root.prop-kind >= 0 && root.prop-kind <= 3: HorizontalLayout {
+                                    spacing: 2px;
+                                    for t[i] in [1.5px, 3px, 5.5px]: SegOption { bar: t; on: root.thick-index == i; tip: i == 0 ? @tr("ctx-thin" => "Thin") : (i == 1 ? @tr("ctx-medium" => "Medium") : @tr("ctx-thick" => "Thick")); clicked => { root.set-prop("thick", i); } }
+                                }
+                                // fill (rectangle, ellipse)
+                                if root.prop-kind >= 0 && root.prop-kind <= 1: VerticalLayout {
+                                    spacing: 6px;
+                                    Text { text: @tr("insp-fill" => "Fill"); color: Theme.text2; font-size: 12px; }
+                                    HorizontalLayout {
+                                        spacing: 3px;
+                                        Swatch { none: true; on: root.fill-index < 0; tip: @tr("ctx-fill-none" => "Fill colour: none"); clicked => { root.set-prop("fill", -1); } }
+                                        for c[i] in Palette.colors: Swatch { c: c; on: root.fill-index == i; clicked => { root.set-prop("fill", i); } }
+                                    }
+                                }
+                                // line style
+                                if root.prop-kind >= 0 && root.prop-kind <= 3: HorizontalLayout {
+                                    spacing: 2px;
+                                    SegOption { icon: "M3 12 h18"; on: root.dash-index == 0; tip: @tr("insp-line-solid" => "Solid"); clicked => { root.set-prop("dash", 0); } }
+                                    SegOption { icon: "M3 12 h4 M10 12 h4 M17 12 h4"; on: root.dash-index == 1; tip: @tr("insp-line-dashed" => "Dashed"); clicked => { root.set-prop("dash", 1); } }
+                                    SegOption { icon: "M3 12 h5 M11 12 h1.5 M15.5 12 h5.5"; on: root.dash-index == 2; tip: @tr("insp-line-dashdot" => "Dash-dot"); clicked => { root.set-prop("dash", 2); } }
+                                }
+                                // corners (rectangle)
+                                if root.prop-kind == 0: VerticalLayout {
+                                    spacing: 6px;
+                                    Text { text: @tr("insp-corners" => "Corners"); color: Theme.text2; font-size: 12px; }
+                                    HorizontalLayout {
+                                        spacing: 2px;
+                                        SegOption { icon: "M5 19 V5 h14"; on: root.corners-index == 0; tip: @tr("insp-corners-sharp" => "Sharp"); clicked => { root.set-prop("corners", 0); } }
+                                        SegOption { icon: "M5 19 V9 a4 4 0 0 1 4 -4 h10"; on: root.corners-index == 1; tip: @tr("insp-corners-soft" => "Soft"); clicked => { root.set-prop("corners", 1); } }
+                                        SegOption { icon: "M5 19 V14 a9 9 0 0 1 9 -9 h5"; on: root.corners-index == 2; tip: @tr("insp-corners-round" => "Round"); clicked => { root.set-prop("corners", 2); } }
+                                    }
+                                }
+                                // arrowheads (line): heads are a property of the line
+                                if root.prop-kind == 2: VerticalLayout {
+                                    spacing: 6px;
+                                    Text { text: @tr("insp-heads" => "Arrowheads"); color: Theme.text2; font-size: 12px; }
+                                    HorizontalLayout {
+                                        spacing: 6px;
+                                        Text { text: @tr("insp-head-start" => "Start"); color: Theme.text3; font-size: 11px; vertical-alignment: center; width: 52px; }
+                                        SegOption { icon: "M4 12 h16"; on: root.head-start == 0; tip: @tr("common-none" => "None"); clicked => { root.set-prop("head-start", 0); } }
+                                        SegOption { icon: "M20 12 H8 M4 12 l6 -4 v8 z"; on: root.head-start == 1; tip: @tr("insp-head-triangle" => "Triangle"); clicked => { root.set-prop("head-start", 1); } }
+                                        SegOption { icon: "M20 12 H4 M10 6 l-6 6 6 6"; on: root.head-start == 2; tip: @tr("insp-head-chevron" => "Chevron"); clicked => { root.set-prop("head-start", 2); } }
+                                        SegOption { icon: "M20 12 H9 M4 12 a2.5 2.5 0 1 0 5 0 a2.5 2.5 0 1 0 -5 0"; on: root.head-start == 3; tip: @tr("insp-head-dot" => "Dot"); clicked => { root.set-prop("head-start", 3); } }
+                                    }
+                                    HorizontalLayout {
+                                        spacing: 6px;
+                                        Text { text: @tr("insp-head-end" => "End"); color: Theme.text3; font-size: 11px; vertical-alignment: center; width: 52px; }
+                                        SegOption { icon: "M4 12 h16"; on: root.head-end == 0; tip: @tr("common-none" => "None"); clicked => { root.set-prop("head-end", 0); } }
+                                        SegOption { icon: "M4 12 h12 M20 12 l-6 -4 v8 z"; on: root.head-end == 1; tip: @tr("insp-head-triangle" => "Triangle"); clicked => { root.set-prop("head-end", 1); } }
+                                        SegOption { icon: "M4 12 h16 M14 6 l6 6 -6 6"; on: root.head-end == 2; tip: @tr("insp-head-chevron" => "Chevron"); clicked => { root.set-prop("head-end", 2); } }
+                                        SegOption { icon: "M4 12 h11 M15 12 a2.5 2.5 0 1 0 5 0 a2.5 2.5 0 1 0 -5 0"; on: root.head-end == 3; tip: @tr("insp-head-dot" => "Dot"); clicked => { root.set-prop("head-end", 3); } }
+                                    }
+                                }
+                                // text
+                                if root.prop-kind == 4: HorizontalLayout {
+                                    spacing: 2px;
+                                    SegOption { text: @tr("insp-size-s" => "S"); on: root.text-size-index == 0; clicked => { root.set-prop("text-size", 0); } }
+                                    SegOption { text: @tr("insp-size-m" => "M"); on: root.text-size-index == 1; clicked => { root.set-prop("text-size", 1); } }
+                                    SegOption { text: @tr("insp-size-l" => "L"); on: root.text-size-index == 2; clicked => { root.set-prop("text-size", 2); } }
+                                    Rectangle { width: 8px; }
+                                    SegOption { icon: "M7 5 h6 a3.5 3.5 0 0 1 0 7 H7 z M7 12 h7 a3.5 3.5 0 0 1 0 7 H7 z"; on: root.text-bold; tip: @tr("ctx-bold" => "Bold"); clicked => { root.set-prop("bold", root.text-bold ? 0 : 1); } }
+                                    SegOption { icon: "M10 5 h8 M6 19 h8 M14 5 l-4 14"; on: root.text-italic; tip: @tr("ctx-italic" => "Italic"); clicked => { root.set-prop("italic", root.text-italic ? 0 : 1); } }
+                                }
+                                // opacity
+                                if root.prop-kind >= 0 && root.prop-kind != 5: VerticalLayout {
+                                    spacing: 4px;
+                                    HorizontalLayout {
+                                        Text { text: @tr("insp-opacity" => "Opacity"); color: Theme.text2; font-size: 12px; horizontal-stretch: 1; }
+                                        Text { text: round(root.alpha * 100) + " %"; color: Theme.text3; font-size: 11px; }
+                                    }
+                                    MiniSlider {
+                                        value <=> root.alpha;
+                                        tip: @tr("insp-opacity" => "Opacity");
+                                        moved(v) => { root.set-alpha(v, false); }
+                                        released => { root.set-alpha(root.alpha, true); }
+                                    }
+                                }
+                                // position and size of one selected mark
+                                if root.prop-for-selection && root.selection-count == 1: VerticalLayout {
+                                    spacing: 6px;
+                                    HorizontalLayout {
+                                        spacing: 8px;
+                                        NumField { label: @tr("insp-x" => "X"); value: root.geom-x; committed(v) => { root.set-geom("x", v); } }
+                                        NumField { label: @tr("insp-y" => "Y"); value: root.geom-y; committed(v) => { root.set-geom("y", v); } }
+                                    }
+                                    HorizontalLayout {
+                                        spacing: 8px;
+                                        NumField { label: @tr("insp-w" => "W"); value: root.geom-w; committed(v) => { root.set-geom("w", v); } }
+                                        NumField { label: @tr("insp-h" => "H"); value: root.geom-h; committed(v) => { root.set-geom("h", v); } }
+                                    }
+                                }
+                                // arrange (ZK-52)
+                                if root.selection-count >= 1: VerticalLayout {
+                                    spacing: 4px;
+                                    Rectangle { height: 1px; background: Theme.line; }
+                                    HorizontalLayout {
+                                        spacing: 2px;
+                                        IconButton { label: @tr("arrange-front" => "Bring to front"); tip: self.label + "  Ctrl+Shift+]"; icon: "M4 4 h16 M12 20 V8 M7 13 l5 -5 5 5"; clicked => { root.arrange(0); } }
+                                        IconButton { label: @tr("layers-up" => "Bring forward"); tip: self.label + "  Ctrl+]"; icon: "M12 19 V5 M6 11 l6 -6 6 6"; clicked => { root.arrange(2); } }
+                                        IconButton { label: @tr("layers-down" => "Send backward"); tip: self.label + "  Ctrl+["; icon: "M12 5 v14 M6 13 l6 6 6 -6"; clicked => { root.arrange(3); } }
+                                        IconButton { label: @tr("arrange-back" => "Send to back"); tip: self.label + "  Ctrl+Shift+["; icon: "M4 20 h16 M12 4 v12 M7 11 l5 5 5 -5"; clicked => { root.arrange(1); } }
+                                        IconButton { label: @tr("common-duplicate" => "Duplicate"); tip: self.label + "  Ctrl+D"; icon: "M9 9 h11 v11 H9 z M15 9 V4 H4 v11 h5"; clicked => { root.duplicate(); } }
+                                    }
+                                    if root.selection-count >= 2: HorizontalLayout {
+                                        spacing: 2px;
+                                        IconButton { label: @tr("arrange-align-left" => "Align left edges"); icon: "M4 3 v18 M8 7 h9 v3 H8 z M8 14 h13 v3 H8 z"; clicked => { root.align(0); } }
+                                        IconButton { label: @tr("arrange-align-hcentre" => "Align vertical centres"); icon: "M12 3 v18 M7 7 h10 v3 H7 z M5 14 h14 v3 H5 z"; clicked => { root.align(1); } }
+                                        IconButton { label: @tr("arrange-align-right" => "Align right edges"); icon: "M20 3 v18 M7 7 h9 v3 H7 z M3 14 h13 v3 H3 z"; clicked => { root.align(2); } }
+                                        IconButton { label: @tr("arrange-align-top" => "Align top edges"); icon: "M3 4 h18 M7 8 v9 h3 V8 z M14 8 v13 h3 V8 z"; clicked => { root.align(3); } }
+                                        IconButton { label: @tr("arrange-align-vcentre" => "Align horizontal centres"); icon: "M3 12 h18 M7 7 v10 h3 V7 z M14 5 v14 h3 V5 z"; clicked => { root.align(4); } }
+                                        IconButton { label: @tr("arrange-align-bottom" => "Align bottom edges"); icon: "M3 20 h18 M7 7 v9 h3 V7 z M14 3 v13 h3 V3 z"; clicked => { root.align(5); } }
+                                    }
+                                    if root.selection-count >= 2: HorizontalLayout {
+                                        spacing: 2px;
+                                        IconButton { label: @tr("arrange-distribute-x" => "Even gaps across"); icon: "M3 3 v18 M21 3 v18 M9 8 h6 v8 H9 z"; enabled: root.selection-count >= 3; clicked => { root.distribute(0); } }
+                                        IconButton { label: @tr("arrange-distribute-y" => "Even gaps down"); icon: "M3 3 h18 M3 21 h18 M8 9 h8 v6 H8 z"; enabled: root.selection-count >= 3; clicked => { root.distribute(1); } }
+                                        Rectangle { width: 8px; }
+                                        IconButton { label: @tr("arrange-group" => "Group"); tip: self.label + "  Ctrl+G"; icon: "M4 4 h7 v7 H4 z M13 13 h7 v7 h-7 z M2 2 h20 v20 H2 z"; clicked => { root.group(true); } }
+                                        IconButton { label: @tr("arrange-ungroup" => "Ungroup"); tip: self.label + "  Ctrl+Shift+G"; icon: "M4 4 h7 v7 H4 z M13 13 h7 v7 h-7 z"; clicked => { root.group(false); } }
+                                    }
+                                }
                             }
-                            if root.selection-count >= 2: HorizontalLayout {
+                        }
+                        // ---- Layers: top of the list = front
+                        if root.insp-tab == 1: VerticalLayout {
+                            vertical-stretch: 1;
+                            spacing: 6px;
+                            if root.layers.length == 0: Text { text: @tr("layers-empty" => "No annotations yet — draw something on the canvas."); color: Theme.text3; font-size: 12px; wrap: word-wrap; }
+                            ScrollView {
+                                vertical-stretch: 1;
+                                VerticalLayout {
+                                    spacing: 2px;
+                                    alignment: start;
+                                    for l in root.layers: Rectangle {
+                                        height: 32px;
+                                        border-radius: 7px;
+                                        background: l.selected ? #3D7BF533 : (row-ta.has-hover ? Theme.elevated : transparent);
+                                        animate background { duration: 120ms; }
+                                        row-ta := TouchArea {
+                                            pointer-event(e) => {
+                                                if (e.kind == PointerEventKind.down && e.button == PointerEventButton.left) {
+                                                    root.layer-click(l.id, e.modifiers.shift || e.modifiers.control);
+                                                }
+                                            }
+                                        }
+                                        HorizontalLayout {
+                                            padding-left: 6px;
+                                            padding-right: 2px;
+                                            spacing: 6px;
+                                            VerticalLayout {
+                                                alignment: center;
+                                                Icon { width: 18px; height: 18px; d: KindIcons.paths[l.kind]; tint: l.hidden ? Theme.disabled : Theme.text2; }
+                                            }
+                                            Text { text: l.name; color: l.hidden ? Theme.text3 : Theme.text; font-size: 12px; vertical-alignment: center; overflow: elide; horizontal-stretch: 1; }
+                                            IconButton {
+                                                width: 28px;
+                                                height: 28px;
+                                                label: l.hidden ? @tr("layers-show" => "Show") : @tr("layers-hide" => "Hide");
+                                                icon: l.hidden ? "M3 3 l18 18 M10.6 10.6 a2 2 0 0 0 2.8 2.8 M9.9 5.1 A10 10 0 0 1 21 12 a17 17 0 0 1 -2.8 3.6 M6.6 6.6 A17 17 0 0 0 3 12 s3.5 6 9 6 a9 9 0 0 0 3.6 -0.7" : "M2 12 s3.5 -7 10 -7 10 7 10 7 -3.5 7 -10 7 -10 -7 -10 -7 z M9 12 a3 3 0 1 0 6 0 a3 3 0 1 0 -6 0";
+                                                clicked => { root.layer-eye(l.id); }
+                                            }
+                                        }
+                                    }
+                                    Rectangle {
+                                        height: 30px;
+                                        HorizontalLayout {
+                                            padding-left: 6px;
+                                            spacing: 6px;
+                                            VerticalLayout { alignment: center; Icon { width: 18px; height: 18px; d: "M5 5 h14 a2 2 0 0 1 2 2 v10 a2 2 0 0 1 -2 2 H5 a2 2 0 0 1 -2 -2 V7 a2 2 0 0 1 2 -2 z M7 10 a1.5 1.5 0 1 0 3 0 a1.5 1.5 0 1 0 -3 0 M4 17 l5 -5 4 4 3 -3 4 4"; tint: Theme.text3; } }
+                                            Text { text: @tr("layers-background" => "Screenshot (background) — always at the bottom"); color: Theme.text3; font-size: 11px; vertical-alignment: center; overflow: elide; }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        // ---- Image
+                        if root.insp-tab == 2: VerticalLayout {
+                            vertical-stretch: 1;
+                            spacing: 10px;
+                            alignment: start;
+                            Text { text: root.info-size; color: Theme.text; font-size: 16px; font-weight: 600; }
+                            VerticalLayout {
                                 spacing: 2px;
-                                IconButton { label: @tr("arrange-distribute-x" => "Even gaps across"); icon: "M3 3 v18 M21 3 v18 M9 8 h6 v8 H9 z"; enabled: root.selection-count >= 3; clicked => { root.distribute(0); } hovered(h) => { root.hover-hint = h ? self.label : ""; } }
-                                IconButton { label: @tr("arrange-distribute-y" => "Even gaps down"); icon: "M3 3 h18 M3 21 h18 M8 9 h8 v6 H8 z"; enabled: root.selection-count >= 3; clicked => { root.distribute(1); } hovered(h) => { root.hover-hint = h ? self.label : ""; } }
-                                Rectangle { width: 8px; }
-                                IconButton { label: @tr("arrange-group" => "Group"); icon: "M4 4 h7 v7 H4 z M13 13 h7 v7 h-7 z M2 2 h20 v20 H2 z"; clicked => { root.group(true); } hovered(h) => { root.hover-hint = h ? self.label : ""; } }
-                                IconButton { label: @tr("arrange-ungroup" => "Ungroup"); icon: "M4 4 h7 v7 H4 z M13 13 h7 v7 h-7 z"; clicked => { root.group(false); } hovered(h) => { root.hover-hint = h ? self.label : ""; } }
+                                Text { text: @tr("meta-source" => "Source"); color: Theme.text3; font-size: 11px; }
+                                Text { text: root.info-source; color: Theme.text2; font-size: 12px; wrap: word-wrap; }
+                            }
+                            VerticalLayout {
+                                spacing: 2px;
+                                Text { text: @tr("meta-taken" => "Date taken"); color: Theme.text3; font-size: 11px; }
+                                Text { text: root.info-taken; color: Theme.text2; font-size: 12px; }
+                            }
+                            Text { text: root.info-path; color: Theme.text3; font-size: 10px; wrap: word-wrap; }
+                            Rectangle { height: 1px; background: Theme.line; }
+                            Text { text: @tr("shot-crop" => "Crop") + " · " + @tr("shot-tone" => "Tone") + " · " + @tr("shot-rotate-mirror" => "Rotate and mirror") + " — " + @tr("common-in-development" => "Coming soon"); color: Theme.text3; font-size: 12px; wrap: word-wrap; }
+                        }
+                        // ---- Meta
+                        if root.insp-tab == 3: ScrollView {
+                            vertical-stretch: 1;
+                            VerticalLayout {
+                                spacing: 10px;
+                                alignment: start;
+                                VerticalLayout {
+                                    spacing: 4px;
+                                    Text { text: @tr("meta-title" => "Title"); color: Theme.text3; font-size: 11px; }
+                                    LineEdit { text <=> root.meta-title; edited(t) => { root.meta-edited("title", t); } }
+                                }
+                                VerticalLayout {
+                                    spacing: 4px;
+                                    Text { text: @tr("meta-description" => "Description"); color: Theme.text3; font-size: 11px; }
+                                    TextEdit { height: 80px; text <=> root.meta-description; wrap: word-wrap; edited(t) => { root.meta-edited("description", t); } }
+                                }
+                                VerticalLayout {
+                                    spacing: 4px;
+                                    Text { text: @tr("meta-tags" => "Tags"); color: Theme.text3; font-size: 11px; }
+                                    LineEdit { text <=> root.meta-tags; placeholder-text: @tr("meta-add-tag" => "add…"); edited(t) => { root.meta-edited("tags", t); } }
+                                }
+                                VerticalLayout {
+                                    spacing: 4px;
+                                    Text { text: @tr("meta-author" => "Author"); color: Theme.text3; font-size: 11px; }
+                                    LineEdit { text <=> root.meta-author; edited(t) => { root.meta-edited("author", t); } }
+                                }
+                                VerticalLayout {
+                                    spacing: 4px;
+                                    Text { text: @tr("meta-rights" => "Copyright"); color: Theme.text3; font-size: 11px; }
+                                    LineEdit { text <=> root.meta-rights; edited(t) => { root.meta-edited("rights", t); } }
+                                }
+                                VerticalLayout {
+                                    spacing: 2px;
+                                    Text { text: @tr("meta-taken" => "Date taken"); color: Theme.text3; font-size: 11px; }
+                                    Text { text: root.info-taken; color: Theme.text2; font-size: 12px; }
+                                }
                             }
                         }
                     }
                 }
             }
             Rectangle { height: 1px; background: Theme.line; }
-            // status bar
+            // ---- status bar: size · hint · crop · zoom (fit, slider, %, 100%)
             Rectangle {
                 height: 30px;
                 background: Theme.panel;
                 HorizontalLayout {
                     padding-left: 12px;
-                    padding-right: 12px;
-                    spacing: 16px;
+                    padding-right: 10px;
+                    padding-top: 4px;
+                    padding-bottom: 4px;
+                    spacing: 12px;
                     Text { text: root.image-size; color: Theme.text3; font-size: 12px; vertical-alignment: center; }
-                    Text { text: root.hover-hint != "" ? root.hover-hint : (root.toast != "" ? root.toast : root.hint); color: root.toast != "" && root.hover-hint == "" ? Theme.accent-text : Theme.text2; font-size: 12px; vertical-alignment: center; overflow: elide; horizontal-stretch: 1; }
+                    Text { text: root.toast != "" ? root.toast : root.hint; color: root.toast != "" ? Theme.accent-text : Theme.text2; font-size: 12px; vertical-alignment: center; overflow: elide; horizontal-stretch: 1; }
                     Text { text: root.crop-text; color: Theme.text3; font-size: 12px; vertical-alignment: center; }
                     HorizontalLayout {
-                        spacing: 4px;
+                        spacing: 8px;
                         horizontal-stretch: 0;
-                        IconButton { y: 3px; height: 24px; width: 24px; label: @tr("status-fit" => "Fit to window"); icon: "M4 9 V4 h5 M15 4 h5 v5 M20 15 v5 h-5 M9 20 H4 v-5"; clicked => { root.zoom-fit(); } hovered(h) => { root.hover-hint = h ? self.label : ""; } }
-                        Text { text: root.zoom-text; color: Theme.text; font-size: 12px; vertical-alignment: center; min-width: 40px; }
-                    }
-                    Rectangle {
-                        y: 4px;
-                        width: 48px;
-                        height: 22px;
-                        border-radius: 6px;
-                        background: z100.has-hover ? Theme.control-on : Theme.elevated;
-                        Text { text: "100%"; color: Theme.text2; font-size: 11px; horizontal-alignment: center; vertical-alignment: center; width: parent.width; height: parent.height; }
-                        z100 := TouchArea { clicked => { root.zoom-100(); } }
+                        SmallButton { icon: "M4 9 V4 h5 M15 4 h5 v5 M20 15 v5 h-5 M9 20 H4 v-5"; tip: @tr("status-fit" => "Fit to window") + "  Ctrl+0"; clicked => { root.zoom-fit(); } }
+                        MiniSlider {
+                            width: 120px;
+                            value <=> root.zoom-pos;
+                            tip: @tr("status-zoom" => "Zoom");
+                            moved(v) => { root.zoom-to(v); }
+                        }
+                        Text { text: root.zoom-text; color: Theme.text; font-size: 12px; vertical-alignment: center; horizontal-alignment: right; width: 44px; }
+                        SmallButton { text: "100%"; tip: @tr("status-zoom-100" => "Zoom 100 %") + "  Ctrl+1"; clicked => { root.zoom-100(); } }
                     }
                 }
             }
         }
+    }
+
+    // ---- resize edges of the frameless window (Windows)
+    if root.custom-frame && !root.win-maximized: Rectangle {
+        property <length> e: 5px;
+        ResizeEdge { x: 0; y: 0; width: parent.width; height: parent.e; dir: 1; mouse-cursor: ns-resize; resize(d) => { root.window-resize(d); } }
+        ResizeEdge { x: 0; y: parent.height - parent.e; width: parent.width; height: parent.e; dir: 4; mouse-cursor: ns-resize; resize(d) => { root.window-resize(d); } }
+        ResizeEdge { x: 0; y: 0; width: parent.e; height: parent.height; dir: 7; mouse-cursor: ew-resize; resize(d) => { root.window-resize(d); } }
+        ResizeEdge { x: parent.width - parent.e; y: 0; width: parent.e; height: parent.height; dir: 0; mouse-cursor: ew-resize; resize(d) => { root.window-resize(d); } }
+        ResizeEdge { x: 0; y: 0; width: 10px; height: 10px; dir: 3; mouse-cursor: nwse-resize; resize(d) => { root.window-resize(d); } }
+        ResizeEdge { x: parent.width - 10px; y: 0; width: 10px; height: 10px; dir: 2; mouse-cursor: nesw-resize; resize(d) => { root.window-resize(d); } }
+        ResizeEdge { x: 0; y: parent.height - 10px; width: 10px; height: 10px; dir: 6; mouse-cursor: nesw-resize; resize(d) => { root.window-resize(d); } }
+        ResizeEdge { x: parent.width - 10px; y: parent.height - 10px; width: 10px; height: 10px; dir: 5; mouse-cursor: nwse-resize; resize(d) => { root.window-resize(d); } }
+    }
+
+    // ---- tooltip bubble (drawn last: above everything but popups)
+    property <bool> tip-show: false;
+    property <int> tip-serial: Tip.serial;
+    property <bool> tip-armed: Tip.armed;
+    changed tip-serial => { root.tip-show = false; }
+    changed tip-armed => { if (!root.tip-armed) { root.tip-show = false; } }
+    Timer {
+        interval: 550ms;
+        running: root.tip-armed && !root.tip-show;
+        triggered => { root.tip-show = true; }
+    }
+    Rectangle {
+        opacity: root.tip-show ? 1 : 0;
+        visible: self.opacity > 0.01;
+        animate opacity { duration: 130ms; easing: ease-out; }
+        width: tip-text.preferred-width + 18px;
+        height: 26px;
+        x: clamp(Tip.side == 1 ? Tip.ax + 8px : Tip.ax - self.width / 2, 4px, max(4px, root.width - self.width - 4px));
+        y: clamp(Tip.side == 0 ? Tip.ay + 6px : (Tip.side == 2 ? Tip.ay - self.height - 6px : Tip.ay - self.height / 2), 4px, max(4px, root.height - self.height - 4px));
+        border-radius: 7px;
+        background: #0B0D11F2;
+        border-width: 1px;
+        border-color: Theme.control-on;
+        drop-shadow-blur: 10px;
+        drop-shadow-color: #00000080;
+        tip-text := Text { text: Tip.text; color: Theme.text; font-size: 12px; horizontal-alignment: center; vertical-alignment: center; width: parent.width; height: parent.height; }
     }
 }

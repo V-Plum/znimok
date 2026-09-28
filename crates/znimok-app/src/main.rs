@@ -11,6 +11,7 @@
 mod app;
 mod capture;
 mod crash;
+mod frame;
 #[cfg(target_os = "macos")]
 mod hotkey_mac;
 #[cfg(windows)]
@@ -107,6 +108,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let ui = AppWindow::new()?;
     ui.set_app_icon(tray::icon(64));
+    frame::before_show(&ui);
     ui.set_capture_available(capture::available());
     ui.set_capture_key(
         if cfg!(target_os = "macos") {
@@ -227,6 +229,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     ui.show()?;
+    frame::after_show(&ui);
     slint::run_event_loop_until_quit()?;
     drop(timer);
     drop(tray_ui);
@@ -415,6 +418,14 @@ fn wire(ui: &AppWindow, app: &Shared) {
     {
         use slint::winit_030::{EventResult, WinitWindowAccessor, winit};
         ui.window().on_winit_window_event(move |_, ev| {
+            if let winit::event::WindowEvent::Resized(_) = ev {
+                let ctx = CTX.with(|c| c.borrow().clone());
+                if let Some((_, weak)) = ctx
+                    && let Some(ui) = weak.upgrade()
+                {
+                    frame::on_resized(&ui);
+                }
+            }
             // macOS trackpad: pinch to zoom, double tap = fit ↔ 100 %.
             match ev {
                 winit::event::WindowEvent::PinchGesture { delta, .. } => {
@@ -464,6 +475,55 @@ fn wire(ui: &AppWindow, app: &Shared) {
                 let _ = slint::quit_event_loop();
             }
             slint::CloseRequestResponse::HideWindow
+        });
+    }
+
+    // --- own title bar
+    {
+        let weak = ui.as_weak();
+        ui.on_window_drag(move || {
+            if let Some(ui) = weak.upgrade() {
+                frame::drag(&ui);
+            }
+        });
+    }
+    {
+        let weak = ui.as_weak();
+        ui.on_window_toggle(move || {
+            if let Some(ui) = weak.upgrade() {
+                frame::toggle_maximized(&ui);
+            }
+        });
+    }
+    {
+        let weak = ui.as_weak();
+        ui.on_window_minimize(move || {
+            if let Some(ui) = weak.upgrade() {
+                ui.window().set_minimized(true);
+            }
+        });
+    }
+    {
+        let weak = ui.as_weak();
+        ui.on_window_resize(move |dir| {
+            if let Some(ui) = weak.upgrade() {
+                frame::resize(&ui, dir);
+            }
+        });
+    }
+    {
+        let app = app.clone();
+        let weak = ui.as_weak();
+        ui.on_window_close(move || {
+            let Some(ui) = weak.upgrade() else { return };
+            // Same as the system close button: save or ask, then hide to the tray (or quit).
+            if !confirm_leave(&app, &ui) {
+                return;
+            }
+            let _ = ui.hide();
+            if !TRAY.with(|c| c.get()) {
+                let _ = slint::quit_event_loop();
+            }
         });
     }
 
@@ -579,14 +639,6 @@ fn wire(ui: &AppWindow, app: &Shared) {
     on!(ui, app, on_cancel_text, |a, w| {
         a.cancel_text(&w);
     });
-    on!(ui, app, on_set_color, |a, w, i| {
-        a.set_color(&w, i.max(0) as usize);
-        w.invoke_focus_canvas();
-    });
-    on!(ui, app, on_set_thick, |a, w, i| {
-        a.set_thick(&w, i.max(0) as usize);
-        w.invoke_focus_canvas();
-    });
     on!(ui, app, on_arrange, |a, w, to| {
         a.arrange(&w, to);
         w.invoke_focus_canvas();
@@ -606,6 +658,29 @@ fn wire(ui: &AppWindow, app: &Shared) {
     on!(ui, app, on_duplicate, |a, w| {
         a.duplicate(&w);
         w.invoke_focus_canvas();
+    });
+    on!(ui, app, on_set_prop, |a, w, name, v| {
+        a.set_prop(&w, &name, v);
+    });
+    on!(ui, app, on_set_alpha, |a, w, v, last| {
+        a.set_alpha(&w, v, last);
+    });
+    on!(ui, app, on_set_geom, |a, w, field, text| {
+        a.set_geom(&w, &field, &text);
+        w.invoke_focus_canvas();
+    });
+    on!(ui, app, on_layer_click, |a, w, id, add| {
+        a.set_tool(&w, app::tool::SELECT);
+        a.layer_click(&w, id, add);
+    });
+    on!(ui, app, on_layer_eye, |a, w, id| {
+        a.layer_eye(&w, id);
+    });
+    on!(ui, app, on_meta_edited, |a, w, field, value| {
+        a.meta_edited(&w, &field, &value);
+    });
+    on!(ui, app, on_zoom_to, |a, w, pos| {
+        a.zoom_to(&w, pos);
     });
     on!(ui, app, on_zoom_fit, |a, w| {
         a.zoom_fit(&w);

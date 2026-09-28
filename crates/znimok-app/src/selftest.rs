@@ -107,6 +107,21 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
             ui.get_page() == 0,
             format!("{n} cards"),
         );
+        // Own title bar: Windows has no system frame; macOS traffic lights sit mid-bar (26 pt).
+        if cfg!(windows) {
+            r.check(
+                "own title bar (no system frame)",
+                ui.get_custom_frame(),
+                String::new(),
+            );
+        }
+        if let Some(c) = crate::frame::lights_centre(ui) {
+            r.check(
+                "traffic lights centred on the bar",
+                (c - 26.0).abs() <= 1.5,
+                format!("centre {c:.1} pt"),
+            );
+        }
         r.snapshot(ui, "00-library");
     }));
     steps.push(Box::new(move |app, ui, r| match image {
@@ -274,7 +289,12 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
                     .count()
             })
             .unwrap_or(0);
-        r.check("select all + colour", blue == 7, format!("{blue} blue"));
+        // Colour applies to every kind but Hide (a hide mark has no stroke).
+        r.check(
+            "select all + colour (all but Hide)",
+            blue == 6,
+            format!("{blue} blue"),
+        );
     }));
     steps.push(Box::new(|_, ui, r| r.snapshot(ui, "03-selected-blue")));
     steps.push(Box::new(|app, ui, r| {
@@ -388,6 +408,132 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
                 ui.get_tool()
             ),
         );
+    }));
+    // ZK-54: inspector properties, layers, meta, zoom slider; snapshots of every tab.
+    steps.push(Box::new(|app, ui, r| {
+        let find = |app: &Shared, k: znimok_core::Kind| -> Option<u32> {
+            let a = app.borrow();
+            let s = a.s.as_ref()?;
+            s.ed.doc
+                .objects
+                .iter()
+                .find(|o| o.kind() == k)
+                .map(|o| o.id)
+        };
+        let get = |app: &Shared, id: u32| -> Option<znimok_core::Object> {
+            app.borrow().s.as_ref()?.ed.doc.get(id).cloned()
+        };
+        // Fill a rectangle with the 3rd colour.
+        if let Some(id) = find(app, znimok_core::Kind::Rect) {
+            app.borrow_mut().layer_click(ui, id as i32, false);
+            r.check(
+                "layer click selects",
+                ui.get_prop_kind() == 0 && ui.get_prop_for_selection(),
+                format!("kind {}", ui.get_prop_kind()),
+            );
+            ui.invoke_set_prop("fill".into(), 2);
+            let c2 = get(app, id).and_then(|o| o.style.color2);
+            r.check(
+                "fill applies to the rectangle",
+                c2 == Some(crate::app::PALETTE[2]),
+                format!("{c2:?}"),
+            );
+            ui.invoke_set_prop("corners".into(), 2);
+            let c = get(app, id).map(|o| o.style.corners);
+            r.check(
+                "corners: round",
+                c == Some(znimok_core::Corners::Round),
+                format!("{c:?}"),
+            );
+            ui.invoke_set_alpha(0.5, false);
+            ui.invoke_set_alpha(0.4, true);
+            let a = get(app, id).map(|o| o.style.alpha);
+            r.check("opacity slider", a == Some(40), format!("{a:?}"));
+            ui.invoke_set_geom("x".into(), "10".into());
+            let x = get(app, id).map(|o| o.rect.x);
+            r.check("X field moves the mark", x == Some(10), format!("{x:?}"));
+        }
+        // Arrowheads are line properties.
+        if let Some(id) = find(app, znimok_core::Kind::Line) {
+            app.borrow_mut().layer_click(ui, id as i32, false);
+            ui.invoke_set_prop("head-start".into(), 3);
+            let heads = get(app, id).map(|o| match o.data {
+                znimok_core::Data::Line {
+                    head_front,
+                    head_back,
+                    ..
+                } => (head_back, head_front),
+                _ => (znimok_core::Head::None, znimok_core::Head::None),
+            });
+            r.check(
+                "line heads: start = dot, end kept",
+                heads == Some((znimok_core::Head::Dot, znimok_core::Head::Triangle)),
+                format!("{heads:?}"),
+            );
+            ui.invoke_layer_eye(id as i32);
+            let hidden = get(app, id).map(|o| o.hidden);
+            r.check(
+                "eye hides the mark",
+                hidden == Some(true),
+                format!("{hidden:?}"),
+            );
+            ui.invoke_layer_eye(id as i32);
+        }
+        let rows = slint::Model::row_count(&ui.get_layers());
+        r.check(
+            "layers list = marks",
+            rows == count(app),
+            format!("{rows} rows"),
+        );
+        ui.set_insp_tab(1);
+    }));
+    steps.push(Box::new(|app, ui, r| {
+        r.snapshot(ui, "10-layers");
+        ui.invoke_meta_edited("title".into(), "Тестова назва".into());
+        ui.invoke_meta_edited("tags".into(), "тест, znimok ,".into());
+        let (name, tags) = {
+            let a = app.borrow();
+            let d = &a.s.as_ref().unwrap().ed.doc;
+            (d.name.clone(), d.meta.tags.clone())
+        };
+        r.check(
+            "meta: title and tags",
+            name == "Тестова назва" && tags == vec!["тест".to_string(), "znimok".to_string()],
+            format!("{name} · {tags:?}"),
+        );
+        ui.set_insp_tab(2);
+    }));
+    steps.push(Box::new(|_, ui, r| {
+        r.snapshot(ui, "11-image-tab");
+        ui.set_insp_tab(3);
+    }));
+    steps.push(Box::new(|app, ui, r| {
+        r.snapshot(ui, "12-meta-tab");
+        ui.set_insp_tab(0);
+        ui.invoke_zoom_to(0.75);
+        let (sc, ..) = app.borrow().view_probe();
+        r.check(
+            "zoom slider 0.75 = 400 %",
+            (sc - 4.0).abs() < 1e-6,
+            format!("scale {sc:.3}"),
+        );
+        ui.invoke_zoom_fit();
+    }));
+    // Tooltip bubble: arm it as a hover over the Undo button would, wait past the delay.
+    steps.push(Box::new(|_, ui, _| {
+        let tip = ui.global::<crate::Tip>();
+        tip.set_text("Скасувати  Ctrl+Z".into());
+        tip.set_side(0);
+        tip.set_ax(ui.window().size().width as f32 / ui.window().scale_factor() - 214.0);
+        tip.set_ay(42.0);
+        tip.set_serial(tip.get_serial() + 1);
+        tip.set_armed(true);
+    }));
+    // The bubble appears after 550 ms; one more step (350 ms) before the snapshot.
+    steps.push(Box::new(|_, _, _| {}));
+    steps.push(Box::new(|_, ui, r| {
+        r.snapshot(ui, "13-tooltip");
+        ui.global::<crate::Tip>().set_armed(false);
     }));
     // Autosave fires ~0.7 s after the last change on the 400 ms timer; give it time.
     steps.push(Box::new(|_, _, _| {}));
