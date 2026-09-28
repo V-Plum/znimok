@@ -16,6 +16,7 @@ mod hotkey_mac;
 mod hotkey_win;
 mod io;
 mod library;
+mod overlay;
 mod selftest;
 mod tray;
 
@@ -330,38 +331,42 @@ fn export_with_dialog(app: &Shared, ui: &AppWindow) {
 /// worker thread (WinRT wants the multithreaded apartment, the UI thread is OLE's STA), then
 /// the shot opens in the editor.
 fn new_shot(app: &Shared, ui: &AppWindow) {
-    if !capture::available() || !confirm_leave(app, ui) {
+    if !capture::available() || overlay::is_open() || !confirm_leave(app, ui) {
         return;
     }
-    // Windows: the window steps aside (WGC sees it). macOS: the capture filter excludes our own
-    // windows, so it stays.
-    let hide = cfg!(windows);
-    if hide {
-        let _ = ui.hide();
-    }
-    let delay = Duration::from_millis(if hide { 250 } else { 0 });
-    slint::Timer::single_shot(delay, move || {
-        std::thread::spawn(move || {
-            let r = capture::display_under_cursor();
+    // The editor steps aside so the frozen screen does not contain it (on macOS the capture
+    // filter would drop it anyway, but the overlay should not sit on top of it either).
+    let was_visible = ui.window().is_visible();
+    let _ = ui.hide();
+    // Windows: give DWM time to take the editor off the screen before the frame is grabbed.
+    let delay = Duration::from_millis(if was_visible && cfg!(windows) { 250 } else { 0 });
+    std::thread::spawn(move || {
+        std::thread::sleep(delay);
+        {
+            let r = capture::freeze();
             let _ = slint::invoke_from_event_loop(move || {
-                with_ctx(|a, ui| {
-                    show_window(ui);
-                    match r {
-                        Ok(raster) => a.new_document(ui, raster, "screen", None),
-                        Err(capture::Fail::Permission) => {
-                            let msg = a.tr.tr("err-capture-mac-perm");
-                            a.toast(ui, msg);
+                with_ctx(|a, ui| match r {
+                    Ok(frozen) => {
+                        if let Err(e) = overlay::open(frozen, was_visible) {
+                            show_window(ui);
+                            a.toast(ui, e.to_string());
                         }
-                        Err(capture::Fail::Other(e)) => {
-                            let mut args = znimok_i18n::FluentArgs::new();
-                            args.set("reason", e);
-                            let msg = a.tr.tr_args("err-capture-generic", &args);
-                            a.toast(ui, msg);
-                        }
+                    }
+                    Err(e) => {
+                        show_window(ui);
+                        let msg = match e {
+                            capture::Fail::Permission => a.tr.tr("err-capture-mac-perm"),
+                            capture::Fail::Other(e) => {
+                                let mut args = znimok_i18n::FluentArgs::new();
+                                args.set("reason", e);
+                                a.tr.tr_args("err-capture-generic", &args)
+                            }
+                        };
+                        a.toast(ui, msg);
                     }
                 });
             });
-        });
+        }
     });
 }
 
@@ -397,17 +402,17 @@ fn wire(ui: &AppWindow, app: &Shared) {
     // --- drop files onto the window (any page): open them.
     {
         use slint::winit_030::{EventResult, WinitWindowAccessor, winit};
-        let app = app.clone();
-        let weak = ui.as_weak();
         ui.window().on_winit_window_event(move |_, ev| {
             if let winit::event::WindowEvent::DroppedFile(path) = ev {
                 let path = path.clone();
-                let app = app.clone();
-                let weak = weak.clone();
                 // Leave winit's handler first: the confirmation dialog runs a nested loop.
-                slint::Timer::single_shot(Duration::ZERO, move || {
-                    let Some(ui) = weak.upgrade() else { return };
-                    if confirm_leave(&app, &ui) {
+                // (`invoke_from_event_loop` wakes the loop; a zero timer waits for the next event.)
+                let _ = slint::invoke_from_event_loop(move || {
+                    let ctx = CTX.with(|c| c.borrow().clone());
+                    if let Some((app, weak)) = ctx
+                        && let Some(ui) = weak.upgrade()
+                        && confirm_leave(&app, &ui)
+                    {
                         app.borrow_mut().open_path(&ui, &path);
                     }
                 });

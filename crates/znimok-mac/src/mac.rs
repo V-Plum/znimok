@@ -6,7 +6,7 @@ use screencapturekit::shareable_content::SCShareableContentInfo;
 use znimok_platform::{
     Capture, CaptureCaps, CaptureOptions, CaptureTarget, ColorInfo, Cursor, DisplayId, DisplayInfo,
     Frame, Permission, PermissionState, Permissions, PixelFormat, PlatformError, Point, Rect,
-    Result,
+    Result, WindowId, WindowInfo, WindowList,
 };
 
 #[repr(C)]
@@ -22,11 +22,33 @@ unsafe extern "C" {
     fn CGRequestScreenCaptureAccess() -> bool;
     fn CGEventCreate(source: *const c_void) -> *mut c_void;
     fn CGEventGetLocation(event: *const c_void) -> CGPoint;
+    fn CGWindowListCreate(option: u32, relative_to: u32) -> *const c_void;
 }
 
 #[link(name = "CoreFoundation", kind = "framework")]
 unsafe extern "C" {
     fn CFRelease(cf: *const c_void);
+    fn CFArrayGetCount(array: *const c_void) -> isize;
+    fn CFArrayGetValueAtIndex(array: *const c_void, idx: isize) -> *const c_void;
+}
+
+/// On-screen window ids, front to back (`kCGWindowListOptionOnScreenOnly`). ScreenCaptureKit
+/// does not promise any order, and "click = the window under the pointer" needs the front one.
+fn z_order() -> Vec<u32> {
+    // SAFETY: plain CoreGraphics call; the array holds CGWindowIDs stored as pointer-sized
+    // values (not objects), and is released below.
+    unsafe {
+        let arr = CGWindowListCreate(1, 0);
+        if arr.is_null() {
+            return Vec::new();
+        }
+        let n = CFArrayGetCount(arr);
+        let ids = (0..n)
+            .map(|i| CFArrayGetValueAtIndex(arr, i) as usize as u32)
+            .collect();
+        CFRelease(arr);
+        ids
+    }
 }
 
 fn has_screen_access() -> bool {
@@ -276,5 +298,50 @@ impl Permissions for MacCapture {
             .status()
             .map_err(|e| PlatformError::Other(e.to_string()))
             .map(|_| ())
+    }
+}
+
+impl WindowList for MacCapture {
+    /// Normal-level windows on screen, front to back, in desktop units (points).
+    fn windows(&self) -> Result<Vec<WindowInfo>> {
+        let content = self.content()?;
+        let order = z_order();
+        let me = std::process::id() as i32;
+        let mut list: Vec<(usize, WindowInfo)> = content
+            .windows()
+            .into_iter()
+            .filter(|w| w.is_on_screen() && w.window_layer() == 0)
+            .map(|w| {
+                let f = w.frame();
+                let app = w.owning_application();
+                let pid = app.as_ref().map(|a| a.process_id()).unwrap_or(0);
+                let rank = order
+                    .iter()
+                    .position(|id| *id == w.window_id())
+                    .unwrap_or(usize::MAX);
+                let info = WindowInfo {
+                    id: WindowId(w.window_id() as u64),
+                    title: w.title().unwrap_or_default(),
+                    app: app
+                        .as_ref()
+                        .map(|a| a.application_name())
+                        .unwrap_or_default(),
+                    pid: pid.max(0) as u32,
+                    bounds: Rect {
+                        x: f.origin.x.round() as i32,
+                        y: f.origin.y.round() as i32,
+                        width: f.size.width.round().max(0.0) as u32,
+                        height: f.size.height.round().max(0.0) as u32,
+                    },
+                    display: None,
+                    scale_factor: 1.0,
+                    minimized: false,
+                    own: pid == me,
+                };
+                (rank, info)
+            })
+            .collect();
+        list.sort_by_key(|(rank, _)| *rank);
+        Ok(list.into_iter().map(|(_, w)| w).collect())
     }
 }

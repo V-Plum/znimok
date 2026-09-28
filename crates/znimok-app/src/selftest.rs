@@ -35,7 +35,11 @@ impl Report {
     }
 
     fn snapshot(&mut self, ui: &AppWindow, name: &str) {
-        match ui.window().take_snapshot() {
+        self.snapshot_window(ui.window(), name);
+    }
+
+    fn snapshot_window(&mut self, window: &slint::Window, name: &str) {
+        match window.take_snapshot() {
             Ok(buf) => {
                 let path = self.dir.join(format!("{name}.png"));
                 let img =
@@ -296,6 +300,87 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
                 format!("{dims:?}"),
             );
         }
+    }));
+
+    // Capture overlay on a synthetic frozen frame: hover a window, drag a region.
+    steps.push(Box::new(|app, _ui, r| {
+        let raster = app
+            .borrow()
+            .s
+            .as_ref()
+            .map(|s| (*s.ed.doc.banks[0]).clone());
+        let Some(raster) = raster else {
+            r.check("overlay opened", false, "no document".into());
+            return;
+        };
+        let frozen = crate::capture::Frozen {
+            bounds: znimok_platform::Rect {
+                x: 0,
+                y: 0,
+                width: raster.width,
+                height: raster.height,
+            },
+            windows: vec![(
+                crate::capture::PxRect {
+                    x: 100,
+                    y: 100,
+                    w: 400,
+                    h: 300,
+                },
+                "test window".into(),
+            )],
+            raster,
+        };
+        let ok = crate::overlay::open(frozen, true).is_ok();
+        r.check(
+            "overlay opened",
+            ok && crate::overlay::is_open(),
+            String::new(),
+        );
+    }));
+    steps.push(Box::new(|_, _, r| {
+        let Some(ov) = crate::overlay::handle() else {
+            r.check("overlay hover", false, "closed".into());
+            return;
+        };
+        let sf = ov.window().scale_factor();
+        // Logical coordinates of frame pixel (300, 250) — inside the test window.
+        let lw = ov.window().size().width as f32 / sf;
+        let kk = 1600.0 / lw.max(1.0);
+        ov.invoke_pointer(1, 300.0 / kk, 250.0 / kk, false);
+        let (has, win) = (ov.get_has_sel(), ov.get_is_window());
+        r.check(
+            "overlay hover highlights the window",
+            has && win,
+            format!("label {}", ov.get_sel_label()),
+        );
+        r.snapshot_window(ov.window(), "07-overlay-hover");
+        // Drag frame pixels (600, 500) → (900, 700): a 300 × 200 region.
+        ov.invoke_pointer(0, 600.0 / kk, 500.0 / kk, false);
+        for i in 1..=10 {
+            let t = i as f32 / 10.0;
+            ov.invoke_pointer(1, (600.0 + 300.0 * t) / kk, (500.0 + 200.0 * t) / kk, false);
+        }
+        r.check(
+            "overlay drag",
+            ov.get_has_sel() && !ov.get_is_window(),
+            format!("label {}", ov.get_sel_label()),
+        );
+        r.snapshot_window(ov.window(), "08-overlay-drag");
+        ov.invoke_pointer(2, 900.0 / kk, 700.0 / kk, false);
+    }));
+    steps.push(Box::new(|app, ui, r| {
+        let size = app.borrow().s.as_ref().map(|s| s.ed.doc.image_size());
+        r.check(
+            "region opened in the editor",
+            !crate::overlay::is_open()
+                && ui.get_page() == 1
+                && size.is_some_and(|(w, h)| {
+                    (w as i32 - 300).abs() <= 2 && (h as i32 - 200).abs() <= 2
+                }),
+            format!("{size:?}"),
+        );
+        r.snapshot(ui, "09-region-editor");
     }));
 
     // Needs a live desktop: opt in with ZNIMOK_SELFTEST_CAPTURE=1.

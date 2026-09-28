@@ -238,13 +238,12 @@ impl App {
     // ------------------------------------------------------------------ documents
 
     /// A new library document from pixels (screenshot, clipboard, image file).
-    pub fn new_document(
-        &mut self,
-        ui: &AppWindow,
+    fn build_document(
+        &self,
         raster: Raster,
         source: &str,
         name: Option<String>,
-    ) {
+    ) -> (Document, PathBuf) {
         let now = chrono::Local::now();
         let name = name.unwrap_or_else(|| {
             self.tr.tr_args(
@@ -259,8 +258,39 @@ impl App {
         doc.meta.created_ms = now.timestamp_millis();
         doc.meta.source = source.into();
         let path = library::new_path(&self.lib_dir, &doc.id.simple().to_string());
+        (doc, path)
+    }
+
+    /// A new library document from pixels (screenshot, clipboard, image file), opened in the editor.
+    pub fn new_document(
+        &mut self,
+        ui: &AppWindow,
+        raster: Raster,
+        source: &str,
+        name: Option<String>,
+    ) {
+        let (doc, path) = self.build_document(raster, source, name);
         // Not on disk yet: `fresh` makes the first autosave write it.
         self.open_session(ui, Editor::new(doc), path, true);
+    }
+
+    /// Straight to the library without opening the editor (Shift in the capture overlay).
+    pub fn store_quietly(
+        &mut self,
+        ui: &AppWindow,
+        raster: Raster,
+        source: &str,
+    ) -> Result<(), String> {
+        let (doc, path) = self.build_document(raster, source, None);
+        let opts = self.options_for(&doc);
+        let _guard = SAVE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _ = std::fs::create_dir_all(&self.lib_dir);
+        let r = znimok_format::save(&path, &doc, &opts)
+            .map_err(|e| format!("{} ({e})", self.tr.tr("err-library-save")));
+        if self.s.is_none() {
+            self.refresh_library(ui);
+        }
+        r
     }
 
     fn open_session(&mut self, ui: &AppWindow, ed: Editor, path: PathBuf, fresh: bool) {
@@ -340,8 +370,12 @@ impl App {
 
     /// Thumbnail and write options for a save.
     fn write_options(&mut self) -> Option<znimok_format::WriteOptions> {
-        let s = self.s.as_ref()?;
-        let doc = &s.ed.doc;
+        let doc = self.s.as_ref()?.ed.doc.clone();
+        Some(self.options_for(&doc))
+    }
+
+    /// Thumbnail and write options for saving `doc`.
+    fn options_for(&mut self, doc: &Document) -> znimok_format::WriteOptions {
         let f = doc.frame();
         let k = (320.0 / f.w as f64).min(240.0 / f.h as f64).min(1.0);
         let mut view = View::one_to_one(doc);
@@ -350,7 +384,7 @@ impl App {
         view.height = ((f.h as f64 * k).round() as i64).clamp(1, 240) as u16;
         let mut pix = Pixmap::new(1, 1);
         self.renderer.render(doc, view, &mut pix);
-        Some(znimok_format::WriteOptions {
+        znimok_format::WriteOptions {
             app_version: format!("Znimok {}", env!("CARGO_PKG_VERSION")),
             thumbnail: Some(Raster::new(
                 pix.width() as u32,
@@ -358,7 +392,7 @@ impl App {
                 znimok_render::pixmap_to_rgba(&pix),
             )),
             ..Default::default()
-        })
+        }
     }
 
     /// Saves now, on this thread (leaving the document, closing the window, Ctrl+S).

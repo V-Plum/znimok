@@ -200,6 +200,114 @@ component CardView inherits Rectangle {
     }
 }
 
+component HintChip inherits HorizontalLayout {
+    in property <string> key;
+    in property <string> text;
+    spacing: 6px;
+    height: 20px;
+    Rectangle {
+        width: key-text.preferred-width + 12px;
+        height: 20px;
+        border-radius: 5px;
+        background: #FFFFFF1F;
+        key-text := Text { text: root.key; color: #E8EAEE; font-size: 11px; font-weight: 600; horizontal-alignment: center; vertical-alignment: center; width: parent.width; height: parent.height; }
+    }
+    Text { text: root.text; color: #A7ADB8; font-size: 12px; vertical-alignment: center; }
+}
+
+// The capture overlay (ZK-39, first cut): the frozen screen, a dim veil, a selection frame
+// (drag = region, click = window under the pointer, Space = whole screen) and the hint strip
+// from the design. Coordinates are logical pixels of this window; Rust maps them to the frame.
+export component Overlay inherits Window {
+    no-frame: true;
+    always-on-top: true;
+    background: black;
+    title: "Znimok";
+
+    in property <image> shot;
+    // Selection, or the window under the pointer when nothing is dragged.
+    in property <bool> has-sel;
+    in property <length> sel-x;
+    in property <length> sel-y;
+    in property <length> sel-w;
+    in property <length> sel-h;
+    in property <string> sel-label;
+    in property <bool> is-window;
+
+    callback pointer(int, length, length, bool);
+    callback key(string, bool);
+
+    Image {
+        width: parent.width;
+        height: parent.height;
+        source: root.shot;
+        image-fit: fill;
+    }
+    // Veil around the selection (the whole screen when nothing is selected).
+    Rectangle { x: 0; y: 0; width: parent.width; height: root.has-sel ? root.sel-y : parent.height; background: #00000073; }
+    if root.has-sel: Rectangle { x: 0; y: root.sel-y + root.sel-h; width: parent.width; height: max(0, parent.height - root.sel-y - root.sel-h); background: #00000073; }
+    if root.has-sel: Rectangle { x: 0; y: root.sel-y; width: root.sel-x; height: root.sel-h; background: #00000073; }
+    if root.has-sel: Rectangle { x: root.sel-x + root.sel-w; y: root.sel-y; width: max(0, parent.width - root.sel-x - root.sel-w); height: root.sel-h; background: #00000073; }
+    if root.has-sel: Rectangle {
+        x: root.sel-x - 1px;
+        y: root.sel-y - 1px;
+        width: root.sel-w + 2px;
+        height: root.sel-h + 2px;
+        border-width: root.is-window ? 3px : 1.5px;
+        border-color: #3D7BF5;
+        background: transparent;
+    }
+    if root.has-sel && root.sel-label != "": Rectangle {
+        x: min(max(4px, root.sel-x), parent.width - self.width - 4px);
+        y: root.sel-y > 34px ? root.sel-y - 30px : min(root.sel-y + root.sel-h + 6px, parent.height - 30px);
+        width: label.preferred-width + 16px;
+        height: 24px;
+        border-radius: 6px;
+        background: #171A20E6;
+        label := Text { text: root.sel-label; color: #E8EAEE; font-size: 12px; horizontal-alignment: center; vertical-alignment: center; width: parent.width; height: parent.height; }
+    }
+    // Hint strip, bottom centre.
+    Rectangle {
+        x: (parent.width - self.width) / 2;
+        y: parent.height - self.height - 28px;
+        width: hints.preferred-width + 32px;
+        height: 40px;
+        border-radius: 12px;
+        background: #171A20F0;
+        hints := HorizontalLayout {
+            x: 14px;
+            y: (parent.height - 20px) / 2;
+            width: self.preferred-width;
+            height: 20px;
+            spacing: 18px;
+            HintChip { key: @tr("capture-release" => "release"); text: @tr("capture-to-editor" => "to editor"); }
+            HintChip { key: "Shift"; text: @tr("capture-to-clipboard" => "to clipboard"); }
+            HintChip { key: "Space"; text: @tr("capture-whole-screen" => "whole screen"); }
+            HintChip { key: @tr("capture-click" => "click"); text: @tr("capture-window" => "window"); }
+            HintChip { key: "Esc"; text: @tr("capture-cancel" => "cancel"); }
+        }
+    }
+    fs := FocusScope {
+        key-pressed(e) => {
+            root.key(e.text, e.modifiers.shift);
+            return accept;
+        }
+        TouchArea {
+            mouse-cursor: crosshair;
+            pointer-event(e) => {
+                if (e.kind == PointerEventKind.down) {
+                    root.pointer(e.button == PointerEventButton.left ? 0 : 3, self.mouse-x, self.mouse-y, e.modifiers.shift);
+                } else if (e.kind == PointerEventKind.up) {
+                    root.pointer(e.button == PointerEventButton.left ? 2 : 4, self.mouse-x, self.mouse-y, e.modifiers.shift);
+                } else if (e.kind == PointerEventKind.move) {
+                    root.pointer(1, self.mouse-x, self.mouse-y, e.modifiers.shift);
+                }
+            }
+        }
+    }
+    public function grab-focus() { fs.focus(); }
+}
+
 // Tray icon (Windows) / menu bar item (macOS): the app keeps running there after the window
 // closes, so the hotkey works and "Quit" is always one click away (ZK-45 in full later).
 export component AppTray inherits SystemTrayIcon {
