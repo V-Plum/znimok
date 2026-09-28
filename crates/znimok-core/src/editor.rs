@@ -311,6 +311,7 @@ impl Editor {
                 for id in &ids {
                     let o = self.doc.get_mut(*id).expect("checked");
                     apply_patch(o, &patch)?;
+                    o.sanitize();
                 }
                 Ok(changed(ids))
             }
@@ -340,6 +341,7 @@ impl Editor {
                 dy,
                 ..
             } => {
+                let (orig, dx, dy) = (orig.clamped(), clamp_coord(dx), clamp_coord(dy));
                 let o = self.doc.get_mut(id).ok_or(CoreError::UnknownObject(id))?;
                 if handle >= hit::handles(o).len() {
                     return Err(CoreError::Invalid(format!(
@@ -347,6 +349,7 @@ impl Editor {
                     )));
                 }
                 hit::resize(o, handle, orig, dx, dy);
+                o.sanitize();
                 Ok(changed(vec![id]))
             }
             Command::Group { ids } => {
@@ -492,8 +495,9 @@ impl Editor {
                     .map(|id| (*id, self.doc.get(*id).expect("checked").bounds()))
                     .collect();
                 let horizontal = axis == Axis::Horizontal;
-                let start = |r: &IRect| if horizontal { r.x } else { r.y };
-                let size = |r: &IRect| if horizontal { r.w } else { r.h };
+                // i64: many marks near the coordinate limit would overflow i32 sums.
+                let start = |r: &IRect| i64::from(if horizontal { r.x } else { r.y });
+                let size = |r: &IRect| i64::from(if horizontal { r.w } else { r.h });
                 items.sort_by_key(|(_, r)| start(r));
                 let first = start(&items[0].1);
                 let last_end = items
@@ -501,17 +505,18 @@ impl Editor {
                     .map(|(_, r)| start(r) + size(r))
                     .max()
                     .expect("non-empty");
-                let total: i32 = items.iter().map(|(_, r)| size(r)).sum();
-                let n = items.len() as i32;
+                let total: i64 = items.iter().map(|(_, r)| size(r)).sum();
+                let n = items.len() as i64;
                 let gap2 = 2 * (last_end - first - total); // doubled to keep halves exact
-                let mut pos2: i32 = 2 * first;
+                let mut pos2 = 2 * first;
                 for (k, (id, r)) in items.iter().enumerate() {
                     let target = pos2.div_euclid(2);
-                    let d = if k == 0 || k as i32 == n - 1 {
+                    let d = if k == 0 || k as i64 == n - 1 {
                         0
                     } else {
                         target - start(r)
                     };
+                    let d = d.clamp(i64::from(-COORD_LIMIT), i64::from(COORD_LIMIT)) as i32;
                     let o = self.doc.get_mut(*id).expect("checked");
                     match axis {
                         Axis::Horizontal => o.translate(d, 0),
@@ -1089,6 +1094,35 @@ mod tests {
             })
             .is_err()
         );
+    }
+
+    #[test]
+    fn hostile_json_from_an_agent_cannot_break_the_core() {
+        let mut e = editor();
+        let big = r#"{"cmd":"add_object","object":{"rect":{"x":-2147483648,"y":2147483647,"w":2147483647,"h":-2147483648},"data":{"kind":"pen","points":[[-2147483648,2147483647],[2147483647,-2147483648]]}}}"#;
+        let a = e.apply_json(big).unwrap().created.unwrap();
+        let b = add(&mut e, rect(i32::MAX, i32::MIN, i32::MAX, i32::MAX));
+        let c = add(&mut e, rect(0, 0, 10, 10));
+        for cmd in [
+            format!(r#"{{"cmd":"move_objects","ids":[{a},{b}],"dx":2147483647,"dy":-2147483648}}"#),
+            format!(r#"{{"cmd":"resize_object","id":{b},"handle":4,"orig":{{"x":2147483647,"y":0,"w":2147483647,"h":1}},"dx":2147483647,"dy":2147483647}}"#),
+            format!(r#"{{"cmd":"distribute","ids":[{a},{b},{c}],"axis":"horizontal"}}"#),
+            format!(r#"{{"cmd":"align","ids":[{a},{b},{c}],"edge":"h_center"}}"#),
+            r#"{"cmd":"rotate","quarters":-2147483648}"#.to_string(),
+            r#"{"cmd":"set_crop","rect":{"x":-2147483648,"y":-2147483648,"w":2147483647,"h":2147483647}}"#.to_string(),
+        ] {
+            let _ = e.apply_json(&cmd);
+        }
+        for o in &e.doc.objects {
+            let b = o.bounds();
+            assert!(b.x.abs() <= COORD_LIMIT && b.w <= 2 * COORD_LIMIT, "{b:?}");
+        }
+        let _ = e.query(&Query::ListObjects);
+        let _ = e.query(&Query::HitTest {
+            x: f64::MAX,
+            y: f64::MIN,
+            px_per_doc: Some(0.0),
+        });
     }
 
     #[test]

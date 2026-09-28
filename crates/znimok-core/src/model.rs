@@ -12,6 +12,16 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+/// Coordinates of marks are kept within ±2²⁰ px — far beyond any canvas (≤ 32 767), small
+/// enough that sums and differences never overflow `i32`. Enforced where objects enter a
+/// document ([`Document::push`], commands) — files and agents cannot smuggle in extremes.
+pub const COORD_LIMIT: i32 = 1 << 20;
+
+/// Clamps a coordinate or offset into ±[`COORD_LIMIT`].
+pub fn clamp_coord(v: i32) -> i32 {
+    v.clamp(-COORD_LIMIT, COORD_LIMIT)
+}
+
 /// Integer rectangle in screenshot pixels. For [`Kind::Line`] the sign of `w`/`h` carries the
 /// direction from (x, y) to (x + w, y + h) and is never normalised.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
@@ -78,6 +88,16 @@ impl IRect {
             x: self.x + dx,
             y: self.y + dy,
             ..self
+        }
+    }
+
+    /// Every component within ±[`COORD_LIMIT`].
+    pub fn clamped(self) -> Self {
+        Self {
+            x: clamp_coord(self.x),
+            y: clamp_coord(self.y),
+            w: clamp_coord(self.w),
+            h: clamp_coord(self.h),
         }
     }
 
@@ -421,13 +441,25 @@ impl Object {
         }
     }
 
-    /// Moves the object; pen points move with it.
-    pub fn translate(&mut self, dx: i32, dy: i32) {
-        self.rect = self.rect.translated(dx, dy);
+    /// Brings geometry into the safe range (see [`COORD_LIMIT`]) and fixes derived fields.
+    pub fn sanitize(&mut self) {
+        self.rect = self.rect.clamped();
+        self.rot %= 360;
         if let Data::Pen { points } = &mut self.data {
             for p in points.iter_mut() {
-                p.0 += dx;
-                p.1 += dy;
+                *p = (clamp_coord(p.0), clamp_coord(p.1));
+            }
+            self.rect = self.bounds();
+        }
+    }
+
+    /// Moves the object; pen points move with it.
+    pub fn translate(&mut self, dx: i32, dy: i32) {
+        let (dx, dy) = (clamp_coord(dx), clamp_coord(dy));
+        self.rect = self.rect.translated(dx, dy).clamped();
+        if let Data::Pen { points } = &mut self.data {
+            for p in points.iter_mut() {
+                *p = (clamp_coord(p.0 + dx), clamp_coord(p.1 + dy));
             }
         }
     }
@@ -687,10 +719,8 @@ impl Document {
         if object.id == 0 || self.index_of(object.id).is_some() {
             object.id = self.next_id;
         }
-        self.next_id = self.next_id.max(object.id) + 1;
-        if object.kind() == Kind::Pen {
-            object.rect = object.bounds();
-        }
+        self.next_id = self.next_id.max(object.id).saturating_add(1);
+        object.sanitize();
         self.objects.push(object);
         self.objects.len() - 1
     }
@@ -1001,6 +1031,26 @@ mod tests {
                 .unwrap();
         assert_eq!(minimal.style, Style::default());
         assert_eq!(minimal.id, 0);
+    }
+
+    #[test]
+    fn extreme_coordinates_are_clamped_on_entry() {
+        let mut doc = Document::from_raster("t", Raster::solid(4, 4, Rgb::WHITE));
+        let i = doc.push(Object::new(
+            IRect::new(i32::MIN, 0, i32::MAX, 5),
+            Data::Pen {
+                points: vec![(i32::MIN, i32::MAX), (i32::MAX, 0)],
+            },
+        ));
+        let o = &doc.objects[i];
+        assert_eq!(
+            o.bounds(),
+            IRect::new(-COORD_LIMIT, 0, 2 * COORD_LIMIT, COORD_LIMIT)
+        );
+        let mut r = Object::new(IRect::new(COORD_LIMIT, 0, COORD_LIMIT, 1), Data::Rect);
+        r.translate(i32::MAX, i32::MIN);
+        assert_eq!(r.rect.x, COORD_LIMIT);
+        let _ = r.bounds();
     }
 
     #[test]
