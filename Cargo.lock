@@ -6560,6 +6560,8 @@ dependencies = [
  "serde_json",
  "znimok-core",
  "znimok-format",
+ "znimok-html",
+ "znimok-i18n",
  "znimok-render",
 ]
 
@@ -6581,6 +6583,15 @@ dependencies = [
  "uuid",
  "znimok-core",
  "znimok-render",
+]
+
+[[package]]
+name = "znimok-html"
+version = "0.0.0"
+dependencies = [
+ "chrono",
+ "znimok-core",
+ "znimok-i18n",
 ]
 
 [[package]]

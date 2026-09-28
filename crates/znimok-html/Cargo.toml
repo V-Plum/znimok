@@ -1,0 +1,17 @@
+[package]
+name = "znimok-html"
+description = "Self-contained HTML page of a Znimok screenshot: the rendered picture, its annotations as a list and the metadata; opens offline in any browser"
+version.workspace = true
+edition.workspace = true
+license-file.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+znimok-core = { path = "../znimok-core" }
+znimok-i18n = { path = "../znimok-i18n" }
+chrono = { version = "0.4", default-features = false, features = ["std"] }

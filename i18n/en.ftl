@@ -2090,6 +2090,11 @@ clipboard-copied = Copied
 # @max: 80
 clipboard-error = Could not copy to the clipboard.
 
+# @where: Footer of the self-contained HTML page of a screenshot; $version is the Znimok version
+# @kind: hint
+# @max: 48
+html-made-with = Made with Znimok { $version }
+
 ## Library
 ## The home screen: grid of screenshots and videos, filters, details panel.
 

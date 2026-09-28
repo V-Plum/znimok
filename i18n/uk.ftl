@@ -2100,6 +2100,11 @@ clipboard-copied = Скопійовано
 # @max: 80
 clipboard-error = Не вдалося скопіювати в буфер обміну.
 
+# @where: Footer of the self-contained HTML page of a screenshot; $version is the Znimok version
+# @kind: hint
+# @max: 48
+html-made-with = Зроблено в Znimok { $version }
+
 ## Library
 ## The home screen: grid of screenshots and videos, filters, details panel.
 
