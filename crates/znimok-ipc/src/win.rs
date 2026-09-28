@@ -212,7 +212,7 @@ pub(crate) struct Listener {
 impl Listener {
     pub fn start(
         cfg: Config,
-        token: String,
+        token: Arc<crate::Auth>,
         handler: Arc<dyn Handler>,
         stop: Arc<AtomicBool>,
         active: Arc<AtomicUsize>,
@@ -226,7 +226,6 @@ impl Listener {
         std::thread::Builder::new()
             .name("znimok-ipc".into())
             .spawn(move || {
-                let token = Arc::new(token);
                 let cfg = Arc::new(cfg);
                 let mut next = Some(HANDLE(first_raw as *mut _));
                 while !s.load(Ordering::SeqCst) {
@@ -293,10 +292,16 @@ fn open(name: &str) -> std::io::Result<File> {
 pub(crate) fn connect(
     cfg: &Config,
 ) -> std::io::Result<(Box<dyn Read + Send>, Box<dyn Write + Send>)> {
-    let name = pipe_name(cfg)?;
+    connect_endpoint(&pipe_name(cfg)?)
+}
+
+/// Opens a pipe by its full name (the probe of another user's pipe uses it).
+pub(crate) fn connect_endpoint(
+    name: &str,
+) -> std::io::Result<(Box<dyn Read + Send>, Box<dyn Write + Send>)> {
     let t0 = Instant::now();
     let file = loop {
-        match open(&name) {
+        match open(name) {
             Ok(f) => break f,
             Err(e)
                 if e.raw_os_error() == Some(ERROR_PIPE_BUSY.0 as i32)

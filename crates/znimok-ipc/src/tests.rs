@@ -169,3 +169,65 @@ fn socket_and_folder_are_private() {
     assert_eq!(mode(&c.dir()), 0o700);
     assert_eq!(mode(&c.token_path()), 0o600);
 }
+
+#[test]
+fn flooding_client_is_slowed_down_not_served() {
+    let c = Config {
+        rate: 5,
+        burst: 5,
+        ..cfg("rate")
+    };
+    let _s = Server::start(c.clone(), echo()).unwrap();
+    let mut cl = Client::connect(&c, "flood").unwrap();
+    let mut ok = 0;
+    let mut limited = None;
+    for i in 0..20 {
+        match cl.call("echo", json!(i)) {
+            Ok(_) => ok += 1,
+            Err(CallError::Rpc(e)) if e.code == RpcError::RATE_LIMITED => {
+                limited.get_or_insert(e);
+            }
+            other => panic!("{other:?}"),
+        }
+    }
+    assert!((5..=7).contains(&ok), "burst of 5 (+ refill): {ok}");
+    let e = limited.expect("some requests refused");
+    let wait = e.data.unwrap()["retry_after_ms"].as_u64().unwrap();
+    assert!((1..=400).contains(&wait), "{wait}");
+    // After waiting, the same connection works again.
+    std::thread::sleep(Duration::from_millis(wait + 50));
+    assert_eq!(cl.call("echo", json!("again")).unwrap(), json!("again"));
+}
+
+#[test]
+fn repeated_wrong_tokens_are_answered_slowly_and_counted() {
+    let c = Config {
+        auth_failures_before_delay: 2,
+        auth_delay: Duration::from_millis(400),
+        ..cfg("guess")
+    };
+    let s = Server::start(c.clone(), echo()).unwrap();
+    let t = |_| {
+        let t0 = std::time::Instant::now();
+        assert!(Client::connect_with_token(&c, "ff").is_err());
+        t0.elapsed()
+    };
+    let times: Vec<_> = (0..4).map(t).collect();
+    assert!(times[0] < Duration::from_millis(300), "{times:?}");
+    assert!(times[1] < Duration::from_millis(300), "{times:?}");
+    assert!(times[2] >= Duration::from_millis(390), "{times:?}");
+    assert!(times[3] >= Duration::from_millis(390), "{times:?}");
+    assert_eq!(s.auth_failures(), 4);
+    // The right token is not held back.
+    let t0 = std::time::Instant::now();
+    Client::connect(&c, "me").unwrap();
+    assert!(t0.elapsed() < Duration::from_millis(300));
+}
+
+#[test]
+fn open_endpoint_reaches_our_own_server() {
+    let c = cfg("open");
+    let s = Server::start(c.clone(), echo()).unwrap();
+    open_endpoint(s.endpoint()).unwrap();
+    assert!(open_endpoint(&format!("{}-nope", s.endpoint())).is_err());
+}
