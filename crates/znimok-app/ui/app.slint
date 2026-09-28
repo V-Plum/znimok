@@ -524,6 +524,58 @@ component Switch inherits Rectangle {
     }
 }
 
+// ---------------------------------------------------------------------------------------------
+// Object panel building blocks: a section with a small caption (and an optional action on the
+// right), a row with a 60 px label column, and a colour row with room for the colour picker.
+
+component PropSection inherits VerticalLayout {
+    in property <string> title;
+    in property <string> action-icon;
+    in property <string> action-tip;
+    in property <bool> action-enabled: true;
+    callback action();
+    spacing: 8px;
+    HorizontalLayout {
+        height: 22px;
+        Text { text: root.title; color: Theme.text3; font-size: 11px; font-weight: 600; letter-spacing: 0.4px; vertical-alignment: center; horizontal-stretch: 1; }
+        if root.action-icon != "": IconButton { width: 26px; height: 22px; icon: root.action-icon; label: root.action-tip; enabled: root.action-enabled; clicked => { root.action(); } }
+    }
+    @children
+}
+
+component PropRow inherits HorizontalLayout {
+    in property <string> label;
+    spacing: 8px;
+    Text { text: root.label; color: Theme.text3; font-size: 11px; vertical-alignment: center; width: 60px; overflow: elide; }
+    @children
+}
+
+// Palette chips plus, at the right, the chip that will open the colour picker with the
+// eyedropper (strings `colour-picker` / `colour-eyedropper` already exist; the popover is
+// a later ticket) — the room is reserved now so the layout does not move when it lands.
+component ColourRow inherits HorizontalLayout {
+    in property <int> selected: -1;
+    in property <bool> with-none;
+    in property <string> none-tip;
+    callback picked(int);
+    spacing: 3px;
+    if root.with-none: Swatch { width: 22px; height: 22px; none: true; on: root.selected < 0; tip: root.none-tip; clicked => { root.picked(-1); } }
+    for c[i] in Palette.colors: Swatch { width: 22px; height: 22px; c: c; on: root.selected == i; clicked => { root.picked(i); } }
+    Rectangle { horizontal-stretch: 1; }
+    Rectangle {
+        width: 22px;
+        height: 22px;
+        border-radius: 7px;
+        background: @linear-gradient(135deg, #FF5A5F 0%, #FFD23F 30%, #34C48A 55%, #3D7BF5 80%, #9B5CF5 100%);
+        transform-origin: { x: self.width / 2, y: self.height / 2 };
+        transform-scale: pick-ta.has-hover ? 1.08 : 1.0;
+        animate transform-scale { duration: 140ms; easing: cubic-bezier(0.2, 0.8, 0.2, 1); }
+        Rectangle { x: 2px; y: 2px; width: 18px; height: 18px; border-radius: 5px; background: Theme.panel; }
+        Icon { width: 12px; height: 12px; d: "M3 21 l6 -6 M15 3 l6 6 -9 9 -6 -6 z M13 5 l6 6"; tint: Theme.text2; }
+        pick-ta := TipTouch { tip: @tr("colour-picker" => "Colour picker") + " — " + @tr("common-in-development" => "Coming soon"); }
+    }
+}
+
 component CardView inherits Rectangle {
     in property <CardData> data;
     callback open;
@@ -1356,139 +1408,153 @@ export component AppWindow inherits Window {
                         if root.insp-tab == 0: ScrollView {
                             vertical-stretch: 1;
                             VerticalLayout {
-                                spacing: 12px;
+                                spacing: 14px;
                                 alignment: start;
-                                Text {
-                                    text: root.prop-kind >= 0 ? (root.prop-for-selection ? (root.selection-count > 1 ? @tr("arrange-selected" => "Selected: {0}", root.selection-count) : root.prop-title) : root.prop-title) : (root.mark-count == 0 ? @tr("insp-no-marks" => "No annotations yet. Pick a tool on the left and draw on the screenshot.") : @tr("insp-nothing-selected" => "Select an annotation to change it, or pick a tool on the left."));
-                                    color: root.prop-kind >= 0 ? Theme.text : Theme.text3;
-                                    font-size: root.prop-kind >= 0 ? 13px : 12px;
-                                    font-weight: root.prop-kind >= 0 ? 600 : 400;
-                                    wrap: word-wrap;
-                                }
-                                // stroke colour
-                                if root.prop-kind >= 0 && root.prop-kind != 5 && root.prop-kind != 9: VerticalLayout {
-                                    spacing: 6px;
-                                    Text { text: root.prop-kind == 4 ? @tr("ctx-text-colour" => "Text colour") : @tr("insp-stroke" => "Stroke"); color: Theme.text2; font-size: 12px; }
-                                    HorizontalLayout {
-                                        spacing: 7px;
-                                        for c[i] in Palette.colors: Swatch { c: c; on: root.color-index == i; clicked => { root.set-prop("color", i); } }
+                                // Title row: what is being edited, and how many.
+                                HorizontalLayout {
+                                    spacing: 8px;
+                                    Text {
+                                        text: root.prop-kind >= 0 ? root.prop-title : (root.mark-count == 0 ? @tr("insp-no-marks" => "No annotations yet. Pick a tool on the left and draw on the screenshot.") : @tr("insp-nothing-selected" => "Select an annotation to change it, or pick a tool on the left."));
+                                        color: root.prop-kind >= 0 ? Theme.text : Theme.text3;
+                                        font-size: root.prop-kind >= 0 ? 13px : 12px;
+                                        font-weight: root.prop-kind >= 0 ? 600 : 400;
+                                        wrap: word-wrap;
+                                        horizontal-stretch: 1;
+                                        vertical-alignment: center;
+                                    }
+                                    if root.prop-for-selection && root.selection-count > 1: Text {
+                                        text: @tr("arrange-selected" => "Selected: {0}", root.selection-count);
+                                        color: Theme.text3;
+                                        font-size: 11px;
+                                        vertical-alignment: center;
                                     }
                                 }
-                                // thickness
-                                if root.prop-kind >= 0 && root.prop-kind <= 3: HorizontalLayout {
-                                    spacing: 2px;
-                                    for t[i] in [1.5px, 3px, 5.5px]: SegOption { bar: t; on: root.thick-index == i; tip: i == 0 ? @tr("ctx-thin" => "Thin") : (i == 1 ? @tr("ctx-medium" => "Medium") : @tr("ctx-thick" => "Thick")); clicked => { root.set-prop("thick", i); } }
-                                }
-                                // fill (rectangle, ellipse)
-                                if root.prop-kind >= 0 && root.prop-kind <= 1: VerticalLayout {
-                                    spacing: 6px;
-                                    HorizontalLayout {
-                                        Text { text: @tr("insp-fill" => "Fill"); color: Theme.text2; font-size: 12px; vertical-alignment: center; horizontal-stretch: 1; }
-                                        IconButton {
-                                            width: 28px;
-                                            height: 24px;
-                                            label: @tr("insp-swap-colours" => "Swap stroke and fill");
-                                            icon: "M7 4 L3 8 l4 4 M3 8 h13 a4 4 0 0 1 4 4 M17 20 l4 -4 -4 -4 M21 16 H8 a4 4 0 0 1 -4 -4";
-                                            enabled: root.fill-index >= 0;
-                                            clicked => { root.set-prop("swap", 0); }
+                                // ---- Stroke (text: the letters' colour)
+                                if root.prop-kind >= 0 && root.prop-kind != 5 && root.prop-kind != 9: PropSection {
+                                    title: root.prop-kind == 4 ? @tr("ctx-text-colour" => "Text colour") : @tr("insp-stroke" => "Stroke");
+                                    action-icon: root.prop-kind <= 1 || root.prop-kind == 4 ? "M7 4 L3 8 l4 4 M3 8 h13 a4 4 0 0 1 4 4 M17 20 l4 -4 -4 -4 M21 16 H8 a4 4 0 0 1 -4 -4" : "";
+                                    action-tip: @tr("insp-swap-colours" => "Swap stroke and fill");
+                                    action-enabled: root.fill-index >= 0 || root.color-index >= 0;
+                                    action => { root.set-prop("swap", 0); }
+                                    ColourRow {
+                                        selected: root.color-index;
+                                        with-none: root.prop-kind <= 1;
+                                        none-tip: @tr("insp-stroke-none" => "No outline");
+                                        picked(i) => { root.set-prop(i < 0 ? "stroke-none" : "color", i); }
+                                    }
+                                    if root.prop-kind <= 3: PropRow {
+                                        label: @tr("insp-thickness" => "Thickness");
+                                        HorizontalLayout {
+                                            spacing: 2px;
+                                            for t[i] in [1.5px, 3px, 5.5px]: SegOption { bar: t; on: root.thick-index == i; tip: i == 0 ? @tr("ctx-thin" => "Thin") : (i == 1 ? @tr("ctx-medium" => "Medium") : @tr("ctx-thick" => "Thick")); clicked => { root.set-prop("thick", i); } }
                                         }
                                     }
-                                    HorizontalLayout {
-                                        spacing: 3px;
-                                        Swatch { none: true; on: root.fill-index < 0; tip: @tr("ctx-fill-none" => "Fill colour: none"); clicked => { root.set-prop("fill", -1); } }
-                                        for c[i] in Palette.colors: Swatch { c: c; on: root.fill-index == i; clicked => { root.set-prop("fill", i); } }
+                                    if root.prop-kind <= 3: PropRow {
+                                        label: @tr("ctx-line-style" => "Line style");
+                                        HorizontalLayout {
+                                            spacing: 2px;
+                                            SegOption { icon: "M3 12 h18"; on: root.dash-index == 0; tip: @tr("insp-line-solid" => "Solid"); clicked => { root.set-prop("dash", 0); } }
+                                            SegOption { icon: "M3 12 h4 M10 12 h4 M17 12 h4"; on: root.dash-index == 1; tip: @tr("insp-line-dashed" => "Dashed"); clicked => { root.set-prop("dash", 1); } }
+                                            SegOption { icon: "M3 12 h5 M11 12 h1.5 M15.5 12 h5.5"; on: root.dash-index == 2; tip: @tr("insp-line-dashdot" => "Dash-dot"); clicked => { root.set-prop("dash", 2); } }
+                                        }
+                                    }
+                                    if root.prop-kind == 0: PropRow {
+                                        label: @tr("insp-corners" => "Corners");
+                                        HorizontalLayout {
+                                            spacing: 2px;
+                                            SegOption { icon: "M5 19 V5 h14"; on: root.corners-index == 0; tip: @tr("insp-corners-sharp" => "Sharp"); clicked => { root.set-prop("corners", 0); } }
+                                            SegOption { icon: "M5 19 V9 a4 4 0 0 1 4 -4 h10"; on: root.corners-index == 1; tip: @tr("insp-corners-soft" => "Soft"); clicked => { root.set-prop("corners", 1); } }
+                                            SegOption { icon: "M5 19 V14 a9 9 0 0 1 9 -9 h5"; on: root.corners-index == 2; tip: @tr("insp-corners-round" => "Round"); clicked => { root.set-prop("corners", 2); } }
+                                        }
                                     }
                                 }
-                                // line style
-                                if root.prop-kind >= 0 && root.prop-kind <= 3: HorizontalLayout {
-                                    spacing: 2px;
-                                    SegOption { icon: "M3 12 h18"; on: root.dash-index == 0; tip: @tr("insp-line-solid" => "Solid"); clicked => { root.set-prop("dash", 0); } }
-                                    SegOption { icon: "M3 12 h4 M10 12 h4 M17 12 h4"; on: root.dash-index == 1; tip: @tr("insp-line-dashed" => "Dashed"); clicked => { root.set-prop("dash", 1); } }
-                                    SegOption { icon: "M3 12 h5 M11 12 h1.5 M15.5 12 h5.5"; on: root.dash-index == 2; tip: @tr("insp-line-dashdot" => "Dash-dot"); clicked => { root.set-prop("dash", 2); } }
-                                }
-                                // corners (rectangle)
-                                if root.prop-kind == 0: VerticalLayout {
-                                    spacing: 6px;
-                                    Text { text: @tr("insp-corners" => "Corners"); color: Theme.text2; font-size: 12px; }
-                                    HorizontalLayout {
-                                        spacing: 2px;
-                                        SegOption { icon: "M5 19 V5 h14"; on: root.corners-index == 0; tip: @tr("insp-corners-sharp" => "Sharp"); clicked => { root.set-prop("corners", 0); } }
-                                        SegOption { icon: "M5 19 V9 a4 4 0 0 1 4 -4 h10"; on: root.corners-index == 1; tip: @tr("insp-corners-soft" => "Soft"); clicked => { root.set-prop("corners", 1); } }
-                                        SegOption { icon: "M5 19 V14 a9 9 0 0 1 9 -9 h5"; on: root.corners-index == 2; tip: @tr("insp-corners-round" => "Round"); clicked => { root.set-prop("corners", 2); } }
+                                // ---- Fill (rectangle, ellipse) / outline (text)
+                                if root.prop-kind >= 0 && (root.prop-kind <= 1 || root.prop-kind == 4): PropSection {
+                                    title: root.prop-kind == 4 ? @tr("ctx-text-outline" => "Outline colour") : @tr("insp-fill" => "Fill");
+                                    ColourRow {
+                                        selected: root.fill-index;
+                                        with-none: true;
+                                        none-tip: @tr("ctx-fill-none" => "Fill colour: none");
+                                        picked(i) => { root.set-prop("fill", i); }
                                     }
                                 }
-                                // arrowheads (line): heads are a property of the line
-                                if root.prop-kind == 2: VerticalLayout {
-                                    spacing: 6px;
-                                    Text { text: @tr("insp-heads" => "Arrowheads"); color: Theme.text2; font-size: 12px; }
-                                    HorizontalLayout {
-                                        spacing: 6px;
-                                        Text { text: @tr("insp-head-start" => "Start"); color: Theme.text3; font-size: 11px; vertical-alignment: center; width: 52px; }
-                                        SegOption { icon: "M4 12 h16"; on: root.head-start == 0; tip: @tr("common-none" => "None"); clicked => { root.set-prop("head-start", 0); } }
-                                        SegOption { icon: "M20 12 H8 M4 12 l6 -4 v8 z"; on: root.head-start == 1; tip: @tr("insp-head-triangle" => "Triangle"); clicked => { root.set-prop("head-start", 1); } }
-                                        SegOption { icon: "M20 12 H4 M10 6 l-6 6 6 6"; on: root.head-start == 2; tip: @tr("insp-head-chevron" => "Chevron"); clicked => { root.set-prop("head-start", 2); } }
-                                        SegOption { icon: "M20 12 H9 M4 12 a2.5 2.5 0 1 0 5 0 a2.5 2.5 0 1 0 -5 0"; on: root.head-start == 3; tip: @tr("insp-head-dot" => "Dot"); clicked => { root.set-prop("head-start", 3); } }
+                                // ---- Arrowheads: a property of the line
+                                if root.prop-kind == 2: PropSection {
+                                    title: @tr("insp-heads" => "Arrowheads");
+                                    PropRow {
+                                        label: @tr("insp-head-start" => "Start");
+                                        HorizontalLayout {
+                                            spacing: 2px;
+                                            SegOption { icon: "M4 12 h16"; on: root.head-start == 0; tip: @tr("common-none" => "None"); clicked => { root.set-prop("head-start", 0); } }
+                                            SegOption { icon: "M20 12 H8 M4 12 l6 -4 v8 z"; on: root.head-start == 1; tip: @tr("insp-head-triangle" => "Triangle"); clicked => { root.set-prop("head-start", 1); } }
+                                            SegOption { icon: "M20 12 H4 M10 6 l-6 6 6 6"; on: root.head-start == 2; tip: @tr("insp-head-chevron" => "Chevron"); clicked => { root.set-prop("head-start", 2); } }
+                                            SegOption { icon: "M20 12 H9 M4 12 a2.5 2.5 0 1 0 5 0 a2.5 2.5 0 1 0 -5 0"; on: root.head-start == 3; tip: @tr("insp-head-dot" => "Dot"); clicked => { root.set-prop("head-start", 3); } }
+                                        }
                                     }
-                                    HorizontalLayout {
-                                        spacing: 6px;
-                                        Text { text: @tr("insp-head-end" => "End"); color: Theme.text3; font-size: 11px; vertical-alignment: center; width: 52px; }
-                                        SegOption { icon: "M4 12 h16"; on: root.head-end == 0; tip: @tr("common-none" => "None"); clicked => { root.set-prop("head-end", 0); } }
-                                        SegOption { icon: "M4 12 h12 M20 12 l-6 -4 v8 z"; on: root.head-end == 1; tip: @tr("insp-head-triangle" => "Triangle"); clicked => { root.set-prop("head-end", 1); } }
-                                        SegOption { icon: "M4 12 h16 M14 6 l6 6 -6 6"; on: root.head-end == 2; tip: @tr("insp-head-chevron" => "Chevron"); clicked => { root.set-prop("head-end", 2); } }
-                                        SegOption { icon: "M4 12 h11 M15 12 a2.5 2.5 0 1 0 5 0 a2.5 2.5 0 1 0 -5 0"; on: root.head-end == 3; tip: @tr("insp-head-dot" => "Dot"); clicked => { root.set-prop("head-end", 3); } }
+                                    PropRow {
+                                        label: @tr("insp-head-end" => "End");
+                                        HorizontalLayout {
+                                            spacing: 2px;
+                                            SegOption { icon: "M4 12 h16"; on: root.head-end == 0; tip: @tr("common-none" => "None"); clicked => { root.set-prop("head-end", 0); } }
+                                            SegOption { icon: "M4 12 h12 M20 12 l-6 -4 v8 z"; on: root.head-end == 1; tip: @tr("insp-head-triangle" => "Triangle"); clicked => { root.set-prop("head-end", 1); } }
+                                            SegOption { icon: "M4 12 h16 M14 6 l6 6 -6 6"; on: root.head-end == 2; tip: @tr("insp-head-chevron" => "Chevron"); clicked => { root.set-prop("head-end", 2); } }
+                                            SegOption { icon: "M4 12 h11 M15 12 a2.5 2.5 0 1 0 5 0 a2.5 2.5 0 1 0 -5 0"; on: root.head-end == 3; tip: @tr("insp-head-dot" => "Dot"); clicked => { root.set-prop("head-end", 3); } }
+                                        }
                                     }
                                 }
-                                // text
-                                if root.prop-kind == 4: VerticalLayout {
-                                    spacing: 6px;
-                                    Text { text: @tr("text-size" => "Size"); color: Theme.text2; font-size: 12px; }
-                                    HorizontalLayout {
-                                        spacing: 2px;
-                                        SegOption { icon: "M6 12 h12"; tip: @tr("text-size-down" => "Smaller type"); clicked => { root.set-prop("text-step", -1); } }
-                                        Rectangle {
-                                            width: 64px;
-                                            height: 28px;
-                                            border-radius: 7px;
-                                            background: Theme.elevated;
-                                            border-width: 1px;
-                                            border-color: size-input.has-focus ? Theme.accent : Theme.control-on;
-                                            animate border-color { duration: 120ms; }
-                                            size-input := TextInput {
-                                                width: parent.width - 12px;
-                                                height: parent.height;
-                                                horizontal-alignment: center;
-                                                vertical-alignment: center;
-                                                color: Theme.text;
-                                                font-size: 12px;
-                                                input-type: number;
-                                                text <=> root.text-size-px;
-                                                accepted => { root.set-text-size(self.text); }
-                                                changed has-focus => { if (!self.has-focus) { root.set-text-size(self.text); } }
+                                // ---- Text
+                                if root.prop-kind == 4: PropSection {
+                                    title: @tr("tool-text-name" => "Text");
+                                    PropRow {
+                                        label: @tr("text-size" => "Size");
+                                        HorizontalLayout {
+                                            spacing: 2px;
+                                            SegOption { width: 30px; horizontal-stretch: 0; icon: "M6 12 h12"; tip: @tr("text-size-down" => "Smaller type"); clicked => { root.set-prop("text-step", -1); } }
+                                            Rectangle {
+                                                width: 52px;
+                                                height: 28px;
+                                                border-radius: 7px;
+                                                background: Theme.elevated;
+                                                border-width: 1px;
+                                                border-color: size-input.has-focus ? Theme.accent : Theme.control-on;
+                                                animate border-color { duration: 120ms; }
+                                                size-input := TextInput {
+                                                    width: parent.width - 8px;
+                                                    height: parent.height;
+                                                    horizontal-alignment: center;
+                                                    vertical-alignment: center;
+                                                    color: Theme.text;
+                                                    font-size: 12px;
+                                                    input-type: number;
+                                                    text <=> root.text-size-px;
+                                                    accepted => { root.set-text-size(self.text); }
+                                                    changed has-focus => { if (!self.has-focus) { root.set-text-size(self.text); } }
+                                                }
                                             }
+                                            SegOption { width: 30px; horizontal-stretch: 0; icon: "M6 12 h12 M12 6 v12"; tip: @tr("text-size-up" => "Larger type"); clicked => { root.set-prop("text-step", 1); } }
+                                            Rectangle { horizontal-stretch: 1; }
+                                            SegOption { width: 32px; horizontal-stretch: 0; icon: "M7 5 h6 a3.5 3.5 0 0 1 0 7 H7 z M7 12 h7 a3.5 3.5 0 0 1 0 7 H7 z"; on: root.text-bold; tip: @tr("ctx-bold" => "Bold"); clicked => { root.set-prop("bold", root.text-bold ? 0 : 1); } }
+                                            SegOption { width: 32px; horizontal-stretch: 0; icon: "M10 5 h8 M6 19 h8 M14 5 l-4 14"; on: root.text-italic; tip: @tr("ctx-italic" => "Italic"); clicked => { root.set-prop("italic", root.text-italic ? 0 : 1); } }
                                         }
-                                        SegOption { icon: "M6 12 h12 M12 6 v12"; tip: @tr("text-size-up" => "Larger type"); clicked => { root.set-prop("text-step", 1); } }
-                                        Rectangle { width: 8px; }
-                                        SegOption { icon: "M7 5 h6 a3.5 3.5 0 0 1 0 7 H7 z M7 12 h7 a3.5 3.5 0 0 1 0 7 H7 z"; on: root.text-bold; tip: @tr("ctx-bold" => "Bold"); clicked => { root.set-prop("bold", root.text-bold ? 0 : 1); } }
-                                        SegOption { icon: "M10 5 h8 M6 19 h8 M14 5 l-4 14"; on: root.text-italic; tip: @tr("ctx-italic" => "Italic"); clicked => { root.set-prop("italic", root.text-italic ? 0 : 1); } }
                                     }
                                 }
-                                // opacity
-                                if root.prop-kind >= 0 && root.prop-kind != 5: VerticalLayout {
-                                    spacing: 4px;
+                                // ---- Opacity
+                                if root.prop-kind >= 0 && root.prop-kind != 5: PropRow {
+                                    label: @tr("insp-opacity" => "Opacity");
                                     HorizontalLayout {
-                                        Text { text: @tr("insp-opacity" => "Opacity"); color: Theme.text2; font-size: 12px; horizontal-stretch: 1; }
-                                        Text { text: round(root.alpha * 100) + " %"; color: Theme.text3; font-size: 11px; }
-                                    }
-                                    MiniSlider {
-                                        value <=> root.alpha;
-                                        tip: @tr("insp-opacity" => "Opacity");
-                                        moved(v) => { root.set-alpha(v, false); }
-                                        released => { root.set-alpha(root.alpha, true); }
+                                        spacing: 8px;
+                                        MiniSlider {
+                                            value <=> root.alpha;
+                                            tip: @tr("insp-opacity" => "Opacity");
+                                            moved(v) => { root.set-alpha(v, false); }
+                                            released => { root.set-alpha(root.alpha, true); }
+                                        }
+                                        Text { text: round(root.alpha * 100) + " %"; color: Theme.text2; font-size: 11px; vertical-alignment: center; horizontal-alignment: right; width: 36px; }
                                     }
                                 }
-                                // position and size of one selected mark
-                                if root.prop-for-selection && root.selection-count == 1: VerticalLayout {
-                                    spacing: 6px;
+                                // ---- Position and size of one selected mark
+                                if root.prop-for-selection && root.selection-count == 1: PropSection {
+                                    title: @tr("insp-position" => "Position and size");
                                     HorizontalLayout {
                                         spacing: 8px;
                                         NumField { label: @tr("insp-x" => "X"); value: root.geom-x; committed(v) => { root.set-geom("x", v); } }
@@ -1500,34 +1566,43 @@ export component AppWindow inherits Window {
                                         NumField { label: @tr("insp-h" => "H"); value: root.geom-h; committed(v) => { root.set-geom("h", v); } }
                                     }
                                 }
-                                // arrange (ZK-52)
-                                if root.selection-count >= 1: VerticalLayout {
-                                    spacing: 4px;
-                                    Rectangle { height: 1px; background: Theme.line; }
-                                    HorizontalLayout {
-                                        spacing: 2px;
-                                        IconButton { label: @tr("arrange-front" => "Bring to front"); tip: self.label + "  Ctrl+Shift+]"; icon: "M4 4 h16 M12 20 V8 M7 13 l5 -5 5 5"; clicked => { root.arrange(0); } }
-                                        IconButton { label: @tr("layers-up" => "Bring forward"); tip: self.label + "  Ctrl+]"; icon: "M12 19 V5 M6 11 l6 -6 6 6"; clicked => { root.arrange(2); } }
-                                        IconButton { label: @tr("layers-down" => "Send backward"); tip: self.label + "  Ctrl+["; icon: "M12 5 v14 M6 13 l6 6 6 -6"; clicked => { root.arrange(3); } }
-                                        IconButton { label: @tr("arrange-back" => "Send to back"); tip: self.label + "  Ctrl+Shift+["; icon: "M4 20 h16 M12 4 v12 M7 11 l5 5 5 -5"; clicked => { root.arrange(1); } }
-                                        IconButton { label: @tr("common-duplicate" => "Duplicate"); tip: self.label + "  Ctrl+D"; icon: "M9 9 h11 v11 H9 z M15 9 V4 H4 v11 h5"; clicked => { root.duplicate(); } }
+                                // ---- Arrange (ZK-52)
+                                if root.selection-count >= 1: PropSection {
+                                    title: @tr("arrange-title" => "Arrange");
+                                    PropRow {
+                                        label: @tr("arrange-order" => "Order");
+                                        HorizontalLayout {
+                                            spacing: 2px;
+                                            SegOption { icon: "M4 4 h16 M12 20 V8 M7 13 l5 -5 5 5"; tip: @tr("arrange-front" => "Bring to front") + "  Ctrl+Shift+]"; clicked => { root.arrange(0); } }
+                                            SegOption { icon: "M12 19 V5 M6 11 l6 -6 6 6"; tip: @tr("layers-up" => "Bring forward") + "  Ctrl+]"; clicked => { root.arrange(2); } }
+                                            SegOption { icon: "M12 5 v14 M6 13 l6 6 6 -6"; tip: @tr("layers-down" => "Send backward") + "  Ctrl+["; clicked => { root.arrange(3); } }
+                                            SegOption { icon: "M4 20 h16 M12 4 v12 M7 11 l5 5 5 -5"; tip: @tr("arrange-back" => "Send to back") + "  Ctrl+Shift+["; clicked => { root.arrange(1); } }
+                                            Rectangle { width: 6px; }
+                                            SegOption { icon: "M9 9 h11 v11 H9 z M15 9 V4 H4 v11 h5"; tip: @tr("common-duplicate" => "Duplicate") + "  Ctrl+D"; clicked => { root.duplicate(); } }
+                                        }
                                     }
-                                    if root.selection-count >= 2: HorizontalLayout {
-                                        spacing: 2px;
-                                        IconButton { label: @tr("arrange-align-left" => "Align left edges"); icon: "M4 3 v18 M8 7 h9 v3 H8 z M8 14 h13 v3 H8 z"; clicked => { root.align(0); } }
-                                        IconButton { label: @tr("arrange-align-hcentre" => "Align vertical centres"); icon: "M12 3 v18 M7 7 h10 v3 H7 z M5 14 h14 v3 H5 z"; clicked => { root.align(1); } }
-                                        IconButton { label: @tr("arrange-align-right" => "Align right edges"); icon: "M20 3 v18 M7 7 h9 v3 H7 z M3 14 h13 v3 H3 z"; clicked => { root.align(2); } }
-                                        IconButton { label: @tr("arrange-align-top" => "Align top edges"); icon: "M3 4 h18 M7 8 v9 h3 V8 z M14 8 v13 h3 V8 z"; clicked => { root.align(3); } }
-                                        IconButton { label: @tr("arrange-align-vcentre" => "Align horizontal centres"); icon: "M3 12 h18 M7 7 v10 h3 V7 z M14 5 v14 h3 V5 z"; clicked => { root.align(4); } }
-                                        IconButton { label: @tr("arrange-align-bottom" => "Align bottom edges"); icon: "M3 20 h18 M7 7 v9 h3 V7 z M14 3 v13 h3 V3 z"; clicked => { root.align(5); } }
+                                    if root.selection-count >= 2: PropRow {
+                                        label: @tr("arrange-align" => "Align");
+                                        HorizontalLayout {
+                                            spacing: 2px;
+                                            SegOption { icon: "M4 3 v18 M8 7 h9 v3 H8 z M8 14 h13 v3 H8 z"; tip: @tr("arrange-align-left" => "Align left edges"); clicked => { root.align(0); } }
+                                            SegOption { icon: "M12 3 v18 M7 7 h10 v3 H7 z M5 14 h14 v3 H5 z"; tip: @tr("arrange-align-hcentre" => "Align vertical centres"); clicked => { root.align(1); } }
+                                            SegOption { icon: "M20 3 v18 M7 7 h9 v3 H7 z M3 14 h13 v3 H3 z"; tip: @tr("arrange-align-right" => "Align right edges"); clicked => { root.align(2); } }
+                                            SegOption { icon: "M3 4 h18 M7 8 v9 h3 V8 z M14 8 v13 h3 V8 z"; tip: @tr("arrange-align-top" => "Align top edges"); clicked => { root.align(3); } }
+                                            SegOption { icon: "M3 12 h18 M7 7 v10 h3 V7 z M14 5 v14 h3 V5 z"; tip: @tr("arrange-align-vcentre" => "Align horizontal centres"); clicked => { root.align(4); } }
+                                            SegOption { icon: "M3 20 h18 M7 7 v9 h3 V7 z M14 3 v13 h3 V3 z"; tip: @tr("arrange-align-bottom" => "Align bottom edges"); clicked => { root.align(5); } }
+                                        }
                                     }
-                                    if root.selection-count >= 2: HorizontalLayout {
-                                        spacing: 2px;
-                                        IconButton { label: @tr("arrange-distribute-x" => "Even gaps across"); icon: "M3 3 v18 M21 3 v18 M9 8 h6 v8 H9 z"; enabled: root.selection-count >= 3; clicked => { root.distribute(0); } }
-                                        IconButton { label: @tr("arrange-distribute-y" => "Even gaps down"); icon: "M3 3 h18 M3 21 h18 M8 9 h8 v6 H8 z"; enabled: root.selection-count >= 3; clicked => { root.distribute(1); } }
-                                        Rectangle { width: 8px; }
-                                        IconButton { label: @tr("arrange-group" => "Group"); tip: self.label + "  Ctrl+G"; icon: "M4 4 h7 v7 H4 z M13 13 h7 v7 h-7 z M2 2 h20 v20 H2 z"; clicked => { root.group(true); } }
-                                        IconButton { label: @tr("arrange-ungroup" => "Ungroup"); tip: self.label + "  Ctrl+Shift+G"; icon: "M4 4 h7 v7 H4 z M13 13 h7 v7 h-7 z"; clicked => { root.group(false); } }
+                                    if root.selection-count >= 2: PropRow {
+                                        label: @tr("arrange-distribute" => "Spread");
+                                        HorizontalLayout {
+                                            spacing: 2px;
+                                            SegOption { icon: "M3 3 v18 M21 3 v18 M9 8 h6 v8 H9 z"; enabled: root.selection-count >= 3; tip: @tr("arrange-distribute-x" => "Even gaps across"); clicked => { root.distribute(0); } }
+                                            SegOption { icon: "M3 3 h18 M3 21 h18 M8 9 h8 v6 H8 z"; enabled: root.selection-count >= 3; tip: @tr("arrange-distribute-y" => "Even gaps down"); clicked => { root.distribute(1); } }
+                                            Rectangle { width: 6px; }
+                                            SegOption { icon: "M4 4 h7 v7 H4 z M13 13 h7 v7 h-7 z M2 2 h20 v20 H2 z"; tip: @tr("arrange-group" => "Group") + "  Ctrl+G"; clicked => { root.group(true); } }
+                                            SegOption { icon: "M4 4 h7 v7 H4 z M13 13 h7 v7 h-7 z"; tip: @tr("arrange-ungroup" => "Ungroup") + "  Ctrl+Shift+G"; clicked => { root.group(false); } }
+                                        }
                                     }
                                 }
                             }

@@ -139,6 +139,8 @@ pub struct App {
     thick: usize,
     /// Defaults for new marks (and what the inspector changes on a selection), ZK-54.
     alpha: u8,
+    /// Rectangle / ellipse without an outline (a solid plate of the fill).
+    no_stroke: bool,
     fill: Option<usize>,
     dash: Dash,
     corners: Corners,
@@ -208,6 +210,7 @@ impl App {
             color: 0,
             thick: 1,
             alpha: 100,
+            no_stroke: false,
             fill: None,
             dash: Dash::Solid,
             corners: Corners::Sharp,
@@ -605,6 +608,7 @@ impl App {
             color: PALETTE[self.color],
             thick: THICK[self.thick],
             alpha: self.alpha,
+            no_main: self.no_stroke && matches!(t, tool::RECT | tool::ELLIPSE),
             color2: if matches!(t, tool::RECT | tool::ELLIPSE) {
                 self.fill.map(|i| PALETTE[i])
             } else {
@@ -1596,12 +1600,26 @@ impl App {
         match name {
             "color" => {
                 self.color = (v.max(0) as usize).min(PALETTE.len() - 1);
+                self.no_stroke = false;
                 let c = PALETTE[self.color];
                 self.patch_selected(
                     ui,
                     |o| !matches!(o.kind(), Kind::Hide | Kind::Image),
                     style(StylePatch {
                         color: Some(c),
+                        no_main: Some(false),
+                        ..Default::default()
+                    }),
+                    None,
+                );
+            }
+            "stroke-none" => {
+                self.no_stroke = true;
+                self.patch_selected(
+                    ui,
+                    |o| matches!(o.kind(), Kind::Rect | Kind::Ellipse),
+                    style(StylePatch {
+                        no_main: Some(true),
                         ..Default::default()
                     }),
                     None,
@@ -1749,35 +1767,59 @@ impl App {
                 return;
             }
             "swap" => {
-                // Stroke ↔ fill (text: letters ↔ outline) of each selected mark that has both.
-                let pairs: Vec<(ObjectId, Rgb, Rgb)> = {
+                // Stroke ↔ fill (text: letters ↔ outline). A missing side swaps too: a plate
+                // without an outline becomes an outlined empty shape and back (owner, 28.09).
+                let entries: Vec<(ObjectId, Kind, Option<Rgb>, Option<Rgb>)> = {
                     let Some(s) = self.s.as_ref() else { return };
                     s.ed.selection()
                         .iter()
                         .filter_map(|id| s.ed.doc.get(*id))
                         .filter(|o| matches!(o.kind(), Kind::Rect | Kind::Ellipse | Kind::Text))
-                        .filter_map(|o| o.style.color2.map(|c2| (o.id, o.style.color, c2)))
+                        .map(|o| {
+                            let plate = o.kind() != Kind::Text && o.style.no_main;
+                            (
+                                o.id,
+                                o.kind(),
+                                (!plate).then_some(o.style.color),
+                                o.style.color2,
+                            )
+                        })
+                        // Text keeps its letters: it swaps only when it has an outline.
+                        .filter(|(_, k, st, fi)| {
+                            if *k == Kind::Text {
+                                fi.is_some()
+                            } else {
+                                st.is_some() || fi.is_some()
+                            }
+                        })
                         .collect()
                 };
-                if pairs.is_empty() {
-                    if let Some(f) = self.fill {
-                        let (c, f2) = (self.color, f);
-                        self.color = f2;
-                        self.fill = Some(c);
+                if entries.is_empty() {
+                    // Nothing selected: the defaults for new marks.
+                    let stroke = (!self.no_stroke).then_some(self.color);
+                    let fill = self.fill;
+                    if stroke.is_some() || fill.is_some() {
+                        self.no_stroke = fill.is_none();
+                        if let Some(f) = fill {
+                            self.color = f;
+                        }
+                        self.fill = stroke;
                     }
                 } else {
-                    let merge = (pairs.len() > 1).then(|| self.merge_key());
-                    for (id, c, c2) in pairs {
+                    let merge = (entries.len() > 1).then(|| self.merge_key());
+                    for (id, _, stroke, fill) in entries {
+                        let sp = StylePatch {
+                            color: fill,
+                            no_main: Some(fill.is_none()),
+                            color2: Some(stroke),
+                            ..Default::default()
+                        };
                         self.apply(
                             ui,
                             Command::UpdateObjects {
                                 ids: vec![id],
                                 patch: ObjectPatch {
-                                    style: Some(StylePatch {
-                                        color: Some(c2),
-                                        color2: Some(Some(c)),
-                                        ..Default::default()
-                                    }),
+                                    style: Some(sp),
                                     ..Default::default()
                                 },
                                 merge: merge.clone(),
@@ -2247,12 +2289,15 @@ impl App {
                 let title = o.name.clone().unwrap_or_else(|| tool_name(kind));
                 ui.set_prop_title(title.into());
                 let st = &o.style;
-                ui.set_color_index(
+                let plate = matches!(o.kind(), Kind::Rect | Kind::Ellipse) && st.no_main;
+                ui.set_color_index(if plate {
+                    -1
+                } else {
                     PALETTE
                         .iter()
                         .position(|c| *c == st.color)
-                        .map_or(-1, |i| i as i32),
-                );
+                        .map_or(-1, |i| i as i32)
+                });
                 ui.set_thick_index(
                     THICK
                         .iter()
@@ -2304,7 +2349,13 @@ impl App {
                     }
                     .into(),
                 );
-                ui.set_color_index(self.color as i32);
+                ui.set_color_index(
+                    if self.no_stroke && matches!(self.tool, tool::RECT | tool::ELLIPSE) {
+                        -1
+                    } else {
+                        self.color as i32
+                    },
+                );
                 ui.set_thick_index(self.thick as i32);
                 ui.set_fill_index(self.fill.map_or(-1, |i| i as i32));
                 ui.set_dash_index(dash_index(self.dash));

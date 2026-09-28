@@ -823,6 +823,21 @@ insp-stroke = Контур
 # @max: 16
 insp-fill = Заливка
 
+# @where: Object panel: row label of the line thickness control
+# @kind: label
+# @max: 12
+insp-thickness = Товщина
+
+# @where: Object panel: the "no outline" chip in the stroke colour row (rectangle, ellipse)
+# @kind: tooltip
+# @max: 24
+insp-stroke-none = Без контуру
+
+# @where: Object panel: section with X / Y / W / H of the selected annotation
+# @kind: label
+# @max: 24
+insp-position = Положення й розмір
+
 # @where: Fill section: button that swaps the stroke and fill colours (text: letters and outline)
 # @kind: tooltip
 # @max: 40
@@ -1385,6 +1400,26 @@ arrange-group = Групувати
 # @kind: menu
 # @max: 20
 arrange-ungroup = Розгрупувати
+
+# @where: Object panel: section with order, align, spread and group controls
+# @kind: label
+# @max: 16
+arrange-title = Розташування
+
+# @where: Object panel: row label of the z-order buttons
+# @kind: label
+# @max: 12
+arrange-order = Порядок
+
+# @where: Object panel: row label of the six align buttons
+# @kind: label
+# @max: 12
+arrange-align = Вирівняти
+
+# @where: Object panel: row label of the even-gaps buttons
+# @kind: label
+# @max: 12
+arrange-distribute = Розподіл
 
 # @where: Context menu: new marks of this kind use this style
 # @kind: menu

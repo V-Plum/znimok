@@ -821,6 +821,21 @@ insp-stroke = Stroke
 # @max: 16
 insp-fill = Fill
 
+# @where: Object panel: row label of the line thickness control
+# @kind: label
+# @max: 12
+insp-thickness = Thickness
+
+# @where: Object panel: the "no outline" chip in the stroke colour row (rectangle, ellipse)
+# @kind: tooltip
+# @max: 24
+insp-stroke-none = No outline
+
+# @where: Object panel: section with X / Y / W / H of the selected annotation
+# @kind: label
+# @max: 24
+insp-position = Position and size
+
 # @where: Fill section: button that swaps the stroke and fill colours (text: letters and outline)
 # @kind: tooltip
 # @max: 40
@@ -1381,6 +1396,26 @@ arrange-group = Group
 # @kind: menu
 # @max: 20
 arrange-ungroup = Ungroup
+
+# @where: Object panel: section with order, align, spread and group controls
+# @kind: label
+# @max: 16
+arrange-title = Arrange
+
+# @where: Object panel: row label of the z-order buttons
+# @kind: label
+# @max: 12
+arrange-order = Order
+
+# @where: Object panel: row label of the six align buttons
+# @kind: label
+# @max: 12
+arrange-align = Align
+
+# @where: Object panel: row label of the even-gaps buttons
+# @kind: label
+# @max: 12
+arrange-distribute = Spread
 
 # @where: Context menu: new marks of this kind use this style
 # @kind: menu

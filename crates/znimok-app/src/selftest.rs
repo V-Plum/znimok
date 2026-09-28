@@ -467,6 +467,18 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
                 matches!((before, after), (Some((c, Some(f))), Some((c2, Some(f2)))) if c2 == f && f2 == c),
                 format!("{before:?} → {after:?}"),
             );
+            // No outline, then swap: the plate's fill becomes the outline, the fill goes.
+            ui.invoke_set_prop("stroke-none".into(), 0);
+            let plate = get(app, id).map(|o| o.style.no_main);
+            ui.invoke_set_prop("swap".into(), 0);
+            let st = get(app, id).map(|o| (o.style.color, o.style.color2, o.style.no_main));
+            r.check(
+                "swap with no outline: fill → outline, no fill",
+                plate == Some(true) && st == Some((crate::app::PALETTE[0], None, false)),
+                format!("plate {plate:?} → {st:?}"),
+            );
+            ui.invoke_set_prop("fill".into(), 4);
+            r.snapshot(ui, "14-props-rect");
             ui.invoke_set_prop("corners".into(), 2);
             let c = get(app, id).map(|o| o.style.corners);
             r.check(
@@ -517,6 +529,7 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
                 heads == Some((znimok_core::Head::Dot, znimok_core::Head::Triangle)),
                 format!("{heads:?}"),
             );
+            r.snapshot(ui, "15-props-line");
             ui.invoke_layer_eye(id as i32);
             let hidden = get(app, id).map(|o| o.hidden);
             r.check(
