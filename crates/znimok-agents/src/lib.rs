@@ -9,10 +9,14 @@
 //! - [`permissions`] and [`audit`] — «цей раз / ця сесія / завжди» per client and scope, and a
 //!   90-day journal without contents.
 //!
+//! - [`handoff`] — «Передати агенту»: a hand-off folder (picture, context, brief) for Claude Code
+//!   or the clipboard.
+//!
 //! MCP is off until the person switches it on (settings `agents.mcp_enabled`).
 
 pub mod audit;
 pub mod backend;
+pub mod handoff;
 pub mod library;
 pub mod mcp;
 pub mod permissions;

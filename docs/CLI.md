@@ -45,6 +45,19 @@ The first use of a scope (`capture`, `library_read`, `library_write`, `settings`
 approved by the person in the app («цей раз / ця сесія / завжди»); without the app running, only
 what was allowed with `znimok agents allow` works. See `docs/IPC.md` for what the app answers.
 
+## Hand a screenshot to an agent
+
+`znimok handoff shot.znimok --note "Why is this button grey?"` prepares a hand-off folder
+(`<data>/Handoff/<id>/`: `screenshot.png`, `context.json`, `handoff.md`) and opens Claude Code in a
+new terminal with a prompt that names `handoff.md` — or, with `--to clipboard` or when Claude
+Code is not installed, puts the picture, the file and the brief on the clipboard.
+
+By default the picture is **a copy with secrets, personal data and faces hidden** and the
+recognised text has secrets masked (the library document is not changed); `--no-redact` hands it
+over as it is. Masking can only hide what text recognition found — look at the copy before
+sending anything sensitive. `--dry-run` prepares the folder and prints the brief without running
+anything.
+
 ## Exit codes
 
 | Code | Meaning |

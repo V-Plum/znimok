@@ -88,6 +88,23 @@ enum Cmd {
         #[arg(value_enum, default_value_t = SchemaKind::Command)]
         kind: SchemaKind,
     },
+    /// «Передати агенту»: the screenshot (a copy with secrets hidden), its context and a brief,
+    /// to Claude Code in a new terminal or onto the clipboard.
+    Handoff {
+        file: PathBuf,
+        /// What you want from the agent.
+        #[arg(long, default_value = "")]
+        note: String,
+        /// claude (default: from the settings) or clipboard.
+        #[arg(long)]
+        to: Option<String>,
+        /// Hand over the picture as it is, without hiding secrets.
+        #[arg(long)]
+        no_redact: bool,
+        /// Prepare the folder and print what would be run, without running it.
+        #[arg(long)]
+        dry_run: bool,
+    },
     /// MCP server for AI agents on standard input/output (e.g. `claude mcp add znimok -- znimok mcp`).
     Mcp,
     /// What AI agents may do: switch MCP on/off, list, allow and revoke permissions, the journal.
@@ -535,6 +552,45 @@ fn run(cli: Cli) -> Result<(), Fail> {
                 json!({ "dir": dir.display().to_string(), "documents": rows }),
                 text,
             );
+        }
+        Cmd::Handoff {
+            file,
+            note,
+            to,
+            no_redact,
+            dry_run,
+        } => {
+            use znimok_agents::handoff;
+            let mut hs = znimok_settings::Store::open_default()
+                .map(|s| s.get().agents.handoff)
+                .unwrap_or_default();
+            match to.as_deref() {
+                None => {}
+                Some("claude") => hs.target = znimok_settings::HandoffTarget::ClaudeCode,
+                Some("clipboard") => hs.target = znimok_settings::HandoffTarget::Clipboard,
+                Some(o) => return Err(Fail(2, format!("--to: claude or clipboard, not «{o}»"))),
+            }
+            if no_redact {
+                hs.redact = false;
+            }
+            let root = znimok_agents::data_dir().join("Handoff");
+            let p = handoff::prepare(&file, &note, &Default::default(), &hs, &root)
+                .map_err(|e| Fail(3, e))?;
+            let claude = handoff::claude_path();
+            let v = json!({
+                "folder": p.dir.display().to_string(),
+                "picture": p.picture.display().to_string(),
+                "brief": p.brief.display().to_string(),
+                "hidden": p.hidden,
+                "claude": claude.as_ref().map(|c| c.display().to_string()),
+                "prompt": handoff::prompt(&p),
+            });
+            if dry_run {
+                out(v, format!("prepared {}\n{}", p.dir.display(), p.brief_text));
+            } else {
+                let sent = handoff::send(&p, &hs).map_err(|e| Fail(3, e))?;
+                out(v, format!("handed over to {sent:?}: {}", p.dir.display()));
+            }
         }
         Cmd::Mcp => {
             znimok_agents::serve_stdio().map_err(|e| Fail(3, e.to_string()))?;

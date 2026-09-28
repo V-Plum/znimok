@@ -31,3 +31,6 @@ base64 = "0.23"
 
 [target.'cfg(windows)'.dependencies]
 znimok-win = { path = "../znimok-win" }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+znimok-mac = { path = "../znimok-mac" }

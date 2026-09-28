@@ -412,6 +412,44 @@ pub struct Agents {
     /// Per cloud feature: ask before sending, send without asking, or never (ZK-70). A feature
     /// missing here is «ask».
     pub consent: std::collections::BTreeMap<CloudFeature, Consent>,
+    /// «Передати агенту» (ZK-71).
+    pub handoff: Handoff,
+}
+
+/// Where «Передати агенту» sends a screenshot and how.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(default)]
+pub struct Handoff {
+    pub target: HandoffTarget,
+    /// The folder Claude Code starts in (a project); empty = the home folder.
+    pub working_dir: Option<PathBuf>,
+    /// Hand over a copy with secrets, personal data and faces hidden (the library document stays
+    /// as it is). On by default: the agent may send the picture to its cloud model.
+    pub redact: bool,
+    /// Recognise the text and add it (secrets masked) to the context.
+    pub include_text: bool,
+}
+
+impl Default for Handoff {
+    fn default() -> Self {
+        Self {
+            target: HandoffTarget::ClaudeCode,
+            working_dir: None,
+            redact: true,
+            include_text: true,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum HandoffTarget {
+    /// A new terminal with `claude` and a prepared prompt (falls back to the clipboard when
+    /// Claude Code is not installed).
+    #[default]
+    ClaudeCode,
+    /// The picture, the file and the brief on the clipboard, for any other agent or chat.
+    Clipboard,
 }
 
 impl Default for Agents {
@@ -421,6 +459,7 @@ impl Default for Agents {
             cloud_enabled: false,
             mcp_enabled: false,
             consent: Default::default(),
+            handoff: Handoff::default(),
         }
     }
 }
