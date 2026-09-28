@@ -10,9 +10,9 @@
 //!   znimok-p4 seek <f.mp4> [--mode zero|cpu|sw] [--count N] [--gop N] [--seed N] [--rows]
 
 mod gpu;
-mod pattern;
 #[cfg(target_os = "macos")]
 mod mac;
+mod pattern;
 #[cfg(windows)]
 mod win;
 
