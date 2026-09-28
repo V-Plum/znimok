@@ -1,0 +1,28 @@
+[package]
+name = "znimok-settings"
+description = "Znimok settings and profile — one JSON file in the OS config folder (lenient load, atomic save, unknown keys kept), standard data/cache/log folders, secrets in the OS store (Credential Manager / Keychain)"
+version.workspace = true
+edition.workspace = true
+license-file.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+znimok-platform = { path = "../znimok-platform" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+schemars = "1"
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.62", features = [
+    "Win32_Foundation",
+    "Win32_Security_Credentials",
+] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2-core-foundation = { version = "0.3", default-features = false, features = ["std", "CFBase", "CFData", "CFDictionary", "CFNumber", "CFString"] }
+objc2-security = { version = "0.3", default-features = false, features = ["std", "SecBase", "SecItem"] }
