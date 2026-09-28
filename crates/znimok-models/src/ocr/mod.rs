@@ -118,6 +118,13 @@ pub fn system() -> Option<Box<dyn Ocr>> {
 /// Splits `wanted` into (available tags to use, missing), matching by the primary subtag
 /// (`uk` ↔ `uk-UA`, `en` ↔ `en-US`).
 pub fn match_languages(wanted: &[&str], available: &[String]) -> (Vec<String>, Vec<String>) {
+    // Russian is never used, even when the OS has it (owner, 29.09.2026).
+    let available: Vec<String> = available
+        .iter()
+        .filter(|a| !is_russian(a))
+        .cloned()
+        .collect();
+    let available = &available;
     let primary = |t: &str| {
         t.split(['-', '_'])
             .next()
@@ -136,6 +143,13 @@ pub fn match_languages(wanted: &[&str], available: &[String]) -> (Vec<String>, V
         }
     }
     (use_, missing)
+}
+
+/// Russian by primary subtag — never offered or used (owner, 29.09.2026).
+pub fn is_russian(tag: &str) -> bool {
+    tag.split(['-', '_'])
+        .next()
+        .is_some_and(|p| p.eq_ignore_ascii_case("ru"))
 }
 
 /// Joins the MTA on this thread (WinRT from any thread; see znimok-win `com_thread`).
@@ -170,6 +184,11 @@ mod tests {
         assert_eq!(
             match_languages(&["uk", "en"], &avail),
             (vec!["en-US".to_string()], vec!["uk".to_string()])
+        );
+        // Russian is never used, even installed and asked for.
+        assert_eq!(
+            match_languages(&["ru", "en"], &avail),
+            (vec!["en-US".to_string()], vec!["ru".to_string()])
         );
         let mac = vec!["uk-UA".to_string(), "en-US".to_string()];
         assert_eq!(

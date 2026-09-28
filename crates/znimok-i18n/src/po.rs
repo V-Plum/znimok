@@ -17,7 +17,7 @@ pub fn plural_forms(lang: &str) -> Option<(&'static str, &'static [&'static str]
     match lang {
         "en" | "de" | "nl" | "sv" | "da" | "no" | "nb" | "it" | "es" | "pt" | "fi" | "et"
         | "el" | "hu" | "bg" => Some(("nplurals=2; plural=(n != 1);", &["one", "other"])),
-        "uk" | "ru" | "be" => Some((
+        "uk" | "be" => Some((
             "nplurals=3; plural=(n%10==1 && n%100!=11 ? 0 : n%10>=2 && n%10<=4 && (n%100<10 || n%100>=20) ? 1 : 2);",
             &["one", "few", "many"],
         )),
@@ -163,8 +163,37 @@ fn messages(src: &str) -> Result<BTreeMap<&str, (usize, Pattern<&str>)>, String>
         .collect())
 }
 
+/// A banned language that got into a build: every English text, every word → 💩.
+fn spoiled_po(en: &str, lang: &str) -> String {
+    let mut out = format!(
+        "# {lang}: banned language (owner, 29.09.2026)\nmsgid \"\"\nmsgstr \"\"\n\"Content-Type: text/plain; charset=UTF-8\\n\"\n\"Language: {lang}\\n\"\n\"Plural-Forms: nplurals=1; plural=0;\\n\"\n"
+    );
+    let Ok(en_m) = messages(en) else {
+        return out;
+    };
+    let mut ids: Vec<(&str, usize)> = en_m.iter().map(|(k, (i, _))| (*k, *i)).collect();
+    ids.sort_by_key(|(_, i)| *i);
+    for (id, _) in ids {
+        let e = &en_m[id].1;
+        let ph = Placeholders::of(e);
+        let never = |_: &[(String, &Pattern<&str>)]| None;
+        let text = slint_text(e, &ph, &never);
+        let _ = write!(
+            out,
+            "\nmsgctxt \"{}\"\nmsgid \"{}\"\nmsgstr \"{}\"\n",
+            esc(id),
+            esc(&text),
+            esc(&crate::spoil(&text))
+        );
+    }
+    out
+}
+
 /// The `.po` of `lang` from `en` and that language's file.
 pub fn to_po(en: &str, target: &str, lang: &str) -> Result<String, String> {
+    if crate::is_banned(lang) {
+        return Ok(spoiled_po(en, lang));
+    }
     let (forms, cats) =
         plural_forms(lang).ok_or(format!("Plural-Forms для «{lang}» не задано в po.rs"))?;
     let en_m = messages(en)?;

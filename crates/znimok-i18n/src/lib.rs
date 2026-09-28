@@ -8,6 +8,11 @@
 //! - [`check`] — the rules every language file must pass (run by `cargo test` in CI);
 //! - [`sync`] — copies the instruction comments of `en.ftl` into the other files;
 //! - [`po`] — gettext files for Slint's `@tr("id" => "English")`.
+//!
+//! **Russian — never** (owner, 29.09.2026). No Russian translation is shipped, accepted or loaded:
+//! [`check`] fails on a Russian file (so CI rejects it), [`available`] never lists it, and should
+//! one still get into a build, every text of it is replaced with [`BANNED_TEXT`]. A Russian OS
+//! gets the English interface, like any language without a translation.
 
 pub mod check;
 pub mod po;
@@ -21,6 +26,31 @@ pub use fluent_bundle::{FluentArgs, FluentValue};
 
 /// The language every other one falls back to.
 pub const FALLBACK: &str = "en";
+
+/// Languages Znimok never ships or loads, by primary subtag (owner, 29.09.2026).
+pub const BANNED: &[&str] = &["ru"];
+
+/// What a banned language shows instead of every word.
+pub const BANNED_TEXT: &str = "💩";
+
+/// The primary subtag, lower case: `ru-RU` → `ru`, `uk_UA` → `uk`.
+fn primary(tag: &str) -> String {
+    tag.trim()
+        .split(['-', '_'])
+        .next()
+        .unwrap_or("")
+        .to_ascii_lowercase()
+}
+
+pub fn is_banned(tag: &str) -> bool {
+    BANNED.contains(&primary(tag).as_str())
+}
+
+/// Every word of `text` becomes [`BANNED_TEXT`].
+pub fn spoil(text: &str) -> String {
+    let words = text.split_whitespace().count().max(1);
+    vec![BANNED_TEXT; words].join(" ")
+}
 
 /// The files built into the program: (language code, Fluent source).
 pub const BUILT_IN: &[(&str, &str)] = &[
@@ -38,7 +68,7 @@ pub fn available() -> Vec<&'static str> {
     BUILT_IN
         .iter()
         .map(|(l, _)| *l)
-        .filter(|l| report.is_complete(l))
+        .filter(|l| report.is_complete(l) && !is_banned(l))
         .collect()
 }
 
@@ -51,12 +81,6 @@ pub fn system_language() -> Option<String> {
 /// language (by its primary subtag: `uk-UA` → `uk`) if available, else English.
 pub fn choose_language(setting: Option<&str>, system: Option<&str>) -> &'static str {
     let avail = available();
-    let primary = |tag: &str| {
-        tag.split(['-', '_'])
-            .next()
-            .unwrap_or("")
-            .to_ascii_lowercase()
-    };
     for want in [setting, system].into_iter().flatten() {
         let p = primary(want);
         if let Some(l) = avail.iter().find(|l| **l == p) {
@@ -69,6 +93,8 @@ pub fn choose_language(setting: Option<&str>, system: Option<&str>) -> &'static 
 /// Formats messages of one language with English as the fallback. Shareable between threads.
 pub struct Localizer {
     lang: &'static str,
+    /// A banned language got in: every text is [`spoil`]ed.
+    spoiled: bool,
     /// The chosen language first, then English (unless they are the same).
     bundles: Vec<FluentBundle<FluentResource>>,
 }
@@ -86,8 +112,16 @@ fn bundle(lang: &'static str) -> FluentBundle<FluentResource> {
 }
 
 impl Localizer {
-    /// `lang` is a code from [`BUILT_IN`]; anything else gives English.
+    /// `lang` is a code from [`BUILT_IN`]; anything else gives English. A banned language —
+    /// asked for by name or found built in — gives [`BANNED_TEXT`] for every word.
     pub fn new(lang: &str) -> Self {
+        if is_banned(lang) {
+            return Self {
+                lang: FALLBACK,
+                spoiled: true,
+                bundles: vec![bundle(FALLBACK)],
+            };
+        }
         let lang = BUILT_IN
             .iter()
             .map(|(l, _)| *l)
@@ -97,7 +131,11 @@ impl Localizer {
         if lang != FALLBACK {
             bundles.push(bundle(FALLBACK));
         }
-        Self { lang, bundles }
+        Self {
+            lang,
+            spoiled: false,
+            bundles,
+        }
     }
 
     /// The language for this OS and the user's setting (see [`choose_language`]).
@@ -124,13 +162,16 @@ impl Localizer {
     }
 
     fn format(&self, id: &str, args: Option<&FluentArgs>) -> String {
-        for b in &self.bundles {
-            if let Some(p) = b.get_message(id).and_then(|m| m.value()) {
+        let text = self
+            .bundles
+            .iter()
+            .find_map(|b| {
+                let p = b.get_message(id).and_then(|m| m.value())?;
                 let mut errors = Vec::new();
-                return b.format_pattern(p, args, &mut errors).into_owned();
-            }
-        }
-        id.to_string()
+                Some(b.format_pattern(p, args, &mut errors).into_owned())
+            })
+            .unwrap_or_else(|| id.to_string());
+        if self.spoiled { spoil(&text) } else { text }
     }
 }
 
@@ -153,6 +194,44 @@ mod tests {
         let r = check::check_sources(BUILT_IN);
         assert!(r.problems.iter().all(|p| !p.error), "{}", r.render());
         assert_eq!(available(), vec!["en", "uk"]);
+    }
+
+    /// Owner, 29.09.2026: Russian — never. Not offered, not chosen for a Russian OS, spoiled if
+    /// asked for, rejected by the checker, and no such file in the repository.
+    #[test]
+    fn russian_never() {
+        assert!(is_banned("ru") && is_banned("ru-RU") && is_banned("RU_ua"));
+        assert!(!is_banned("uk") && !is_banned("rue") && !is_banned("en"));
+        assert!(!available().iter().any(|l| is_banned(l)));
+        assert_eq!(choose_language(None, Some("ru-RU")), "en");
+        assert_eq!(choose_language(Some("ru"), Some("uk-UA")), "uk");
+        let ru = Localizer::new("ru-RU");
+        assert_eq!(
+            ru.tr("crash-show-folder"),
+            spoil(&Localizer::new("en").tr("crash-show-folder"))
+        );
+        assert!(
+            ru.tr("crash-show-folder")
+                .chars()
+                .all(|c| c == '💩' || c == ' ')
+        );
+        let r = check::check_sources(&[BUILT_IN[0], ("ru", BUILT_IN[0].1)]);
+        assert!(
+            r.problems.iter().any(|p| p.error && p.lang == "ru"),
+            "{}",
+            r.render()
+        );
+        assert!(
+            po::to_po(BUILT_IN[0].1, BUILT_IN[0].1, "ru")
+                .unwrap()
+                .contains("msgstr \"💩")
+        );
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../i18n");
+        for e in std::fs::read_dir(dir).unwrap().flatten() {
+            let name = e.file_name().to_string_lossy().to_string();
+            let stem = name.split('.').next().unwrap_or("");
+            assert!(!is_banned(stem), "i18n/{name}: Russian is never accepted");
+        }
     }
 
     #[test]
