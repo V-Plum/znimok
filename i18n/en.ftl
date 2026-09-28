@@ -59,7 +59,7 @@ app-name = Znimok
 # @where: About page and installer, under the name
 # @kind: hint
 # @max: 60
-app-tagline = Screenshots and screen recordings with notes
+app-tagline = Screenshots and screen recordings with annotations
 
 ## Common
 ## Words shared by many screens. Use these ids instead of copying the same text.
@@ -2487,7 +2487,7 @@ shots-quick-library = Quick captures go to the library too
 # @where: Switch
 # @kind: label
 # @max: 60
-shots-esc-saves = The last Esc in the overlay saves if there are annotations
+shots-esc-saves = Esc over the screen saves if there are annotations
 
 # @where: Switch
 # @kind: label
@@ -3648,7 +3648,7 @@ vid-lane-mic = mic
 # @where: Timeline lane label (short)
 # @kind: label
 # @max: 8
-vid-lane-marks = notes
+vid-lane-marks = marks
 
 # @where: Clip tab section
 # @kind: label

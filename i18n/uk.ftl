@@ -315,7 +315,7 @@ doc-state-unsaved = незбережено
 # @where: Title bar: saving right now
 # @kind: status
 # @max: 16
-doc-state-saving = зберігаю…
+doc-state-saving = збереження…
 
 # @where: Title bar undo button; shortcut shown by the tooltip system
 # @kind: tooltip
@@ -697,7 +697,7 @@ colour-hex = HEX
 # @where: Opacity field (0–100 %)
 # @kind: a11y
 # @max: 16
-colour-opacity = Прозорість
+colour-opacity = Непрозорість
 
 # @where: Row of recently used colours
 # @kind: heading
@@ -846,7 +846,7 @@ insp-corners-round = Круглі
 # @where: Section: opacity slider
 # @kind: label
 # @max: 16
-insp-opacity = Прозорість
+insp-opacity = Непрозорість
 
 # @where: Section: list of effects
 # @kind: label
@@ -1056,7 +1056,7 @@ text-block-width = Ширина блока
 # @where: Under the block width
 # @kind: hint
 # @max: 100
-text-block-hint = Ширина 0 — без переносів; ручки з боків тягнуть ширину.
+text-block-hint = Ширина 0 — без переносів; ширину змінюють ручки з боків.
 
 # @where: Section: outline around letters
 # @kind: label
@@ -1310,7 +1310,7 @@ layers-background = Знімок (тло) — завжди внизу
 # @where: Grey note under the list
 # @kind: hint
 # @max: 160
-layers-hint = Тягнення міняє порядок; клік вибирає, F2 — назва; група — один вузол, її учасники суміжні.
+layers-hint = Тягніть, щоб змінити порядок; клік вибирає, F2 — перейменувати; група — один рядок, її учасники поруч.
 
 # @where: Layers tab with no marks
 # @kind: hint
@@ -2377,7 +2377,7 @@ set-page-about = Про Znimok
 # @where: Page intro
 # @kind: body
 # @max: 200
-keys-intro = Працюють у будь-якій програмі. Натисніть комбінацію в полі, щоб змінити. На Mac стандартні ⌘⇧3/4/5 зайняті системою, тому типові інші.
+keys-intro = Працюють у будь-якій програмі. Клацніть поле й натисніть комбінацію, щоб змінити. На Mac стандартні ⌘⇧3/4/5 зайняті системою, тому типові інші.
 
 # @where: Master switch
 # @kind: label
@@ -2501,7 +2501,7 @@ shots-quick-library = Знімки повз редактор теж у бібл�
 # @where: Switch
 # @kind: label
 # @max: 60
-shots-esc-saves = Останній Esc в оверлеї зберігає, якщо є позначки
+shots-esc-saves = Esc поверх екрана зберігає, якщо є позначки
 
 # @where: Switch
 # @kind: label
@@ -2545,7 +2545,7 @@ shots-cursor = Курсор у знімку
 # @where: Page intro
 # @kind: body
 # @max: 120
-rec-intro = Якість і джерела. Звук за замовчуванням вимкнений: людина вмикає його свідомо.
+rec-intro = Якість і джерела. Звук за замовчуванням вимкнений: ви вмикаєте його свідомо.
 
 # @where: Row
 # @kind: label
@@ -2780,7 +2780,7 @@ priv-telemetry-none = немає, і перемикача теж
 # @where: Row
 # @kind: label
 # @max: 24
-priv-crash = Звіти про падіння
+priv-crash = Звіти про збої
 
 # @where: Row value
 # @kind: value
@@ -2946,7 +2946,7 @@ update-available = Доступна версія { $version }
 # @where: Banner second line; $size formatted
 # @kind: body
 # @max: 100
-update-details = Підписано, { $size }. Установиться під час наступного запуску.
+update-details = Підписано, { $size }. Встановиться під час наступного запуску.
 
 # @where: Banner action
 # @kind: button
@@ -2965,7 +2965,7 @@ onb-title-mac = Три дозволи — і Znimok готовий
 # @where: macOS first run, under the title
 # @kind: body
 # @max: 200
-onb-intro-mac = macOS питає дозвіл на все, що бачить екран. Znimok працює лише на вашому Mac і нікуди нічого не надсилає без вашої дії.
+onb-intro-mac = macOS питає дозволу на все, що бачить екран. Znimok працює лише на вашому Mac і нікуди нічого не надсилає без вашої дії.
 
 # @where: Windows first run, big title
 # @kind: title
@@ -3005,7 +3005,7 @@ onb-keys = Гарячі клавіші
 # @where: Step text (macOS); $region, $screen, $record are key combos like ⌃⇧4
 # @kind: body
 # @max: 300
-onb-keys-mac = Дозволу не потрібно. Типові: { $region } ділянка, { $screen } екран, { $record } запис. Звичні ⌘⇧3/4/5 зайняті системою: вимкніть їх у Системних налаштуваннях → Клавіатура → Скорочення, і Znimok перейме їх сам.
+onb-keys-mac = Дозволу не потрібно. Типові: { $region } ділянка, { $screen } екран, { $record } запис. Звичні ⌘⇧3/4/5 зайняті системою: вимкніть їх у Системних параметрах → Клавіатура → Клавіатурні скорочення, і Znimok перейме їх сам.
 
 # @where: Step text (Windows)
 # @kind: body
@@ -3069,12 +3069,12 @@ err-capture-title = Знімок не вдалося зробити
 # @where: Error body (macOS, no permission)
 # @kind: body
 # @max: 200
-err-capture-mac-perm = macOS не дозволяє Znimok бачити екран. Увімкніть «Запис екрана й системного звуку» у Системних налаштуваннях і поверніться.
+err-capture-mac-perm = macOS не дозволяє Znimok бачити екран. Увімкніть «Запис екрана й системного звуку» в Системних параметрах і поверніться.
 
 # @where: Error action
 # @kind: button
 # @max: 32
-err-open-system-settings = Відкрити Системні налаштування
+err-open-system-settings = Відкрити Системні параметри
 
 # @where: Error body (other causes); $reason is a short technical reason
 # @kind: body
@@ -3374,7 +3374,7 @@ perm-once = Лише зараз
 # @where: Grant until the agent disconnects
 # @kind: button
 # @max: 16
-perm-session = Цю сесію
+perm-session = На цю сесію
 
 # @where: Grant permanently
 # @kind: button

@@ -1,7 +1,7 @@
 # Znimok privacy policy
 
 > Draft (28 September 2026, ZK-84) — takes effect with the first public release after the owner's review.
-> Items [in brackets] are filled in by the owner. Українською: [privacy.md](privacy.md).
+> Українською: [privacy.md](privacy.md).
 
 **In short:** Znimok runs on your computer. It collects no telemetry, usage statistics or analytics, shows
 no ads and sends nothing anywhere without your action. The only network request the app makes on its own
@@ -94,4 +94,4 @@ and in the release notes. A new network request is described here before the rel
 
 ## Contact
 
-[Publisher name], [privacy e-mail]. Questions and vulnerability reports — [address or security policy page].
+Vadym Slyva, v.v.plum@gmail.com — for privacy questions and vulnerability reports.
