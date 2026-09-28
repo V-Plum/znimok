@@ -17,6 +17,7 @@ mod hotkey_win;
 mod io;
 mod library;
 mod selftest;
+mod tray;
 
 use std::cell::RefCell;
 use std::path::PathBuf;
@@ -85,7 +86,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let _ = slint::select_bundled_translation(lang);
     }
 
+    let selftest_dir = std::env::var_os("ZNIMOK_SELFTEST").map(PathBuf::from);
+    // One Znimok per library: a second start shows the running one's window and exits.
+    let instance = if selftest_dir.is_none() {
+        match tray::start(&library::default_dir()) {
+            tray::Start::First(i) => Some(i),
+            tray::Start::Woke => return Ok(()),
+        }
+    } else {
+        None
+    };
+
     let ui = AppWindow::new()?;
+    ui.set_app_icon(tray::icon(64));
     ui.set_capture_available(capture::available());
     ui.set_capture_key(
         if cfg!(target_os = "macos") {
@@ -122,8 +135,52 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         None
     };
 
-    if let Some(dir) = std::env::var_os("ZNIMOK_SELFTEST") {
-        selftest::start(app.clone(), &ui, PathBuf::from(dir), files.first().cloned());
+    // Tray / menu bar icon; while it exists, closing the window keeps the app running.
+    let tray_ui = if selftest_dir.is_none() {
+        let t = AppTray::new()?;
+        t.set_tray_icon(tray::icon(44));
+        t.set_capture_key(ui.get_capture_key());
+        t.set_capture_available(capture::available());
+        t.set_mac(cfg!(target_os = "macos"));
+        {
+            let app = app.clone();
+            let weak = ui.as_weak();
+            t.on_shot(move || {
+                if let Some(ui) = weak.upgrade() {
+                    new_shot(&app, &ui);
+                }
+            });
+        }
+        {
+            let weak = ui.as_weak();
+            t.on_open_window(move || {
+                if let Some(ui) = weak.upgrade() {
+                    show_window(&ui);
+                }
+            });
+        }
+        {
+            let app = app.clone();
+            let weak = ui.as_weak();
+            t.on_quit(move || {
+                if let Some(ui) = weak.upgrade()
+                    && !confirm_leave(&app, &ui)
+                {
+                    show_window(&ui);
+                    return;
+                }
+                let _ = slint::quit_event_loop();
+            });
+        }
+        t.show()?;
+        TRAY.with(|c| c.set(true));
+        Some(t)
+    } else {
+        None
+    };
+
+    if let Some(dir) = selftest_dir.clone() {
+        selftest::start(app.clone(), &ui, dir, files.first().cloned());
     } else if let Some(f) = files.first() {
         app.borrow_mut().open_path(&ui, f);
     }
@@ -138,6 +195,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Duration::from_millis(400),
             move || {
                 let Some(ui) = weak.upgrade() else { return };
+                if instance.as_ref().is_some_and(|i| i.take_wake()) {
+                    show_window(&ui);
+                }
                 let mut a = app.borrow_mut();
                 a.tick_toast(&ui);
                 if let Some((path, doc, opts)) = a.autosave_job(&ui) {
@@ -161,7 +221,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     ui.show()?;
     slint::run_event_loop_until_quit()?;
     drop(timer);
+    drop(tray_ui);
     Ok(())
+}
+
+thread_local! {
+    static TRAY: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Shows the window and brings it to the front (from the tray, the hotkey, a second start).
+fn show_window(ui: &AppWindow) {
+    use slint::winit_030::WinitWindowAccessor;
+    let _ = ui.show();
+    ui.window().with_winit_window(|w| {
+        w.set_minimized(false);
+        w.focus_window();
+    });
 }
 
 /// The global screenshot key (Windows and macOS), called on the UI thread.
@@ -270,7 +345,7 @@ fn new_shot(app: &Shared, ui: &AppWindow) {
             let r = capture::display_under_cursor();
             let _ = slint::invoke_from_event_loop(move || {
                 with_ctx(|a, ui| {
-                    let _ = ui.show();
+                    show_window(ui);
                     match r {
                         Ok(raster) => a.new_document(ui, raster, "screen", None),
                         Err(capture::Fail::Permission) => {
@@ -353,7 +428,11 @@ fn wire(ui: &AppWindow, app: &Shared) {
             if !confirm_leave(&app, &ui) {
                 return slint::CloseRequestResponse::KeepWindowShown;
             }
-            let _ = slint::quit_event_loop();
+            // With a tray icon the app stays (hotkey, "Quit" in the tray menu); without one
+            // (self-test) closing the window ends it.
+            if !TRAY.with(|c| c.get()) {
+                let _ = slint::quit_event_loop();
+            }
             slint::CloseRequestResponse::HideWindow
         });
     }

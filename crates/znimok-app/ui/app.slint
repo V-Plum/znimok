@@ -200,8 +200,44 @@ component CardView inherits Rectangle {
     }
 }
 
+// Tray icon (Windows) / menu bar item (macOS): the app keeps running there after the window
+// closes, so the hotkey works and "Quit" is always one click away (ZK-45 in full later).
+export component AppTray inherits SystemTrayIcon {
+    in property <image> tray-icon;
+    in property <string> capture-key;
+    in property <bool> capture-available: true;
+    in property <bool> mac: false;
+    icon: tray-icon;
+    tooltip: @tr("tray-tooltip" => "Znimok");
+
+    callback shot();
+    callback open-window();
+    callback quit();
+
+    clicked => { root.open-window(); }
+
+    Menu {
+        MenuItem {
+            title: @tr("tray-screen" => "Screenshot") + "    " + root.capture-key;
+            enabled: root.capture-available;
+            activated => { root.shot(); }
+        }
+        MenuItem {
+            title: @tr("tray-open" => "Open Znimok");
+            activated => { root.open-window(); }
+        }
+        MenuSeparator { }
+        MenuItem {
+            title: root.mac ? @tr("tray-quit-mac" => "Quit Znimok") : @tr("tray-quit" => "Quit");
+            activated => { root.quit(); }
+        }
+    }
+}
+
 export component AppWindow inherits Window {
     title: @tr("app-name" => "Znimok");
+    in property <image> app-icon;
+    icon: app-icon;
     preferred-width: 1360px;
     preferred-height: 860px;
     min-width: 800px;

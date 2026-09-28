@@ -21,7 +21,7 @@ znimok-format = { path = "../znimok-format" }
 znimok-render = { path = "../znimok-render" }
 znimok-platform = { path = "../znimok-platform" }
 znimok-i18n = { path = "../znimok-i18n" }
-slint = { version = "~1.18", default-features = false, features = ["std", "compat-1-2", "backend-winit", "renderer-femtovg-wgpu", "unstable-wgpu-30", "unstable-winit-030"] }
+slint = { version = "~1.18", default-features = false, features = ["std", "compat-1-2", "backend-winit", "renderer-femtovg-wgpu", "unstable-wgpu-30", "unstable-winit-030", "system-tray"] }
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp", "gif", "bmp"] }
 rfd = "0.17"
 arboard = "3"
