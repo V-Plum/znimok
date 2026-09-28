@@ -54,13 +54,21 @@ impl PxRect {
     }
 }
 
+#[derive(Clone, Debug)]
+pub struct FrozenWindow {
+    pub rect: PxRect,
+    pub title: String,
+    /// Platform window id, for a capture of the window alone (without what overlaps it).
+    pub id: u64,
+}
+
 /// The display under the pointer, frozen for the capture overlay (ZK-39).
 pub struct Frozen {
     pub raster: Raster,
     /// The display in desktop units (pixels on Windows, points on macOS).
     pub bounds: Rect,
     /// Top-level windows over this display, front to back, clipped to it, in frame pixels.
-    pub windows: Vec<(PxRect, String)>,
+    pub windows: Vec<FrozenWindow>,
 }
 
 impl Frozen {
@@ -125,7 +133,11 @@ fn freeze_with(cap: &(impl Capture + Cursor + WindowList)) -> Result<Frozen, Pla
                 w: (r.width as f32 * k).round() as i32,
                 h: (r.height as f32 * k).round() as i32,
             };
-            (px.w >= 8 && px.h >= 8).then_some((px, w.title))
+            (px.w >= 8 && px.h >= 8).then_some(FrozenWindow {
+                rect: px,
+                title: w.title,
+                id: w.id.0,
+            })
         })
         .collect();
     Ok(Frozen {
@@ -154,6 +166,40 @@ pub fn freeze() -> Result<Frozen, Fail> {
         }
         Err(e) => Err(Fail::Other(e.to_string())),
     }
+}
+
+/// The window alone, unoccluded (WGC window capture / ScreenCaptureKit window filter).
+/// Runs on a worker thread.
+#[cfg(windows)]
+pub fn capture_window(id: u64) -> Result<Raster, Fail> {
+    window_with(&znimok_win::WinCapture::new(), id)
+}
+
+#[cfg(target_os = "macos")]
+pub fn capture_window(id: u64) -> Result<Raster, Fail> {
+    window_with(&znimok_mac::MacCapture::new(), id)
+}
+
+#[cfg(not(any(windows, target_os = "macos")))]
+pub fn capture_window(_id: u64) -> Result<Raster, Fail> {
+    Err(Fail::Other(
+        "window capture is not available on this system".into(),
+    ))
+}
+
+#[cfg_attr(not(any(windows, target_os = "macos")), allow(dead_code))]
+fn window_with(cap: &impl Capture, id: u64) -> Result<Raster, Fail> {
+    cap.capture(
+        &CaptureTarget::Window {
+            id: znimok_platform::WindowId(id),
+        },
+        &CaptureOptions {
+            cursor: false,
+            keep_hdr: false,
+        },
+    )
+    .map(to_raster)
+    .map_err(|e| Fail::Other(e.to_string()))
 }
 
 #[cfg(not(any(windows, target_os = "macos")))]

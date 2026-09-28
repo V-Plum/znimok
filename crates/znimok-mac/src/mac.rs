@@ -129,11 +129,16 @@ impl MacCapture {
                 (info.bounds.width as f32 * info.pixels_per_unit) as u32,
                 (info.bounds.height as f32 * info.pixels_per_unit) as u32,
             ));
+        self.image(&filter, pw, ph, info.bounds)
+    }
+
+    /// One still image through `filter`, as an SDR RGBA frame covering `bounds` (desktop units).
+    fn image(&self, filter: &SCContentFilter, pw: u32, ph: u32, bounds: Rect) -> Result<Frame> {
         let cfg = SCStreamConfiguration::new()
             .with_width(pw)
             .with_height(ph)
             .with_shows_cursor(false);
-        let img = SCScreenshotManager::capture_image(&filter, &cfg).map_err(|e| {
+        let img = SCScreenshotManager::capture_image(filter, &cfg).map_err(|e| {
             let msg = e.to_string();
             if msg.contains("TCC") || msg.contains("declined") {
                 PlatformError::PermissionDenied(Permission::ScreenRecording)
@@ -151,8 +156,8 @@ impl MacCapture {
             stride: w * 4,
             format: PixelFormat::Rgba8,
             color: ColorInfo::SDR,
-            source: info.bounds,
-            scale: w as f32 / info.bounds.width as f32,
+            source: bounds,
+            scale: w as f32 / bounds.width as f32,
             data,
         }
         .validate()
@@ -202,7 +207,7 @@ impl Capture for MacCapture {
         CaptureCaps {
             borderless: true,
             hdr: false,
-            window_capture: false,
+            window_capture: true,
             needs_permission: Some(Permission::ScreenRecording),
             system_picker: false,
         }
@@ -236,9 +241,29 @@ impl Capture for MacCapture {
                 let full = self.shoot(&content, d)?;
                 crop(&full, *rect)
             }
-            CaptureTarget::Window { .. } => Err(PlatformError::Unsupported(
-                "знімок вікна на macOS (ZK-37, далі)",
-            )),
+            CaptureTarget::Window { id } => {
+                // The window alone, without what overlaps it (desktop-independent filter).
+                let windows = content.windows();
+                let w = windows
+                    .iter()
+                    .find(|w| u64::from(w.window_id()) == id.0)
+                    .ok_or_else(|| PlatformError::NotFound(format!("вікно {}", id.0)))?;
+                let f = w.frame();
+                let bounds = Rect {
+                    x: f.origin.x.round() as i32,
+                    y: f.origin.y.round() as i32,
+                    width: f.size.width.round().max(1.0) as u32,
+                    height: f.size.height.round().max(1.0) as u32,
+                };
+                let filter = SCContentFilter::create()
+                    .with_window(w)
+                    .build()
+                    .map_err(|e| PlatformError::Other(format!("SCContentFilter: {e}")))?;
+                let (pw, ph) = SCShareableContentInfo::for_filter(&filter)
+                    .map(|i| i.pixel_size())
+                    .unwrap_or((bounds.width * 2, bounds.height * 2));
+                self.image(&filter, pw, ph, bounds)
+            }
             CaptureTarget::Picked { .. } => {
                 Err(PlatformError::Unsupported("системний пікер (ZK-37, далі)"))
             }

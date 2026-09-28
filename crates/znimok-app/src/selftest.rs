@@ -320,15 +320,16 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
                 width: raster.width,
                 height: raster.height,
             },
-            windows: vec![(
-                crate::capture::PxRect {
+            windows: vec![crate::capture::FrozenWindow {
+                rect: crate::capture::PxRect {
                     x: 100,
                     y: 100,
                     w: 400,
                     h: 300,
                 },
-                "test window".into(),
-            )],
+                title: "test window".into(),
+                id: 0,
+            }],
             raster,
         };
         let ok = crate::overlay::open(frozen, true).is_ok();
@@ -353,6 +354,25 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
             "overlay hover highlights the window",
             has && win,
             format!("label {}", ov.get_sel_label()),
+        );
+        r.check(
+            "magnifier follows the pointer",
+            ov.get_lens_visible()
+                && ov.get_clip_size() == 17
+                && ov.get_lens_label().starts_with("300, 250"),
+            format!(
+                "clip {} at {},{} · {}",
+                ov.get_clip_size(),
+                ov.get_clip_x(),
+                ov.get_clip_y(),
+                ov.get_lens_label()
+            ),
+        );
+        ov.invoke_wheel(1.0);
+        r.check(
+            "magnifier zoom ×16",
+            ov.get_clip_size() == 9,
+            format!("clip {}", ov.get_clip_size()),
         );
         r.snapshot_window(ov.window(), "07-overlay-hover");
         // Drag frame pixels (600, 500) → (900, 700): a 300 × 200 region.

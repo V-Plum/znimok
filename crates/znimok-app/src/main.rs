@@ -331,7 +331,12 @@ fn export_with_dialog(app: &Shared, ui: &AppWindow) {
 /// worker thread (WinRT wants the multithreaded apartment, the UI thread is OLE's STA), then
 /// the shot opens in the editor.
 fn new_shot(app: &Shared, ui: &AppWindow) {
-    if !capture::available() || overlay::is_open() || !confirm_leave(app, ui) {
+    // The capture key while the overlay is open cancels it (ZK-40).
+    if overlay::is_open() {
+        overlay::cancel();
+        return;
+    }
+    if !capture::available() || !confirm_leave(app, ui) {
         return;
     }
     // The editor steps aside so the frozen screen does not contain it (on macOS the capture
