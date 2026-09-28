@@ -52,8 +52,10 @@ jobs:
           & "$pub\probe.exe" $s.endpoint $s.token_path --expect ok
           if ($LASTEXITCODE -ne 0) { throw 'same-user control failed' }
 
-          $pw = 'Zk-' + [guid]::NewGuid().ToString('N') + '!a1'
-          net user zkother $pw /add | Out-Null
+          # ≤ 14 characters: a longer password makes `net user` ask Y/N and silently not create the user.
+          $pw = 'Zk!1' + [guid]::NewGuid().ToString('N').Substring(0, 10)
+          net user zkother $pw /add
+          if ($LASTEXITCODE -ne 0) { throw 'could not create the test user' }
           $cred = New-Object System.Management.Automation.PSCredential('zkother', (ConvertTo-SecureString $pw -AsPlainText -Force))
           $p = Start-Process "$pub\probe.exe" -ArgumentList $s.endpoint, $s.token_path, '--expect', 'denied' `
             -Credential $cred -WorkingDirectory $pub -LoadUserProfile `
