@@ -25,7 +25,7 @@ use objc2_core_video::{
     kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange,
 };
 use objc2_foundation::{NSDictionary, NSNumber, NSString, NSURL};
-use objc2_metal::{MTLPixelFormat, MTLTextureType};
+use objc2_metal::{MTLDevice, MTLPixelFormat, MTLTextureType};
 use serde_json::json;
 use wgpu::hal::api::Metal;
 
