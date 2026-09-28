@@ -6070,6 +6070,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "znimok-p4"
+version = "0.0.0"
+dependencies = [
+ "pollster",
+ "serde_json",
+ "wgpu",
+ "windows",
+ "windows-core",
+]
+
+[[package]]
 name = "znimok-proto"
 version = "0.0.0"
 dependencies = [
