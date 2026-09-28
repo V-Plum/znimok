@@ -1,0 +1,158 @@
+{
+  "$defs": {
+    "IRect": {
+      "description": "Integer rectangle in screenshot pixels. For [`Kind::Line`] the sign of `w`/`h` carries the\ndirection from (x, y) to (x + w, y + h) and is never normalised.",
+      "properties": {
+        "h": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "w": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "x": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "y": {
+          "format": "int32",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "x",
+        "y",
+        "w",
+        "h"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "Every read.",
+  "oneOf": [
+    {
+      "additionalProperties": false,
+      "properties": {
+        "query": {
+          "const": "get_document",
+          "type": "string"
+        }
+      },
+      "required": [
+        "query"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "query": {
+          "const": "list_objects",
+          "type": "string"
+        }
+      },
+      "required": [
+        "query"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "query": {
+          "const": "get_object",
+          "type": "string"
+        }
+      },
+      "required": [
+        "query",
+        "id"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "query": {
+          "const": "get_selection",
+          "type": "string"
+        }
+      },
+      "required": [
+        "query"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "query": {
+          "const": "get_state",
+          "type": "string"
+        }
+      },
+      "required": [
+        "query"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "description": "Top-most mark under a point in screenshot pixels; `px_per_doc` = current zoom (default 1).",
+      "properties": {
+        "px_per_doc": {
+          "default": null,
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "query": {
+          "const": "hit_test",
+          "type": "string"
+        },
+        "x": {
+          "format": "double",
+          "type": "number"
+        },
+        "y": {
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "required": [
+        "query",
+        "x",
+        "y"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "description": "Marks whose bounds intersect a rectangle.",
+      "properties": {
+        "query": {
+          "const": "objects_in_rect",
+          "type": "string"
+        },
+        "rect": {
+          "$ref": "#/$defs/IRect"
+        }
+      },
+      "required": [
+        "query",
+        "rect"
+      ],
+      "type": "object"
+    }
+  ],
+  "title": "Query"
+}

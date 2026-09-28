@@ -113,173 +113,23 @@ impl State {
         self.dirty = true;
     }
 
+    /// Handle of the selected mark under a screen point (screen-constant size, LH §2.7).
     fn hit_handle(&self, out: Point) -> Option<usize> {
-        let index = self.selection?;
-        let obj = self.doc.objects.get(index)?;
-        for (i, (x, y)) in handles(obj).into_iter().enumerate() {
-            let p = self.view.to_out(Point::new(x, y));
-            if (p.x - out.x).abs() <= 7.0 * self.dpr && (p.y - out.y).abs() <= 7.0 * self.dpr {
-                return Some(i);
-            }
-        }
-        None
+        let obj = self.doc.objects.get(self.selection?)?;
+        let p = self.view.to_doc(out.x, out.y);
+        hit::hit_handle(obj, (p.x, p.y), self.view.scale / self.dpr)
     }
 
-    /// Top-most object under a document point (§2.7: segments by distance, boxes by area +3 px).
+    /// Top-most mark under a document point — the shared core rules.
     fn hit_object(&self, p: Point) -> Option<usize> {
-        let slack = 3.0 / self.view.scale;
-        for (i, o) in self.doc.objects.iter().enumerate().rev() {
-            if o.hidden {
-                continue;
-            }
-            let hit = match &o.data {
-                Data::Line { .. } => {
-                    let r = o.rect;
-                    dist_to_segment(
-                        p,
-                        Point::new(r.x as f64, r.y as f64),
-                        Point::new((r.x + r.w) as f64, (r.y + r.h) as f64),
-                    ) <= 4.0 / self.view.scale + o.style.thick as f64 / 2.0
-                }
-                Data::Pen { points } => points.windows(2).any(|w| {
-                    dist_to_segment(
-                        p,
-                        Point::new(w[0].0 as f64, w[0].1 as f64),
-                        Point::new(w[1].0 as f64, w[1].1 as f64),
-                    ) <= 4.0 / self.view.scale + o.style.thick as f64 / 2.0
-                }),
-                _ => {
-                    let b = o.bounds();
-                    let q = if o.kind().can_rotate() && o.rot != 0 {
-                        unrotate(p, b, o.rot)
-                    } else {
-                        p
-                    };
-                    q.x >= b.x as f64 - slack
-                        && q.y >= b.y as f64 - slack
-                        && q.x <= b.right() as f64 + slack
-                        && q.y <= b.bottom() as f64 + slack
-                }
-            };
-            if hit {
-                return Some(i);
-            }
-        }
-        None
+        hit::pick(&self.doc, (p.x, p.y), self.view.scale / self.dpr)
     }
 }
 
-fn unrotate(p: Point, b: IRect, rot: u16) -> Point {
-    let (cx, cy) = b.center();
-    let a = -(rot as f64).to_radians();
-    let (dx, dy) = (p.x - cx, p.y - cy);
-    Point::new(
-        cx + dx * a.cos() - dy * a.sin(),
-        cy + dx * a.sin() + dy * a.cos(),
-    )
-}
-
-fn dist_to_segment(p: Point, a: Point, b: Point) -> f64 {
-    let ab = b - a;
-    let len2 = ab.hypot2();
-    if len2 == 0.0 {
-        return (p - a).hypot();
-    }
-    let t = ((p - a).dot(ab) / len2).clamp(0.0, 1.0);
-    (p - (a + ab * t)).hypot()
-}
-
-/// Handle positions in document coordinates.
-fn handles(o: &Object) -> Vec<(f64, f64)> {
-    match o.kind() {
-        Kind::Line => {
-            let r = o.rect;
-            vec![
-                (r.x as f64, r.y as f64),
-                ((r.x + r.w) as f64, (r.y + r.h) as f64),
-            ]
-        }
-        Kind::Text | Kind::Mark => {
-            let b = o.bounds();
-            let (_, cy) = b.center();
-            vec![(b.x as f64, cy), (b.right() as f64, cy)]
-        }
-        Kind::Counter | Kind::Stamp => vec![],
-        _ => {
-            let b = o.bounds();
-            let (x0, y0, x1, y1) = (b.x as f64, b.y as f64, b.right() as f64, b.bottom() as f64);
-            let (cx, cy) = b.center();
-            vec![
-                (x0, y0),
-                (cx, y0),
-                (x1, y0),
-                (x1, cy),
-                (x1, y1),
-                (cx, y1),
-                (x0, y1),
-                (x0, cy),
-            ]
-        }
-    }
-}
+use znimok_core::hit::{self, handles};
 
 fn apply_resize(o: &mut Object, handle: usize, orig: IRect, dx: i32, dy: i32) {
-    match o.kind() {
-        Kind::Line => {
-            if handle == 0 {
-                o.rect = IRect::new(orig.x + dx, orig.y + dy, orig.w - dx, orig.h - dy);
-            } else {
-                o.rect = IRect::new(orig.x, orig.y, orig.w + dx, orig.h + dy);
-            }
-        }
-        Kind::Text => {
-            if let Data::Text { box_w, .. } = &mut o.data {
-                let n = orig.normalized();
-                let w = if handle == 0 { n.w - dx } else { n.w + dx };
-                *box_w = w.max(24);
-                o.rect = if handle == 0 {
-                    IRect::new(n.x + dx, n.y, w.max(24), n.h)
-                } else {
-                    IRect::new(n.x, n.y, w.max(24), n.h)
-                };
-            }
-        }
-        _ => {
-            let n = orig.normalized();
-            let (mut x0, mut y0, mut x1, mut y1) = (n.x, n.y, n.right(), n.bottom());
-            match handle {
-                0 => {
-                    x0 += dx;
-                    y0 += dy;
-                }
-                1 => {
-                    y0 += dy;
-                }
-                2 => {
-                    x1 += dx;
-                    y0 += dy;
-                }
-                3 => {
-                    x1 += dx;
-                }
-                4 => {
-                    x1 += dx;
-                    y1 += dy;
-                }
-                5 => {
-                    y1 += dy;
-                }
-                6 => {
-                    x0 += dx;
-                    y1 += dy;
-                }
-                _ => {
-                    x0 += dx;
-                }
-            }
-            o.rect = IRect::new(x0, y0, x1 - x0, y1 - y0);
-        }
-    }
+    hit::resize(o, handle, orig, dx, dy);
 }
 
 /// Selection outline and handles drawn straight into the pixmap, in screen pixels.

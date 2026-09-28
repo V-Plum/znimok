@@ -324,7 +324,7 @@ pub fn reference_document(w: u32, h: u32) -> Document {
         }
         t
     };
-    doc.banks.push(thumb);
+    doc.add_bank(thumb);
     doc.push(
         Object::new(r(80.0, 800.0, 240.0, 160.0), Data::Image { bank: 1 }).with_style(Style {
             corners: Corners::Round,

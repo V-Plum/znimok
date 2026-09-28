@@ -1,0 +1,1790 @@
+{
+  "$defs": {
+    "Align": {
+      "enum": [
+        "left",
+        "center",
+        "right"
+      ],
+      "type": "string"
+    },
+    "AlignEdge": {
+      "enum": [
+        "left",
+        "h_center",
+        "right",
+        "top",
+        "v_center",
+        "bottom"
+      ],
+      "type": "string"
+    },
+    "Arrange": {
+      "enum": [
+        "front",
+        "back",
+        "forward",
+        "backward"
+      ],
+      "type": "string"
+    },
+    "Axis": {
+      "enum": [
+        "horizontal",
+        "vertical"
+      ],
+      "type": "string"
+    },
+    "CaptureDest": {
+      "enum": [
+        "editor",
+        "overlay",
+        "clipboard",
+        "library"
+      ],
+      "type": "string"
+    },
+    "CaptureTarget": {
+      "oneOf": [
+        {
+          "description": "The display under the pointer, or the given display.",
+          "properties": {
+            "display": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "target": {
+              "const": "screen",
+              "type": "string"
+            }
+          },
+          "required": [
+            "target"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "target": {
+              "const": "window",
+              "type": "string"
+            },
+            "window": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "target",
+            "window"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "rect": {
+              "$ref": "#/$defs/IRect"
+            },
+            "target": {
+              "const": "region",
+              "type": "string"
+            }
+          },
+          "required": [
+            "target",
+            "rect"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Interactive overlay: the user chooses.",
+          "properties": {
+            "target": {
+              "const": "interactive",
+              "type": "string"
+            }
+          },
+          "required": [
+            "target"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "Corners": {
+      "enum": [
+        "sharp",
+        "soft",
+        "round"
+      ],
+      "type": "string"
+    },
+    "CounterShape": {
+      "enum": [
+        "circle",
+        "rounded_box",
+        "pin"
+      ],
+      "type": "string"
+    },
+    "Dash": {
+      "enum": [
+        "solid",
+        "dashed",
+        "dash_dot"
+      ],
+      "type": "string"
+    },
+    "Data": {
+      "description": "Kind-specific data.",
+      "oneOf": [
+        {
+          "properties": {
+            "kind": {
+              "const": "rect",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "kind": {
+              "const": "ellipse",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "`head_size` is a size step 0..=2 (small, medium, large), not pixels.",
+          "properties": {
+            "head_back": {
+              "$ref": "#/$defs/Head"
+            },
+            "head_front": {
+              "$ref": "#/$defs/Head"
+            },
+            "head_size": {
+              "format": "uint8",
+              "maximum": 255,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "kind": {
+              "const": "line",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "head_front",
+            "head_back",
+            "head_size"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Trail in screenshot coordinates, absolute.",
+          "properties": {
+            "kind": {
+              "const": "pen",
+              "type": "string"
+            },
+            "points": {
+              "items": {
+                "maxItems": 2,
+                "minItems": 2,
+                "prefixItems": [
+                  {
+                    "format": "int32",
+                    "type": "integer"
+                  },
+                  {
+                    "format": "int32",
+                    "type": "integer"
+                  }
+                ],
+                "type": "array"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "kind",
+            "points"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "align": {
+              "$ref": "#/$defs/Align"
+            },
+            "bold": {
+              "type": "boolean"
+            },
+            "box_w": {
+              "format": "int32",
+              "type": "integer"
+            },
+            "italic": {
+              "type": "boolean"
+            },
+            "kind": {
+              "const": "text",
+              "type": "string"
+            },
+            "size": {
+              "format": "int32",
+              "type": "integer"
+            },
+            "text": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "text",
+            "size",
+            "bold",
+            "italic",
+            "align",
+            "box_w"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "kind": {
+              "const": "hide",
+              "type": "string"
+            },
+            "mode": {
+              "$ref": "#/$defs/HideMode"
+            },
+            "strength": {
+              "format": "uint8",
+              "maximum": 255,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "kind",
+            "mode",
+            "strength"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "kind": {
+              "const": "mark",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "group": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "kind": {
+              "const": "counter",
+              "type": "string"
+            },
+            "seq": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "shape": {
+              "$ref": "#/$defs/CounterShape"
+            },
+            "start": {
+              "format": "int32",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "kind",
+            "seq",
+            "group",
+            "start",
+            "shape"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "0..=5 are vector stamps, 100+ are emoji indexes.",
+          "properties": {
+            "id": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "kind": {
+              "const": "stamp",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "id"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "bank": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "kind": {
+              "const": "image",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "bank"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "Effect": {
+      "enum": [
+        "none",
+        "light",
+        "strong"
+      ],
+      "type": "string"
+    },
+    "Head": {
+      "enum": [
+        "none",
+        "triangle",
+        "chevron",
+        "dot"
+      ],
+      "type": "string"
+    },
+    "HideMode": {
+      "enum": [
+        "blur",
+        "pixelate",
+        "plate"
+      ],
+      "type": "string"
+    },
+    "IRect": {
+      "description": "Integer rectangle in screenshot pixels. For [`Kind::Line`] the sign of `w`/`h` carries the\ndirection from (x, y) to (x + w, y + h) and is never normalised.",
+      "properties": {
+        "h": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "w": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "x": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "y": {
+          "format": "int32",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "x",
+        "y",
+        "w",
+        "h"
+      ],
+      "type": "object"
+    },
+    "ImageFormat": {
+      "enum": [
+        "png",
+        "jpeg",
+        "webp",
+        "html"
+      ],
+      "type": "string"
+    },
+    "MergeKey": {
+      "description": "Identifies a series of changes that should become a single undo step.",
+      "oneOf": [
+        {
+          "description": "Arrow-key nudges of the current selection.",
+          "properties": {
+            "series": {
+              "const": "nudge",
+              "type": "string"
+            }
+          },
+          "required": [
+            "series"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "One drag of a slider or handle; `id` distinguishes different controls or drags.",
+          "properties": {
+            "id": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "series": {
+              "const": "drag",
+              "type": "string"
+            }
+          },
+          "required": [
+            "series",
+            "id"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Typing into one text mark.",
+          "properties": {
+            "object": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "series": {
+              "const": "typing",
+              "type": "string"
+            }
+          },
+          "required": [
+            "series",
+            "object"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "Meta": {
+      "description": "Descriptive metadata of a record.",
+      "properties": {
+        "author": {
+          "default": "",
+          "type": "string"
+        },
+        "copyright": {
+          "default": "",
+          "type": "string"
+        },
+        "created_ms": {
+          "default": 0,
+          "description": "Creation time, Unix milliseconds UTC.",
+          "format": "int64",
+          "type": "integer"
+        },
+        "description": {
+          "default": "",
+          "type": "string"
+        },
+        "source": {
+          "default": "",
+          "description": "Where the picture came from: \"screen\", \"window\", \"region\", \"clipboard\", \"file\"…",
+          "type": "string"
+        },
+        "tags": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "Object": {
+      "description": "One annotation. `rect` is the box in screenshot pixels; see [`IRect`] for the line convention.",
+      "properties": {
+        "data": {
+          "$ref": "#/$defs/Data"
+        },
+        "group": {
+          "default": 0,
+          "description": "Selection group (0 = none). Members of a group are adjacent in z-order (§7 п.47).",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "hidden": {
+          "default": false,
+          "type": "boolean"
+        },
+        "id": {
+          "default": 0,
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "rect": {
+          "$ref": "#/$defs/IRect"
+        },
+        "rot": {
+          "default": 0,
+          "description": "Rotation 0..360 degrees around the centre; ignored for kinds that cannot rotate.",
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "style": {
+          "$ref": "#/$defs/Style",
+          "default": {
+            "alpha": 100,
+            "alpha2": 100,
+            "color": {
+              "b": 95,
+              "g": 90,
+              "r": 255
+            },
+            "color2": null,
+            "corner_px": 0,
+            "corners": "sharp",
+            "dash": "solid",
+            "glow": "none",
+            "no_main": false,
+            "shadow": "none",
+            "thick": 4
+          }
+        }
+      },
+      "required": [
+        "rect",
+        "data"
+      ],
+      "type": "object"
+    },
+    "ObjectPatch": {
+      "additionalProperties": false,
+      "description": "Partial update of objects. Fields that do not apply to a kind are ignored.",
+      "properties": {
+        "align": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Align"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "bold": {
+          "default": null,
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "data": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Data"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Replace the kind-specific data entirely; must keep the same kind."
+        },
+        "hidden": {
+          "default": null,
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "italic": {
+          "default": null,
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "name": {
+          "description": "`Some(None)` clears the name (back to the automatic one).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "rect": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/IRect"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "rot": {
+          "default": null,
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "size": {
+          "default": null,
+          "description": "Text marks: font size in screenshot pixels.",
+          "format": "int32",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "style": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/StylePatch"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "text": {
+          "default": null,
+          "description": "Text marks: new text.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "Rgb": {
+      "description": "sRGB colour. Opacity is kept separately in [`Style`].",
+      "properties": {
+        "b": {
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "g": {
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "r": {
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "r",
+        "g",
+        "b"
+      ],
+      "type": "object"
+    },
+    "Style": {
+      "description": "Visual style shared by every kind. Fields that a kind does not use are ignored by the renderer.",
+      "properties": {
+        "alpha": {
+          "default": 100,
+          "description": "Opacity 10–100 %.",
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "alpha2": {
+          "default": 100,
+          "description": "Opacity of the second colour 10–100 %.",
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "color": {
+          "$ref": "#/$defs/Rgb",
+          "default": {
+            "b": 95,
+            "g": 90,
+            "r": 255
+          }
+        },
+        "color2": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Rgb"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Second colour: fill (rect/ellipse), outline (text), digit (counter)."
+        },
+        "corner_px": {
+          "default": 0,
+          "description": "Corner radius in screenshot pixels, computed when the corner level was chosen.",
+          "format": "int32",
+          "type": "integer"
+        },
+        "corners": {
+          "$ref": "#/$defs/Corners",
+          "default": "sharp"
+        },
+        "dash": {
+          "$ref": "#/$defs/Dash",
+          "default": "solid"
+        },
+        "glow": {
+          "$ref": "#/$defs/Effect",
+          "default": "none"
+        },
+        "no_main": {
+          "default": false,
+          "description": "Outline disabled (rect/ellipse become a solid plate).",
+          "type": "boolean"
+        },
+        "shadow": {
+          "$ref": "#/$defs/Effect",
+          "default": "none"
+        },
+        "thick": {
+          "default": 4,
+          "description": "Thickness in screenshot pixels (2/4/7); marker: band height; counter/stamp: diameter.",
+          "format": "int32",
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "StylePatch": {
+      "additionalProperties": false,
+      "description": "Partial update of a style: only the given fields change.",
+      "properties": {
+        "alpha": {
+          "default": null,
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "alpha2": {
+          "default": null,
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "color": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Rgb"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "color2": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Rgb"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "`Some(None)` removes the second colour."
+        },
+        "corner_px": {
+          "default": null,
+          "format": "int32",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "corners": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Corners"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "dash": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Dash"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "glow": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Effect"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "no_main": {
+          "default": null,
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "shadow": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Effect"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "thick": {
+          "default": null,
+          "format": "int32",
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "Every action on Znimok. See the module docs.",
+  "oneOf": [
+    {
+      "additionalProperties": false,
+      "description": "Adds a mark on top. The id is assigned by the document (returned in `Applied.created`);\ncounters get the next sequence number and their group's start number.",
+      "properties": {
+        "cmd": {
+          "const": "add_object",
+          "type": "string"
+        },
+        "object": {
+          "$ref": "#/$defs/Object"
+        },
+        "select": {
+          "default": false,
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "cmd",
+        "object"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "cmd": {
+          "const": "update_objects",
+          "type": "string"
+        },
+        "ids": {
+          "items": {
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "type": "array"
+        },
+        "merge": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MergeKey"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "patch": {
+          "$ref": "#/$defs/ObjectPatch"
+        }
+      },
+      "required": [
+        "cmd",
+        "ids",
+        "patch"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "cmd": {
+          "const": "delete_objects",
+          "type": "string"
+        },
+        "ids": {
+          "items": {
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "cmd",
+        "ids"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "description": "Moves marks by an offset in screenshot pixels (arrow keys use `merge: nudge`).",
+      "properties": {
+        "cmd": {
+          "const": "move_objects",
+          "type": "string"
+        },
+        "dx": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "dy": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "ids": {
+          "items": {
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "type": "array"
+        },
+        "merge": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MergeKey"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "cmd",
+        "ids",
+        "dx",
+        "dy"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "description": "Drags handle `handle` of one mark by (dx, dy) from `orig` (the rectangle when the drag began).",
+      "properties": {
+        "cmd": {
+          "const": "resize_object",
+          "type": "string"
+        },
+        "dx": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "dy": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "handle": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "id": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "merge": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MergeKey"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "orig": {
+          "$ref": "#/$defs/IRect"
+        }
+      },
+      "required": [
+        "cmd",
+        "id",
+        "handle",
+        "orig",
+        "dx",
+        "dy"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "add": {
+          "default": false,
+          "type": "boolean"
+        },
+        "cmd": {
+          "const": "select",
+          "type": "string"
+        },
+        "ids": {
+          "items": {
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "cmd",
+        "ids"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "cmd": {
+          "const": "select_all",
+          "type": "string"
+        }
+      },
+      "required": [
+        "cmd"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "cmd": {
+          "const": "clear_selection",
+          "type": "string"
+        }
+      },
+      "required": [
+        "cmd"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "cmd": {
+          "const": "group",
+          "type": "string"
+        },
+        "ids": {
+          "items": {
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "cmd",
+        "ids"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "cmd": {
+          "const": "ungroup",
+          "type": "string"
+        },
+        "ids": {
+          "items": {
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "cmd",
+        "ids"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "cmd": {
+          "const": "rename_group",
+          "type": "string"
+        },
+        "group": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "cmd",
+        "group",
+        "name"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "cmd": {
+          "const": "arrange",
+          "type": "string"
+        },
+        "ids": {
+          "items": {
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "type": "array"
+        },
+        "to": {
+          "$ref": "#/$defs/Arrange"
+        }
+      },
+      "required": [
+        "cmd",
+        "ids",
+        "to"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "description": "Aligns to the common bounds of the marks, or to the frame when there is only one.",
+      "properties": {
+        "cmd": {
+          "const": "align",
+          "type": "string"
+        },
+        "edge": {
+          "$ref": "#/$defs/AlignEdge"
+        },
+        "ids": {
+          "items": {
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "cmd",
+        "ids",
+        "edge"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "description": "Equal gaps between three or more marks along an axis.",
+      "properties": {
+        "axis": {
+          "$ref": "#/$defs/Axis"
+        },
+        "cmd": {
+          "const": "distribute",
+          "type": "string"
+        },
+        "ids": {
+          "items": {
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "cmd",
+        "ids",
+        "axis"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "cmd": {
+          "const": "set_counter_start",
+          "type": "string"
+        },
+        "group": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "start": {
+          "format": "int32",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "cmd",
+        "group",
+        "start"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "description": "`None` removes the crop.",
+      "properties": {
+        "cmd": {
+          "const": "set_crop",
+          "type": "string"
+        },
+        "rect": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/IRect"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "cmd"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "description": "Changes the tone part of the recipe; missing fields stay.",
+      "properties": {
+        "cmd": {
+          "const": "set_tone",
+          "type": "string"
+        },
+        "contrast": {
+          "default": null,
+          "format": "int32",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "exposure": {
+          "default": null,
+          "format": "float",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "gamma": {
+          "default": null,
+          "format": "float",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "merge": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MergeKey"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "cmd"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "cmd": {
+          "const": "reset_tone",
+          "type": "string"
+        }
+      },
+      "required": [
+        "cmd"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "description": "Quarter turns clockwise (negative = counter-clockwise).",
+      "properties": {
+        "cmd": {
+          "const": "rotate",
+          "type": "string"
+        },
+        "quarters": {
+          "format": "int32",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "cmd",
+        "quarters"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "description": "Resamples the picture; mark geometry follows, thicknesses and font sizes do not unless\n`scale_text`. Bakes the turns into a new original (the old one stays for undo).",
+      "properties": {
+        "cmd": {
+          "const": "resize_image",
+          "type": "string"
+        },
+        "height": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "scale_text": {
+          "default": false,
+          "type": "boolean"
+        },
+        "width": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "cmd",
+        "width",
+        "height"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "description": "New canvas rectangle in picture coordinates (may reach beyond it); new area gets `fill`\nor stays transparent.",
+      "properties": {
+        "cmd": {
+          "const": "resize_canvas",
+          "type": "string"
+        },
+        "fill": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Rgb"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "rect": {
+          "$ref": "#/$defs/IRect"
+        }
+      },
+      "required": [
+        "cmd",
+        "rect"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "cmd": {
+          "const": "mirror",
+          "type": "string"
+        }
+      },
+      "required": [
+        "cmd"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "cmd": {
+          "const": "set_name",
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "cmd",
+        "name"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "cmd": {
+          "const": "set_meta",
+          "type": "string"
+        },
+        "meta": {
+          "$ref": "#/$defs/Meta"
+        }
+      },
+      "required": [
+        "cmd",
+        "meta"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "cmd": {
+          "const": "undo",
+          "type": "string"
+        }
+      },
+      "required": [
+        "cmd"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "cmd": {
+          "const": "redo",
+          "type": "string"
+        }
+      },
+      "required": [
+        "cmd"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "cmd": {
+          "const": "capture",
+          "type": "string"
+        },
+        "dest": {
+          "$ref": "#/$defs/CaptureDest"
+        },
+        "target": {
+          "$ref": "#/$defs/CaptureTarget"
+        }
+      },
+      "required": [
+        "cmd",
+        "target",
+        "dest"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "cmd": {
+          "const": "export",
+          "type": "string"
+        },
+        "format": {
+          "$ref": "#/$defs/ImageFormat"
+        },
+        "path": {
+          "default": null,
+          "description": "Destination file; `None` = clipboard.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "cmd",
+        "format"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "cmd": {
+          "const": "share",
+          "type": "string"
+        },
+        "target": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "cmd",
+        "target"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "cmd": {
+          "const": "open",
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "cmd",
+        "path"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "cmd": {
+          "const": "save",
+          "type": "string"
+        }
+      },
+      "required": [
+        "cmd"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "cmd": {
+          "const": "save_copy",
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "cmd",
+        "path"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "cmd": {
+          "const": "library_rename",
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "record": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "cmd",
+        "record",
+        "name"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "cmd": {
+          "const": "library_delete",
+          "type": "string"
+        },
+        "record": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "cmd",
+        "record"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "cmd": {
+          "const": "library_restore",
+          "type": "string"
+        },
+        "record": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "cmd",
+        "record"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "cmd": {
+          "const": "set_setting",
+          "type": "string"
+        },
+        "key": {
+          "type": "string"
+        },
+        "value": true
+      },
+      "required": [
+        "cmd",
+        "key",
+        "value"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "client": {
+          "type": "string"
+        },
+        "cmd": {
+          "const": "agent_grant",
+          "type": "string"
+        },
+        "scopes": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "cmd",
+        "client",
+        "scopes"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "client": {
+          "type": "string"
+        },
+        "cmd": {
+          "const": "agent_revoke",
+          "type": "string"
+        }
+      },
+      "required": [
+        "cmd",
+        "client"
+      ],
+      "type": "object"
+    }
+  ],
+  "title": "Command"
+}
