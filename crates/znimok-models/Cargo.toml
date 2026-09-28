@@ -1,0 +1,55 @@
+[package]
+name = "znimok-models"
+description = "Znimok model providers — on-device OCR (Windows.Media.Ocr, Apple Vision) and Claude by the user's own key (BYOK) over the OS HTTP stack, with image preparation, a send preview and a cost meter"
+version.workspace = true
+edition.workspace = true
+license-file.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+znimok-settings = { path = "../znimok-settings" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+base64 = "0.23"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-core = "0.62"
+windows-future = "0.3"
+windows = { version = "0.62", features = [
+    "Foundation",
+    "Foundation_Collections",
+    "Globalization",
+    "Graphics_Imaging",
+    "Media_Ocr",
+    "Security_Cryptography",
+    "Storage_Streams",
+    "Web_Http",
+    "Web_Http_Headers",
+    "Win32_System_Com",
+    "Win32_System_WinRT",
+] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+block2 = "0.6"
+objc2-foundation = { version = "0.3", features = [
+    "NSArray",
+    "NSData",
+    "NSDictionary",
+    "NSError",
+    "NSString",
+    "NSURL",
+    "NSURLRequest",
+    "NSURLResponse",
+    "NSURLSession",
+    "NSValue",
+    "NSGeometry",
+    "NSObjCRuntime",
+    "block2",
+] }
