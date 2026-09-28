@@ -34,6 +34,17 @@ fn err(what: &str) -> PlatformError {
     PlatformError::Other(format!("clipboard: {what}"))
 }
 
+/// `+[NSPasteboard generalPasteboard]` is nil without a login session (ssh, a launch daemon):
+/// objc2's wrapper panics on that, so it is called by hand and nil becomes an error.
+fn general() -> Result<Retained<NSPasteboard>> {
+    // SAFETY: a class method without arguments returning an autoreleased object or nil.
+    let pb: Option<Retained<NSPasteboard>> =
+        unsafe { objc2::msg_send![NSPasteboard::class(), generalPasteboard] };
+    pb.ok_or_else(|| {
+        PlatformError::Unsupported("no pasteboard in this session (no GUI login, e.g. ssh)")
+    })
+}
+
 impl Clipboard for MacClipboard {
     fn write(&self, items: &[ClipItem]) -> Result<()> {
         let mut out: Vec<Retained<NSPasteboardItem>> = Vec::new();
@@ -88,7 +99,7 @@ impl Clipboard for MacClipboard {
                 }
             }
         }
-        let pb = NSPasteboard::generalPasteboard();
+        let pb = general()?;
         pb.clearContents();
         let objs: Vec<Retained<ProtocolObject<dyn NSPasteboardWriting>>> =
             out.into_iter().map(ProtocolObject::from_retained).collect();
@@ -100,7 +111,7 @@ impl Clipboard for MacClipboard {
     }
 
     fn read(&self) -> Result<Vec<ClipItem>> {
-        let pb = NSPasteboard::generalPasteboard();
+        let pb = general()?;
         let mut items = Vec::new();
         // SAFETY: framework constants.
         let (t_png, t_tiff, t_url, t_text) = unsafe {
@@ -202,6 +213,19 @@ mod tests {
     use super::*;
     use znimok_platform::conformance;
 
+    /// Without a GUI session (ssh) the calls fail cleanly instead of panicking.
+    #[test]
+    fn no_session_is_an_error_not_a_panic() {
+        if general().is_err() {
+            assert!(MacClipboard::new().read().is_err());
+            assert!(
+                MacClipboard::new()
+                    .write(&[ClipItem::Text("x".into())])
+                    .is_err()
+            );
+        }
+    }
+
     #[test]
     fn opacity_rule() {
         let mut px = vec![1, 2, 3, 0, 4, 5, 6, 0];
@@ -218,6 +242,10 @@ mod tests {
             return;
         }
         let c = MacClipboard::new();
+        if general().is_err() {
+            eprintln!("skipped: no pasteboard in this session (ssh)");
+            return;
+        }
         conformance::clipboard(&c).unwrap();
 
         let dir = std::env::temp_dir().join(format!("znimok-live-clip-{}", std::process::id()));
