@@ -1,0 +1,29 @@
+[package]
+name = "znimok-ipc"
+description = "Local IPC for Znimok: JSON-RPC 2.0 over a per-user named pipe (Windows, DACL of the current user) or unix socket (0600), session token, size and time limits"
+version.workspace = true
+edition.workspace = true
+license-file.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+serde_json = "1"
+getrandom = "0.3"
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.62", features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_Security_Authorization",
+    "Win32_Storage_FileSystem",
+    "Win32_System_IO",
+    "Win32_System_Pipes",
+    "Win32_System_Threading",
+    "Win32_System_Memory",
+] }
+windows-core = "0.62"
