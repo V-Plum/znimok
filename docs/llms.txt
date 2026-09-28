@@ -1,0 +1,16 @@
+# Znimok
+
+> Znimok is a screenshot and annotation tool for Windows and macOS with a local library and an MCP server for AI agents (`znimok mcp`, stdio; MCP 2026-07-28 and 2025-11-25). Agents capture screens, windows and regions, annotate them, hide secrets and personal data, recognise text on the device and export PNG/JPEG/WebP or a self-contained HTML page. Access needs the user's approval per client and scope; MCP is off until the user switches it on.
+
+## Docs
+
+- [Znimok for AI agents](https://github.com/V-Plum/znimok/blob/main/docs/AGENTS.md): connecting (Claude Code, Claude Desktop .mcpb, any MCP client), permissions, every tool with its arguments, annotate commands, scenarios
+- [Command line](https://github.com/V-Plum/znimok/blob/main/docs/CLI.md): `znimok` subcommands, including `mcp` and `agents`
+- [Document format](https://github.com/V-Plum/znimok/blob/main/docs/FORMAT.md): the `.znimok` file
+- [IPC](https://github.com/V-Plum/znimok/blob/main/docs/IPC.md): how Znimok processes talk to the running app
+
+## Optional
+
+- [Editor commands schema](https://github.com/V-Plum/znimok/tree/main/crates/znimok-core/schema): JSON Schema of the commands `annotate` accepts
+- [Privacy](https://github.com/V-Plum/znimok/blob/main/docs/privacy.en.md): what Znimok does and does not do with data
+- [Threat model](https://github.com/V-Plum/znimok/blob/main/docs/threat-model.md)
