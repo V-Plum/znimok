@@ -1,0 +1,3768 @@
+### Znimok — interface strings, English (en).
+###
+### Reference file for translators, human or AI. English (en.ftl) and Ukrainian (uk.ftl) are the
+### two complete references; a new language is one more file xx.ftl with the same ids — see i18n/README.md.
+### Every message has an instruction comment (@where, @kind, @max, @note); it is identical in all files.
+###
+### Rules
+###   - Audience: people who take screenshots at work. Tone: plain, friendly, short; never blame the user.
+###   - Sentence case everywhere (only the first word capitalised), in every language.
+###   - Buttons and menu items: an action. English — imperative ("Save"); Ukrainian — infinitive ("Зберегти").
+###   - An ellipsis "…" (U+2026, one character) means the item opens a dialog before acting. Keep it.
+###   - Quotes: English “…”, Ukrainian «…». Apostrophe in Ukrainian: ' (U+0027) as in the reference.
+###   - Sizes are written "1920 × 1080": U+00D7 with spaces, in every language.
+###   - Key names stay as on the keyboard: Ctrl, Alt, Shift, Esc, Enter, Tab, Delete, F2; macOS glyphs ⌘ ⌥ ⇧ ⌃. Single letters in tool names, e.g. "(R)", are physical keys: keep them.
+###   - Never translate: Znimok, Claude, Claude Code, Claude Desktop, Anthropic, MCP, Slack, Jira, Telegram, Redmine, GitHub, Chrome, Edge, DevTools, PNG, JPEG, WebP, GIF, MP4, HEX, HDR, SDR, OCR, Slint, font names.
+###   - Variables look like { $name }. Keep every variable of the English message, spelled exactly the same; you may move it inside the sentence.
+###   - Plurals: use the CLDR categories of your language (English: one, other; Ukrainian: one, few, many, other). The default variant is marked with * and must be [other].
+###   - @max is the most characters the text may take after variables are filled with typical values; longer text is cut in the UI. Prefer a shorter wording over an abbreviation.
+###   - @kind says what the text is: button, menu, tab, option, label, heading, title, hint, body, tooltip, a11y (screen reader only), placeholder, status, toast, error, badge, value.
+###   - @where says where the text is shown. Read it before translating: the same English word can need different translations in different places.
+###
+### Glossary (English — Ukrainian — meaning)
+###   screenshot — знімок — a captured still image; also the document kind
+###   annotation — позначка — anything drawn on a screenshot: rectangle, arrow, text, counter…
+###   library — бібліотека — the folder with all screenshots and videos, and the home screen
+###   editor — редактор — the window where a screenshot is annotated
+###   over the screen — поверх екрана — editing right on the frozen screen (overlay mode)
+###   overlay — накладка — the frozen-screen layer where the user chooses what to capture
+###   card after a capture — плашка — the small card in the corner after a capture (6 s)
+###   crop / to crop — кадр / кадрувати — a document property, not a pixel cut: annotations outside stay
+###   hide (tool) — приховати — blur, pixelate or cover a part of the image
+###   highlighter — маркер — semi-transparent band over text
+###   counter — лічильник — numbered badge; groups number themselves
+###   stamp — штамп — ready-made sign: check, cross, star…
+###   copy — копіювати — the main action: image to the clipboard
+###   share — поділитися — the OS share sheet
+###   export — експорт — ONLY saving a file through the export dialog
+###   hand to agent — передати агенту — give the document to an AI agent
+###   agent — агент — an external AI program connected over MCP
+###   assistant — помічник — the built-in natural-language command bar (Ctrl+K)
+###   hotkey — гаряча клавіша — global keyboard shortcut
+###   region — ділянка — a rectangle of the screen chosen by dragging
+###   display — монітор — a physical screen
+###   canvas — полотно — the drawing area of the editor
+###   recording — запис — screen video (v2)
+###   tray / menu bar — трей — notification area on Windows, menu bar on macOS
+
+
+## App
+## Product name and identity. "Znimok" is a name: never translate or transliterate it.
+
+
+# @where: Everywhere the product is named: window title, tray, About
+# @kind: label
+# @max: 12
+# @note: Brand name. Keep "Znimok" in every language.
+app-name = Znimok
+
+# @where: About page and installer, under the name
+# @kind: hint
+# @max: 60
+app-tagline = Screenshots and screen recordings with notes
+
+## Common
+## Words shared by many screens. Use these ids instead of copying the same text.
+
+
+# @where: Dialogs and modes: leave without applying
+# @kind: button
+# @max: 16
+common-cancel = Cancel
+
+# @where: Icon-only close buttons (×) of dialogs, pills, tabs
+# @kind: a11y
+# @max: 24
+common-close = Close
+
+# @where: Crop mode, overlay editor: finish and apply
+# @kind: button
+# @max: 16
+common-done = Done
+
+# @where: Assistant plan, dialogs: apply the change
+# @kind: button
+# @max: 16
+common-apply = Apply
+
+# @where: Crop, tone and similar: back to the original value
+# @kind: button
+# @max: 16
+common-reset = Reset
+
+# @where: Save to the library (Ctrl+S); also confirm-on-close dialog
+# @kind: button
+# @max: 16
+common-save = Save
+
+# @where: Export dialogs: opens the system save dialog
+# @kind: button
+# @max: 18
+common-save-ellipsis = Save…
+
+# @where: Close-with-unsaved dialog, the quiet destructive choice
+# @kind: button
+# @max: 18
+common-dont-save = Don't save
+
+# @where: Context menus: delete the selected item
+# @kind: menu
+# @max: 20
+common-delete = Delete
+
+# @where: Context menus: rename (F2)
+# @kind: menu
+# @max: 20
+common-rename = Rename
+
+# @where: Context menus: duplicate (Ctrl+D)
+# @kind: menu
+# @max: 20
+common-duplicate = Duplicate
+
+# @where: Title bar menu button, file lists
+# @kind: button
+# @max: 16
+common-open = Open
+
+# @where: Library home: open a file from disk
+# @kind: button
+# @max: 18
+common-open-ellipsis = Open…
+
+# @where: Toasts: reveal the result (file, item)
+# @kind: button
+# @max: 16
+common-show = Show
+
+# @where: Context menu of a mark: exclude from export (keeps it in the document)
+# @kind: menu
+# @max: 20
+common-hide = Hide
+
+# @where: Icon-only "…" buttons that open more actions
+# @kind: a11y
+# @max: 24
+common-more = More
+
+# @where: Onboarding, banners: postpone
+# @kind: button
+# @max: 16
+common-later = Later
+
+# @where: Onboarding: next step
+# @kind: button
+# @max: 16
+common-next = Next
+
+# @where: Settings and onboarding: choose another folder
+# @kind: button
+# @max: 16
+common-change-ellipsis = Change…
+
+# @where: Inspector: add fill / effect / tag
+# @kind: button
+# @max: 16
+common-add = Add
+
+# @where: Settings: add a share target, a key
+# @kind: button
+# @max: 16
+common-add-ellipsis = Add…
+
+# @where: Settings row action that opens the page with details
+# @kind: button
+# @max: 16
+common-manage = Manage
+
+# @where: Errors about permissions: re-test after the user changed settings
+# @kind: button
+# @max: 20
+common-check-again = Check again
+
+# @where: Segmented controls and pickers: nothing selected (effect, arrowhead, outline)
+# @kind: option
+# @max: 12
+common-none = None
+
+# @where: Tooltip of any control that is shown but not implemented yet (stable layout rule)
+# @kind: tooltip
+# @max: 40
+# @note: Shown on greyed-out controls so their place does not change between releases.
+common-in-development = Coming soon
+
+# @where: Three-way segmented control Never / Ask / Always
+# @kind: option
+# @max: 10
+common-never = Never
+
+# @where: Three-way segmented control Never / Ask / Always
+# @kind: option
+# @max: 10
+common-ask = Ask
+
+# @where: Three-way segmented control Never / Ask / Always
+# @kind: option
+# @max: 10
+common-always = Always
+
+# @where: Short value "switched off" in segmented controls
+# @kind: option
+# @max: 10
+common-off = Off
+
+# @where: Relative time in logs: just now
+# @kind: status
+# @max: 14
+common-now = now
+
+# @where: Relative time in logs and library groups
+# @kind: status
+# @max: 14
+common-yesterday = yesterday
+
+# @where: Library: group header of today's items
+# @kind: heading
+# @max: 14
+common-today = Today
+
+# @where: Library: group header of yesterday's items
+# @kind: heading
+# @max: 14
+common-yesterday-heading = Yesterday
+
+# @where: Size shown as width × height; keep the × sign
+# @kind: label
+# @max: 24
+# @note: × is U+00D7 with spaces around, same in every language.
+common-size-by = { $width } × { $height }
+
+# @where: Estimated file size, e.g. "≈ 640 KB"; $size is already formatted with its unit
+# @kind: label
+# @max: 16
+common-size-approx = ≈ { $size }
+
+# @where: Number of marks (annotations) on a document; status bar, cards, pills
+# @kind: label
+# @max: 24
+# @note: "Annotation" in English, "позначка" in Ukrainian — see the glossary.
+common-marks =
+    { $count ->
+        [one] { $count } annotation
+       *[other] { $count } annotations
+    }
+
+## Navigation
+## The left rail of the main window and the way back to the library.
+
+
+# @where: Left rail: Library page (also its accessible name)
+# @kind: tooltip
+# @max: 24
+nav-library = Library
+
+# @where: Left rail: Agents page
+# @kind: tooltip
+# @max: 24
+nav-agents = Agents
+
+# @where: Left rail: Settings page
+# @kind: tooltip
+# @max: 24
+nav-settings = Settings
+
+# @where: Editor title bar: back arrow to the library
+# @kind: a11y
+# @max: 32
+nav-back-to-library = Back to library
+
+## Editor title bar
+## The row at the top of the editor window: document kind, name, save state, main actions.
+
+
+# @where: Title bar chip before the document name
+# @kind: badge
+# @max: 12
+doc-kind-screenshot = Screenshot
+
+# @where: Title bar chip before the document name
+# @kind: badge
+# @max: 12
+doc-kind-video = Video
+
+# @where: Title bar chip for an empty canvas
+# @kind: badge
+# @max: 16
+doc-kind-blank = Blank canvas
+
+# @where: Title bar toggle; global setting, on by default
+# @kind: label
+# @max: 24
+doc-autosave = Save automatically
+
+# @where: Title bar, after the toggle: everything is in the library
+# @kind: status
+# @max: 16
+doc-state-saved = saved
+
+# @where: Title bar: there are changes not in the library yet (auto-save off)
+# @kind: status
+# @max: 16
+doc-state-unsaved = unsaved
+
+# @where: Title bar: saving right now
+# @kind: status
+# @max: 16
+doc-state-saving = saving…
+
+# @where: Title bar undo button; shortcut shown by the tooltip system
+# @kind: tooltip
+# @max: 28
+doc-undo = Undo
+
+# @where: Title bar redo button
+# @kind: tooltip
+# @max: 28
+doc-redo = Redo
+
+# @where: Title bar: give the document to an AI agent (file + context)
+# @kind: button
+# @max: 20
+doc-hand-to-agent = Hand to agent
+
+# @where: Title bar main button: copy the image to the clipboard
+# @kind: button
+# @max: 16
+# @note: Main action everywhere. Never call it "Export".
+doc-copy = Copy
+
+# @where: Arrow next to Copy: other ways to get the result out
+# @kind: tooltip
+# @max: 24
+doc-other-ways = More options
+
+# @where: Name of a new document before it is saved; $date and $time are preformatted
+# @kind: label
+# @max: 40
+doc-untitled = Screenshot { $date } { $time }
+
+## Open menu
+## The "Open ▾" menu in the title bar and on the home screen.
+
+
+# @where: Open ▾ menu; shortcut Ctrl+O / ⌘O shown by the menu
+# @kind: menu
+# @max: 32
+open-file = File…
+
+# @where: Open ▾ menu: image from the clipboard
+# @kind: menu
+# @max: 32
+open-clipboard = From clipboard
+
+# @where: Open ▾ menu: submenu with capture kinds
+# @kind: menu
+# @max: 32
+open-new-shot = New screenshot
+
+# @where: Open ▾ menu: empty canvas
+# @kind: menu
+# @max: 32
+open-blank = Blank canvas
+
+# @where: Toast when "From clipboard" finds no image
+# @kind: error
+# @max: 80
+open-error-no-image = There is no image in the clipboard.
+
+# @where: Toast when a dropped or opened file cannot be read as an image
+# @kind: error
+# @max: 120
+open-error-not-image = Can't open “{ $name }”: it is not an image Znimok can read.
+
+## Other ways menu
+## The menu behind the arrow next to Copy.
+
+
+# @where: First item, same as the main Copy button
+# @kind: menu
+# @max: 32
+share-copy-image = Copy image
+
+# @where: Grey note after the first item
+# @kind: hint
+# @max: 24
+share-copy-image-hint = main button
+
+# @where: Puts the file itself on the clipboard (paste into a chat or a folder)
+# @kind: menu
+# @max: 32
+share-copy-file = Copy as file
+
+# @where: Opens the OS share sheet
+# @kind: menu
+# @max: 36
+share-system = Share…
+
+# @where: Same as share-system where the menu names the OS feature
+# @kind: menu
+# @max: 40
+share-system-long = System share menu…
+
+# @where: Opens the export dialog (Ctrl+Shift+S)
+# @kind: menu
+# @max: 32
+share-export = Export file…
+
+# @where: Single HTML file with marks that opens anywhere
+# @kind: menu
+# @max: 36
+share-html = Self-contained HTML…
+
+# @where: Group heading for integrations
+# @kind: heading
+# @max: 24
+share-targets = Share targets
+
+# @where: Badge next to the heading: not available yet
+# @kind: badge
+# @max: 12
+share-targets-later = later
+
+# @where: Adds an integration
+# @kind: menu
+# @max: 24
+share-add-target = Add target…
+
+## Tools
+## The vertical tool rail of the editor and the overlay. Tooltips carry the one-key shortcut in parentheses; keep the Latin letter as is — it is a physical key, not a word. Names without the key are used as headings.
+
+
+# @where: Tool rail button tooltip and accessible name; (V) is its shortcut
+# @kind: tooltip
+# @max: 28
+tool-select = Select (V)
+
+# @where: Tool / mark kind name without the shortcut: inspector heading, layer rows
+# @kind: label
+# @max: 20
+tool-select-name = Select
+
+# @where: Tool rail button tooltip and accessible name; (R) is its shortcut
+# @kind: tooltip
+# @max: 28
+tool-rect = Rectangle (R)
+
+# @where: Tool / mark kind name without the shortcut: inspector heading, layer rows
+# @kind: label
+# @max: 20
+tool-rect-name = Rectangle
+
+# @where: Tool rail button tooltip and accessible name; (E) is its shortcut
+# @kind: tooltip
+# @max: 28
+tool-ellipse = Ellipse (E)
+
+# @where: Tool / mark kind name without the shortcut: inspector heading, layer rows
+# @kind: label
+# @max: 20
+tool-ellipse-name = Ellipse
+
+# @where: Tool rail button tooltip and accessible name; (L) is its shortcut
+# @kind: tooltip
+# @max: 28
+tool-arrow = Arrow (L)
+
+# @where: Tool / mark kind name without the shortcut: inspector heading, layer rows
+# @kind: label
+# @max: 20
+tool-arrow-name = Arrow
+
+# @where: Tool rail button tooltip and accessible name; (P) is its shortcut
+# @kind: tooltip
+# @max: 28
+tool-pen = Pen (P)
+
+# @where: Tool / mark kind name without the shortcut: inspector heading, layer rows
+# @kind: label
+# @max: 20
+tool-pen-name = Pen
+
+# @where: Tool rail button tooltip and accessible name; (T) is its shortcut
+# @kind: tooltip
+# @max: 28
+tool-text = Text (T)
+
+# @where: Tool / mark kind name without the shortcut: inspector heading, layer rows
+# @kind: label
+# @max: 20
+tool-text-name = Text
+
+# @where: Tool rail button tooltip and accessible name; (B) is its shortcut
+# @kind: tooltip
+# @max: 28
+tool-hide = Hide (B)
+
+# @where: Tool / mark kind name without the shortcut: inspector heading, layer rows
+# @kind: label
+# @max: 20
+tool-hide-name = Hide
+
+# @where: Tool rail button tooltip and accessible name; (H) is its shortcut
+# @kind: tooltip
+# @max: 28
+tool-highlighter = Highlighter (H)
+
+# @where: Tool / mark kind name without the shortcut: inspector heading, layer rows
+# @kind: label
+# @max: 20
+tool-highlighter-name = Highlighter
+
+# @where: Tool rail button tooltip and accessible name; (N) is its shortcut
+# @kind: tooltip
+# @max: 28
+tool-counter = Counter (N)
+
+# @where: Tool / mark kind name without the shortcut: inspector heading, layer rows
+# @kind: label
+# @max: 20
+tool-counter-name = Counter
+
+# @where: Tool rail button tooltip and accessible name; (S) is its shortcut
+# @kind: tooltip
+# @max: 28
+tool-stamp = Stamp (S)
+
+# @where: Tool / mark kind name without the shortcut: inspector heading, layer rows
+# @kind: label
+# @max: 20
+tool-stamp-name = Stamp
+
+# @where: Tool rail button tooltip and accessible name; (I) is its shortcut
+# @kind: tooltip
+# @max: 28
+tool-image = Image (I)
+
+# @where: Tool / mark kind name without the shortcut: inspector heading, layer rows
+# @kind: label
+# @max: 20
+tool-image-name = Image
+
+# @where: Tool rail button tooltip and accessible name; (C) is its shortcut
+# @kind: tooltip
+# @max: 28
+tool-crop = Crop (C)
+
+# @where: Tool / mark kind name without the shortcut: inspector heading, layer rows
+# @kind: label
+# @max: 20
+tool-crop-name = Crop
+
+# @where: Mark kind name: a straight line (arrow with no heads)
+# @kind: label
+# @max: 20
+tool-line-name = Line
+
+# @where: Video editor rail: split the clip at the playhead; (S) is its shortcut
+# @kind: tooltip
+# @max: 28
+tool-cut = Split (S)
+
+# @where: Narrow windows: the rest of the tools behind "…"
+# @kind: tooltip
+# @max: 24
+tool-more = More tools
+
+## Context bar
+## The floating bar next to the selected mark (window, overlay and video share it).
+
+
+# @where: Colour swatch button for outlines
+# @kind: a11y
+# @max: 32
+ctx-stroke-colour = Stroke colour
+
+# @where: Colour swatch button for fills, with a colour set
+# @kind: a11y
+# @max: 32
+ctx-fill-colour = Fill colour
+
+# @where: Colour swatch button for fills when there is no fill
+# @kind: a11y
+# @max: 32
+ctx-fill-none = Fill colour: none
+
+# @where: Text mark: colour of the letters
+# @kind: a11y
+# @max: 32
+ctx-text-colour = Text colour
+
+# @where: Text mark: colour of the outline around the letters
+# @kind: a11y
+# @max: 32
+ctx-text-outline = Outline colour
+
+# @where: Line width option
+# @kind: a11y
+# @max: 16
+ctx-thin = Thin
+
+# @where: Line width option
+# @kind: a11y
+# @max: 16
+ctx-medium = Medium
+
+# @where: Line width option
+# @kind: a11y
+# @max: 16
+ctx-thick = Thick
+
+# @where: Corner rounding button
+# @kind: a11y
+# @max: 16
+ctx-corners = Corners
+
+# @where: Solid / dashed button
+# @kind: a11y
+# @max: 24
+ctx-line-style = Line style
+
+# @where: Shadow / glow button
+# @kind: a11y
+# @max: 16
+ctx-effect = Effect
+
+# @where: Text mark
+# @kind: a11y
+# @max: 16
+ctx-bold = Bold
+
+# @where: Text mark
+# @kind: a11y
+# @max: 16
+ctx-italic = Italic
+
+# @where: Text alignment
+# @kind: a11y
+# @max: 24
+ctx-align-left = Align left
+
+# @where: Text alignment
+# @kind: a11y
+# @max: 24
+ctx-align-centre = Align centre
+
+# @where: Text alignment
+# @kind: a11y
+# @max: 24
+ctx-align-right = Align right
+
+# @where: Status hint while drawing a rectangle/ellipse
+# @kind: hint
+# @max: 32
+# @note: "Shift" is a key name, keep it.
+ctx-hint-square = Shift — square
+
+# @where: Status hint on the canvas
+# @kind: hint
+# @max: 32
+ctx-hint-zoom = Alt + wheel — zoom
+
+## Colour picker
+## The popover that opens from a colour swatch.
+
+
+# @where: Accessible name of the popover
+# @kind: a11y
+# @max: 24
+colour-picker = Colour picker
+
+# @where: Button that picks a colour from the screenshot or the screen
+# @kind: button
+# @max: 16
+colour-eyedropper = Eyedropper
+
+# @where: Tooltip of the eyedropper button
+# @kind: tooltip
+# @max: 72
+colour-eyedropper-tip = Eyedropper: pick a colour from the screenshot or the screen
+
+# @where: Label of the hex code field; keep "HEX"
+# @kind: label
+# @max: 6
+colour-hex = HEX
+
+# @where: Opacity field (0–100 %)
+# @kind: a11y
+# @max: 16
+colour-opacity = Opacity
+
+# @where: Row of recently used colours
+# @kind: heading
+# @max: 16
+colour-recent = Recent
+
+# @where: Adds the colour to the user's palette
+# @kind: button
+# @max: 24
+colour-save = Save to palette
+
+# @where: Grey note at the bottom of the popover
+# @kind: hint
+# @max: 160
+colour-eyedropper-note = The eyedropper samples the screenshot; for the live screen it uses capture (Windows) or the system sampler (macOS).
+
+# @where: Palette swatch (accessible name only)
+# @kind: a11y
+# @max: 16
+colour-red = Red
+
+# @where: Palette swatch (accessible name only)
+# @kind: a11y
+# @max: 16
+colour-orange = Orange
+
+# @where: Palette swatch (accessible name only)
+# @kind: a11y
+# @max: 16
+colour-yellow = Yellow
+
+# @where: Palette swatch (accessible name only)
+# @kind: a11y
+# @max: 16
+colour-green = Green
+
+# @where: Palette swatch (accessible name only)
+# @kind: a11y
+# @max: 16
+colour-blue = Blue
+
+# @where: Palette swatch (accessible name only)
+# @kind: a11y
+# @max: 16
+colour-purple = Purple
+
+# @where: Palette swatch (accessible name only)
+# @kind: a11y
+# @max: 16
+colour-white = White
+
+# @where: Palette swatch (accessible name only)
+# @kind: a11y
+# @max: 16
+colour-black = Black
+
+## Inspector
+## The right panel of the editor window: tabs and the Object tab.
+
+
+# @where: Inspector tab: the selected mark
+# @kind: tab
+# @max: 10
+insp-tab-object = Object
+
+# @where: Inspector tab: list of marks, z-order
+# @kind: tab
+# @max: 10
+insp-tab-layers = Layers
+
+# @where: Inspector tab: the screenshot itself (crop, rotation, tone)
+# @kind: tab
+# @max: 10
+insp-tab-shot = Image
+
+# @where: Inspector tab: title, author, tags…
+# @kind: tab
+# @max: 10
+insp-tab-meta = Meta
+
+# @where: Video inspector tab: trim and sound
+# @kind: tab
+# @max: 10
+insp-tab-clip = Clip
+
+# @where: Video inspector tab: DevTools log and clicks
+# @kind: tab
+# @max: 10
+insp-tab-events = Events
+
+# @where: Collapse the inspector
+# @kind: a11y
+# @max: 24
+insp-hide-panel = Hide panel
+
+# @where: Expand the inspector
+# @kind: a11y
+# @max: 24
+insp-show-panel = Show panel
+
+# @where: After the kind name in the Object tab: which mark of how many
+# @kind: label
+# @max: 24
+insp-selected-of = { $index } of { $total }
+
+# @where: Object tab when nothing is selected
+# @kind: hint
+# @max: 80
+insp-nothing-selected = Select an annotation to change it, or pick a tool on the left.
+
+# @where: Object tab of a screenshot without marks
+# @kind: hint
+# @max: 100
+insp-no-marks = No annotations yet. Pick a tool on the left and draw on the screenshot.
+
+# @where: Section: outline colour and width
+# @kind: label
+# @max: 16
+insp-stroke = Stroke
+
+# @where: Section: fill colour
+# @kind: label
+# @max: 16
+insp-fill = Fill
+
+# @where: Section: corner rounding
+# @kind: label
+# @max: 16
+insp-corners = Corners
+
+# @where: Corner option
+# @kind: option
+# @max: 10
+insp-corners-sharp = Sharp
+
+# @where: Corner option
+# @kind: option
+# @max: 10
+insp-corners-soft = Soft
+
+# @where: Corner option
+# @kind: option
+# @max: 10
+insp-corners-round = Round
+
+# @where: Section: opacity slider
+# @kind: label
+# @max: 16
+insp-opacity = Opacity
+
+# @where: Section: list of effects
+# @kind: label
+# @max: 16
+insp-effects = Effects
+
+# @where: Effects section when empty
+# @kind: hint
+# @max: 24
+insp-effects-none = No effects
+
+# @where: Effect name (list row and Add menu)
+# @kind: menu
+# @max: 16
+insp-effect-shadow = Shadow
+
+# @where: Effect name
+# @kind: menu
+# @max: 16
+insp-effect-glow = Glow
+
+# @where: Effect name
+# @kind: menu
+# @max: 16
+insp-effect-outline = Outline
+
+# @where: Toggle of an effect row; $name is the effect name
+# @kind: a11y
+# @max: 32
+insp-effect-on = { $name } on
+
+# @where: Toggle of an effect row
+# @kind: a11y
+# @max: 32
+insp-effect-off = { $name } off
+
+# @where: Chevron that opens an effect's settings
+# @kind: a11y
+# @max: 16
+insp-expand = Expand
+
+# @where: Chevron that closes an effect's settings
+# @kind: a11y
+# @max: 16
+insp-collapse = Collapse
+
+# @where: Shadow setting (short label before a number field)
+# @kind: label
+# @max: 10
+insp-shadow-offset = Offset
+
+# @where: Shadow setting (short label)
+# @kind: label
+# @max: 10
+# @note: Very short label; the field's accessible name is insp-shadow-blur-long.
+insp-shadow-blur = Blur
+
+# @where: Accessible name of the shadow blur field
+# @kind: a11y
+# @max: 24
+insp-shadow-blur-long = Blur radius
+
+# @where: Accessible name of the shadow opacity field
+# @kind: a11y
+# @max: 24
+insp-shadow-opacity = Shadow opacity
+
+# @where: Design note for developers is not shown; this is the hint under the list
+# @kind: hint
+# @max: 160
+insp-effects-note = Effects stack: add, switch on and off, reorder.
+
+# @where: Position field label; keep the Latin letter
+# @kind: label
+# @max: 2
+insp-x = X
+
+# @where: Position field label; keep the Latin letter
+# @kind: label
+# @max: 2
+insp-y = Y
+
+# @where: Width field label, one letter
+# @kind: label
+# @max: 2
+insp-w = W
+
+# @where: Height field label, one letter
+# @kind: label
+# @max: 2
+insp-h = H
+
+# @where: Accessible name of the width field
+# @kind: a11y
+# @max: 16
+insp-width = Width
+
+# @where: Accessible name of the height field
+# @kind: a11y
+# @max: 16
+insp-height = Height
+
+# @where: Rotation field (degrees)
+# @kind: label
+# @max: 16
+insp-rotation = Rotation
+
+# @where: Line style option
+# @kind: a11y
+# @max: 20
+insp-line-solid = Solid
+
+# @where: Line style option
+# @kind: a11y
+# @max: 20
+insp-line-dashed = Dashed
+
+# @where: Line style option
+# @kind: a11y
+# @max: 20
+insp-line-dashdot = Dash-dot
+
+# @where: Arrow / line / pen section: arrowheads
+# @kind: label
+# @max: 20
+insp-heads = Arrowheads
+
+# @where: Grey note after the heading: heads also work for the pen
+# @kind: hint
+# @max: 24
+insp-heads-pen = pen too
+
+# @where: Arrowhead at the start of the line
+# @kind: label
+# @max: 10
+insp-head-start = Start
+
+# @where: Arrowhead at the end of the line
+# @kind: label
+# @max: 10
+insp-head-end = End
+
+# @where: Arrowhead size (S / M / L)
+# @kind: label
+# @max: 10
+insp-head-size = Size
+
+# @where: Arrowhead shape
+# @kind: a11y
+# @max: 16
+insp-head-triangle = Triangle
+
+# @where: Arrowhead shape: open V
+# @kind: a11y
+# @max: 16
+insp-head-chevron = Chevron
+
+# @where: Arrowhead shape
+# @kind: a11y
+# @max: 16
+insp-head-dot = Dot
+
+# @where: Size option, one letter; keep S/M/L in every language
+# @kind: option
+# @max: 2
+insp-size-s = S
+
+# @where: Size option
+# @kind: option
+# @max: 2
+insp-size-m = M
+
+# @where: Size option
+# @kind: option
+# @max: 2
+insp-size-l = L
+
+## Text mark
+## Inspector and hints while a text mark is edited.
+
+
+# @where: After the kind name in the inspector while typing
+# @kind: status
+# @max: 16
+text-editing = editing
+
+# @where: Section: typeface
+# @kind: label
+# @max: 12
+text-font = Font
+
+# @where: Font size field
+# @kind: label
+# @max: 12
+text-size = Size
+
+# @where: Section: text block width
+# @kind: label
+# @max: 12
+text-block = Block
+
+# @where: Accessible name of the block width field
+# @kind: a11y
+# @max: 24
+text-block-width = Block width
+
+# @where: Under the block width
+# @kind: hint
+# @max: 100
+text-block-hint = Width 0 — no wrapping; the side handles change the width.
+
+# @where: Section: outline around letters
+# @kind: label
+# @max: 12
+text-outline = Outline
+
+# @where: Status hint: Enter finishes
+# @kind: hint
+# @max: 16
+text-hint-done = done
+
+# @where: Status hint: Shift+Enter adds a line
+# @kind: hint
+# @max: 16
+text-hint-newline = new line
+
+# @where: Status hint: Esc cancels
+# @kind: hint
+# @max: 16
+text-hint-cancel = cancel
+
+# @where: Status bar while a text mark is edited
+# @kind: status
+# @max: 24
+text-status = editing text
+
+# @where: Button: smaller type
+# @kind: tooltip
+# @max: 24
+text-size-down = Smaller type
+
+# @where: Button: larger type
+# @kind: tooltip
+# @max: 24
+text-size-up = Larger type
+
+## Hide, highlighter, counter, stamp
+## Mark-specific controls.
+
+
+# @where: Hide style: blur what is under the mark
+# @kind: option
+# @max: 12
+hide-blur = Blur
+
+# @where: Hide style: pixelate
+# @kind: option
+# @max: 12
+hide-pixels = Pixels
+
+# @where: Hide style: solid plate
+# @kind: option
+# @max: 12
+hide-plate = Solid
+
+# @where: Slider: how strong the hiding is
+# @kind: label
+# @max: 16
+hide-strength = Strength
+
+# @where: Layer row of a hide mark with a detected kind; $what is e.g. "e-mail"
+# @kind: label
+# @max: 40
+hide-hidden-name = Hidden: { $what }
+
+# @where: Highlighter: band height
+# @kind: label
+# @max: 16
+mark-band = Band height
+
+# @where: Counter: badge shape
+# @kind: label
+# @max: 16
+counter-shape = Shape
+
+# @where: Counter shape
+# @kind: option
+# @max: 12
+counter-circle = Circle
+
+# @where: Counter shape
+# @kind: option
+# @max: 12
+counter-square = Square
+
+# @where: Counter shape: map-pin
+# @kind: option
+# @max: 12
+counter-pin = Pin
+
+# @where: Counter: colour of the number
+# @kind: label
+# @max: 16
+counter-digit-colour = Number
+
+# @where: Counter number colour option
+# @kind: tooltip
+# @max: 60
+counter-digit-auto = Auto: black or white, whichever reads better
+
+# @where: Counter context menu
+# @kind: menu
+# @max: 32
+counter-start-from = Start numbering from…
+
+# @where: Counter context menu
+# @kind: menu
+# @max: 32
+counter-new-group = New numbering group
+
+# @where: Counter context menu
+# @kind: menu
+# @max: 48
+counter-edit-group = Edit the whole group (colour, size, shape)
+
+# @where: Counter context menu
+# @kind: menu
+# @max: 32
+counter-delete-group = Delete group
+
+# @where: Counter inspector: the number the next click will place
+# @kind: hint
+# @max: 16
+counter-next = Next: { $n }
+
+# @where: Layer row name of a counter
+# @kind: label
+# @max: 20
+counter-name = Counter { $n }
+
+# @where: Stamp and emoji picker (tool S)
+# @kind: heading
+# @max: 40
+stamp-picker = Stamps and emoji
+
+# @where: Search field of the picker
+# @kind: placeholder
+# @max: 24
+stamp-search = Search emoji
+
+# @where: Picker tab with Znimok stamps
+# @kind: tab
+# @max: 12
+stamp-stamps = Stamps
+
+# @where: Picker section
+# @kind: tab
+# @max: 24
+stamp-emoji-recent = Emoji · recent
+
+# @where: Stamp name (accessible name)
+# @kind: a11y
+# @max: 20
+stamp-check = Check mark
+
+# @where: Stamp name (accessible name)
+# @kind: a11y
+# @max: 20
+stamp-cross = Cross
+
+# @where: Stamp name (accessible name)
+# @kind: a11y
+# @max: 20
+stamp-question = Question
+
+# @where: Stamp name (accessible name)
+# @kind: a11y
+# @max: 20
+stamp-exclamation = Exclamation
+
+# @where: Stamp name (accessible name)
+# @kind: a11y
+# @max: 20
+stamp-star = Star
+
+# @where: Stamp name (accessible name)
+# @kind: a11y
+# @max: 20
+stamp-warning = Warning
+
+## Layers
+## The Layers tab of the inspector.
+
+
+# @where: Heading of the list; order is top to bottom
+# @kind: label
+# @max: 40
+layers-count =
+    { $count ->
+        [one] { $count } annotation · top to bottom
+       *[other] { $count } annotations · top to bottom
+    }
+
+# @where: Button: group the selected marks
+# @kind: a11y
+# @max: 20
+layers-group = Group
+
+# @where: Button: ungroup
+# @kind: a11y
+# @max: 20
+layers-ungroup = Ungroup
+
+# @where: Button: one step up in z-order
+# @kind: a11y
+# @max: 20
+layers-up = Bring forward
+
+# @where: Button: one step down in z-order
+# @kind: a11y
+# @max: 20
+layers-down = Send backward
+
+# @where: Eye button of a hidden row
+# @kind: a11y
+# @max: 20
+layers-show = Show
+
+# @where: Eye button of a visible row
+# @kind: a11y
+# @max: 20
+layers-hide = Hide
+
+# @where: Chevron of a group row
+# @kind: a11y
+# @max: 24
+layers-collapse-group = Collapse group
+
+# @where: Chevron of a group row
+# @kind: a11y
+# @max: 24
+layers-expand-group = Expand group
+
+# @where: Row of a named group
+# @kind: label
+# @max: 40
+layers-group-name = Group “{ $name }”
+
+# @where: Default name of a new group
+# @kind: label
+# @max: 24
+layers-group-default = Group { $n }
+
+# @where: Last row: the screenshot itself
+# @kind: label
+# @max: 48
+layers-background = Screenshot (background) — always at the bottom
+
+# @where: Grey note under the list
+# @kind: hint
+# @max: 160
+layers-hint = Drag to reorder; click selects, F2 renames; a group is one row, its members stay together.
+
+# @where: Layers tab with no marks
+# @kind: hint
+# @max: 60
+layers-empty = No annotations yet — draw something on the canvas.
+
+## Arrange
+## Align, distribute and z-order actions (context bar with several marks, menus).
+
+
+# @where: Several marks selected
+# @kind: tooltip
+# @max: 32
+arrange-align-left = Align left edges
+
+# @where: Several marks selected
+# @kind: tooltip
+# @max: 32
+arrange-align-hcentre = Align vertical centres
+
+# @where: Several marks selected
+# @kind: tooltip
+# @max: 32
+arrange-align-right = Align right edges
+
+# @where: Several marks selected
+# @kind: tooltip
+# @max: 32
+arrange-align-top = Align top edges
+
+# @where: Several marks selected
+# @kind: tooltip
+# @max: 32
+arrange-align-vcentre = Align horizontal centres
+
+# @where: Several marks selected
+# @kind: tooltip
+# @max: 32
+arrange-align-bottom = Align bottom edges
+
+# @where: Three or more selected
+# @kind: tooltip
+# @max: 32
+arrange-distribute-x = Even gaps across
+
+# @where: Three or more selected
+# @kind: tooltip
+# @max: 32
+arrange-distribute-y = Even gaps down
+
+# @where: Context menu; shortcut ]
+# @kind: menu
+# @max: 28
+arrange-front = Bring to front
+
+# @where: Context menu; shortcut [
+# @kind: menu
+# @max: 28
+arrange-back = Send to back
+
+# @where: Context menu; Ctrl+G
+# @kind: menu
+# @max: 20
+arrange-group = Group
+
+# @where: Context menu; Ctrl+Shift+G
+# @kind: menu
+# @max: 20
+arrange-ungroup = Ungroup
+
+# @where: Context menu: new marks of this kind use this style
+# @kind: menu
+# @max: 40
+arrange-default-style = Make default style
+
+# @where: Status bar with several marks selected
+# @kind: status
+# @max: 24
+arrange-selected = Selected: { $count }
+
+## Image tab
+## The Image tab of the inspector: source, crop, rotation, tone, image and canvas size.
+
+
+# @where: Source line: window capture; $title is the window title
+# @kind: label
+# @max: 48
+shot-source-window = Window “{ $title }”
+
+# @where: Source line: whole display; $n is its number
+# @kind: label
+# @max: 48
+shot-source-display = Display { $n }
+
+# @where: Source line: region capture
+# @kind: label
+# @max: 48
+shot-source-region = Region
+
+# @where: Source line: pasted image
+# @kind: label
+# @max: 48
+shot-source-clipboard = From clipboard
+
+# @where: Source line: opened file
+# @kind: label
+# @max: 48
+shot-source-file = File “{ $name }”
+
+# @where: Facts line: an HDR capture tone-mapped to SDR; $nits is a number
+# @kind: label
+# @max: 48
+shot-hdr = HDR → SDR, white { $nits } nits
+
+# @where: Facts line: marks left outside the crop (they are kept)
+# @kind: label
+# @max: 40
+shot-outside =
+    { $count ->
+        [one] { $count } outside the crop
+       *[other] { $count } outside the crop
+    }
+
+# @where: Section: crop
+# @kind: label
+# @max: 12
+shot-crop = Crop
+
+# @where: Crop aspect: free
+# @kind: option
+# @max: 12
+shot-crop-free = Free
+
+# @where: Starts crop mode; (C) is the shortcut
+# @kind: button
+# @max: 20
+shot-crop-button = Crop (C)
+
+# @where: Section: rotate and mirror
+# @kind: label
+# @max: 28
+shot-rotate-mirror = Rotate and mirror
+
+# @where: Button
+# @kind: a11y
+# @max: 24
+shot-rotate-left = Rotate left
+
+# @where: Button
+# @kind: a11y
+# @max: 24
+shot-rotate-right = Rotate right
+
+# @where: Button
+# @kind: a11y
+# @max: 32
+shot-mirror-h = Mirror horizontally
+
+# @where: Button
+# @kind: a11y
+# @max: 32
+shot-mirror-v = Mirror vertically
+
+# @where: Section: tone
+# @kind: label
+# @max: 12
+shot-tone = Tone
+
+# @where: Hold to see the original
+# @kind: button
+# @max: 16
+shot-compare = Compare
+
+# @where: Tooltip of Compare
+# @kind: tooltip
+# @max: 60
+shot-compare-tip = Hold to see the original frame
+
+# @where: Tone slider; value in EV
+# @kind: label
+# @max: 14
+shot-exposure = Exposure
+
+# @where: Tone slider: midtones
+# @kind: label
+# @max: 14
+shot-gamma = Gamma
+
+# @where: Tone slider
+# @kind: label
+# @max: 14
+shot-contrast = Contrast
+
+# @where: Reset button of the tone section
+# @kind: tooltip
+# @max: 60
+shot-tone-reset-tip = Back to the tone as captured
+
+# @where: Grey note under the tone sliders
+# @kind: hint
+# @max: 120
+shot-tone-hint = A recipe over the original: the original stays untouched; Compare shows it while you hold.
+
+# @where: Opens the image size dialog
+# @kind: button
+# @max: 20
+shot-image-size = Image…
+
+# @where: Opens the canvas size dialog
+# @kind: button
+# @max: 20
+shot-canvas-size = Canvas…
+
+# @where: Grey note under the two buttons
+# @kind: hint
+# @max: 120
+shot-bake-hint = Both bake the recipe into a new original; the previous one stays for undo.
+
+# @where: Dialog title
+# @kind: title
+# @max: 32
+size-image-title = Image size
+
+# @where: Dialog title
+# @kind: title
+# @max: 32
+size-canvas-title = Canvas size
+
+# @where: Dialog: current size
+# @kind: label
+# @max: 32
+size-now = Now: { $width } × { $height }
+
+# @where: Dialog field
+# @kind: label
+# @max: 12
+size-percent = Percent
+
+# @where: Dialog checkbox
+# @kind: label
+# @max: 32
+size-keep-ratio = Keep proportions
+
+# @where: Dialog checkbox (image size only)
+# @kind: label
+# @max: 48
+size-scale-text = Scale text with the image
+
+# @where: Dialog checkbox: nearest-neighbour resampling
+# @kind: label
+# @max: 40
+size-sharp = Sharp (no smoothing)
+
+# @where: Dialog main button
+# @kind: button
+# @max: 16
+size-apply = Resize
+
+# @where: Dialog note (image size)
+# @kind: hint
+# @max: 160
+size-note-image = Line widths, counters and stamps keep their size; text scales only with the checkbox above.
+
+# @where: Dialog note (canvas size)
+# @kind: hint
+# @max: 160
+size-note-canvas = The screenshot becomes an object on a larger or smaller canvas; nothing is stretched.
+
+## Meta tab
+## Title, description, author and the rest of the document metadata.
+
+
+# @where: Field
+# @kind: label
+# @max: 16
+meta-title = Title
+
+# @where: Field
+# @kind: label
+# @max: 16
+meta-description = Description
+
+# @where: Field
+# @kind: label
+# @max: 16
+meta-author = Author
+
+# @where: Field: copyright notice
+# @kind: label
+# @max: 16
+meta-rights = Copyright
+
+# @where: Field
+# @kind: label
+# @max: 16
+meta-tags = Tags
+
+# @where: Placeholder of the new-tag field
+# @kind: placeholder
+# @max: 16
+meta-add-tag = add…
+
+# @where: Accessible name of the new-tag field
+# @kind: a11y
+# @max: 16
+meta-add-tag-a11y = Add tag
+
+# @where: Field: capture date and time
+# @kind: label
+# @max: 20
+meta-taken = Date taken
+
+# @where: Field: where it came from
+# @kind: label
+# @max: 16
+meta-source = Source
+
+# @where: Section: what export does with metadata
+# @kind: label
+# @max: 20
+meta-on-export = On export
+
+# @where: Checkbox
+# @kind: label
+# @max: 32
+meta-write = Write to PNG / JPEG
+
+# @where: Checkbox: remove everything
+# @kind: label
+# @max: 32
+meta-strip = Remove all metadata
+
+# @where: Grey note
+# @kind: hint
+# @max: 120
+meta-program-note = The Program field is set to Znimok and its version, except in the remove-all mode.
+
+## Crop mode
+## The editor while the crop frame is being edited.
+
+
+# @where: Crop bar label
+# @kind: label
+# @max: 12
+crop-title = Crop
+
+# @where: Lock icon next to the proportions
+# @kind: a11y
+# @max: 32
+crop-lock-ratio = Lock proportions
+
+# @where: Status hint after "Enter"
+# @kind: hint
+# @max: 16
+crop-hint-done = done
+
+# @where: Status hint after "Esc"
+# @kind: hint
+# @max: 16
+crop-hint-cancel = cancel
+
+# @where: Status hint
+# @kind: hint
+# @max: 40
+crop-hint-move = drag inside — move the frame
+
+# @where: Frame width field
+# @kind: a11y
+# @max: 24
+crop-width = Crop width
+
+# @where: Frame height field
+# @kind: a11y
+# @max: 24
+crop-height = Crop height
+
+# @where: Inspector line: original size → frame size
+# @kind: label
+# @max: 48
+crop-sizes = { $width } × { $height } → crop { $cw } × { $ch }
+
+# @where: Inspector line: marks outside the new frame are kept
+# @kind: hint
+# @max: 60
+crop-outside-kept =
+    { $count ->
+        [one] { $count } annotation outside the crop — it will be kept
+       *[other] { $count } annotations outside the crop — they will be kept
+    }
+
+# @where: Grey note while cropping
+# @kind: hint
+# @max: 160
+crop-dimmed-note = The rest of the inspector is dimmed while cropping. The crop is a document property: annotations outside it are not deleted.
+
+# @where: Status bar while cropping
+# @kind: status
+# @max: 48
+crop-status =
+    { $count ->
+        [one] cropping · { $count } annotation outside
+       *[other] cropping · { $count } annotations outside
+    }
+
+## Canvas and status bar
+## Context menu of the canvas, drag-and-drop, status bar.
+
+
+# @where: Context menu; Ctrl+V
+# @kind: menu
+# @max: 24
+canvas-paste = Paste
+
+# @where: Context menu; Ctrl+A
+# @kind: menu
+# @max: 24
+canvas-select-all = Select all
+
+# @where: Context menu; Ctrl+0
+# @kind: menu
+# @max: 24
+canvas-fit = Fit
+
+# @where: Context menu; Ctrl+1
+# @kind: menu
+# @max: 24
+canvas-zoom-100 = Zoom 100 %
+
+# @where: Drop overlay while a file is dragged over the canvas
+# @kind: title
+# @max: 48
+canvas-drop-add = Release to add as an annotation
+
+# @where: Drop overlay second line; { $key } is "Shift"
+# @kind: hint
+# @max: 60
+canvas-drop-shift = Hold { $key } to open as a new screenshot
+
+# @where: Empty canvas
+# @kind: hint
+# @max: 100
+canvas-blank-hint = Blank canvas. Ctrl+V pastes an image; drop a file to open it.
+
+# @where: Status bar button
+# @kind: a11y
+# @max: 24
+status-fit = Fit to window
+
+# @where: Status bar zoom value field
+# @kind: a11y
+# @max: 16
+status-zoom = Zoom
+
+# @where: Status bar button
+# @kind: a11y
+# @max: 24
+status-zoom-100 = Zoom 100 %
+
+# @where: Status bar: no crop
+# @kind: status
+# @max: 32
+status-crop-whole = Crop: whole screenshot
+
+# @where: Status bar: current crop
+# @kind: status
+# @max: 32
+status-crop-size = Crop: { $width } × { $height }
+
+# @where: Status bar after a save
+# @kind: status
+# @max: 32
+status-saved-library = Saved to library
+
+## Capture overlay
+## The frozen-screen overlay for choosing what to capture. Key names (Shift, Alt, Space, Esc) are keys: keep them.
+
+
+# @where: Hint chip: releasing the mouse without a key
+# @kind: badge
+# @max: 12
+capture-release = release
+
+# @where: Hint: where the capture goes on release
+# @kind: hint
+# @max: 20
+capture-to-editor = to editor
+
+# @where: Hint after "Shift"
+# @kind: hint
+# @max: 20
+capture-to-clipboard = to clipboard
+
+# @where: Hint after "Alt"
+# @kind: hint
+# @max: 20
+capture-over-screen = over the screen
+
+# @where: Hint after "Space"
+# @kind: hint
+# @max: 20
+capture-whole-screen = whole screen
+
+# @where: Hint chip: a click (not a drag)
+# @kind: badge
+# @max: 12
+capture-click = click
+
+# @where: Hint after "click"
+# @kind: hint
+# @max: 20
+capture-window = window
+
+# @where: Hint after "Esc"
+# @kind: hint
+# @max: 20
+capture-cancel = cancel
+
+# @where: Mode switch, top right
+# @kind: option
+# @max: 12
+capture-mode-shot = Screenshot
+
+# @where: Mode switch, top right
+# @kind: option
+# @max: 12
+capture-mode-record = Record
+
+# @where: Countdown before a delayed capture: Esc cancels
+# @kind: hint
+# @max: 24
+capture-countdown-cancel = Esc — cancel
+
+## Overlay editor
+## Editing right over the frozen screen (Alt on release).
+
+
+# @where: Chip at the left of the overlay bar
+# @kind: badge
+# @max: 20
+overlay-chip = Over the screen
+
+# @where: Button: move to the editor window
+# @kind: a11y
+# @max: 32
+overlay-open-window = Open in the editor window
+
+# @where: Tooltip of the same button
+# @kind: tooltip
+# @max: 80
+overlay-open-window-tip = To the editor window — tone, size, library
+
+# @where: Hint in the overlay status
+# @kind: hint
+# @max: 48
+overlay-hint-frame = drag the frame corners — that is the crop
+
+# @where: Hint after "Ctrl+S"
+# @kind: hint
+# @max: 20
+overlay-hint-save = to library
+
+# @where: Hint after "Esc"
+# @kind: hint
+# @max: 16
+overlay-hint-close = close
+
+## Pill
+## The small card in the corner of the display after a capture (6 s).
+
+
+# @where: Pill title after a region capture
+# @kind: title
+# @max: 40
+pill-region-copied = Region screenshot copied
+
+# @where: Pill title after a whole-screen capture
+# @kind: title
+# @max: 40
+pill-screen-copied = Screenshot copied
+
+# @where: Pill title after a window capture
+# @kind: title
+# @max: 40
+pill-window-copied = Window screenshot copied
+
+# @where: Pill title when the capture only went to the library
+# @kind: title
+# @max: 40
+pill-saved = Saved to library
+
+# @where: Pill second line
+# @kind: hint
+# @max: 48
+pill-where = { $width } × { $height } · in the clipboard and the library
+
+# @where: Pill button
+# @kind: button
+# @max: 14
+pill-edit = Edit
+
+# @where: Pill "…" button
+# @kind: a11y
+# @max: 80
+pill-more = More: save as file, hand to agent, show in library
+
+# @where: Pill menu
+# @kind: menu
+# @max: 28
+pill-save-file = Save as file…
+
+# @where: Pill menu
+# @kind: menu
+# @max: 28
+pill-show-library = Show in library
+
+# @where: Yellow pill while an agent captures; $client is its name
+# @kind: title
+# @max: 48
+pill-agent-capturing = { $client } is capturing the screen
+
+## Tray
+## The tray menu on Windows and the menu bar menu on macOS (same items, native menu).
+
+
+# @where: Tray menu
+# @kind: menu
+# @max: 28
+tray-region = Region screenshot
+
+# @where: Tray menu
+# @kind: menu
+# @max: 28
+tray-screen = Screenshot
+
+# @where: Tray menu
+# @kind: menu
+# @max: 28
+tray-record = Record video
+
+# @where: Tray menu
+# @kind: menu
+# @max: 28
+tray-open = Open Znimok
+
+# @where: Tray menu: release all hotkeys for a while
+# @kind: menu
+# @max: 32
+tray-pause-keys = Pause hotkeys
+
+# @where: Tray menu while paused
+# @kind: menu
+# @max: 32
+tray-resume-keys = Resume hotkeys
+
+# @where: Tray menu (Windows)
+# @kind: menu
+# @max: 20
+tray-quit = Quit
+
+# @where: Menu bar menu (macOS)
+# @kind: menu
+# @max: 24
+tray-quit-mac = Quit Znimok
+
+# @where: Tray icon tooltip when idle
+# @kind: tooltip
+# @max: 40
+tray-tooltip = Znimok
+
+# @where: Tray icon tooltip while recording; $time like 00:12
+# @kind: tooltip
+# @max: 40
+tray-tooltip-recording = Znimok — recording { $time }
+
+# @where: Tray icon tooltip while hotkeys are paused
+# @kind: tooltip
+# @max: 40
+tray-tooltip-paused-keys = Znimok — hotkeys paused
+
+## Export dialog
+## Export a file (Ctrl+Shift+S).
+
+
+# @where: Dialog title and accessible name
+# @kind: title
+# @max: 24
+export-title = Export file
+
+# @where: Left column heading
+# @kind: label
+# @max: 20
+export-preview = Preview
+
+# @where: Fact label
+# @kind: label
+# @max: 12
+export-size = Size
+
+# @where: Fact label: estimated file size
+# @kind: label
+# @max: 12
+export-file = File
+
+# @where: Fact label: number of annotations
+# @kind: label
+# @max: 12
+export-marks = Annotations
+
+# @where: Note under the preview
+# @kind: hint
+# @max: 140
+export-flat-note = A file with annotations is a flat image. The editable project stays in the library.
+
+# @where: Field
+# @kind: label
+# @max: 12
+export-format = Format
+
+# @where: Under the format choice
+# @kind: hint
+# @max: 120
+export-format-hint = PNG — lossless, with transparency. JPEG and WebP — smaller files for photos and chats.
+
+# @where: Field
+# @kind: label
+# @max: 12
+export-scale = Scale
+
+# @where: Field (JPEG/WebP)
+# @kind: label
+# @max: 12
+export-quality = Quality
+
+# @where: Checkbox
+# @kind: label
+# @max: 56
+export-metadata = Write metadata (title, description, author, date)
+
+# @where: Checkbox
+# @kind: label
+# @max: 32
+export-white-bg = Transparent background → white
+
+# @where: Checkbox
+# @kind: label
+# @max: 32
+export-remember = Remember these settings
+
+# @where: File name field
+# @kind: label
+# @max: 12
+export-name = Name
+
+# @where: Accessible name of the file name field
+# @kind: a11y
+# @max: 16
+export-name-a11y = File name
+
+# @where: Dialog secondary button
+# @kind: button
+# @max: 16
+export-to-clipboard = To clipboard
+
+# @where: Toast after export; $name is the file name
+# @kind: toast
+# @max: 60
+export-done-toast = Exported “{ $name }”
+
+# @where: Toast when the file cannot be written
+# @kind: error
+# @max: 80
+export-error = Could not save the file.
+
+# @where: Toast after copying
+# @kind: toast
+# @max: 24
+clipboard-copied = Copied
+
+# @where: Toast when the clipboard is locked or fails
+# @kind: error
+# @max: 80
+clipboard-error = Could not copy to the clipboard.
+
+## Library
+## The home screen: grid of screenshots and videos, filters, details panel.
+
+
+# @where: Page title
+# @kind: title
+# @max: 24
+lib-title = Library
+
+# @where: Search field
+# @kind: placeholder
+# @max: 60
+lib-search = Search by name, tag or text in the screenshot
+
+# @where: Main button
+# @kind: button
+# @max: 20
+lib-new-shot = New screenshot
+
+# @where: Arrow next to New screenshot
+# @kind: a11y
+# @max: 32
+lib-capture-more = Other capture options
+
+# @where: Button (v2)
+# @kind: button
+# @max: 16
+lib-record = Record
+
+# @where: Filter
+# @kind: option
+# @max: 12
+lib-filter-all = All
+
+# @where: Filter
+# @kind: option
+# @max: 14
+lib-filter-shots = Screenshots
+
+# @where: Filter
+# @kind: option
+# @max: 12
+lib-filter-videos = Videos
+
+# @where: Filter: videos with a DevTools report
+# @kind: option
+# @max: 16
+lib-filter-report = With report
+
+# @where: Sort menu
+# @kind: option
+# @max: 20
+lib-sort-newest = Newest first
+
+# @where: Sort menu
+# @kind: option
+# @max: 20
+lib-sort-oldest = Oldest first
+
+# @where: Sort menu
+# @kind: option
+# @max: 20
+lib-sort-name = By name
+
+# @where: Sort menu
+# @kind: option
+# @max: 20
+lib-sort-size = By size
+
+# @where: Card badge of a recording with a browser log
+# @kind: badge
+# @max: 16
+lib-badge-devtools = DevTools log
+
+# @where: Details panel chip
+# @kind: button
+# @max: 12
+lib-add-tag = + tag
+
+# @where: Details panel main button; also card menu (Enter)
+# @kind: button
+# @max: 24
+lib-open-editor = Open in editor
+
+# @where: Details panel short button
+# @kind: button
+# @max: 12
+lib-to-agent = To agent
+
+# @where: Details panel: show the file in Explorer / Finder
+# @kind: button
+# @max: 16
+lib-in-folder = In folder
+
+# @where: Card context menu
+# @kind: menu
+# @max: 28
+lib-show-in-folder = Show in folder
+
+# @where: Card context menu
+# @kind: menu
+# @max: 24
+lib-trash = Move to trash
+
+# @where: Details panel button
+# @kind: button
+# @max: 24
+lib-trash-long = Move to trash
+
+# @where: Details fact
+# @kind: label
+# @max: 16
+lib-source = Source
+
+# @where: Source value
+# @kind: value
+# @max: 16
+lib-src-window = Window
+
+# @where: Source value
+# @kind: value
+# @max: 16
+lib-src-display = Display
+
+# @where: Details fact
+# @kind: label
+# @max: 12
+lib-file = File
+
+# @where: Toast after deleting, with an Undo action
+# @kind: toast
+# @max: 48
+lib-trashed-toast = Screenshot moved to trash
+
+# @where: Toast action
+# @kind: button
+# @max: 16
+lib-undo = Undo
+
+# @where: Toast
+# @kind: error
+# @max: 60
+lib-error-delete = Could not delete the file.
+
+# @where: Toast
+# @kind: error
+# @max: 60
+lib-error-rename = Could not rename the screenshot.
+
+# @where: Card badge: this item is open in the editor
+# @kind: badge
+# @max: 16
+lib-in-editor = in the editor
+
+# @where: Library status bar
+# @kind: status
+# @max: 60
+lib-status =
+    { $count ->
+        [one] { $count } item · { $size }
+       *[other] { $count } items · { $size }
+    }
+
+# @where: Empty library, first run
+# @kind: title
+# @max: 48
+lib-empty-title = Your screenshots will appear here
+
+# @where: Empty library; $key is the region hotkey, e.g. Alt+Shift+4
+# @kind: body
+# @max: 120
+lib-empty-body = Press { $key } to capture a region, or use the button below.
+
+# @where: Empty library, under the button
+# @kind: hint
+# @max: 60
+lib-empty-drop = Drop an image here to open it
+
+# @where: Search without results; $query is what the user typed
+# @kind: title
+# @max: 60
+lib-search-empty-title = Nothing found for “{ $query }”
+
+# @where: Search without results
+# @kind: body
+# @max: 160
+lib-search-empty-body =
+    { $count ->
+        [one] We search names, tags and text in screenshots. Text recognition is off for { $count } older screenshot.
+       *[other] We search names, tags and text in screenshots. Text recognition is off for { $count } older screenshots.
+    }
+
+# @where: Search without results
+# @kind: button
+# @max: 28
+lib-ocr-all = Recognise text in all
+
+## Settings
+## The Settings page inside the main window: navigation and shared rows.
+
+
+# @where: Page title
+# @kind: title
+# @max: 24
+set-title = Settings
+
+# @where: Search field
+# @kind: placeholder
+# @max: 28
+set-search = Find a setting
+
+# @where: Note next to the title
+# @kind: hint
+# @max: 32
+set-applied-now = Changes apply immediately
+
+# @where: Settings navigation
+# @kind: tab
+# @max: 24
+set-page-shots = Screenshots
+
+# @where: Settings navigation
+# @kind: tab
+# @max: 24
+set-page-keys = Hotkeys
+
+# @where: Settings navigation
+# @kind: tab
+# @max: 24
+set-page-recording = Recording
+
+# @where: Settings navigation
+# @kind: tab
+# @max: 24
+set-page-library = Library
+
+# @where: Settings navigation
+# @kind: tab
+# @max: 24
+set-page-sharing = Sharing
+
+# @where: Settings navigation
+# @kind: tab
+# @max: 24
+set-page-agents = Agents and models
+
+# @where: Settings navigation
+# @kind: tab
+# @max: 24
+set-page-look = Appearance and language
+
+# @where: Settings navigation
+# @kind: tab
+# @max: 24
+set-page-privacy = Privacy
+
+# @where: Settings navigation
+# @kind: tab
+# @max: 24
+set-page-updates = Updates
+
+# @where: Settings navigation
+# @kind: tab
+# @max: 24
+set-page-about = About Znimok
+
+## Settings · Hotkeys
+## Global hotkeys page.
+
+
+# @where: Page intro
+# @kind: body
+# @max: 200
+keys-intro = They work in any program. Click a field and press a combination to change it. On a Mac the standard ⌘⇧3/4/5 belong to the system, so the defaults are different.
+
+# @where: Master switch
+# @kind: label
+# @max: 32
+keys-enable = Capture with hotkeys
+
+# @where: Under the master switch
+# @kind: hint
+# @max: 80
+keys-enable-hint = Off — the combinations are free for other programs
+
+# @where: Row
+# @kind: label
+# @max: 32
+keys-region = Region screenshot
+
+# @where: Row
+# @kind: label
+# @max: 32
+keys-screen = Whole-screen screenshot
+
+# @where: Row
+# @kind: label
+# @max: 32
+keys-window = Window screenshot
+
+# @where: Row
+# @kind: label
+# @max: 32
+keys-record = Video recording: start / stop
+
+# @where: Row
+# @kind: label
+# @max: 32
+keys-clipboard = Clipboard image → editor
+
+# @where: Row
+# @kind: label
+# @max: 32
+keys-blank = Blank editor
+
+# @where: Field while waiting for a combination
+# @kind: placeholder
+# @max: 28
+keys-press = press a combination…
+
+# @where: Field without a combination
+# @kind: value
+# @max: 16
+keys-not-set = not set
+
+# @where: Under a field when the new combination is taken
+# @kind: error
+# @max: 60
+keys-taken = Held by another program — kept the previous one
+
+# @where: Page footer
+# @kind: button
+# @max: 24
+keys-defaults = Restore defaults
+
+# @where: Page footer: canvas navigation
+# @kind: hint
+# @max: 60
+keys-canvas-hint = Zoom: Alt + wheel · Pan: Space + drag
+
+## Settings · Screenshots
+## What happens when a capture is released, the pill, editor behaviour.
+
+
+# @where: Page intro
+# @kind: body
+# @max: 120
+shots-intro = What happens when you release the mouse in the overlay. Each action sits on exactly one gesture.
+
+# @where: Section title
+# @kind: label
+# @max: 48
+shots-gestures = What a capture does on release
+
+# @where: Under the section title
+# @kind: hint
+# @max: 100
+shots-gestures-hint = Each action is bound to exactly one gesture. Drag to swap.
+
+# @where: Gesture chip: release without a key
+# @kind: badge
+# @max: 16
+shots-no-key = no key
+
+# @where: Action
+# @kind: option
+# @max: 28
+shots-act-editor = Open in editor
+
+# @where: Action
+# @kind: option
+# @max: 28
+shots-act-clipboard = To clipboard
+
+# @where: Action
+# @kind: option
+# @max: 28
+shots-act-overlay = Edit over the screen
+
+# @where: Row: the pill after a capture
+# @kind: label
+# @max: 32
+shots-pill = Card after a capture
+
+# @where: Duration option; $n is a number
+# @kind: option
+# @max: 8
+shots-seconds = { $n } s
+
+# @where: Switch
+# @kind: label
+# @max: 48
+shots-quick-library = Quick captures go to the library too
+
+# @where: Switch
+# @kind: label
+# @max: 60
+shots-esc-saves = The last Esc in the overlay saves if there are annotations
+
+# @where: Switch
+# @kind: label
+# @max: 60
+shots-tool-stays = The tool stays active after drawing
+
+# @where: Switch (same as the title bar toggle)
+# @kind: label
+# @max: 60
+shots-autosave = Save automatically (also in the editor title bar)
+
+# @where: Switch
+# @kind: label
+# @max: 60
+shots-guides = Smart guides: centres, edges, equal gaps
+
+# @where: Row: what a left click on the tray icon does
+# @kind: label
+# @max: 48
+shots-tray-click = Left click on the tray icon
+
+# @where: Option
+# @kind: option
+# @max: 16
+shots-tray-menu = Menu
+
+# @where: Option
+# @kind: option
+# @max: 20
+shots-tray-new = New screenshot
+
+# @where: Switch
+# @kind: label
+# @max: 32
+shots-cursor = Cursor in screenshots
+
+## Settings · Recording
+## Video recording settings (v2).
+
+
+# @where: Page intro
+# @kind: body
+# @max: 120
+rec-intro = Quality and sources. Sound is off by default: you turn it on deliberately.
+
+# @where: Row
+# @kind: label
+# @max: 32
+rec-fps = Frames per second
+
+# @where: Row
+# @kind: label
+# @max: 16
+rec-quality = Quality
+
+# @where: Option
+# @kind: option
+# @max: 12
+rec-quality-low = Lower
+
+# @where: Option
+# @kind: option
+# @max: 12
+rec-quality-normal = Normal
+
+# @where: Option
+# @kind: option
+# @max: 12
+rec-quality-high = High
+
+# @where: Row
+# @kind: label
+# @max: 12
+rec-codec = Codec
+
+# @where: Row: what clicking a window does in record mode
+# @kind: label
+# @max: 32
+rec-window-click = Click on a window
+
+# @where: Option: the frame follows the window
+# @kind: option
+# @max: 16
+rec-follow = follow it
+
+# @where: Option: record its area only
+# @kind: option
+# @max: 16
+rec-as-region = as a region
+
+# @where: Row
+# @kind: label
+# @max: 24
+rec-system-audio = System sound
+
+# @where: Device picker default
+# @kind: option
+# @max: 24
+rec-default-device = Default device
+
+# @where: Row
+# @kind: label
+# @max: 24
+rec-microphone = Microphone
+
+# @where: Row
+# @kind: label
+# @max: 40
+rec-cursor-clicks = Cursor and click highlight
+
+# @where: Row
+# @kind: label
+# @max: 40
+rec-devtools = DevTools log from Chrome/Edge
+
+# @where: Row status
+# @kind: status
+# @max: 32
+rec-extension-connected = extension connected
+
+## Settings · Library
+## Library folder, retention, text recognition.
+
+
+# @where: Page intro
+# @kind: body
+# @max: 120
+libset-intro = The folder is the source of truth. You can keep it on a cloud drive and Znimok will pick up changes.
+
+# @where: Row
+# @kind: label
+# @max: 24
+libset-folder = Library folder
+
+# @where: Under the folder; $size is formatted
+# @kind: hint
+# @max: 60
+libset-stats =
+    { $count ->
+        [one] { $count } screenshot · { $size }
+       *[other] { $count } screenshots · { $size }
+    }
+
+# @where: Row
+# @kind: label
+# @max: 40
+libset-keep-shots = Keep screenshots no more than
+
+# @where: Option
+# @kind: option
+# @max: 12
+libset-by-count = count
+
+# @where: Option
+# @kind: option
+# @max: 12
+libset-by-size = size
+
+# @where: Row
+# @kind: label
+# @max: 32
+libset-keep-videos = Videos — no more than
+
+# @where: Switch
+# @kind: label
+# @max: 48
+libset-oldest-trash = The oldest go to the trash, not away for good
+
+# @where: Switch
+# @kind: label
+# @max: 60
+libset-ocr = Recognise text in screenshots for search (on device)
+
+# @where: Button
+# @kind: button
+# @max: 20
+libset-show-folder = Show folder
+
+# @where: Button
+# @kind: button
+# @max: 24
+libset-clear = Clear library…
+
+# @where: Confirmation dialog
+# @kind: body
+# @max: 120
+libset-clear-confirm =
+    { $count ->
+        [one] Move { $count } item of the library to the trash?
+       *[other] Move all { $count } items of the library to the trash?
+    }
+
+## Settings · Sharing
+## What the Copy button does and the formats.
+
+
+# @where: Page intro
+# @kind: body
+# @max: 120
+sharing-intro = What the main Copy button does and which format comes out.
+
+# @where: Row
+# @kind: label
+# @max: 32
+sharing-main = Main button of the action row
+
+# @where: Option
+# @kind: option
+# @max: 28
+sharing-main-copy = Copy to clipboard
+
+# @where: Row
+# @kind: label
+# @max: 24
+sharing-format = Screenshot format
+
+# @where: Switch
+# @kind: label
+# @max: 40
+sharing-metadata = Write metadata into files
+
+# @where: Switch
+# @kind: label
+# @max: 40
+sharing-mask = Mask secrets in reports
+
+# @where: Row
+# @kind: label
+# @max: 16
+sharing-file-name = File name
+
+# @where: Under the pattern field; the {date}/{time} tokens in braces are literal and must stay in English
+# @kind: hint
+# @max: 80
+# @note: Shown as "{date}" and "{time}": literal braces (Fluent escapes). Keep the words date and time in English — they are tokens.
+sharing-file-pattern-hint = Use { "{" }date{ "}" } and { "{" }time{ "}" } in the name
+
+# @where: Share targets row
+# @kind: hint
+# @max: 60
+sharing-targets-later = Slack, Jira, Telegram, Redmine — later
+
+## Settings · Privacy
+## Everything that touches the network and data.
+
+
+# @where: Page intro
+# @kind: body
+# @max: 120
+priv-intro = Znimok sends nothing anywhere without your action. Everything that touches the network and your data is here.
+
+# @where: Switch
+# @kind: label
+# @max: 40
+priv-updates = Check for updates daily
+
+# @where: Under the switch
+# @kind: hint
+# @max: 48
+priv-updates-hint = GitHub Releases, version number only
+
+# @where: Row
+# @kind: label
+# @max: 32
+priv-telemetry = Telemetry and statistics
+
+# @where: Row value
+# @kind: value
+# @max: 40
+priv-telemetry-none = none, and no switch either
+
+# @where: Row
+# @kind: label
+# @max: 24
+priv-crash = Crash reports
+
+# @where: Row value
+# @kind: value
+# @max: 40
+priv-crash-local = a local file; you send it yourself
+
+# @where: Row
+# @kind: label
+# @max: 40
+priv-cloud = Cloud models (your own key)
+
+# @where: Row value
+# @kind: value
+# @max: 32
+priv-cloud-off = off, no key
+
+# @where: Row action
+# @kind: button
+# @max: 20
+priv-add-key = Add key…
+
+# @where: Row
+# @kind: label
+# @max: 40
+priv-agents = Agent access (MCP)
+
+# @where: Row value
+# @kind: value
+# @max: 40
+priv-agents-count =
+    { $count ->
+        [one] { $count } client has permission
+       *[other] { $count } clients have permission
+    }
+
+# @where: Row (macOS)
+# @kind: label
+# @max: 32
+priv-mac-perms = macOS permissions
+
+# @where: Row action
+# @kind: button
+# @max: 16
+priv-check = Check
+
+# @where: Link
+# @kind: button
+# @max: 28
+priv-policy = Privacy policy
+
+# @where: Link
+# @kind: button
+# @max: 24
+priv-source = Source code
+
+## Settings · Appearance and About
+## Theme, language, launch at login, About.
+
+
+# @where: Row
+# @kind: label
+# @max: 12
+look-theme = Theme
+
+# @where: Option
+# @kind: option
+# @max: 20
+look-theme-system = As in the system
+
+# @where: Option
+# @kind: option
+# @max: 12
+look-theme-light = Light
+
+# @where: Option
+# @kind: option
+# @max: 12
+look-theme-dark = Dark
+
+# @where: Row
+# @kind: label
+# @max: 12
+look-language = Language
+
+# @where: Option: follow the system
+# @kind: option
+# @max: 16
+look-language-system = System
+
+# @where: Name of THIS language in itself, for the language menu
+# @kind: option
+# @max: 20
+# @note: Write the language's own name in the language itself (endonym).
+look-language-name = English
+
+# @where: Row
+# @kind: label
+# @max: 32
+look-tool-labels = Labels under tools
+
+# @where: Option
+# @kind: option
+# @max: 12
+look-labels-always = always
+
+# @where: Option
+# @kind: option
+# @max: 16
+look-labels-first = first runs
+
+# @where: Option
+# @kind: option
+# @max: 12
+look-labels-never = never
+
+# @where: Switch
+# @kind: label
+# @max: 40
+look-autostart = Start at sign-in
+
+# @where: Row
+# @kind: label
+# @max: 24
+look-reduce-motion = Reduce motion
+
+# @where: Row value
+# @kind: value
+# @max: 20
+look-as-system = as in the system
+
+# @where: About: version line
+# @kind: label
+# @max: 40
+about-version = Znimok { $version }
+
+# @where: About: after the version
+# @kind: badge
+# @max: 40
+about-signed = release signature verified
+
+# @where: About: credits; Slint and font names stay as they are
+# @kind: body
+# @max: 200
+about-made-with = Made with Slint · fonts Onest, JetBrains Mono, Unbounded (OFL) · library licences
+
+# @where: About: donation link
+# @kind: button
+# @max: 16
+about-support = Support
+
+# @where: About: install an update
+# @kind: button
+# @max: 16
+about-update = Update
+
+# @where: Banner in the library and About
+# @kind: title
+# @max: 40
+update-available = Version { $version } is available
+
+# @where: Banner second line; $size formatted
+# @kind: body
+# @max: 100
+update-details = Signed, { $size }. Installs at the next launch.
+
+# @where: Banner action
+# @kind: button
+# @max: 20
+update-now = Update now
+
+## Onboarding
+## First run: permissions (macOS), hotkeys, library folder, agents.
+
+
+# @where: macOS first run, big title
+# @kind: title
+# @max: 48
+onb-title-mac = Three permissions — and Znimok is ready
+
+# @where: macOS first run, under the title
+# @kind: body
+# @max: 200
+onb-intro-mac = macOS asks for permission for everything that sees the screen. Znimok works only on your Mac and sends nothing anywhere without your action.
+
+# @where: Windows first run, big title
+# @kind: title
+# @max: 48
+onb-title-win = Two steps — and Znimok is ready
+
+# @where: Windows first run, under the title
+# @kind: body
+# @max: 200
+onb-intro-win = Znimok needs no administrator rights and sends nothing anywhere without your action. Check the hotkeys and choose where screenshots live.
+
+# @where: Under the progress dots
+# @kind: hint
+# @max: 80
+onb-step = Step { $n } of { $total } · you can come back here later in Settings
+
+# @where: Step (macOS): the Screen Recording permission
+# @kind: label
+# @max: 40
+onb-screen = Screen and system audio recording
+
+# @where: Step state
+# @kind: hint
+# @max: 60
+onb-screen-granted = Granted. Needed for any capture.
+
+# @where: Step state before the grant
+# @kind: hint
+# @max: 80
+onb-screen-needed = Needed for any capture. macOS will ask you to restart Znimok.
+
+# @where: Step
+# @kind: label
+# @max: 24
+onb-keys = Hotkeys
+
+# @where: Step text (macOS); $region, $screen, $record are key combos like ⌃⇧4
+# @kind: body
+# @max: 300
+onb-keys-mac = No permission needed. Defaults: { $region } region, { $screen } screen, { $record } recording. The usual ⌘⇧3/4/5 belong to the system: turn them off in System Settings → Keyboard → Keyboard Shortcuts, and Znimok takes them over.
+
+# @where: Step text (Windows)
+# @kind: body
+# @max: 240
+onb-keys-win = Defaults: { $region } region, { $screen } screen, { $record } recording. If a combination is taken by another program, pick another one here.
+
+# @where: Step action (macOS)
+# @kind: button
+# @max: 24
+onb-open-settings = Open settings
+
+# @where: Step
+# @kind: label
+# @max: 24
+onb-library = Library folder
+
+# @where: Step text
+# @kind: hint
+# @max: 100
+onb-library-hint = All screenshots and videos live here as files. You can pick a folder on a cloud drive.
+
+# @where: Step (optional)
+# @kind: label
+# @max: 24
+onb-mic = Microphone
+
+# @where: Step text
+# @kind: hint
+# @max: 80
+onb-mic-hint = Only for recording video with voice. You can skip it.
+
+# @where: Step action
+# @kind: button
+# @max: 16
+onb-allow = Allow
+
+# @where: Step
+# @kind: label
+# @max: 32
+onb-agents = Access for AI agents
+
+# @where: Step text
+# @kind: hint
+# @max: 100
+onb-agents-hint = Off. You can turn it on on the Agents page when you need it.
+
+# @where: Footer
+# @kind: button
+# @max: 20
+onb-skip-all = Skip all
+
+## States and errors
+## Empty states, errors, confirmations, toasts. Explain without blaming the user; one action each.
+
+
+# @where: Error title
+# @kind: title
+# @max: 48
+err-capture-title = Couldn't take the screenshot
+
+# @where: Error body (macOS, no permission)
+# @kind: body
+# @max: 200
+err-capture-mac-perm = macOS does not let Znimok see the screen. Turn on “Screen and system audio recording” in System Settings and come back.
+
+# @where: Error action
+# @kind: button
+# @max: 32
+err-open-system-settings = Open System Settings
+
+# @where: Error body (other causes); $reason is a short technical reason
+# @kind: body
+# @max: 160
+err-capture-generic = The system refused the capture: { $reason }
+
+# @where: Error title; $combo like Alt+Shift+4
+# @kind: title
+# @max: 60
+err-key-taken-title = { $combo } is already used by another program
+
+# @where: Error body; $action is e.g. "Region screenshot"
+# @kind: body
+# @max: 160
+err-key-taken-body = { $action } has no hotkey for now. Choose another combination or free this one in that program.
+
+# @where: Error action
+# @kind: button
+# @max: 20
+err-key-choose = Choose another
+
+# @where: Error title
+# @kind: title
+# @max: 48
+err-disk-title = Recording stopped: the disk is full
+
+# @where: Error body; $time like 0:41
+# @kind: body
+# @max: 160
+err-disk-body = Everything up to this moment is saved ({ $time }). Free some space or change the library folder.
+
+# @where: Error action
+# @kind: button
+# @max: 20
+err-open-recording = Open recording
+
+# @where: Error action
+# @kind: button
+# @max: 20
+err-change-folder = Change folder
+
+# @where: Toast when saving to the library fails
+# @kind: error
+# @max: 100
+err-library-save = Could not save to the library. Check that the library folder is available.
+
+# @where: Hint when the retention limit is reached
+# @kind: error
+# @max: 100
+err-library-full = The limit is reached: the next save moves the oldest item to the trash.
+
+# @where: Close-with-unsaved dialog; $name is the document name
+# @kind: title
+# @max: 60
+confirm-save-title = Save changes to “{ $name }”?
+
+# @where: Close-with-unsaved dialog
+# @kind: body
+# @max: 120
+confirm-save-body = Your unsaved changes will be lost.
+
+# @where: Toast with progress
+# @kind: toast
+# @max: 32
+toast-exporting-video = Exporting video…
+
+# @where: Toast action
+# @kind: button
+# @max: 16
+toast-stop = Stop
+
+## Agents
+## The Agents page: connected MCP clients, models, action log, and the permission request.
+
+
+# @where: Page title
+# @kind: title
+# @max: 24
+agents-title = Agents
+
+# @where: Yellow live indicator; $client is the agent name
+# @kind: badge
+# @max: 48
+agents-live = { $client } is capturing the screen now
+
+# @where: Page action
+# @kind: button
+# @max: 32
+agents-revoke-all = Revoke all permissions
+
+# @where: Section
+# @kind: heading
+# @max: 32
+agents-clients = Connected clients
+
+# @where: Section hint
+# @kind: hint
+# @max: 120
+agents-clients-hint = Each agent gets its own key and its own permissions. Access is off until you turn it on.
+
+# @where: Client status
+# @kind: status
+# @max: 16
+agents-active = Active
+
+# @where: Client status; $when is relative, e.g. "yesterday"
+# @kind: status
+# @max: 32
+agents-last-used = Last used { $when }
+
+# @where: Client row "…" button
+# @kind: a11y
+# @max: 24
+agents-configure = Configure
+
+# @where: Permission name in summaries
+# @kind: label
+# @max: 24
+agents-scope-screen = screen capture
+
+# @where: Permission name in summaries
+# @kind: label
+# @max: 24
+agents-scope-library = library reading
+
+# @where: Permission name in summaries
+# @kind: label
+# @max: 24
+agents-scope-marks = annotations
+
+# @where: Permission name in summaries
+# @kind: label
+# @max: 24
+agents-scope-export = export
+
+# @where: Summary: permission level
+# @kind: label
+# @max: 24
+agents-grant-always = always
+
+# @where: Summary: permission level
+# @kind: label
+# @max: 24
+agents-grant-ask = ask every time
+
+# @where: Summary: permission level
+# @kind: label
+# @max: 24
+agents-grant-no = no
+
+# @where: Dashed button under the list
+# @kind: button
+# @max: 40
+agents-how-connect = How to connect another agent
+
+# @where: Section
+# @kind: heading
+# @max: 40
+agents-models = Models for Znimok features
+
+# @where: Section hint
+# @kind: hint
+# @max: 140
+agents-models-hint = On the device first. The cloud — only with your key and only for the features you allowed.
+
+# @where: Model row
+# @kind: label
+# @max: 48
+agents-ocr = Recognising text in screenshots
+
+# @where: Model row
+# @kind: label
+# @max: 48
+agents-redact = Finding secrets and faces to mask
+
+# @where: Model row value
+# @kind: status
+# @max: 20
+agents-on-device = On device
+
+# @where: Model row
+# @kind: label
+# @max: 40
+agents-assistant = Natural-language assistant
+
+# @where: Model row second line; $model is a model name
+# @kind: hint
+# @max: 60
+agents-assistant-hint = { $model } · your key · show what is sent
+
+# @where: Row: money spent via the user's key
+# @kind: label
+# @max: 32
+agents-spend = Spending this month
+
+# @where: Section
+# @kind: heading
+# @max: 24
+agents-log = Action log
+
+# @where: Section action
+# @kind: button
+# @max: 12
+agents-log-export = Export
+
+# @where: Log entry
+# @kind: label
+# @max: 80
+agents-log-window-shot = { $client } · screenshot of window “{ $title }”
+
+# @where: Log entry
+# @kind: label
+# @max: 60
+agents-log-window-list = { $client } · window list
+
+# @where: Log entry; $format like PNG
+# @kind: label
+# @max: 80
+agents-log-export-entry = { $client } · export { $format } “{ $name }”
+
+# @where: Log entry
+# @kind: label
+# @max: 60
+agents-log-marks =
+    { $count ->
+        [one] { $client } · added { $count } annotation
+       *[other] { $client } · added { $count } annotations
+    }
+
+# @where: Log entry
+# @kind: label
+# @max: 60
+agents-log-denied = { $client } · screen capture — denied
+
+# @where: Empty state
+# @kind: title
+# @max: 48
+agents-empty-title = No agent has connected yet
+
+# @where: Empty state
+# @kind: body
+# @max: 160
+agents-empty-body = Znimok can work with Claude Code and other agents. Access is off until you turn it on.
+
+# @where: Empty state main action
+# @kind: button
+# @max: 24
+agents-enable = Turn on access
+
+# @where: Empty state second action
+# @kind: button
+# @max: 20
+agents-how = How to connect
+
+# @where: Accessible name of the permission dialog
+# @kind: a11y
+# @max: 40
+perm-a11y = Permission request from an agent
+
+# @where: Permission dialog title
+# @kind: title
+# @max: 60
+perm-title = { $client } wants to capture the screen
+
+# @where: Under the title; $key is a shortened key
+# @kind: hint
+# @max: 48
+perm-new-client = New client · key { $key }
+
+# @where: Permission dialog text
+# @kind: body
+# @max: 260
+perm-body = The agent will be able to take screenshots of the screen and windows until you revoke the permission. You will see a yellow indicator while it captures, and every action goes to the log.
+
+# @where: Checkbox
+# @kind: label
+# @max: 40
+perm-scope-screen = Screen and window captures
+
+# @where: Checkbox
+# @kind: label
+# @max: 40
+perm-scope-marks = Annotations and export
+
+# @where: Checkbox
+# @kind: label
+# @max: 40
+perm-scope-library = Reading the library
+
+# @where: Grant for this one request
+# @kind: button
+# @max: 16
+perm-once = Only now
+
+# @where: Grant until the agent disconnects
+# @kind: button
+# @max: 16
+perm-session = This session
+
+# @where: Grant permanently
+# @kind: button
+# @max: 16
+perm-always = Always
+
+# @where: Refuse
+# @kind: button
+# @max: 16
+perm-deny = Deny
+
+## Assistant
+## Ctrl+K command bar: natural language → a plan of commands. Dialogs from the owner's decisions of 28.09.2026.
+
+
+# @where: Title bar button and dialog name
+# @kind: button
+# @max: 16
+asst-name = Assistant
+
+# @where: Accessible name of the command field
+# @kind: a11y
+# @max: 16
+asst-command = Command
+
+# @where: Empty command field
+# @kind: placeholder
+# @max: 60
+asst-placeholder = Describe what to do with the screenshot…
+
+# @where: Plan header; $model is a model name, $sent says what went to the cloud
+# @kind: status
+# @max: 120
+asst-plan =
+    { $count ->
+        [one] Plan of { $count } step · { $model } · sent: { $sent }
+       *[other] Plan of { $count } steps · { $model } · sent: { $sent }
+    }
+
+# @where: Value of $sent: no pixels were sent
+# @kind: label
+# @max: 80
+asst-sent-structure = window list and screen size, no screenshot
+
+# @where: Plan step state
+# @kind: badge
+# @max: 24
+asst-preview = preview
+
+# @where: Under the plan
+# @kind: hint
+# @max: 100
+asst-dashed-note = Dashed — what will be added. You can edit the request and try again.
+
+# @where: Suggestions heading
+# @kind: heading
+# @max: 20
+asst-try = Try also
+
+# @where: Example request chip (written in the user's voice)
+# @kind: option
+# @max: 48
+asst-example-1 = blur all e-mails and phone numbers
+
+# @where: Example request chip
+# @kind: option
+# @max: 48
+asst-example-2 = number the buttons left to right
+
+# @where: Example request chip
+# @kind: option
+# @max: 48
+asst-example-3 = crop to the settings window
+
+# @where: Example request chip
+# @kind: option
+# @max: 48
+asst-example-4 = find yesterday's terminal screenshot
+
+# @where: Indicator: the request goes to the cloud
+# @kind: badge
+# @max: 16
+asst-cloud = to the cloud
+
+# @where: Indicator: no network
+# @kind: badge
+# @max: 16
+asst-offline = offline
+
+# @where: Local palette state without an API key
+# @kind: hint
+# @max: 100
+asst-no-key = Cloud suggestions need your API key. Local commands work without it.
+
+# @where: Action in the no-key state
+# @kind: button
+# @max: 24
+asst-set-up-key = Add key…
+
+# @where: Dialog before pixels leave the device
+# @kind: title
+# @max: 40
+asst-send-title = Send the screenshot?
+
+# @where: Dialog text
+# @kind: body
+# @max: 200
+asst-send-body = This command needs the image. It has been masked on the device first; this is exactly what will be sent.
+
+# @where: Checkbox
+# @kind: label
+# @max: 48
+asst-send-dont-ask-doc = Don't ask for this document
+
+# @where: Checkbox (global; reset in Settings)
+# @kind: label
+# @max: 48
+asst-send-dont-ask = Don't ask again
+
+# @where: Dialog main action
+# @kind: button
+# @max: 16
+asst-send = Send
+
+# @where: Dialog second action
+# @kind: button
+# @max: 20
+asst-dont-send = Don't send
+
+# @where: Dialog on the first cloud action
+# @kind: title
+# @max: 60
+asst-cost-title = Cloud features cost money
+
+# @where: Dialog text; $model name, $price is a formatted amount like $0.01
+# @kind: body
+# @max: 300
+asst-cost-body = Requests go to { $model } with your key and are billed by Anthropic to your account. A typical request with a 1024-px screenshot costs about { $price }. Spending is shown on the Agents page.
+
+# @where: Dialog main action
+# @kind: button
+# @max: 20
+asst-cost-ok = Understood
+
+# @where: Note under the bar
+# @kind: hint
+# @max: 160
+asst-footnote = The assistant uses the same commands as MCP: every step of the plan is a command you can undo with one Ctrl+Z.
+
+## Recording and video (v2)
+## Screen recording, the video editor and video export. Shipped in v2; translated now so the layout is stable.
+
+
+# @where: Recording pill button
+# @kind: a11y
+# @max: 16
+rec-pause = Pause
+
+# @where: Recording pill button while paused
+# @kind: a11y
+# @max: 16
+rec-resume = Resume
+
+# @where: Recording pill button
+# @kind: a11y
+# @max: 16
+rec-stop = Stop
+
+# @where: Tray / menu bar text while recording; $time like 00:12
+# @kind: status
+# @max: 24
+rec-tray = Recording { $time }
+
+# @where: Status while paused
+# @kind: status
+# @max: 24
+rec-paused = Paused { $time }
+
+# @where: Pill after recording
+# @kind: title
+# @max: 32
+rec-saved = Video saved
+
+# @where: Pill second line
+# @kind: hint
+# @max: 60
+rec-saved-details = { $width } × { $height } · { $size }
+
+# @where: DevTools log size
+# @kind: badge
+# @max: 32
+rec-devtools-events =
+    { $count ->
+        [one] DevTools log: { $count } event
+       *[other] DevTools log: { $count } events
+    }
+
+# @where: Pill button
+# @kind: button
+# @max: 16
+rec-share = Share
+
+# @where: Video editor title bar
+# @kind: button
+# @max: 20
+vid-bug-report = Bug report
+
+# @where: Status hint; "Space" is the key
+# @kind: hint
+# @max: 24
+vid-hint-play = Space — play
+
+# @where: Status hint
+# @kind: hint
+# @max: 24
+vid-hint-frame = ← → — frame
+
+# @where: Status hint
+# @kind: hint
+# @max: 24
+vid-hint-cut = S — split
+
+# @where: Transport
+# @kind: a11y
+# @max: 16
+vid-to-start = To start
+
+# @where: Transport
+# @kind: a11y
+# @max: 16
+vid-frame-back = Frame back
+
+# @where: Transport
+# @kind: a11y
+# @max: 16
+vid-play = Play
+
+# @where: Transport
+# @kind: a11y
+# @max: 16
+vid-pause = Pause
+
+# @where: Transport
+# @kind: a11y
+# @max: 16
+vid-frame-forward = Frame forward
+
+# @where: Transport
+# @kind: a11y
+# @max: 16
+vid-to-end = To end
+
+# @where: Transport
+# @kind: a11y
+# @max: 16
+vid-speed = Speed
+
+# @where: Transport
+# @kind: a11y
+# @max: 16
+vid-loop = Loop
+
+# @where: Track header
+# @kind: label
+# @max: 12
+vid-track-system = System
+
+# @where: Track header
+# @kind: label
+# @max: 12
+vid-track-mic = Microphone
+
+# @where: Button: take the current frame as a screenshot
+# @kind: button
+# @max: 24
+vid-frame-as-shot = Frame as screenshot
+
+# @where: Timeline lane label (short)
+# @kind: label
+# @max: 8
+vid-lane-video = video
+
+# @where: Timeline lane label (short)
+# @kind: label
+# @max: 8
+vid-lane-sound = sound
+
+# @where: Timeline lane label (short)
+# @kind: label
+# @max: 8
+vid-lane-mic = mic
+
+# @where: Timeline lane label (short)
+# @kind: label
+# @max: 8
+vid-lane-marks = notes
+
+# @where: Clip tab section
+# @kind: label
+# @max: 16
+vid-trim = Trim
+
+# @where: Trim field
+# @kind: label
+# @max: 8
+vid-from = From
+
+# @where: Trim field
+# @kind: label
+# @max: 8
+vid-to = To
+
+# @where: Under the trim; $seconds formatted like 4.9
+# @kind: hint
+# @max: 100
+vid-cuts =
+    { $count ->
+        [one] { $count } gap cut · { $seconds } s. Delete cuts the selection.
+       *[other] { $count } gaps cut · { $seconds } s. Delete cuts the selection.
+    }
+
+# @where: Clip tab section
+# @kind: label
+# @max: 12
+vid-sound = Sound
+
+# @where: Under the sound section
+# @kind: hint
+# @max: 80
+vid-tracks-note = Tracks are separate; export mixes them into one.
+
+# @where: Clip tab section
+# @kind: label
+# @max: 24
+vid-size-frame = Size and crop
+
+# @where: Events tab section
+# @kind: label
+# @max: 16
+vid-devtools = DevTools log
+
+# @where: Events count
+# @kind: status
+# @max: 16
+vid-events =
+    { $count ->
+        [one] { $count } event
+       *[other] { $count } events
+    }
+
+# @where: Status bar: current frame number
+# @kind: status
+# @max: 16
+vid-frame-n = frame { $n }
+
+# @where: Status bar
+# @kind: status
+# @max: 40
+vid-marks-here =
+    { $count ->
+        [one] { $count } annotation on this frame
+       *[other] { $count } annotations on this frame
+    }
+
+# @where: Status bar
+# @kind: status
+# @max: 32
+vid-cursor-recorded = Cursor and clicks recorded
+
+# @where: Status bar; $fps is a number
+# @kind: status
+# @max: 16
+vid-fps = { $fps } fps
+
+# @where: Video export dialog
+# @kind: title
+# @max: 24
+vexp-title = Export video
+
+# @where: Field
+# @kind: label
+# @max: 16
+vexp-fps = Frames/s
+
+# @where: Field
+# @kind: label
+# @max: 12
+vexp-width = Width
+
+# @where: Field (GIF)
+# @kind: label
+# @max: 12
+vexp-colours = Colours
+
+# @where: Checkbox (GIF)
+# @kind: label
+# @max: 16
+vexp-dither = Dithering
+
+# @where: Checkbox (GIF)
+# @kind: label
+# @max: 16
+vexp-loop = Loop
+
+# @where: Before the estimate
+# @kind: label
+# @max: 12
+vexp-estimate = Estimate:
+
+# @where: Warning for large GIFs
+# @kind: hint
+# @max: 140
+vexp-gif-warning = GIFs over 25 MB load poorly in chats. MP4 or WebP suits such clips better.
