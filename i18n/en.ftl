@@ -3037,6 +3037,30 @@ onb-agents-hint = Off. You can turn it on on the Agents page when you need it.
 # @max: 20
 onb-skip-all = Skip all
 
+## Crash reports
+## After a crash Znimok offers its local report once at the next start. Nothing is sent automatically.
+
+
+# @where: Title of the dialog shown at start after the previous run crashed
+# @kind: title
+# @max: 60
+crash-title = Znimok closed unexpectedly last time
+
+# @where: Text of the same dialog; $summary is the short technical reason (in English or empty)
+# @kind: body
+# @max: 300
+crash-body = A crash report was saved on this computer: { $summary }. You can open a prefilled GitHub issue (you review it and send it yourself) or look at the report files.
+
+# @where: Button of the crash dialog: opens github.com with the report filled in
+# @kind: button
+# @max: 24
+crash-open-issue = Open GitHub issue
+
+# @where: Button of the crash dialog: shows the folder with the report files
+# @kind: button
+# @max: 24
+crash-show-folder = Show folder
+
 ## States and errors
 ## Empty states, errors, confirmations, toasts. Explain without blaming the user; one action each.
 

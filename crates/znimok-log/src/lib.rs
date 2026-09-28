@@ -345,6 +345,20 @@ fn percent_encode(s: &str) -> String {
     out
 }
 
+/// Open a URL in the browser or a folder in Explorer / Finder (for "open issue" and "show folder").
+pub fn open_in_os(target: &str) {
+    let program = if cfg!(windows) {
+        "explorer.exe"
+    } else if cfg!(target_os = "macos") {
+        "open"
+    } else {
+        "xdg-open"
+    };
+    if let Err(e) = std::process::Command::new(program).arg(target).spawn() {
+        tracing::warn!("{program} {target}: {e}");
+    }
+}
+
 /// A "new issue" page on GitHub prefilled with the report (the user reviews and submits it; a
 /// minidump, if any, is attached by hand). The body is cut to keep the URL within browser limits.
 pub fn issue_url(r: &Report) -> String {
