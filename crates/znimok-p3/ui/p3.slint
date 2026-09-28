@@ -1,0 +1,156 @@
+// P3: menu bar item + a small window that walks through permissions and shortcuts.
+// Not the product UI — only what the prototype has to prove (PLAN §6, P3).
+
+import { Button, ScrollView } from "std-widgets.slint";
+
+export component P3Tray inherits SystemTrayIcon {
+    in property <image> tray-icon;
+    in property <string> screen-key: "⌃⇧3";
+    in property <string> window-key: "⌃⇧4";
+    in property <bool> autostart: false;
+    icon: tray-icon;
+    tooltip: "Znimok P3";
+
+    callback shot-display();
+    callback shot-picker();
+    callback show-window();
+    callback toggle-autostart();
+    callback quit();
+
+    Menu {
+        MenuItem {
+            title: "Знімок екрана  " + root.screen-key;
+            activated => { root.shot-display(); }
+        }
+        MenuItem {
+            title: "Знімок вікна…  " + root.window-key;
+            activated => { root.shot-picker(); }
+        }
+        MenuSeparator { }
+        MenuItem {
+            title: "Дозволи й клавіші…";
+            activated => { root.show-window(); }
+        }
+        MenuItem {
+            title: root.autostart ? "✓ Запускати під час входу" : "Запускати під час входу";
+            activated => { root.toggle-autostart(); }
+        }
+        MenuSeparator { }
+        MenuItem {
+            title: "Вийти з Znimok P3";
+            activated => { root.quit(); }
+        }
+    }
+}
+
+export component P3Window inherits Window {
+    title: "Znimok P3 — дозволи й клавіші";
+    preferred-width: 640px;
+    preferred-height: 560px;
+    min-width: 560px;
+    background: #0F1115;
+    default-font-size: 13px;
+
+    in property <bool> capture-ok;
+    in property <string> capture-state;
+    in property <bool> keys-ok;
+    in property <string> keys-state;
+    in property <string> keys-hint;
+    in property <bool> autostart-ok;
+    in property <string> autostart-state;
+    in property <string> last-result;
+    in property <string> log-text;
+    in property <string> build-info;
+
+    callback request-capture();
+    callback open-capture-settings();
+    callback open-keyboard-settings();
+    callback recheck();
+    callback toggle-autostart();
+    callback shot-display();
+    callback shot-picker();
+
+    VerticalLayout {
+        padding: 20px;
+        spacing: 12px;
+
+        Text { text: "Znimok P3"; color: #E8EAEE; font-size: 20px; font-weight: 700; }
+        Text { text: root.build-info; color: #6F7682; font-size: 11px; }
+
+        // 1. Screen recording
+        Rectangle {
+            background: #171A20; border-radius: 12px;
+            HorizontalLayout {
+                padding: 14px; spacing: 12px;
+                Rectangle { width: 10px; height: 10px; border-radius: 5px; y: 6px; background: root.capture-ok ? #34C48A : #FFB020; }
+                VerticalLayout {
+                    spacing: 4px; horizontal-stretch: 1;
+                    Text { text: "Запис екрана"; color: #E8EAEE; font-weight: 600; }
+                    Text { text: root.capture-state; color: #A7ADB8; wrap: word-wrap; }
+                }
+                VerticalLayout {
+                    spacing: 6px; alignment: center;
+                    if !root.capture-ok: Button { text: "Дозволити"; clicked => { root.request-capture(); } }
+                    Button { text: "Налаштування"; clicked => { root.open-capture-settings(); } }
+                }
+            }
+        }
+
+        // 2. Shortcuts
+        Rectangle {
+            background: #171A20; border-radius: 12px;
+            HorizontalLayout {
+                padding: 14px; spacing: 12px;
+                Rectangle { width: 10px; height: 10px; border-radius: 5px; y: 6px; background: root.keys-ok ? #34C48A : #3D7BF5; }
+                VerticalLayout {
+                    spacing: 4px; horizontal-stretch: 1;
+                    Text { text: "Гарячі клавіші"; color: #E8EAEE; font-weight: 600; }
+                    Text { text: root.keys-state; color: #A7ADB8; wrap: word-wrap; }
+                    Text { text: root.keys-hint; color: #6F7682; wrap: word-wrap; font-size: 12px; }
+                }
+                VerticalLayout {
+                    spacing: 6px; alignment: center;
+                    Button { text: "Клавіатура…"; clicked => { root.open-keyboard-settings(); } }
+                    Button { text: "Перевірити"; clicked => { root.recheck(); } }
+                }
+            }
+        }
+
+        // 3. Autostart
+        Rectangle {
+            background: #171A20; border-radius: 12px;
+            HorizontalLayout {
+                padding: 14px; spacing: 12px;
+                Rectangle { width: 10px; height: 10px; border-radius: 5px; y: 6px; background: root.autostart-ok ? #34C48A : #4A505A; }
+                VerticalLayout {
+                    spacing: 4px; horizontal-stretch: 1;
+                    Text { text: "Запуск під час входу"; color: #E8EAEE; font-weight: 600; }
+                    Text { text: root.autostart-state; color: #A7ADB8; wrap: word-wrap; }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    Button { text: root.autostart-ok ? "Вимкнути" : "Увімкнути"; clicked => { root.toggle-autostart(); } }
+                }
+            }
+        }
+
+        HorizontalLayout {
+            spacing: 10px;
+            Button { text: "Знімок екрана"; primary: true; clicked => { root.shot-display(); } }
+            Button { text: "Знімок вікна через пікер…"; clicked => { root.shot-picker(); } }
+            Rectangle { horizontal-stretch: 1; }
+        }
+        Text { text: root.last-result; color: #8FB6FF; wrap: word-wrap; }
+
+        Rectangle {
+            background: #0B0D11; border-radius: 10px; vertical-stretch: 1; min-height: 120px;
+            ScrollView {
+                content-height: log.preferred-height + 16px;
+                log := Text {
+                    x: 10px; y: 8px; width: parent.width - 20px;
+                    text: root.log-text; color: #6F7682; font-size: 11px; font-family: "Menlo"; wrap: word-wrap;
+                }
+            }
+        }
+    }
+}

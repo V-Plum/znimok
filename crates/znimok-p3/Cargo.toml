@@ -1,0 +1,31 @@
+[package]
+name = "znimok-p3"
+description = "P3 prototype: macOS ScreenCaptureKit, TCC guide, hotkeys, menu bar, autostart"
+version.workspace = true
+edition.workspace = true
+license-file.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "znimok-p3"
+path = "src/main.rs"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+slint = { version = "~1.18", default-features = false, features = ["std", "compat-1-2", "backend-winit", "renderer-femtovg-wgpu", "unstable-wgpu-30", "system-tray"] }
+screencapturekit = { version = "11", features = ["macos_15_0"] }
+global-hotkey = "0.8"
+objc2 = "0.6"
+objc2-foundation = "0.3"
+objc2-app-kit = "0.3"
+objc2-service-management = "0.3"
+vello_cpu = "0.2"
+plist = "1"
+image = { version = "0.25", default-features = false, features = ["png"] }
+
+[target.'cfg(target_os = "macos")'.build-dependencies]
+slint-build = "~1.18"
