@@ -41,7 +41,7 @@ pub fn hits(o: &Object, p: (f64, f64), px_per_doc: f64) -> bool {
             let b = ((r.x + r.w) as f64, (r.y + r.h) as f64);
             dist_to_segment(p, a, b) <= 4.0 / k + o.style.thick as f64 / 2.0
         }
-        Data::Pen { points } => {
+        Data::Pen { points, .. } => {
             if points.len() == 1 {
                 let q = (points[0].0 as f64, points[0].1 as f64);
                 return dist_to_segment(p, q, q) <= 4.0 / k + o.style.thick as f64 / 2.0;

@@ -288,7 +288,7 @@ component NumField inherits HorizontalLayout {
     in-out property <string> value;
     callback committed(string);
     spacing: 4px;
-    Text { text: root.label; color: Theme.text3; font-size: 11px; vertical-alignment: center; width: 14px; }
+    Text { text: root.label; color: Theme.text3; font-size: 11px; vertical-alignment: center; width: 18px; }
     Rectangle {
         height: 26px;
         horizontal-stretch: 1;
@@ -959,6 +959,10 @@ export component AppWindow inherits Window {
     in property <int> selection-count;
     // inspector (ZK-54)
     in-out property <int> insp-tab: 0;
+    in property <int> shadow-index;
+    in property <int> glow-index;
+    in property <string> geom-x2;
+    in property <string> geom-y2;
     // Image tab (ZK-53): tone sliders as positions 0…1 plus their readings, crop panel, size.
     in-out property <float> tone-exposure: 0.5;
     in-out property <float> tone-gamma: 0.5;
@@ -1365,7 +1369,7 @@ export component AppWindow inherits Window {
                         IconButton { width: 40px; height: 36px; tip-side: 1; label: @tr("tool-select" => "Select (V)"); icon: "M5 3 l14 8 -6 2 -3 6 -5 -16 z"; active: root.tool == 0 || root.ctrl-held; clicked => { root.tool-chosen(0); } }
                         IconButton { width: 40px; height: 36px; tip-side: 1; label: @tr("tool-rect" => "Rectangle (R)"); icon: "M6 5 h12 a2 2 0 0 1 2 2 v10 a2 2 0 0 1 -2 2 H6 a2 2 0 0 1 -2 -2 V7 a2 2 0 0 1 2 -2 z"; active: root.tool == 1 && !root.ctrl-held; clicked => { root.tool-chosen(1); } }
                         IconButton { width: 40px; height: 36px; tip-side: 1; label: @tr("tool-ellipse" => "Ellipse (E)"); icon: "M4 12 a8 6 0 1 0 16 0 a8 6 0 1 0 -16 0 z"; active: root.tool == 2 && !root.ctrl-held; clicked => { root.tool-chosen(2); } }
-                        IconButton { width: 40px; height: 36px; tip-side: 1; label: @tr("tool-arrow" => "Arrow (L)"); icon: "M4 20 L20 4 M11 4 h9 v9"; active: root.tool == 3 && !root.ctrl-held; clicked => { root.tool-chosen(3); } }
+                        IconButton { width: 40px; height: 36px; tip-side: 1; label: @tr("tool-line" => "Line (L)"); icon: "M4 20 L20 4 M11 4 h9 v9"; active: root.tool == 3 && !root.ctrl-held; clicked => { root.tool-chosen(3); } }
                         IconButton { width: 40px; height: 36px; tip-side: 1; label: @tr("tool-pen" => "Pen (P)"); icon: "M15.5 4.5 a2.1 2.1 0 0 1 3 3 L8 18 l-4 1 1 -4 z M13.5 6.5 l3 3 M12 20 q2 -3 4 0 t4 0"; active: root.tool == 4 && !root.ctrl-held; clicked => { root.tool-chosen(4); } }
                         IconButton { width: 40px; height: 36px; tip-side: 1; label: @tr("tool-text" => "Text (T)"); icon: "M5 6 h14 M12 6 v14"; active: root.tool == 5 && !root.ctrl-held; clicked => { root.tool-chosen(5); } }
                         Rectangle { height: 9px; Rectangle { y: 4px; height: 1px; x: 8px; width: parent.width - 16px; background: Theme.line; } }
@@ -1569,8 +1573,8 @@ export component AppWindow inherits Window {
                                         }
                                     }
                                 }
-                                // ---- Arrowheads: a property of the line
-                                if root.prop-kind == 2: PropSection {
+                                // ---- Arrowheads: a property of the line and of the pen trail
+                                if root.prop-kind == 2 || root.prop-kind == 3: PropSection {
                                     title: @tr("insp-heads" => "Arrowheads");
                                     PropRow {
                                         label: @tr("insp-head-start" => "Start");
@@ -1629,6 +1633,28 @@ export component AppWindow inherits Window {
                                         }
                                     }
                                 }
+                                // ---- Effects (ZK-48): shadow and glow, off / light / strong
+                                if root.prop-kind == 0 || root.prop-kind == 1 || root.prop-kind == 2 || root.prop-kind == 4 || root.prop-kind == 7 || root.prop-kind == 8 || root.prop-kind == 9: PropSection {
+                                    title: @tr("insp-effects" => "Effects");
+                                    PropRow {
+                                        label: @tr("insp-effect-shadow" => "Shadow");
+                                        HorizontalLayout {
+                                            spacing: 2px;
+                                            SegOption { text: @tr("common-off" => "Off"); on: root.shadow-index == 0; clicked => { root.set-prop("shadow", 0); } }
+                                            SegOption { text: @tr("insp-effect-light" => "Light"); on: root.shadow-index == 1; clicked => { root.set-prop("shadow", 1); } }
+                                            SegOption { text: @tr("insp-effect-strong" => "Strong"); on: root.shadow-index == 2; clicked => { root.set-prop("shadow", 2); } }
+                                        }
+                                    }
+                                    PropRow {
+                                        label: @tr("insp-effect-glow" => "Glow");
+                                        HorizontalLayout {
+                                            spacing: 2px;
+                                            SegOption { text: @tr("common-off" => "Off"); on: root.glow-index == 0; clicked => { root.set-prop("glow", 0); } }
+                                            SegOption { text: @tr("insp-effect-light" => "Light"); on: root.glow-index == 1; clicked => { root.set-prop("glow", 1); } }
+                                            SegOption { text: @tr("insp-effect-strong" => "Strong"); on: root.glow-index == 2; clicked => { root.set-prop("glow", 2); } }
+                                        }
+                                    }
+                                }
                                 // ---- Opacity
                                 if root.prop-kind >= 0 && root.prop-kind != 5: PropRow {
                                     label: @tr("insp-opacity" => "Opacity");
@@ -1644,7 +1670,20 @@ export component AppWindow inherits Window {
                                     }
                                 }
                                 // ---- Position and size of one selected mark
-                                if root.prop-for-selection && root.selection-count == 1: PropSection {
+                                if root.prop-for-selection && root.selection-count == 1 && root.prop-kind == 2: PropSection {
+                                    title: @tr("insp-line-points" => "Line ends");
+                                    HorizontalLayout {
+                                        spacing: 8px;
+                                        NumField { label: @tr("insp-x1" => "X1"); value: root.geom-x; committed(v) => { root.set-geom("x1", v); } }
+                                        NumField { label: @tr("insp-y1" => "Y1"); value: root.geom-y; committed(v) => { root.set-geom("y1", v); } }
+                                    }
+                                    HorizontalLayout {
+                                        spacing: 8px;
+                                        NumField { label: @tr("insp-x2" => "X2"); value: root.geom-x2; committed(v) => { root.set-geom("x2", v); } }
+                                        NumField { label: @tr("insp-y2" => "Y2"); value: root.geom-y2; committed(v) => { root.set-geom("y2", v); } }
+                                    }
+                                }
+                                if root.prop-for-selection && root.selection-count == 1 && root.prop-kind != 2: PropSection {
                                     title: @tr("insp-position" => "Position and size");
                                     HorizontalLayout {
                                         spacing: 8px;

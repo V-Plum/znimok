@@ -91,7 +91,7 @@ pub fn resize_image(doc: &mut Document, w: u32, h: u32, scale_text: bool) -> Res
     for o in &mut doc.objects {
         let kind = o.kind();
         match &mut o.data {
-            Data::Pen { points } => {
+            Data::Pen { points, .. } => {
                 for p in points.iter_mut() {
                     *p = (scale(p.0, sx), scale(p.1, sy));
                 }

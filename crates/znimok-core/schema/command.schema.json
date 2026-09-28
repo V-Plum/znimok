@@ -196,8 +196,16 @@
           "type": "object"
         },
         {
-          "description": "Trail in screenshot coordinates, absolute.",
+          "description": "Trail in screenshot coordinates, absolute. Heads as on a line (owner, 28.09): at the\nend of the trail (`head_front`) and at its start (`head_back`); none by default.",
           "properties": {
+            "head_back": {
+              "$ref": "#/$defs/Head",
+              "default": "none"
+            },
+            "head_front": {
+              "$ref": "#/$defs/Head",
+              "default": "none"
+            },
             "kind": {
               "const": "pen",
               "type": "string"

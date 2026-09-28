@@ -537,9 +537,7 @@ pub fn run(opts: Options) -> Result<(), Box<dyn std::error::Error>> {
                             false,
                         ),
                         4 => (
-                            Data::Pen {
-                                points: vec![(pi.x as i32, pi.y as i32)],
-                            },
+                            Data::pen(vec![(pi.x as i32, pi.y as i32)]),
                             IRect::new(pi.x as i32, pi.y as i32, 0, 0),
                             false,
                         ),
@@ -632,7 +630,7 @@ pub fn run(opts: Options) -> Result<(), Box<dyn std::error::Error>> {
                         Drag::Move { index, start, orig } => {
                             let (dx, dy) = ((pi.x - start.x) as i32, (pi.y - start.y) as i32);
                             let o = &mut s.doc.objects[index];
-                            if let Data::Pen { points } = &mut o.data {
+                            if let Data::Pen { points, .. } = &mut o.data {
                                 let (odx, ody) = (o.rect.x - orig.x, o.rect.y - orig.y);
                                 for pt in points.iter_mut() {
                                     pt.0 += dx - odx;
@@ -676,7 +674,7 @@ pub fn run(opts: Options) -> Result<(), Box<dyn std::error::Error>> {
                             o.rect = IRect::new(start.x as i32, start.y as i32, w, h);
                         }
                         Drag::Pen { index } => {
-                            if let Data::Pen { points } = &mut s.doc.objects[index].data {
+                            if let Data::Pen { points, .. } = &mut s.doc.objects[index].data {
                                 let last = *points.last().unwrap();
                                 if (last.0 - pi.x as i32).abs() + (last.1 - pi.y as i32).abs() >= 1
                                 {

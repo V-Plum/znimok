@@ -473,6 +473,11 @@ tool-ellipse-name = Ellipse
 # @max: 28
 tool-arrow = Arrow (L)
 
+# @where: Tool rail button tooltip and accessible name; (L) is its shortcut. Heads are properties of the line
+# @kind: tooltip
+# @max: 28
+tool-line = Line (L)
+
 # @where: Tool / mark kind name without the shortcut: inspector heading, layer rows
 # @kind: label
 # @max: 20
@@ -937,6 +942,16 @@ insp-shadow-opacity = Shadow opacity
 # @max: 160
 insp-effects-note = Effects stack: add, switch on and off, reorder.
 
+# @where: Effect strength option: weak
+# @kind: option
+# @max: 12
+insp-effect-light = Light
+
+# @where: Effect strength option: strong
+# @kind: option
+# @max: 12
+insp-effect-strong = Strong
+
 # @where: Position field label; keep the Latin letter
 # @kind: label
 # @max: 2
@@ -946,6 +961,31 @@ insp-x = X
 # @kind: label
 # @max: 2
 insp-y = Y
+
+# @where: Line start point, X; keep the Latin letter
+# @kind: label
+# @max: 3
+insp-x1 = X1
+
+# @where: Line start point, Y
+# @kind: label
+# @max: 3
+insp-y1 = Y1
+
+# @where: Line end point, X
+# @kind: label
+# @max: 3
+insp-x2 = X2
+
+# @where: Line end point, Y
+# @kind: label
+# @max: 3
+insp-y2 = Y2
+
+# @where: Section of a line: its two ends
+# @kind: label
+# @max: 24
+insp-line-points = Line ends
 
 # @where: Width field label, one letter
 # @kind: label

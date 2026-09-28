@@ -533,8 +533,16 @@ impl Renderer {
                     self.draw_head(p0, -dir, hl, pw, *head_back);
                 }
             }
-            Data::Pen { points } => {
+            Data::Pen {
+                points,
+                head_front,
+                head_back,
+            } => {
                 self.ctx.set_paint(rgba(st.color, alpha));
+                if points.len() >= 2 && (*head_front != Head::None || *head_back != Head::None) {
+                    self.draw_pen_with_heads(obj, points, *head_front, *head_back, pw);
+                    return;
+                }
                 if points.len() == 1 {
                     let (x, y) = (points[0].0 as f64, points[0].1 as f64);
                     self.ctx
@@ -730,6 +738,76 @@ impl Renderer {
         }
     }
 
+    /// A pen trail with heads: each end points along the trail's last stretch about one head
+    /// long (the raw last segment is a jitter of the mouse), and the trail stops short under a
+    /// head as a line does.
+    fn draw_pen_with_heads(
+        &mut self,
+        obj: &Object,
+        points: &[(i32, i32)],
+        front: Head,
+        back: Head,
+        pw: f64,
+    ) {
+        let mut pts: Vec<Point> = points
+            .iter()
+            .map(|&(x, y)| Point::new(x as f64, y as f64))
+            .collect();
+        pts.dedup();
+        if pts.len() < 2 {
+            return;
+        }
+        let hl = head_len(obj);
+        let total: f64 = pts.windows(2).map(|w| (w[1] - w[0]).hypot()).sum();
+        // Tip and direction at the end of `pts` (reversed for the start).
+        let end = |pts: &[Point]| -> (Point, Vec2) {
+            let tip = *pts.last().unwrap();
+            let from = pts
+                .iter()
+                .rev()
+                .find(|p| (tip - **p).hypot() >= hl)
+                .copied()
+                .unwrap_or(pts[0]);
+            let v = tip - from;
+            let len = v.hypot().max(1e-6);
+            (tip, v / len)
+        };
+        // Cuts the trail back by `d` from its end.
+        let cut = |pts: &mut Vec<Point>, d: f64| {
+            let tip = *pts.last().unwrap();
+            while pts.len() > 2 && (tip - pts[pts.len() - 2]).hypot() < d {
+                pts.remove(pts.len() - 2);
+            }
+            let n = pts.len();
+            let (a, b) = (pts[n - 2], pts[n - 1]);
+            let seg = (b - a).hypot();
+            if seg > 1e-6 {
+                pts[n - 1] = b - (b - a) * (d.min(seg * 0.9) / seg);
+            }
+        };
+        let short = (hl * 0.85).min(total * 0.4);
+        let f = (front != Head::None).then(|| end(&pts));
+        let mut rev: Vec<Point> = pts.iter().rev().copied().collect();
+        let b = (back != Head::None).then(|| end(&rev));
+        if f.is_some() {
+            cut(&mut pts, short);
+        }
+        if b.is_some() {
+            rev = pts.iter().rev().copied().collect();
+            cut(&mut rev, short);
+            pts = rev.into_iter().rev().collect();
+        }
+        self.ctx
+            .set_stroke(Stroke::new(pw).with_caps(Cap::Round).with_join(Join::Round));
+        self.ctx.stroke_path(&cardinal_spline(&pts, 0.3));
+        if let Some((tip, dir)) = f {
+            self.draw_head(tip, dir, hl, pw, front);
+        }
+        if let Some((tip, dir)) = b {
+            self.draw_head(tip, dir, hl, pw, back);
+        }
+    }
+
     /// Arrow head at `tip` pointing along `dir` (LH `EdDrawHead`): filled triangle, open
     /// chevron of two strokes, or a dot centred on the tip.
     fn draw_head(&mut self, tip: Point, dir: Vec2, len: f64, pw: f64, head: Head) {
@@ -879,11 +957,14 @@ fn rotation(o: &Object) -> Affine {
 
 /// Head length in screenshot pixels (LH `EdHeadLen`): size step 0..2, thickness adds a little.
 pub fn head_len(o: &Object) -> f64 {
-    let Data::Line { head_size, .. } = &o.data else {
-        return 0.0;
+    let size = match &o.data {
+        Data::Line { head_size, .. } => *head_size,
+        // A pen trail has no size step: the middle one.
+        Data::Pen { .. } => 1,
+        _ => return 0.0,
     };
     const MUL: [f64; 3] = [3.0, 4.5, 6.5];
-    let m = MUL[(*head_size).min(2) as usize];
+    let m = MUL[size.min(2) as usize];
     (o.style.thick as f64 * m + 4.0).max(6.0)
 }
 

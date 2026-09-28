@@ -54,7 +54,7 @@ pub mod tool {
         "tool-select",
         "tool-rect",
         "tool-ellipse",
-        "tool-arrow",
+        "tool-line",
         "tool-pen",
         "tool-text",
         "tool-hide",
@@ -160,6 +160,11 @@ pub struct App {
     corners: Corners,
     head_start: Head,
     head_end: Head,
+    /// Pen trails have their own heads, none by default (ZK-48).
+    pen_head_start: Head,
+    pen_head_end: Head,
+    shadow: Effect,
+    glow: Effect,
     text_size_i: usize,
     /// Point size for new text, screenshot pixels (0 = automatic, from the picture height).
     text_px: i32,
@@ -202,13 +207,7 @@ fn args(pairs: &[(&'static str, String)]) -> FluentArgs<'static> {
 }
 
 fn bounds_of_points(points: &[(i32, i32)]) -> IRect {
-    Object::new(
-        IRect::default(),
-        Data::Pen {
-            points: points.to_vec(),
-        },
-    )
-    .bounds()
+    Object::new(IRect::default(), Data::pen(points.to_vec())).bounds()
 }
 
 impl App {
@@ -241,6 +240,10 @@ impl App {
             corners: Corners::Sharp,
             head_start: Head::None,
             head_end: Head::Triangle,
+            pen_head_start: Head::None,
+            pen_head_end: Head::None,
+            shadow: Effect::None,
+            glow: Effect::None,
             text_size_i: 1,
             text_px: 0,
             bold: false,
@@ -672,6 +675,12 @@ impl App {
             } else {
                 Corners::Sharp
             },
+            shadow: if fx_tool(t) {
+                self.shadow
+            } else {
+                Effect::None
+            },
+            glow: if fx_tool(t) { self.glow } else { Effect::None },
             ..Style::default()
         };
         let side = self
@@ -724,6 +733,14 @@ impl App {
         }
         let base = [18, 24, 36][self.text_size_i.min(2)];
         ((base as f64 * self.text_size_base()).round() as i32).max(10)
+    }
+
+    fn pen_data(&self, points: Vec<(i32, i32)>) -> Data {
+        Data::Pen {
+            points,
+            head_front: self.pen_head_end,
+            head_back: self.pen_head_start,
+        }
     }
 
     fn new_object(&self, t: usize, a: (i32, i32), b: (i32, i32)) -> Object {
@@ -959,13 +976,9 @@ impl App {
                 let merge = self.merge_key();
                 if self.tool == tool::PEN {
                     let points = vec![start, p];
-                    let mut obj = Object::new(
-                        bounds_of_points(&points),
-                        Data::Pen {
-                            points: points.clone(),
-                        },
-                    )
-                    .with_style(self.style_for(tool::PEN));
+                    let mut obj =
+                        Object::new(bounds_of_points(&points), self.pen_data(points.clone()))
+                            .with_style(self.style_for(tool::PEN));
                     obj.rect = obj.bounds();
                     if let Some(a) = self.apply(
                         ui,
@@ -1024,9 +1037,7 @@ impl App {
                 }
                 points.push(p);
                 let patch = ObjectPatch {
-                    data: Some(Data::Pen {
-                        points: points.clone(),
-                    }),
+                    data: Some(self.pen_data(points.clone())),
                     rect: Some(bounds_of_points(&points)),
                     ..Default::default()
                 };
@@ -1711,6 +1722,27 @@ impl App {
                     None,
                 );
             }
+            "shadow" | "glow" => {
+                let e = match v {
+                    1 => Effect::Light,
+                    2 => Effect::Strong,
+                    _ => Effect::None,
+                };
+                let sp = if name == "shadow" {
+                    self.shadow = e;
+                    StylePatch {
+                        shadow: Some(e),
+                        ..Default::default()
+                    }
+                } else {
+                    self.glow = e;
+                    StylePatch {
+                        glow: Some(e),
+                        ..Default::default()
+                    }
+                };
+                self.patch_selected(ui, |o| o.kind().fx_allowed(), style(sp), None);
+            }
             "stroke-none" => {
                 self.no_stroke = true;
                 self.patch_selected(
@@ -1792,10 +1824,14 @@ impl App {
                     _ => Head::None,
                 };
                 let start = name == "head-start";
-                if start {
-                    self.head_start = h;
-                } else {
-                    self.head_end = h;
+                // Defaults: the pen's own when the Pen tool is on (or a pen is selected).
+                let pen = self.tool == tool::PEN
+                    || !self.selected_where(|o| o.kind() == Kind::Pen).is_empty();
+                match (pen, start) {
+                    (true, true) => self.pen_head_start = h,
+                    (true, false) => self.pen_head_end = h,
+                    (false, true) => self.head_start = h,
+                    (false, false) => self.head_end = h,
                 }
                 // Heads are line data: each selected line gets its own patch.
                 let lines: Vec<(ObjectId, Data)> = {
@@ -1814,6 +1850,18 @@ impl App {
                                     head_front: if start { head_front } else { h },
                                     head_back: if start { h } else { head_back },
                                     head_size,
+                                },
+                            )),
+                            Data::Pen {
+                                ref points,
+                                head_front,
+                                head_back,
+                            } => Some((
+                                o.id,
+                                Data::Pen {
+                                    points: points.clone(),
+                                    head_front: if start { head_front } else { h },
+                                    head_back: if start { h } else { head_back },
                                 },
                             )),
                             _ => None,
@@ -2058,6 +2106,30 @@ impl App {
                 dy: v - r.y,
                 merge: None,
             },
+            // A line's rectangle runs from its start (x, y) to its end (x + w, y + h).
+            "x1" | "y1" | "x2" | "y2" => {
+                let mut n = r;
+                match field {
+                    "x1" => {
+                        n.w = r.x + r.w - v;
+                        n.x = v;
+                    }
+                    "y1" => {
+                        n.h = r.y + r.h - v;
+                        n.y = v;
+                    }
+                    "x2" => n.w = v - r.x,
+                    _ => n.h = v - r.y,
+                }
+                Command::UpdateObjects {
+                    ids: vec![id],
+                    patch: ObjectPatch {
+                        rect: Some(n),
+                        ..Default::default()
+                    },
+                    merge: None,
+                }
+            }
             "w" | "h" => {
                 let mut n = r;
                 if field == "w" {
@@ -2847,6 +2919,19 @@ impl App {
                     ui.set_head_start(head_index(head_back));
                     ui.set_head_end(head_index(head_front));
                 }
+                if let Data::Pen {
+                    head_front,
+                    head_back,
+                    ..
+                } = o.data
+                {
+                    ui.set_head_start(head_index(head_back));
+                    ui.set_head_end(head_index(head_front));
+                }
+                ui.set_shadow_index(effect_index(st.shadow));
+                ui.set_glow_index(effect_index(st.glow));
+                ui.set_geom_x2((o.rect.x + o.rect.w).to_string().into());
+                ui.set_geom_y2((o.rect.y + o.rect.h).to_string().into());
                 if let Data::Text {
                     size, bold, italic, ..
                 } = o.data
@@ -2887,8 +2972,15 @@ impl App {
                 ui.set_dash_index(dash_index(self.dash));
                 ui.set_corners_index(corners_index(self.corners));
                 ui.set_alpha(self.alpha as f32 / 100.0);
-                ui.set_head_start(head_index(self.head_start));
-                ui.set_head_end(head_index(self.head_end));
+                if self.tool == tool::PEN {
+                    ui.set_head_start(head_index(self.pen_head_start));
+                    ui.set_head_end(head_index(self.pen_head_end));
+                } else {
+                    ui.set_head_start(head_index(self.head_start));
+                    ui.set_head_end(head_index(self.head_end));
+                }
+                ui.set_shadow_index(effect_index(self.shadow));
+                ui.set_glow_index(effect_index(self.glow));
                 ui.set_text_size_index(self.text_size_i as i32);
                 ui.set_text_size_px(self.text_size().to_string().into());
                 ui.set_text_bold(self.bold);
@@ -3350,6 +3442,19 @@ fn corners_index(c: Corners) -> i32 {
         Corners::Soft => 1,
         Corners::Round => 2,
     }
+}
+
+fn effect_index(e: Effect) -> i32 {
+    match e {
+        Effect::None => 0,
+        Effect::Light => 1,
+        Effect::Strong => 2,
+    }
+}
+
+/// Tools whose marks take shadow and glow (as `Kind::fx_allowed`).
+fn fx_tool(t: usize) -> bool {
+    !matches!(t, tool::PEN | tool::HIDE | tool::MARKER)
 }
 
 fn head_index(h: Head) -> i32 {

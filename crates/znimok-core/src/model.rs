@@ -331,9 +331,14 @@ pub enum Data {
         head_back: Head,
         head_size: u8,
     },
-    /// Trail in screenshot coordinates, absolute.
+    /// Trail in screenshot coordinates, absolute. Heads as on a line (owner, 28.09): at the
+    /// end of the trail (`head_front`) and at its start (`head_back`); none by default.
     Pen {
         points: Vec<(i32, i32)>,
+        #[serde(default)]
+        head_front: Head,
+        #[serde(default)]
+        head_back: Head,
     },
     Text {
         text: String,
@@ -364,6 +369,15 @@ pub enum Data {
 }
 
 impl Data {
+    /// A pen trail without heads.
+    pub fn pen(points: Vec<(i32, i32)>) -> Self {
+        Data::Pen {
+            points,
+            head_front: Head::None,
+            head_back: Head::None,
+        }
+    }
+
     pub fn kind(&self) -> Kind {
         match self {
             Data::Rect => Kind::Rect,
@@ -427,7 +441,7 @@ impl Object {
     /// Bounding box with non-negative size (pen: from its points).
     pub fn bounds(&self) -> IRect {
         match &self.data {
-            Data::Pen { points } if !points.is_empty() => {
+            Data::Pen { points, .. } if !points.is_empty() => {
                 let (mut x0, mut y0, mut x1, mut y1) = (i32::MAX, i32::MAX, i32::MIN, i32::MIN);
                 for &(x, y) in points {
                     x0 = x0.min(x);
@@ -445,7 +459,7 @@ impl Object {
     pub fn sanitize(&mut self) {
         self.rect = self.rect.clamped();
         self.rot %= 360;
-        if let Data::Pen { points } = &mut self.data {
+        if let Data::Pen { points, .. } = &mut self.data {
             for p in points.iter_mut() {
                 *p = (clamp_coord(p.0), clamp_coord(p.1));
             }
@@ -457,7 +471,7 @@ impl Object {
     pub fn translate(&mut self, dx: i32, dy: i32) {
         let (dx, dy) = (clamp_coord(dx), clamp_coord(dy));
         self.rect = self.rect.translated(dx, dy).clamped();
-        if let Data::Pen { points } = &mut self.data {
+        if let Data::Pen { points, .. } = &mut self.data {
             for p in points.iter_mut() {
                 *p = (clamp_coord(p.0 + dx), clamp_coord(p.1 + dy));
             }
@@ -476,7 +490,7 @@ impl Object {
                 let (x1, y1) = f(self.rect.x + self.rect.w, self.rect.y + self.rect.h);
                 self.rect = IRect::new(x0, y0, x1 - x0, y1 - y0);
             }
-            Data::Pen { points } => {
+            Data::Pen { points, .. } => {
                 for p in points.iter_mut() {
                     *p = f(p.0, p.1);
                 }
@@ -905,9 +919,7 @@ mod tests {
         ));
         doc.push(Object::new(
             IRect::new(0, 0, 0, 0),
-            Data::Pen {
-                points: vec![(1, 2), (40, 3), (50, 55)],
-            },
+            Data::pen(vec![(1, 2), (40, 3), (50, 55)]),
         ));
         doc.push(Object::new(
             IRect::new(60, 10, 30, 12),
@@ -960,7 +972,7 @@ mod tests {
         doc.rotate_quarters(1);
         // (x, y) → (H − y, x) with H = 60.
         assert_eq!(doc.objects[1].rect, IRect::new(10, 80, 30, -60));
-        let Data::Pen { points } = &doc.objects[2].data else {
+        let Data::Pen { points, .. } = &doc.objects[2].data else {
             unreachable!()
         };
         assert_eq!(points[0], (58, 1));
@@ -1038,9 +1050,7 @@ mod tests {
         let mut doc = Document::from_raster("t", Raster::solid(4, 4, Rgb::WHITE));
         let i = doc.push(Object::new(
             IRect::new(i32::MIN, 0, i32::MAX, 5),
-            Data::Pen {
-                points: vec![(i32::MIN, i32::MAX), (i32::MAX, 0)],
-            },
+            Data::pen(vec![(i32::MIN, i32::MAX), (i32::MAX, 0)]),
         ));
         let o = &doc.objects[i];
         assert_eq!(

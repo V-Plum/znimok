@@ -180,7 +180,7 @@ pub fn reference_document(w: u32, h: u32) -> Document {
         })
         .collect();
     doc.push(
-        Object::new(r(600.0, 500.0, 260.0, 80.0), Data::Pen { points: pts })
+        Object::new(r(600.0, 500.0, 260.0, 80.0), Data::pen(pts))
             .with_style(s(Rgb::new(0xA0, 0x5C, 0xF5), 4)),
     );
     // Text: with outline, bold; and a wrapped block, right aligned, italic, 70 %.

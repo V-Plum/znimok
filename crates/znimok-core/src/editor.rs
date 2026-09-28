@@ -28,7 +28,7 @@ impl Weigh for Snapshot {
             .map(|o| {
                 192 + o.name.as_ref().map_or(0, String::len)
                     + match &o.data {
-                        Data::Pen { points } => points.len() * 8,
+                        Data::Pen { points, .. } => points.len() * 8,
                         Data::Text { text, .. } => text.len(),
                         _ => 0,
                     }
@@ -769,15 +769,9 @@ fn apply_patch(o: &mut Object, p: &ObjectPatch) -> Result<(), CoreError> {
         } else {
             r.normalized()
         };
-        if let Data::Pen { points } = &mut o.data {
+        if let Data::Pen { points, .. } = &mut o.data {
             // A new box for a pen trail scales its points into it.
-            let b = crate::model::Object::new(
-                IRect::default(),
-                Data::Pen {
-                    points: points.clone(),
-                },
-            )
-            .bounds();
+            let b = crate::model::Object::new(IRect::default(), Data::pen(points.clone())).bounds();
             let sx = if b.w > 0 {
                 r.w as f64 / b.w as f64
             } else {

@@ -346,13 +346,26 @@ fn write_object(w: &mut Writer, o: &Object, bank_map: &BTreeMap<BankId, u32>) {
                 w.record(b"hdb ", |w| w.u8(head_code(*head_back)));
                 w.record(b"hds ", |w| w.u8(*head_size));
             }
-            Data::Pen { points } => w.record(b"pts ", |w| {
-                w.u32(points.len() as u32);
-                for (x, y) in points {
-                    w.i32(*x);
-                    w.i32(*y);
+            Data::Pen {
+                points,
+                head_front,
+                head_back,
+            } => {
+                w.record(b"pts ", |w| {
+                    w.u32(points.len() as u32);
+                    for (x, y) in points {
+                        w.i32(*x);
+                        w.i32(*y);
+                    }
+                });
+                // Heads on a pen trail are optional: older readers skip the records.
+                if *head_front != Head::None {
+                    w.record(b"hdf ", |w| w.u8(head_code(*head_front)));
                 }
-            }),
+                if *head_back != Head::None {
+                    w.record(b"hdb ", |w| w.u8(head_code(*head_back)));
+                }
+            }
             Data::Text {
                 text,
                 size,
@@ -733,7 +746,11 @@ fn read_object(b: &mut Reader<'_>, limits: &Limits) -> Result<Option<Object>, Fo
             head_back: hdb,
             head_size: hds,
         },
-        Kind::Pen => Data::Pen { points },
+        Kind::Pen => Data::Pen {
+            points,
+            head_front: hdf,
+            head_back: hdb,
+        },
         Kind::Text => Data::Text {
             text,
             size,

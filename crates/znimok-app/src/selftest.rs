@@ -529,6 +529,15 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
                 heads == Some((znimok_core::Head::Dot, znimok_core::Head::Triangle)),
                 format!("{heads:?}"),
             );
+            // Line ends as X2 / Y2; shadow from the inspector.
+            ui.invoke_set_geom("x2".into(), "700".into());
+            ui.invoke_set_prop("shadow".into(), 1);
+            let st = get(app, id).map(|o| (o.rect.x + o.rect.w, o.style.shadow));
+            r.check(
+                "line: X2 moves the end, shadow light",
+                st == Some((700, znimok_core::Effect::Light)) && ui.get_shadow_index() == 1,
+                format!("{st:?}"),
+            );
             r.snapshot(ui, "15-props-line");
             ui.invoke_layer_eye(id as i32);
             let hidden = get(app, id).map(|o| o.hidden);
@@ -538,6 +547,21 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
                 format!("{hidden:?}"),
             );
             ui.invoke_layer_eye(id as i32);
+        }
+        // Pen trails take heads too (ZK-48).
+        if let Some(id) = find(app, znimok_core::Kind::Pen) {
+            app.borrow_mut().layer_click(ui, id as i32, false);
+            ui.invoke_set_prop("head-end".into(), 1);
+            let heads = get(app, id).map(|o| match o.data {
+                znimok_core::Data::Pen { head_front, .. } => head_front,
+                _ => znimok_core::Head::None,
+            });
+            r.check(
+                "pen: end head = triangle",
+                heads == Some(znimok_core::Head::Triangle) && ui.get_head_end() == 1,
+                format!("{heads:?}"),
+            );
+            r.snapshot(ui, "20-props-pen");
         }
         let rows = slint::Model::row_count(&ui.get_layers());
         r.check(

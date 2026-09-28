@@ -28,6 +28,18 @@ fn rich_doc() -> Document {
     doc.group_names.insert(7, "Кнопки".into());
     doc.objects[2].hidden = true;
     doc.objects[2].name = Some("прихована".into());
+    // A pen trail with heads (ZK-48) goes through the file too.
+    for o in &mut doc.objects {
+        if let Data::Pen {
+            head_front,
+            head_back,
+            ..
+        } = &mut o.data
+        {
+            *head_front = Head::Chevron;
+            *head_back = Head::Dot;
+        }
+    }
     doc
 }
 
