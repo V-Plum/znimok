@@ -10,13 +10,9 @@
 
 use std::path::{Path, PathBuf};
 
-use windows::Win32::Foundation::{
-    ERROR_FILE_NOT_FOUND, ERROR_MORE_DATA, ERROR_SUCCESS, WIN32_ERROR,
-};
-use windows::Win32::System::Registry::{
-    HKEY_CURRENT_USER, REG_SZ, RRF_RT_REG_BINARY, RRF_RT_REG_SZ, RegDeleteKeyValueW, RegGetValueW,
-    RegSetKeyValueW,
-};
+use super::reg::{delete_value, not_found, os, read_sz, write_sz};
+use windows::Win32::Foundation::{ERROR_MORE_DATA, ERROR_SUCCESS};
+use windows::Win32::System::Registry::{HKEY_CURRENT_USER, RRF_RT_REG_BINARY, RegGetValueW};
 use windows::core::HSTRING;
 use znimok_platform::{Autostart, AutostartState, PlatformError, Result};
 
@@ -133,95 +129,6 @@ impl Autostart for RunKeyAutostart {
     }
 }
 
-fn not_found(e: WIN32_ERROR) -> bool {
-    e == ERROR_FILE_NOT_FOUND
-}
-
-fn os(e: WIN32_ERROR) -> PlatformError {
-    PlatformError::Os {
-        code: e.0 as i64,
-        message: windows::core::Error::from(e.to_hresult()).message(),
-    }
-}
-
-fn read_sz(key: &str, name: &str) -> Result<Option<String>> {
-    let (key, name) = (HSTRING::from(key), HSTRING::from(name));
-    let mut len = 0u32;
-    // SAFETY: size query without a buffer.
-    let r = unsafe {
-        RegGetValueW(
-            HKEY_CURRENT_USER,
-            &key,
-            &name,
-            RRF_RT_REG_SZ,
-            None,
-            None,
-            Some(&mut len),
-        )
-    };
-    if not_found(r) {
-        return Ok(None);
-    }
-    if r != ERROR_SUCCESS {
-        return Err(os(r));
-    }
-    let mut buf = vec![0u16; (len as usize).div_ceil(2) + 1];
-    let mut len = (buf.len() * 2) as u32;
-    // SAFETY: buffer of `len` bytes.
-    let r = unsafe {
-        RegGetValueW(
-            HKEY_CURRENT_USER,
-            &key,
-            &name,
-            RRF_RT_REG_SZ,
-            None,
-            Some(buf.as_mut_ptr().cast()),
-            Some(&mut len),
-        )
-    };
-    if not_found(r) {
-        return Ok(None);
-    }
-    if r != ERROR_SUCCESS {
-        return Err(os(r));
-    }
-    let chars = (len as usize / 2).min(buf.len());
-    let s = String::from_utf16_lossy(&buf[..chars]);
-    Ok(Some(s.trim_end_matches('\0').to_string()))
-}
-
-fn write_sz(key: &str, name: &str, value: &str) -> Result<()> {
-    let data: Vec<u16> = value.encode_utf16().chain([0]).collect();
-    // SAFETY: `data` is a NUL-terminated UTF-16 string of the given byte size; the key is created
-    // if missing.
-    let r = unsafe {
-        RegSetKeyValueW(
-            HKEY_CURRENT_USER,
-            &HSTRING::from(key),
-            &HSTRING::from(name),
-            REG_SZ.0,
-            Some(data.as_ptr().cast()),
-            (data.len() * 2) as u32,
-        )
-    };
-    if r == ERROR_SUCCESS {
-        Ok(())
-    } else {
-        Err(os(r))
-    }
-}
-
-fn delete_value(key: &str, name: &str) -> Result<()> {
-    // SAFETY: plain call with valid strings.
-    let r =
-        unsafe { RegDeleteKeyValueW(HKEY_CURRENT_USER, &HSTRING::from(key), &HSTRING::from(name)) };
-    if r == ERROR_SUCCESS || not_found(r) {
-        Ok(())
-    } else {
-        Err(os(r))
-    }
-}
-
 /// The exe of a Run command: quoted, or up to the first space.
 fn exe_of(command: &str) -> PathBuf {
     let c = command.trim();
@@ -240,7 +147,7 @@ fn same_command(a: &str, b: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use windows::Win32::System::Registry::RegDeleteTreeW;
+    use windows::Win32::System::Registry::{RegDeleteTreeW, RegSetKeyValueW};
 
     /// A private key instead of the real Run key: nothing starts at login on the test machine.
     struct Scratch(String);

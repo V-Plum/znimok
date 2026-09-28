@@ -534,6 +534,32 @@ pub struct Client {
     next_id: u64,
 }
 
+/// The method a running app answers to open documents (ZK-75): `params` = `{"paths": [...]}`
+/// with absolute paths.
+pub const OPEN_METHOD: &str = "app.open";
+
+/// A second start of the app with files (double-click on a `.znimok`) hands them to the running
+/// instance. `Ok(true)` — it took them; `Ok(false)` — no instance is running (open them here).
+pub fn forward_open(cfg: &Config, files: &[PathBuf]) -> Result<bool, CallError> {
+    let mut client = match Client::connect(cfg, "znimok-app (second start)") {
+        Ok(c) => c,
+        // No token file or nobody listening: no running instance.
+        Err(CallError::Io(_)) => return Ok(false),
+        Err(e) => return Err(e),
+    };
+    let paths: Vec<String> = files
+        .iter()
+        .map(|p| {
+            std::path::absolute(p)
+                .unwrap_or_else(|_| p.clone())
+                .display()
+                .to_string()
+        })
+        .collect();
+    client.call(OPEN_METHOD, json!({ "paths": paths }))?;
+    Ok(true)
+}
+
 impl Client {
     /// Connect to the running server and say hello with the token from its token file.
     pub fn connect(cfg: &Config, client: &str) -> Result<Self, CallError> {

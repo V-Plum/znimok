@@ -1,0 +1,28 @@
+<!-- ZK-75: merge these two keys into crates/znimok-app/mac/Info.plist (inside the top <dict>).
+     The type is exported by Znimok (it owns the format); icon file "znimok-document.icns" goes
+     to Contents/Resources when the document icon exists (ZK-76). -->
+    <key>UTExportedTypeDeclarations</key>
+    <array>
+        <dict>
+            <key>UTTypeIdentifier</key><string>ua.plum.znimok.document</string>
+            <key>UTTypeDescription</key><string>Znimok document</string>
+            <key>UTTypeConformsTo</key>
+            <array><string>public.data</string><string>public.content</string></array>
+            <key>UTTypeIconFile</key><string>znimok-document.icns</string>
+            <key>UTTypeTagSpecification</key>
+            <dict>
+                <key>public.filename-extension</key><array><string>znimok</string></array>
+                <key>public.mime-type</key><array><string>application/x-znimok</string></array>
+            </dict>
+        </dict>
+    </array>
+    <key>CFBundleDocumentTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleTypeName</key><string>Znimok document</string>
+            <key>CFBundleTypeRole</key><string>Editor</string>
+            <key>LSHandlerRank</key><string>Owner</string>
+            <key>LSItemContentTypes</key><array><string>ua.plum.znimok.document</string></array>
+            <key>CFBundleTypeIconFile</key><string>znimok-document.icns</string>
+        </dict>
+    </array>

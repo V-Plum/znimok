@@ -19,5 +19,6 @@ screencapturekit = { version = "11", features = ["macos_15_0"] }
 objc2-service-management = "0.3"
 objc2-foundation = "0.3"
 objc2 = "0.6"
+block2 = "0.6"
 objc2-app-kit = "0.3"
 image = { version = "0.25", default-features = false, features = ["png"] }

@@ -231,3 +231,28 @@ fn open_endpoint_reaches_our_own_server() {
     open_endpoint(s.endpoint()).unwrap();
     assert!(open_endpoint(&format!("{}-nope", s.endpoint())).is_err());
 }
+
+#[test]
+fn a_second_start_hands_files_to_the_running_instance() {
+    let c = cfg("fwd");
+    assert!(
+        !forward_open(&c, &[PathBuf::from("a.znimok")]).unwrap(),
+        "nobody runs yet"
+    );
+    let got = Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+    let g = got.clone();
+    let _s = Server::start(c.clone(), move |m: &str, p: Value| {
+        assert_eq!(m, OPEN_METHOD);
+        let mut v = g.lock().unwrap();
+        for x in p["paths"].as_array().unwrap() {
+            v.push(x.as_str().unwrap().to_string());
+        }
+        Ok(Value::Null)
+    })
+    .unwrap();
+    assert!(forward_open(&c, &[PathBuf::from("знімок 1.znimok")]).unwrap());
+    let v = got.lock().unwrap();
+    assert_eq!(v.len(), 1);
+    assert!(std::path::Path::new(&v[0]).is_absolute(), "{v:?}");
+    assert!(v[0].ends_with("знімок 1.znimok"), "{v:?}");
+}
