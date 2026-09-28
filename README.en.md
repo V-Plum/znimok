@@ -38,6 +38,15 @@ rubber band over empty space, Shift/Ctrl-click, holding Ctrl makes any tool Sele
 moment; Ctrl+D duplicates, Ctrl+]/[ changes the order, Ctrl+G groups; align and distribute
 live in the inspector.
 
+Line (L) takes heads on either end — and so does the pen; a line shows X1/Y1/X2/Y2 in the
+inspector, and shapes, text, counters and stamps get shadow and glow. The Image tab has crop
+(C shows the whole picture: drag a frame, pull its handles or its middle; Enter applies, Esc
+cancels), rotate and mirror, tone (exposure, gamma, contrast; hold Compare to see the
+original) and image size. Crop, turns and tone are a recipe over the original, each change is
+one undo step. The Copy button can be dragged into a chat or a folder — it carries a PNG
+file. Questions such as "Save changes?" with autosave off come in Znimok's own dialog, not a
+system box.
+
 ```sh
 cargo run --release -p znimok-app              # the library
 cargo run --release -p znimok-app -- shot.png  # open an image right away
