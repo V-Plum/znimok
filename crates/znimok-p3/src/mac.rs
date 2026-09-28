@@ -156,7 +156,13 @@ fn capture_display_at(mouse: Option<(f64, f64)>) -> Result<String, String> {
     ))
 }
 
-/// Opens the system content picker; the pick is captured on the callback thread.
+/// Opens the system content picker and captures the pick.
+///
+/// ⚠ The picker's callback arrives on the main thread, and `capture_image` blocks until
+/// ScreenCaptureKit calls back — also on the main queue. Capturing inside the callback
+/// deadlocks (first live test: "completion callback did not fire within 30s"), so the capture
+/// runs on its own thread. Only single-window and single-display modes are offered: with the
+/// application mode as well, macOS adds a "Share this window / all application windows" step.
 fn capture_via_picker(done: impl Fn(Result<String, String>) + Send + 'static) {
     let mut cfg = match SCContentSharingPickerConfiguration::new() {
         Ok(c) => c,
@@ -165,26 +171,31 @@ fn capture_via_picker(done: impl Fn(Result<String, String>) + Send + 'static) {
     cfg.set_allowed_picker_modes(&[
         SCContentSharingPickerMode::SingleWindow,
         SCContentSharingPickerMode::SingleDisplay,
-        SCContentSharingPickerMode::SingleApplication,
     ]);
     let t0 = Instant::now();
-    SCContentSharingPicker::show(&cfg, move |outcome| {
-        let r = match outcome {
-            SCPickerOutcome::Picked(result) => {
-                let picked = t0.elapsed();
-                let filter = result.filter();
-                let (pw, ph) = result.pixel_size();
-                let what = format!(
-                    "{} вікон, {} дисплеїв",
-                    result.windows().len(),
-                    result.displays().len()
-                );
+    SCContentSharingPicker::show(&cfg, move |outcome| match outcome {
+        SCPickerOutcome::Picked(result) => {
+            let picked = t0.elapsed();
+            let on_main = MainThreadMarker::new().is_some();
+            let filter = result.filter();
+            let (pw, ph) = result.pixel_size();
+            let what = format!(
+                "{} вікон, {} дисплеїв, колбек на {} потоці",
+                result.windows().len(),
+                result.displays().len(),
+                if on_main {
+                    "головному"
+                } else {
+                    "фоновому"
+                }
+            );
+            std::thread::spawn(move || {
                 let cfg = SCStreamConfiguration::new()
                     .with_width(pw.max(1))
                     .with_height(ph.max(1))
                     .with_shows_cursor(false);
                 let t1 = Instant::now();
-                match SCScreenshotManager::capture_image(&filter, &cfg) {
+                let r = match SCScreenshotManager::capture_image(&filter, &cfg) {
                     Ok(img) => save_png(&img, "picker").map(|p| {
                         format!(
                             "пікер ({what}): вибір {:.1} с, кадр {:.0} мс, {}×{} px → {}",
@@ -195,13 +206,13 @@ fn capture_via_picker(done: impl Fn(Result<String, String>) + Send + 'static) {
                             p.display()
                         )
                     }),
-                    Err(e) => Err(format!("capture_image після пікера: {e}")),
-                }
-            }
-            SCPickerOutcome::Cancelled => Err("пікер скасовано".into()),
-            SCPickerOutcome::Error(m) => Err(format!("пікер: {m}")),
-        };
-        done(r);
+                    Err(e) => Err(format!("capture_image після пікера ({what}): {e}")),
+                };
+                done(r);
+            });
+        }
+        SCPickerOutcome::Cancelled => done(Err("пікер скасовано".into())),
+        SCPickerOutcome::Error(m) => done(Err(format!("пікер: {m}"))),
     });
 }
 
