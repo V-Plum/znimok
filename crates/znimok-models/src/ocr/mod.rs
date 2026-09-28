@@ -50,6 +50,15 @@ pub struct Line {
     pub rect: Rect,
     /// 0–1 when the engine tells (Vision), else `None`.
     pub confidence: Option<f32>,
+    /// Words with their own boxes when the engine gives them (Windows); empty otherwise — then
+    /// a part of the line is placed by its share of the characters.
+    pub words: Vec<Word>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Word {
+    pub text: String,
+    pub rect: Rect,
 }
 
 #[derive(Clone, Debug, PartialEq)]

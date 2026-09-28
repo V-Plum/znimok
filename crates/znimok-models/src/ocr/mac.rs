@@ -105,6 +105,7 @@ impl Ocr for VisionOcr {
                             h: b.size.height as f32 * h,
                         },
                         confidence: Some(confidence),
+                        words: Vec::new(),
                     });
                 }
             }
