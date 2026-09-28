@@ -6759,6 +6759,7 @@ version = "0.0.0"
 dependencies = [
  "image",
  "windows",
+ "windows-collections",
  "windows-core",
  "windows-future",
  "znimok-platform",

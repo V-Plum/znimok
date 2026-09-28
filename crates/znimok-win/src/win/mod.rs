@@ -2,6 +2,7 @@ pub mod autostart;
 pub mod clipboard;
 mod display;
 mod dxgi;
+pub mod share;
 mod wgc;
 mod winlist;
 
