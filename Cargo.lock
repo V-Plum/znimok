@@ -6527,6 +6527,29 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "29666d0abbfad1e3dc4dcf6144730dd3a3ab225bbbdac83319345b1b44ccfc1b"
 
 [[package]]
+name = "znimok-agents"
+version = "0.0.0"
+dependencies = [
+ "base64",
+ "chrono",
+ "image",
+ "schemars",
+ "serde",
+ "serde_json",
+ "znimok-core",
+ "znimok-format",
+ "znimok-html",
+ "znimok-i18n",
+ "znimok-ipc",
+ "znimok-mask",
+ "znimok-models",
+ "znimok-platform",
+ "znimok-render",
+ "znimok-settings",
+ "znimok-win",
+]
+
+[[package]]
 name = "znimok-app"
 version = "0.0.0"
 dependencies = [
@@ -6560,11 +6583,13 @@ dependencies = [
  "clap",
  "image",
  "serde_json",
+ "znimok-agents",
  "znimok-core",
  "znimok-format",
  "znimok-html",
  "znimok-i18n",
  "znimok-render",
+ "znimok-settings",
 ]
 
 [[package]]
