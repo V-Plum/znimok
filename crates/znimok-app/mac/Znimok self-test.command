@@ -5,7 +5,7 @@ DIR="/Users/Shared/znimok-builds"
 OUT="$DIR/inbox/app-selftest-$(whoami)"
 rm -rf "$OUT" "/tmp/znimok-selftest-lib-$(whoami)"
 mkdir -p "$OUT"
-ZNIMOK_LIBRARY="/tmp/znimok-selftest-lib-$(whoami)" ZNIMOK_SELFTEST="$OUT" \
+RUST_BACKTRACE=1 ZNIMOK_LIBRARY="/tmp/znimok-selftest-lib-$(whoami)" ZNIMOK_SELFTEST="$OUT" \
   "$DIR/Znimok.app/Contents/MacOS/znimok-app" "$DIR/sample.png" 2>&1 | tee "$OUT/console.txt"
 echo "exit code: ${PIPESTATUS[0]}" | tee -a "$OUT/console.txt"
 chmod -R a+rwX "$OUT"

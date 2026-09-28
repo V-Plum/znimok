@@ -33,7 +33,7 @@ windows = { version = "0.62", features = ["Win32_Foundation", "Win32_UI_Input_Ke
 
 [target.'cfg(target_os = "macos")'.dependencies]
 znimok-mac = { path = "../znimok-mac" }
-objc2 = "0.6"
+objc2 = { version = "0.6", features = ["exception"] }
 objc2-app-kit = "0.3"
 objc2-foundation = "0.3"
 global-hotkey = "0.8"

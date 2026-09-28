@@ -103,6 +103,7 @@ fn unconstrain(win: &objc2_app_kit::NSWindow) {
 
     let obj: &AnyObject = win;
     let base = obj.class();
+    trace(&format!("class {}", base.name().to_string_lossy()));
     if base.name().to_bytes().starts_with(b"ZnimokOverlayWindow") {
         return;
     }
@@ -110,6 +111,7 @@ fn unconstrain(win: &objc2_app_kit::NSWindow) {
         Some(c) => c,
         None => {
             let Some(mut b) = ClassBuilder::new(c"ZnimokOverlayWindow", base) else {
+                trace("ClassBuilder::new failed");
                 return;
             };
             // SAFETY: the signature matches `- (NSRect)constrainFrameRect:(NSRect)toScreen:(NSScreen *)`.
@@ -125,11 +127,14 @@ fn unconstrain(win: &objc2_app_kit::NSWindow) {
                         ) -> NSRect,
                 );
             }
-            b.register()
+            let c = b.register();
+            trace("subclass registered");
+            c
         }
     };
     // SAFETY: `cls` is a subclass of the window's class with no extra ivars.
     unsafe { AnyObject::set_class(obj, cls) };
+    trace("set_class done");
 }
 
 #[cfg(target_os = "macos")]
@@ -138,39 +143,74 @@ thread_local! {
     static COVER_LOG: std::cell::RefCell<String> = const { std::cell::RefCell::new(String::new()) };
 }
 
+/// Step trace of the macOS window set-up: stderr (the self-test's console.txt) and the report.
+#[cfg(target_os = "macos")]
+fn trace(step: &str) {
+    eprintln!("[overlay] {step}");
+    COVER_LOG.with(|l| {
+        let mut l = l.borrow_mut();
+        if !l.is_empty() {
+            l.push_str(" · ");
+        }
+        l.push_str(step);
+    });
+}
+
+/// Runs an AppKit step, turning an Objective-C exception into a trace line instead of an
+/// abort ("panic in a function that cannot unwind", owner's Mac 28.09).
+#[cfg(target_os = "macos")]
+fn guarded(step: &str, f: impl FnOnce()) {
+    match objc2::exception::catch(std::panic::AssertUnwindSafe(f)) {
+        Ok(()) => trace(step),
+        Err(e) => trace(&format!("{step} threw {e:?}")),
+    }
+}
+
 fn cover_display(ui: &Overlay) {
     #[cfg(target_os = "macos")]
     if let Some(win) = ns_window(ui) {
         use objc2_app_kit::{
             NSScreenSaverWindowLevel, NSWindowCollectionBehavior, NSWindowStyleMask,
         };
-        unconstrain(&win);
-        if win.styleMask() != NSWindowStyleMask::Borderless {
-            win.setStyleMask(NSWindowStyleMask::Borderless);
-        }
-        win.setLevel(NSScreenSaverWindowLevel);
-        win.setCollectionBehavior(
-            NSWindowCollectionBehavior::CanJoinAllSpaces
-                | NSWindowCollectionBehavior::FullScreenAuxiliary
-                | NSWindowCollectionBehavior::Stationary,
-        );
+        COVER_LOG.with(|l| l.borrow_mut().clear());
+        guarded("unconstrain", || unconstrain(&win));
+        guarded("style", || {
+            if win.styleMask() != NSWindowStyleMask::Borderless {
+                win.setStyleMask(NSWindowStyleMask::Borderless);
+            }
+        });
+        guarded("level", || win.setLevel(NSScreenSaverWindowLevel));
+        guarded("behavior", || {
+            win.setCollectionBehavior(
+                NSWindowCollectionBehavior::CanJoinAllSpaces
+                    | NSWindowCollectionBehavior::FullScreenAuxiliary
+                    | NSWindowCollectionBehavior::Stationary,
+            )
+        });
         if let Some(screen) = win.screen() {
             let want = screen.frame();
-            win.setFrame_display(want, true);
+            guarded("setFrame", || win.setFrame_display(want, true));
             let got = win.frame();
             let vis = screen.visibleFrame();
             let safe = screen.safeAreaInsets();
             let obj: &objc2::runtime::AnyObject = &win;
-            COVER_LOG.with(|l| {
-                *l.borrow_mut() = format!(
-                    "set {:.0},{:.0} {:.0}×{:.0} → got {:.0},{:.0} {:.0}×{:.0} · visible {:.0},{:.0} {:.0}×{:.0} · safe top {:.0} · class {}",
-                    want.origin.x, want.origin.y, want.size.width, want.size.height,
-                    got.origin.x, got.origin.y, got.size.width, got.size.height,
-                    vis.origin.x, vis.origin.y, vis.size.width, vis.size.height,
-                    safe.top,
-                    obj.class().name().to_string_lossy()
-                )
-            });
+            trace(&format!(
+                "set {:.0},{:.0} {:.0}×{:.0} → got {:.0},{:.0} {:.0}×{:.0} · visible {:.0},{:.0} {:.0}×{:.0} · safe top {:.0} · class {}",
+                want.origin.x,
+                want.origin.y,
+                want.size.width,
+                want.size.height,
+                got.origin.x,
+                got.origin.y,
+                got.size.width,
+                got.size.height,
+                vis.origin.x,
+                vis.origin.y,
+                vis.size.width,
+                vis.size.height,
+                safe.top,
+                obj.class().name().to_string_lossy()
+            ));
         }
     }
     #[cfg(not(target_os = "macos"))]
