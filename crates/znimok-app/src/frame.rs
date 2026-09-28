@@ -69,6 +69,17 @@ pub fn on_resized(ui: &AppWindow) {
     {
         mac::dress(ui);
         mac::place_lights(ui);
+        // AppKit lays the title bar out again after a size change finishes — notably after
+        // leaving full screen, when the animation ends later than our resize event (owner's
+        // Mac 28.09: the lights jumped back to the top edge). Place them again once it settled.
+        for ms in [120u64, 400, 900] {
+            let weak = ui.as_weak();
+            slint::Timer::single_shot(std::time::Duration::from_millis(ms), move || {
+                if let Some(ui) = weak.upgrade() {
+                    mac::place_lights(&ui);
+                }
+            });
+        }
     }
 }
 
@@ -188,6 +199,10 @@ mod mac {
     /// Centres the traffic lights on our 52 pt bar.
     pub fn place_lights(ui: &AppWindow) {
         let Some(win) = ns_window(ui) else { return };
+        // In full screen the title bar is the system's own (it slides in from the top).
+        if win.styleMask().contains(NSWindowStyleMask::FullScreen) {
+            return;
+        }
         let r = objc2::exception::catch(std::panic::AssertUnwindSafe(|| {
             let buttons: Vec<_> = [
                 NSWindowButton::CloseButton,
