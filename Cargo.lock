@@ -6541,6 +6541,7 @@ dependencies = [
  "slint",
  "slint-build",
  "windows",
+ "windows-core",
  "znimok-core",
  "znimok-format",
  "znimok-i18n",

@@ -795,6 +795,25 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
                 format!("{dims:?}"),
             );
         }
+        // ZK-64: the file a drag out carries — a PNG named after the document, full frame.
+        let file = app.borrow_mut().drag_file();
+        let want = app.borrow().s.as_ref().map(|s| {
+            let f = s.ed.doc.frame();
+            (f.w as u32, f.h as u32)
+        });
+        let dims = file
+            .as_ref()
+            .ok()
+            .and_then(|p| image::image_dimensions(p).ok());
+        r.check(
+            "drag-out file: PNG of the frame",
+            dims.is_some()
+                && dims == want
+                && file
+                    .as_ref()
+                    .is_ok_and(|p| p.extension().is_some_and(|e| e == "png")),
+            format!("{file:?} {dims:?}"),
+        );
     }));
 
     // Capture overlay on a synthetic frozen frame: hover a window, drag a region.

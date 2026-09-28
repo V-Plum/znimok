@@ -2805,6 +2805,67 @@ impl App {
         ))
     }
 
+    /// The picture as a PNG file for dragging out (ZK-64): a messenger or a folder takes a file.
+    /// Named after the document; one temporary folder, overwritten on the next drag.
+    pub fn drag_file(&mut self) -> Result<PathBuf, String> {
+        let name: String = self
+            .doc_name()
+            .chars()
+            .map(|c| {
+                if c.is_control() || r#"<>:"/\|?*"#.contains(c) {
+                    '_'
+                } else {
+                    c
+                }
+            })
+            .collect();
+        let name = name.trim().trim_end_matches('.').to_string();
+        let name = if name.is_empty() {
+            "Znimok".to_string()
+        } else {
+            name
+        };
+        let dir = std::env::temp_dir().join("Znimok").join("drag");
+        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        let path = dir.join(format!("{name}.png"));
+        let (w, h, rgba) = self.flatten().ok_or("no document")?;
+        io::write_image(&path, w, h, rgba)?;
+        Ok(path)
+    }
+
+    /// Dragging the Copy button out of the window: the picture goes as a file.
+    pub fn drag_out(&mut self, ui: &AppWindow) {
+        self.finish_text(ui);
+        let path = match self.drag_file() {
+            Ok(p) => p,
+            Err(e) => {
+                let msg = format!("{} ({e})", self.tr.tr("export-error"));
+                self.toast(ui, msg);
+                return;
+            }
+        };
+        #[cfg(windows)]
+        {
+            // OLE runs its own loop until the drop; the button release never reaches Slint.
+            let r = crate::dnd_win::drag_files(vec![path]);
+            release_pointer(ui);
+            if let Err(e) = r {
+                let msg = format!("{} ({e})", self.tr.tr("export-error"));
+                self.toast(ui, msg);
+            }
+        }
+        #[cfg(target_os = "macos")]
+        {
+            // AppKit takes the mouse from here: the release goes to the drag session.
+            let started = crate::dnd_mac::drag_from(ui, &path);
+            release_pointer(ui);
+            if !started {
+                let msg = self.tr.tr("export-error");
+                self.toast(ui, msg);
+            }
+        }
+    }
+
     pub fn copy(&mut self, ui: &AppWindow) {
         self.finish_text(ui);
         let Some((w, h, rgba)) = self.flatten() else {
@@ -3246,6 +3307,20 @@ fn draw_marquee(pix: &mut Pixmap, view: &View, m: IRect) {
             put(x1, y);
         }
     }
+}
+
+/// Tells Slint the button is up after a system drag took the mouse, so the Copy button does
+/// not stay pressed (and does not copy on the next move).
+#[cfg(any(windows, target_os = "macos"))]
+fn release_pointer(ui: &AppWindow) {
+    use slint::platform::{PointerEventButton, WindowEvent};
+    let at = slint::LogicalPosition::new(-10.0, -10.0);
+    let w = ui.window();
+    w.dispatch_event(WindowEvent::PointerReleased {
+        position: at,
+        button: PointerEventButton::Left,
+    });
+    w.dispatch_event(WindowEvent::PointerExited);
 }
 
 /// Crop frame over the whole picture (ZK-53): outside dimmed, the rule of thirds inside, and

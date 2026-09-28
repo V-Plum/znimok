@@ -391,6 +391,11 @@ open-error-not-image = Не вдалося відкрити «{ $name }»: це 
 # @max: 32
 share-copy-image = Копіювати зображення
 
+# @where: Tooltip tail of the Copy button: it can be dragged out as a file
+# @kind: tooltip
+# @max: 32
+share-drag-tip = перетягніть у чат чи теку
+
 # @where: Grey note after the first item
 # @kind: hint
 # @max: 24

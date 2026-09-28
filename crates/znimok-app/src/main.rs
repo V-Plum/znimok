@@ -12,6 +12,10 @@ mod app;
 mod capture;
 mod crash;
 mod dialog;
+#[cfg(target_os = "macos")]
+mod dnd_mac;
+#[cfg(windows)]
+mod dnd_win;
 mod frame;
 #[cfg(target_os = "macos")]
 mod hotkey_mac;
@@ -746,6 +750,9 @@ fn wire(ui: &AppWindow, app: &Shared) {
             }
         });
     }
+    on!(ui, app, on_drag_out, |a, w| {
+        a.drag_out(&w);
+    });
     on!(ui, app, on_zoom_to, |a, w, pos| {
         a.zoom_to(&w, pos);
     });

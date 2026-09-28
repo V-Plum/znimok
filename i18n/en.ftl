@@ -389,6 +389,11 @@ open-error-not-image = Can't open “{ $name }”: it is not an image Znimok can
 # @max: 32
 share-copy-image = Copy image
 
+# @where: Tooltip tail of the Copy button: it can be dragged out as a file
+# @kind: tooltip
+# @max: 32
+share-drag-tip = drag to a chat or a folder
+
 # @where: Grey note after the first item
 # @kind: hint
 # @max: 24

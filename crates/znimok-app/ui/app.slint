@@ -1063,6 +1063,7 @@ export component AppWindow inherits Window {
     callback layer-eye(int);
     callback meta-edited(string, string);
     callback image-action(string);
+    callback drag-out();
     callback set-tone(string, float, bool);
     callback compare(bool);
     callback set-crop-size(string, string);
@@ -1321,7 +1322,26 @@ export component AppWindow inherits Window {
                                     }
                                     Text { text: @tr("doc-copy" => "Copy"); color: white; font-size: 13px; font-weight: 600; vertical-alignment: center; wrap: no-wrap; }
                                 }
-                                copy-ta := TipTouch { tip: @tr("share-copy-image" => "Copy image") + "  Ctrl+C"; clicked => { root.copy(); } }
+                                // Click copies; pulling it a few pixels starts a drag of the picture as a
+                                // PNG file into a messenger or a folder (ZK-64).
+                                copy-ta := TipTouch {
+                                    property <bool> dragged;
+                                    tip: @tr("share-copy-image" => "Copy image") + "  Ctrl+C · " + @tr("share-drag-tip" => "drag to a chat or a folder");
+                                    mouse-cursor: self.dragged ? MouseCursor.grabbing : MouseCursor.default;
+                                    pointer-event(e) => {
+                                        if (e.kind == PointerEventKind.down) { self.dragged = false; }
+                                    }
+                                    moved => {
+                                        if (self.pressed && !self.dragged && (abs(self.mouse-x - self.pressed-x) > 6px || abs(self.mouse-y - self.pressed-y) > 6px)) {
+                                            self.dragged = true;
+                                            root.drag-out();
+                                        }
+                                    }
+                                    clicked => {
+                                        if (!self.dragged) { root.copy(); }
+                                        self.dragged = false;
+                                    }
+                                }
                             }
                             Rectangle { width: 1px; background: #FFFFFF38; }
                             Rectangle {
