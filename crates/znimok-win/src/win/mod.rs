@@ -1,3 +1,4 @@
+pub mod autostart;
 mod display;
 mod dxgi;
 mod wgc;

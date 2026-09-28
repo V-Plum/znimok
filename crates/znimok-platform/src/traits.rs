@@ -314,9 +314,33 @@ pub trait Permissions: Send + Sync {
     fn open_settings(&self, p: Permission) -> Result<()>;
 }
 
+/// Start at login, as the OS sees it (the settings page reads it from here, not from a file).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum AutostartState {
+    On,
+    Off,
+    /// Registered, but the user still has to allow it (macOS: System Settings → General → Login
+    /// Items).
+    NeedsApproval,
+    /// Registered, but switched off in the OS (Windows: Task Manager → Startup apps). Turning it
+    /// on in Znimok is the user's explicit choice and clears that.
+    DisabledInSystem,
+    /// This copy cannot start at login (macOS: not inside an .app bundle).
+    Unavailable,
+}
+
 pub trait Autostart: Send + Sync {
     fn is_enabled(&self) -> Result<bool>;
     fn set_enabled(&self, on: bool) -> Result<()>;
+    /// The finer state for the settings page.
+    fn state(&self) -> Result<AutostartState> {
+        Ok(if self.is_enabled()? {
+            AutostartState::On
+        } else {
+            AutostartState::Off
+        })
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

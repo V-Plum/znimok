@@ -1,4 +1,4 @@
-//! Windows implementations of `znimok-platform` (ZK-36: capture and window list).
+//! Windows implementations of `znimok-platform` (ZK-36: capture and window list; ZK-77: autostart).
 //!
 //! Carried over from P2 (ZK-15) and Little Helpers (inventory_screenshots.md §7):
 //! - the process is **Per-Monitor-v2** DPI aware ([`init_process`]), so desktop units are physical
@@ -18,5 +18,7 @@
 #[cfg(windows)]
 mod win;
 
+#[cfg(windows)]
+pub use win::autostart::{BACKGROUND_ARG, RunKeyAutostart};
 #[cfg(windows)]
 pub use win::{Api, WinCapture, init_process};

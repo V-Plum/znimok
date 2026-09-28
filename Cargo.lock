@@ -6630,6 +6630,8 @@ dependencies = [
 name = "znimok-mac"
 version = "0.0.0"
 dependencies = [
+ "objc2-foundation 0.3.2",
+ "objc2-service-management",
  "screencapturekit",
  "znimok-platform",
 ]

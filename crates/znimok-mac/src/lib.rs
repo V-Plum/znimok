@@ -12,7 +12,12 @@
 //! On other systems the crate is empty.
 
 #[cfg(target_os = "macos")]
+mod autostart;
+#[cfg(target_os = "macos")]
 mod mac;
+
+#[cfg(target_os = "macos")]
+pub use autostart::MacAutostart;
 
 #[cfg(target_os = "macos")]
 pub use mac::MacCapture;
