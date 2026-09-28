@@ -5789,6 +5789,8 @@ dependencies = [
  "image",
  "slint",
  "slint-build",
+ "windows",
+ "windows-core",
  "znimok-core",
  "znimok-render",
 ]

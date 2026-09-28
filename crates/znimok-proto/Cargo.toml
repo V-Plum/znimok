@@ -17,5 +17,9 @@ znimok-render = { path = "../znimok-render" }
 slint = { version = "~1.18", default-features = false, features = ["std", "compat-1-2", "backend-winit", "renderer-femtovg-wgpu", "unstable-wgpu-30"] }
 image = { version = "0.25", default-features = false, features = ["png"] }
 
+[target.'cfg(windows)'.dependencies]
+windows-core = "0.62"
+windows = { version = "0.62", features = ["Win32_Foundation", "Win32_System_Com", "Win32_System_Ole", "Win32_System_Memory", "Win32_UI_Shell", "Win32_System_SystemServices", "Win32_System_Com_StructuredStorage", "Win32_Graphics_Gdi"] }
+
 [build-dependencies]
 slint-build = "~1.18"

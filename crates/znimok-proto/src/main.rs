@@ -1,6 +1,8 @@
 //! Phase 1 prototypes. `znimok-proto p1` opens the canvas prototype (ZK-14); `--headless`
 //! renders the reference scene to a PNG without a window.
 
+#[cfg(windows)]
+mod dnd_win;
 mod p1;
 
 fn usage() -> ! {

@@ -1044,6 +1044,56 @@ pub fn run(opts: Options) -> Result<(), Box<dyn std::error::Error>> {
         });
     }
 
+    // --- drag the export out of the window as a file (P1 criterion: DnD into Explorer/Finder).
+    {
+        let st = st.clone();
+        let ui_weak = ui.as_weak();
+        ui.on_drag_out(move || {
+            let Some(ui) = ui_weak.upgrade() else { return };
+            let path = {
+                let mut s = st.borrow_mut();
+                let mut pix = Pixmap::new(1, 1);
+                let State { doc, renderer, .. } = &mut *s;
+                renderer.render(doc, View::one_to_one(doc), &mut pix);
+                let dir = std::env::temp_dir().join("Znimok");
+                let name = if doc.name.is_empty() {
+                    "Знімок".to_string()
+                } else {
+                    doc.name.clone()
+                };
+                let path = dir.join(format!("{name}.png"));
+                if let Err(e) = save_png(&pix, &path) {
+                    ui.set_status(SharedString::from(format!(
+                        "DnD: не вдалося записати файл: {e}"
+                    )));
+                    return;
+                }
+                path
+            };
+            ui.set_status(SharedString::from(format!("DnD: тягну {}", path.display())));
+            #[cfg(windows)]
+            {
+                let t = Instant::now();
+                let msg = match crate::dnd_win::drag_files(vec![path.clone()]) {
+                    Ok(true) => format!(
+                        "DnD: скинуто {} ({:.0} мс)",
+                        path.display(),
+                        t.elapsed().as_secs_f64() * 1e3
+                    ),
+                    Ok(false) => "DnD: скасовано".to_string(),
+                    Err(e) => format!("DnD: помилка {e}"),
+                };
+                ui.set_status(SharedString::from(msg));
+            }
+            #[cfg(not(windows))]
+            {
+                ui.set_status(SharedString::from(
+                    "DnD назовні: ще не реалізовано на цій ОС",
+                ));
+            }
+        });
+    }
+
     ui.run()?;
     drop(stats_timer);
     Ok(())

@@ -6,6 +6,7 @@
 //! (zoom and pan). Thicknesses and font sizes scale with the view, handles do not — handles are
 //! not drawn here, the UI layer draws them on top.
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use parley::{FontContext, LayoutContext};
@@ -77,6 +78,9 @@ pub struct Renderer {
     layouts: LayoutContext<text::Brush>,
     /// Cached uploads of `Document::banks`, keyed by bank index and generation.
     bank_cache: Vec<Option<(usize, Arc<Pixmap>)>>,
+    /// Hide tiles are computed in screenshot resolution and reused while nothing under them
+    /// changes: key = (region, mode, strength, source generation).
+    hide_cache: HashMap<(IRect, HideMode, u8, usize), Arc<Pixmap>>,
     threads: u16,
 }
 
@@ -96,6 +100,7 @@ impl Renderer {
             fonts: FontContext::new(),
             layouts: LayoutContext::new(),
             bank_cache: Vec::new(),
+            hide_cache: HashMap::new(),
             threads,
         }
     }
@@ -425,25 +430,37 @@ impl Renderer {
                     HideMode::Blur | HideMode::Pixelate => {
                         // Pixels below this object: for now the source only (Little Helpers takes
                         // everything below, see inventory §7 п.26) — tracked in the P1 report.
-                        let below = self.below_pixels(doc, index, region);
-                        if let Some(tile) = below {
-                            let tile = if *mode == HideMode::Blur {
-                                hide::blur(&tile, *strength)
-                            } else {
-                                hide::pixelate(&tile, *strength)
-                            };
+                        let src = doc.source();
+                        let key = (
+                            region,
+                            *mode,
+                            *strength,
+                            src.rgba.as_ptr() as usize ^ src.rgba.len(),
+                        );
+                        let tile = match self.hide_cache.get(&key) {
+                            Some(p) => Some(p.clone()),
+                            None => self.below_pixels(doc, index, region).map(|raw| {
+                                let tile = if *mode == HideMode::Blur {
+                                    hide::blur(&raw, *strength)
+                                } else {
+                                    hide::pixelate(&raw, *strength)
+                                };
+                                let p = Arc::new(raster_to_pixmap(&tile));
+                                if self.hide_cache.len() > 64 {
+                                    self.hide_cache.clear();
+                                }
+                                self.hide_cache.insert(key, p.clone());
+                                p
+                            }),
+                        };
+                        if let Some(tile) = tile {
                             let quality = if *mode == HideMode::Blur {
                                 ImageQuality::Medium
                             } else {
                                 ImageQuality::Low
                             };
                             self.ctx.set_transform(t);
-                            self.draw_pixmap(
-                                Arc::new(raster_to_pixmap(&tile)),
-                                rect,
-                                quality,
-                                alpha,
-                            );
+                            self.draw_pixmap(tile, rect, quality, alpha);
                         }
                     }
                 }
