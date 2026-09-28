@@ -13,6 +13,9 @@ fn one(entry: Entry<&str>) -> String {
 /// Rewrite `target` (a language file) after `en`. Messages missing in `target` are left out
 /// (the check reports them); messages not in English go to the end under their own group.
 pub fn sync_comments(en: &str, target: &str) -> Result<String, String> {
+    // Git on Windows checks the files out with CRLF; the output is always LF.
+    let (en, target) = (en.replace("\r\n", "\n"), target.replace("\r\n", "\n"));
+    let (en, target) = (en.as_str(), target.as_str());
     let en_res = fluent_syntax::parser::parse(en)
         .map_err(|(_, e)| format!("en.ftl: {} помилок синтаксису", e.len()))?;
     let tg_res = fluent_syntax::parser::parse(target)
@@ -79,16 +82,16 @@ mod tests {
 
     #[test]
     fn built_in_files_are_already_in_sync() {
-        let en = crate::BUILT_IN[0].1;
-        let uk = crate::BUILT_IN[1].1;
+        let lf = |s: &str| s.replace("\r\n", "\n");
+        let (en, uk) = (&lf(crate::BUILT_IN[0].1), &lf(crate::BUILT_IN[1].1));
         assert_eq!(
             sync_comments(en, en).unwrap(),
-            en,
+            *en,
             "en.ftl не в каноничному вигляді — `znimok-i18n sync-comments`"
         );
         assert_eq!(
             sync_comments(en, uk).unwrap(),
-            uk,
+            *uk,
             "uk.ftl не синхронний з en.ftl — `znimok-i18n sync-comments`"
         );
     }
