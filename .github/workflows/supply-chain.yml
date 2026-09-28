@@ -50,7 +50,12 @@ jobs:
       # Every dependency must be audited (ours or imported from Mozilla, Google, ISRG…) or listed
       # as an exemption in supply-chain/config.toml; a new unaudited crate fails the PR.
       - name: cargo vet
-        run: cargo vet --locked
+        shell: bash
+        run: |
+          cargo vet --locked || {
+            echo "::error::A dependency without an audit. Locally: 'cargo vet' shows it; audit it ('cargo vet certify') or, if it is fine to trust for now, 'cargo vet regenerate exemptions'; commit supply-chain/."
+            exit 1
+          }
 
   sbom:
     name: SBOM (CycloneDX)
