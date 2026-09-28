@@ -1118,11 +1118,14 @@ export component AppTray inherits SystemTrayIcon {
     in property <bool> capture-available: true;
     in property <bool> mac: false;
     icon: tray-icon;
-    tooltip: @tr("tray-tooltip" => "Znimok");
+    tooltip: root.paused ? @tr("tray-tooltip-paused-keys" => "Znimok — hotkeys paused") : @tr("tray-tooltip" => "Znimok");
 
     callback shot();
     callback open-window();
     callback quit();
+    // ZK-44: all global hotkeys released until resumed.
+    in property <bool> paused;
+    callback toggle-pause();
 
     clicked => { root.open-window(); }
 
@@ -1135,6 +1138,10 @@ export component AppTray inherits SystemTrayIcon {
         MenuItem {
             title: @tr("tray-open" => "Open Znimok");
             activated => { root.open-window(); }
+        }
+        MenuItem {
+            title: root.paused ? @tr("tray-resume-keys" => "Resume hotkeys") : @tr("tray-pause-keys" => "Pause hotkeys");
+            activated => { root.toggle-pause(); }
         }
         MenuSeparator { }
         MenuItem {
@@ -1350,6 +1357,10 @@ export component AppWindow inherits Window {
     in property <string> pref-lib-dir;
     in property <string> pref-file;
     in property <string> pref-version;
+    // Hotkeys page (ZK-44): region, screen, clipboard, empty editor.
+    in property <[string]> key-texts;
+    in property <[string]> key-warns;
+    in property <int> key-recording: -1;
     public function focus-settings() { set-keys.focus(); }
     callback set-tone(string, float, bool);
     callback compare(bool);
@@ -1592,17 +1603,46 @@ export component AppWindow inherits Window {
                                 Text { text: @tr("keys-intro" => "They work in any program. Click a field and press a combination to change it. On a Mac the standard ⌘⇧3/4/5 belong to the system, so the defaults are different."); color: Theme.text3; font-size: 12px; wrap: word-wrap; }
                                 SwitchRow { text: @tr("keys-enable" => "Capture with hotkeys"); checked: root.pref-capture; toggled => { root.setting("capture", self.checked ? 1 : 0); } }
                                 Text { text: @tr("keys-enable-hint" => "Off — the combinations are free for other programs"); color: Theme.text3; font-size: 11px; wrap: word-wrap; }
-                                HorizontalLayout {
-                                    spacing: 12px;
-                                    Text { text: @tr("keys-region" => "Region screenshot"); color: Theme.text2; font-size: 12px; vertical-alignment: center; horizontal-stretch: 1; }
-                                    Rectangle {
-                                        width: 140px;
-                                        height: 28px;
-                                        border-radius: 7px;
-                                        background: Theme.elevated;
-                                        Text { text: root.capture-key; color: root.pref-capture ? Theme.text : Theme.disabled; font-size: 12px; horizontal-alignment: center; vertical-alignment: center; width: parent.width; height: parent.height; }
-                                        TipTouch { tip: @tr("common-in-development" => "Coming soon"); mouse-cursor: MouseCursor.default; }
+                                for label[i] in [
+                                    @tr("keys-region" => "Region screenshot"),
+                                    @tr("keys-screen" => "Whole-screen screenshot"),
+                                    @tr("keys-clipboard" => "Clipboard image → editor"),
+                                    @tr("keys-blank" => "Blank editor"),
+                                ]: VerticalLayout {
+                                    spacing: 2px;
+                                    HorizontalLayout {
+                                        spacing: 12px;
+                                        Text { text: label; color: Theme.text2; font-size: 12px; vertical-alignment: center; horizontal-stretch: 1; }
+                                        // Click, then press the combination (Esc — cancel, Backspace — none).
+                                        Rectangle {
+                                            width: 170px;
+                                            height: 30px;
+                                            border-radius: 7px;
+                                            background: root.key-recording == i ? #3D7BF526 : (key-ta.has-hover ? Theme.control-on : Theme.elevated);
+                                            border-width: root.key-recording == i ? 1.5px : 1px;
+                                            border-color: root.key-recording == i ? Theme.accent : Theme.control-on;
+                                            animate background, border-color { duration: 120ms; }
+                                            Text {
+                                                text: root.key-recording == i ? @tr("keys-press" => "press a combination…") : root.key-texts[i];
+                                                color: root.key-recording == i ? Theme.accent-text : (root.pref-capture ? Theme.text : Theme.disabled);
+                                                font-size: 12px;
+                                                font-weight: 600;
+                                                horizontal-alignment: center;
+                                                vertical-alignment: center;
+                                                width: parent.width;
+                                                height: parent.height;
+                                            }
+                                            key-ta := TouchArea {
+                                                mouse-cursor: MouseCursor.pointer;
+                                                clicked => { root.setting("key-record", i); }
+                                            }
+                                        }
                                     }
+                                    if root.key-warns[i] != "": Text { text: root.key-warns[i]; color: Theme.attention; font-size: 11px; horizontal-alignment: right; }
+                                }
+                                HorizontalLayout {
+                                    alignment: start;
+                                    TextButton { text: @tr("keys-defaults" => "Restore defaults"); clicked => { root.setting("keys-defaults", 0); } }
                                 }
                             }
                             // ---- Library

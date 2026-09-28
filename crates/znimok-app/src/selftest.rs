@@ -1128,6 +1128,33 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
         ui.invoke_setting("lang".into(), 1);
         let uk = app.borrow().tr.tr("set-title");
         ui.invoke_setting("lang".into(), 0);
+        // ZK-44: record a combination for the region shot (physical keys), Esc cancels a
+        // recording, "Restore defaults" brings the defaults back.
+        {
+            use slint::winit_030::winit::keyboard::ModifiersState;
+            ui.invoke_setting("key-record".into(), 0);
+            let waiting = ui.get_key_recording() == 0;
+            let mods = ModifiersState::CONTROL | ModifiersState::ALT | ModifiersState::SHIFT;
+            app.borrow_mut().hotkey_key(ui, "F13", mods);
+            let want = znimok_platform::KeyCombo::parse("Ctrl+Alt+Shift+F13").ok();
+            let active = crate::hotkeys::active(crate::hotkeys::Action::Region);
+            let saved = app.borrow().prefs().capture.hotkeys.region;
+            ui.invoke_setting("key-record".into(), 1);
+            app.borrow_mut()
+                .hotkey_key(ui, "Escape", ModifiersState::empty());
+            let cancelled = ui.get_key_recording() == -1;
+            ui.invoke_setting("keys-defaults".into(), 0);
+            let back = app.borrow().prefs().capture.hotkeys.region;
+            r.check(
+                "hotkey recorded (physical keys), registered, saved; Esc cancels; defaults back",
+                waiting
+                    && active == want
+                    && saved == want
+                    && cancelled
+                    && back == znimok_settings::Hotkeys::default().region,
+                format!("active {active:?}, saved {saved:?}, back {back:?}"),
+            );
+        }
         ui.invoke_setting("close".into(), 0);
         r.check(
             "settings: page, saved at once, language switches live, Esc back",

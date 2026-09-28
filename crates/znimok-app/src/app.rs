@@ -387,6 +387,9 @@ impl App {
     }
 
     pub fn settings_close(&mut self, ui: &AppWindow) {
+        if crate::REC.with(|r| r.get()).is_some() {
+            self.hotkey_stop(ui);
+        }
         let back = if self.s.is_some() {
             self.settings_from.max(0)
         } else {
@@ -400,9 +403,128 @@ impl App {
         }
     }
 
+    /// The hotkey that works for region shots, for the hints and the tray.
+    pub fn show_capture_key(&self, ui: &AppWindow) {
+        let os = znimok_platform::Os::current();
+        let k = crate::hotkeys::active(crate::hotkeys::Action::Region)
+            .or(self.prefs().capture.hotkeys.region)
+            .map(|k| k.display(os))
+            .unwrap_or_default();
+        ui.set_capture_key(k.into());
+    }
+
+    /// A hotkey field waits for the next combination (the hotkeys are released meanwhile).
+    pub fn hotkey_record(&mut self, ui: &AppWindow, i: i32) {
+        let Some(a) = crate::hotkeys::Action::ALL.get(i as usize).copied() else {
+            return;
+        };
+        let p = self.prefs();
+        crate::hotkeys::set_paused(true, &p.capture.hotkeys, p.capture.enabled);
+        crate::REC.with(|r| r.set(Some(a)));
+        ui.set_key_recording(i);
+    }
+
+    fn hotkey_stop(&mut self, ui: &AppWindow) {
+        crate::REC.with(|r| r.set(None));
+        ui.set_key_recording(-1);
+        let p = self.prefs();
+        crate::hotkeys::set_paused(false, &p.capture.hotkeys, p.capture.enabled);
+    }
+
+    /// A key pressed while a field records: Esc cancels, Backspace / Delete alone clears, a key
+    /// with modifiers becomes the new combination — if the system gives it; if not, the old one
+    /// stays and the message says so.
+    pub fn hotkey_key(
+        &mut self,
+        ui: &AppWindow,
+        code: &str,
+        mods: slint::winit_030::winit::keyboard::ModifiersState,
+    ) {
+        let Some(a) = crate::REC.with(|r| r.get()) else {
+            return;
+        };
+        if code.starts_with("Shift")
+            || code.starts_with("Control")
+            || code.starts_with("Alt")
+            || code.starts_with("Super")
+            || code.starts_with("Meta")
+        {
+            return;
+        }
+        let bare = mods.is_empty();
+        if code == "Escape" && bare {
+            self.hotkey_stop(ui);
+            self.settings_sync(ui);
+            return;
+        }
+        let new = if (code == "Backspace" || code == "Delete") && bare {
+            None
+        } else {
+            let Some(k) = crate::hotkeys::from_w3c(code) else {
+                return;
+            };
+            let mut text = String::new();
+            if mods.control_key() {
+                text.push_str("Ctrl+");
+            }
+            if mods.alt_key() {
+                text.push_str("Alt+");
+            }
+            if mods.shift_key() {
+                text.push_str("Shift+");
+            }
+            if mods.super_key() {
+                text.push_str("Meta+");
+            }
+            text.push_str(k.name());
+            match znimok_platform::KeyCombo::parse(&text) {
+                Ok(c) => Some(c),
+                Err(e) => {
+                    self.toast(ui, e.to_string());
+                    return;
+                }
+            }
+        };
+        self.hotkey_stop(ui);
+        if crate::hotkeys::try_set(a, new) {
+            self.save_prefs(ui, |p| {
+                crate::hotkeys::Action::set(&mut p.capture.hotkeys, a, new)
+            });
+        } else {
+            let msg = self.tr.tr("keys-taken");
+            self.toast(ui, msg);
+        }
+        self.show_capture_key(ui);
+        self.settings_sync(ui);
+    }
+
     /// The settings page's controls, from the file.
     pub fn settings_sync(&self, ui: &AppWindow) {
         let p = self.prefs();
+        {
+            use crate::hotkeys::{Action, State};
+            let os = znimok_platform::Os::current();
+            let paused = crate::hotkeys::is_paused() && p.capture.enabled;
+            let mut texts = Vec::new();
+            let mut warns = Vec::new();
+            for a in Action::ALL {
+                let want = Action::of(&p.capture.hotkeys, a);
+                texts.push(slint::SharedString::from(
+                    want.map(|k| k.display(os))
+                        .unwrap_or_else(|| self.tr.tr("keys-not-set")),
+                ));
+                warns.push(slint::SharedString::from(match crate::hotkeys::state(a) {
+                    State::Taken { active, .. } => match active {
+                        Some(f) => format!("{} → {}", self.tr.tr("keys-taken"), f.display(os)),
+                        None => self.tr.tr("keys-taken"),
+                    },
+                    _ if paused => self.tr.tr("tray-tooltip-paused-keys"),
+                    _ => String::new(),
+                }));
+            }
+            ui.set_key_texts(std::rc::Rc::new(VecModel::from(texts)).into());
+            ui.set_key_warns(std::rc::Rc::new(VecModel::from(warns)).into());
+        }
         ui.set_pref_capture(p.capture.enabled);
         ui.set_pref_quick_library(p.capture.quick_save_to_library);
         ui.set_pref_keep_tool(p.editor.keep_tool);
@@ -440,7 +562,21 @@ impl App {
     pub fn setting(&mut self, ui: &AppWindow, key: &str, value: i32) {
         let on = value != 0;
         match key {
-            "capture" => self.save_prefs(ui, |p| p.capture.enabled = on),
+            "capture" => {
+                self.save_prefs(ui, |p| p.capture.enabled = on);
+                let p = self.prefs();
+                crate::hotkeys::apply(&p.capture.hotkeys, on);
+            }
+            "key-record" => {
+                self.hotkey_record(ui, value);
+                return;
+            }
+            "keys-defaults" => {
+                self.save_prefs(ui, |p| p.capture.hotkeys = Default::default());
+                let p = self.prefs();
+                crate::hotkeys::apply(&p.capture.hotkeys, p.capture.enabled);
+                self.show_capture_key(ui);
+            }
             "quick-library" => self.save_prefs(ui, |p| p.capture.quick_save_to_library = on),
             "keep-tool" => self.save_prefs(ui, |p| p.editor.keep_tool = on),
             "autosave" => {
@@ -700,6 +836,13 @@ impl App {
         doc.meta.source = source.into();
         let path = library::new_path(&self.lib_dir, &doc.id.simple().to_string());
         (doc, path)
+    }
+
+    /// An empty editor (hotkey): a white 1280 × 800 sheet to draw on or paste into.
+    pub fn open_blank(&mut self, ui: &AppWindow) {
+        let (w, h) = (1280u32, 800u32);
+        let raster = Raster::new(w, h, vec![255; (w * h * 4) as usize]);
+        self.new_document(ui, raster, "blank", None);
     }
 
     /// A new library document from pixels (screenshot, clipboard, image file), opened in the editor.

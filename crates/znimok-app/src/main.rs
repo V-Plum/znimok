@@ -18,10 +18,7 @@ mod dnd_mac;
 mod dnd_win;
 mod filemeta;
 mod frame;
-#[cfg(target_os = "macos")]
-mod hotkey_mac;
-#[cfg(windows)]
-mod hotkey_win;
+mod hotkeys;
 mod io;
 mod library;
 mod overlay;
@@ -142,14 +139,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     ui.set_mac(cfg!(target_os = "macos"));
     ui.global::<Keys>().set_mac(cfg!(target_os = "macos"));
     ui.set_capture_available(capture::available());
-    ui.set_capture_key(
-        if cfg!(target_os = "macos") {
-            "⌃⇧4"
-        } else {
-            "Ctrl+Shift+4"
-        }
-        .into(),
-    );
+    ui.set_capture_key("".into());
 
     let app: Shared = Rc::new(RefCell::new(App::new(tr, lib_dir)));
     app.borrow_mut().use_settings(&ui, store);
@@ -171,23 +161,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Files from the command line (and "Open with…" on Windows).
     let files: Vec<PathBuf> = std::env::args_os().skip(1).map(PathBuf::from).collect();
-    #[cfg(windows)]
-    if std::env::var_os("ZNIMOK_SELFTEST").is_none() {
-        let ok = hotkey_win::register(|| {
-            let _ = slint::invoke_from_event_loop(shot_from_hotkey);
-        });
-        if !ok {
-            eprintln!("Ctrl+Shift+4 is taken by another program");
-        }
+    // Global hotkeys from the settings (ZK-44); the self-test uses them too (recording a key).
+    {
+        let p = app.borrow().prefs();
+        hotkeys::start(&p.capture.hotkeys, p.capture.enabled);
     }
-
-    // macOS: ⌃⇧4 (⌘⇧4 belongs to the system screenshot tool unless the user frees it — ZK-44).
-    #[cfg(target_os = "macos")]
-    let _hotkeys = if std::env::var_os("ZNIMOK_SELFTEST").is_none() {
-        hotkey_mac::register()
-    } else {
-        None
-    };
+    app.borrow().show_capture_key(&ui);
 
     // Tray / menu bar icon; while it exists, closing the window keeps the app running.
     let tray_ui = if selftest_dir.is_none() {
@@ -216,6 +195,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         {
             let app = app.clone();
             let weak = ui.as_weak();
+            {
+                let weak = ui.as_weak();
+                let tw = t.as_weak();
+                t.on_toggle_pause(move || {
+                    let ctx = CTX.with(|c| c.borrow().clone());
+                    if let Some((app, _)) = ctx {
+                        let p = app.borrow().prefs();
+                        let now = !hotkeys::is_paused();
+                        hotkeys::set_paused(now, &p.capture.hotkeys, p.capture.enabled);
+                        if let Some(t) = tw.upgrade() {
+                            t.set_paused(hotkeys::is_paused());
+                        }
+                        if let Some(ui) = weak.upgrade() {
+                            app.borrow().settings_sync(&ui);
+                        }
+                    }
+                });
+            }
             t.on_quit(move || match weak.upgrade() {
                 Some(ui) => confirm_leave(&app, &ui, |_, _| {
                     let _ = slint::quit_event_loop();
@@ -281,6 +278,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 thread_local! {
     static TRAY: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    /// A hotkey field of the settings is waiting for a combination (ZK-44).
+    pub(crate) static REC: std::cell::Cell<Option<hotkeys::Action>> = const { std::cell::Cell::new(None) };
+    static MODS: std::cell::Cell<slint::winit_030::winit::keyboard::ModifiersState> =
+        std::cell::Cell::new(slint::winit_030::winit::keyboard::ModifiersState::empty());
 }
 
 /// Shows the window and brings it to the front (from the tray, the hotkey, a second start).
@@ -293,17 +294,30 @@ fn show_window(ui: &AppWindow) {
     });
 }
 
-/// The global screenshot key (Windows and macOS), called on the UI thread.
-fn shot_from_hotkey() {
+/// A global hotkey was pressed (UI thread).
+fn hotkey_pressed(a: hotkeys::Action) {
     let ctx = CTX.with(|c| c.borrow().clone());
-    if let Some((app, weak)) = ctx
-        && let Some(ui) = weak.upgrade()
-    {
-        // "Take screenshots with hotkeys" off in the settings: the key does nothing (ZK-56).
-        if !app.borrow().prefs().capture.enabled {
-            return;
+    let Some((app, weak)) = ctx else { return };
+    let Some(ui) = weak.upgrade() else { return };
+    if !app.borrow().prefs().capture.enabled {
+        return;
+    }
+    match a {
+        hotkeys::Action::Region => new_shot(&app, &ui),
+        hotkeys::Action::Screen => {
+            if overlay::is_open() || !capture::available() {
+                return;
+            }
+            confirm_leave(&app, &ui, |app, ui| start_capture(app, ui, true));
         }
-        new_shot(&app, &ui);
+        hotkeys::Action::Clipboard => {
+            show_window(&ui);
+            confirm_leave(&app, &ui, |app, ui| app.borrow_mut().open_clipboard(ui));
+        }
+        hotkeys::Action::Editor => {
+            show_window(&ui);
+            confirm_leave(&app, &ui, |app, ui| app.borrow_mut().open_blank(ui));
+        }
     }
 }
 
@@ -421,7 +435,13 @@ fn new_shot(app: &Shared, ui: &AppWindow) {
     confirm_leave(app, ui, start_shot);
 }
 
-fn start_shot(_app: &Shared, ui: &AppWindow) {
+fn start_shot(app: &Shared, ui: &AppWindow) {
+    start_capture(app, ui, false);
+}
+
+/// Freezes the display under the pointer; `whole` = straight into the editor (the whole-screen
+/// hotkey), otherwise the overlay to choose what to keep.
+fn start_capture(_app: &Shared, ui: &AppWindow, whole: bool) {
     // The editor steps aside so the frozen screen does not contain it (on macOS the capture
     // filter would drop it anyway, but the overlay should not sit on top of it either).
     let was_visible = ui.window().is_visible();
@@ -434,6 +454,10 @@ fn start_shot(_app: &Shared, ui: &AppWindow) {
             let r = capture::freeze();
             let _ = slint::invoke_from_event_loop(move || {
                 with_ctx(|a, ui| match r {
+                    Ok(frozen) if whole => {
+                        show_window(ui);
+                        a.new_document(ui, frozen.raster, "screen", None);
+                    }
                     Ok(frozen) => {
                         if let Err(e) = overlay::open(frozen, was_visible) {
                             show_window(ui);
@@ -498,6 +522,27 @@ fn wire(ui: &AppWindow, app: &Shared) {
                 {
                     frame::on_resized(&ui);
                 }
+            }
+            // Settings → hotkeys: the next combination pressed, as physical keys (ZK-44).
+            match ev {
+                winit::event::WindowEvent::ModifiersChanged(m) => {
+                    MODS.with(|c| c.set(m.state()));
+                }
+                winit::event::WindowEvent::KeyboardInput { event, .. }
+                    if REC.with(|r| r.get()).is_some() =>
+                {
+                    if event.state == winit::event::ElementState::Pressed
+                        && let winit::keyboard::PhysicalKey::Code(code) = event.physical_key
+                    {
+                        let name = format!("{code:?}");
+                        let mods = MODS.with(|c| c.get());
+                        let _ = slint::invoke_from_event_loop(move || {
+                            with_ctx(|a, ui| a.hotkey_key(ui, &name, mods));
+                        });
+                    }
+                    return EventResult::PreventDefault;
+                }
+                _ => {}
             }
             // macOS trackpad: pinch to zoom, double tap = fit ↔ 100 %.
             match ev {

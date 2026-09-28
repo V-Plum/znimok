@@ -24,6 +24,7 @@ znimok-i18n = { path = "../znimok-i18n" }
 znimok-log = { path = "../znimok-log" }
 slint = { version = "~1.18", default-features = false, features = ["std", "compat-1-2", "backend-winit", "renderer-femtovg-wgpu", "unstable-wgpu-30", "unstable-winit-030", "system-tray"] }
 png = "0.18"
+global-hotkey = "0.8"
 znimok-settings = { path = "../znimok-settings" }
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp", "gif", "bmp"] }
 rfd = "0.17"
@@ -40,7 +41,6 @@ znimok-mac = { path = "../znimok-mac" }
 objc2 = { version = "0.6", features = ["exception"] }
 objc2-app-kit = "0.3"
 objc2-foundation = "0.3"
-global-hotkey = "0.8"
 
 [build-dependencies]
 slint-build = "~1.18"
