@@ -260,10 +260,13 @@ mod tests {
     use crate::http::Response;
     use std::sync::Mutex;
 
+    /// Headers and JSON body of one request.
+    type Seen = (Vec<(String, String)>, Value);
+
     struct Fake {
         status: u16,
         body: String,
-        seen: Mutex<Vec<(Vec<(String, String)>, Value)>>,
+        seen: Mutex<Vec<Seen>>,
     }
 
     impl Transport for Fake {
