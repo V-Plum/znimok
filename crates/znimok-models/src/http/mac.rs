@@ -65,7 +65,8 @@ impl Transport for MacHttp {
             },
         );
         let session = NSURLSession::sharedSession();
-        let task = session.dataTaskWithRequest_completionHandler(&req, &block);
+        // SAFETY: the block owns everything it touches and outlives the task (kept by the session).
+        let task = unsafe { session.dataTaskWithRequest_completionHandler(&req, &block) };
         task.resume();
         match rx.recv_timeout(timeout + Duration::from_secs(5)) {
             Ok(Ok((status, body, retry))) => Ok(Response {
