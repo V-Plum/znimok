@@ -27,7 +27,7 @@ fn hdrop_format() -> FORMATETC {
     FORMATETC {
         cfFormat: CF_HDROP.0,
         ptd: std::ptr::null_mut(),
-        dwAspect: DVASPECT_CONTENT.0 as u32,
+        dwAspect: DVASPECT_CONTENT.0,
         lindex: -1,
         tymed: TYMED_HGLOBAL.0 as u32,
     }
@@ -37,7 +37,7 @@ fn wants_hdrop(f: *const FORMATETC) -> HRESULT {
     let Some(f) = (unsafe { f.as_ref() }) else {
         return DV_E_FORMATETC;
     };
-    if f.cfFormat != CF_HDROP.0 || f.dwAspect != DVASPECT_CONTENT.0 as u32 {
+    if f.cfFormat != CF_HDROP.0 || f.dwAspect != DVASPECT_CONTENT.0 {
         return DV_E_FORMATETC;
     }
     if f.tymed & TYMED_HGLOBAL.0 as u32 == 0 {
