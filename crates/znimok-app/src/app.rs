@@ -5,6 +5,7 @@
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
+use chrono::TimeZone;
 use slint::wgpu_30::wgpu;
 use slint::{ComponentHandle, SharedString, VecModel};
 use znimok_core::command::{AlignEdge, Arrange, Axis};
@@ -16,7 +17,7 @@ use znimok_render::vello_cpu::kurbo::Point;
 use znimok_render::{Renderer, View};
 
 use crate::library::{self, Entry};
-use crate::{AppWindow, CardData, io};
+use crate::{AppWindow, CardData, LayerRow, io};
 
 pub const PALETTE: [Rgb; 8] = [
     Rgb::new(0xFF, 0x5A, 0x5F),
@@ -136,6 +137,18 @@ pub struct App {
     tool: usize,
     color: usize,
     thick: usize,
+    /// Defaults for new marks (and what the inspector changes on a selection), ZK-54.
+    alpha: u8,
+    fill: Option<usize>,
+    dash: Dash,
+    corners: Corners,
+    head_start: Head,
+    head_end: Head,
+    text_size_i: usize,
+    bold: bool,
+    italic: bool,
+    /// One undo step per drag of the opacity slider.
+    alpha_merge: Option<MergeKey>,
     drag: Option<Drag>,
     next_merge: u64,
     editing: Option<Editing>,
@@ -192,6 +205,16 @@ impl App {
             tool: tool::RECT,
             color: 0,
             thick: 1,
+            alpha: 100,
+            fill: None,
+            dash: Dash::Solid,
+            corners: Corners::Sharp,
+            head_start: Head::None,
+            head_end: Head::Triangle,
+            text_size_i: 1,
+            bold: false,
+            italic: false,
+            alpha_merge: None,
             drag: None,
             next_merge: 1,
             editing: None,
@@ -324,8 +347,49 @@ impl App {
         self.dirty = true;
         ui.set_page(1);
         ui.invoke_focus_canvas();
+        self.show_meta(ui);
         self.sync(ui);
         ui.window().request_redraw();
+    }
+
+    /// Meta tab fields — set when a document opens, not on every sync (it would move the cursor
+    /// while typing).
+    fn show_meta(&self, ui: &AppWindow) {
+        let Some(s) = self.s.as_ref() else { return };
+        let d = &s.ed.doc;
+        ui.set_meta_title(d.name.as_str().into());
+        ui.set_meta_description(d.meta.description.as_str().into());
+        ui.set_meta_author(d.meta.author.as_str().into());
+        ui.set_meta_rights(d.meta.copyright.as_str().into());
+        ui.set_meta_tags(d.meta.tags.join(", ").into());
+    }
+
+    /// Meta tab edits: the title is the document name; the rest is `Meta`. Not undo steps.
+    pub fn meta_edited(&mut self, ui: &AppWindow, field: &str, value: &str) {
+        let Some(s) = self.s.as_ref() else { return };
+        let cmd = if field == "title" {
+            Command::SetName {
+                name: value.trim().to_string(),
+            }
+        } else {
+            let mut meta = s.ed.doc.meta.clone();
+            match field {
+                "description" => meta.description = value.to_string(),
+                "author" => meta.author = value.trim().to_string(),
+                "rights" => meta.copyright = value.trim().to_string(),
+                "tags" => {
+                    meta.tags = value
+                        .split(',')
+                        .map(|t| t.trim().to_string())
+                        .filter(|t| !t.is_empty())
+                        .collect()
+                }
+                _ => return,
+            }
+            Command::SetMeta { meta }
+        };
+        self.apply(ui, cmd);
+        self.sync(ui);
     }
 
     /// Opens a `.znimok` in place, or makes a new library document from an image file.
@@ -537,6 +601,22 @@ impl App {
         let base = Style {
             color: PALETTE[self.color],
             thick: THICK[self.thick],
+            alpha: self.alpha,
+            color2: if matches!(t, tool::RECT | tool::ELLIPSE) {
+                self.fill.map(|i| PALETTE[i])
+            } else {
+                None
+            },
+            dash: if matches!(t, tool::RECT | tool::ELLIPSE | tool::ARROW | tool::PEN) {
+                self.dash
+            } else {
+                Dash::Solid
+            },
+            corners: if t == tool::RECT {
+                self.corners
+            } else {
+                Corners::Sharp
+            },
             ..Style::default()
         };
         let side = self
@@ -558,7 +638,6 @@ impl App {
                     PALETTE[self.color]
                 },
                 thick: 8 * THICK[self.thick] + 8,
-                alpha: 100,
                 ..base
             },
             tool::COUNTER => Style {
@@ -578,10 +657,15 @@ impl App {
         }
     }
 
-    fn text_size(&self) -> i32 {
+    /// Text sizes S / M / L are 18 / 24 / 36 px on a 1080 px tall picture, scaled up for taller.
+    fn text_size_base(&self) -> f64 {
         let h = self.s.as_ref().map(|s| s.ed.doc.frame().h).unwrap_or(1080);
-        let base = [18, 24, 36][self.thick];
-        ((base as f64 * (h as f64 / 1080.0).max(1.0)).round() as i32).max(10)
+        (h as f64 / 1080.0).max(1.0)
+    }
+
+    fn text_size(&self) -> i32 {
+        let base = [18, 24, 36][self.text_size_i.min(2)];
+        ((base as f64 * self.text_size_base()).round() as i32).max(10)
     }
 
     fn new_object(&self, t: usize, a: (i32, i32), b: (i32, i32)) -> Object {
@@ -590,8 +674,8 @@ impl App {
             tool::RECT => Data::Rect,
             tool::ELLIPSE => Data::Ellipse,
             tool::ARROW => Data::Line {
-                head_front: Head::Triangle,
-                head_back: Head::None,
+                head_front: self.head_end,
+                head_back: self.head_start,
                 head_size: 1,
             },
             tool::HIDE => Data::Hide {
@@ -1166,8 +1250,8 @@ impl App {
                         Data::Text {
                             text,
                             size,
-                            bold: false,
-                            italic: false,
+                            bold: self.bold,
+                            italic: self.italic,
                             align: Align::Left,
                             box_w: 0,
                         },
@@ -1459,64 +1543,352 @@ impl App {
     }
 
     pub fn set_color(&mut self, ui: &AppWindow, i: usize) {
-        self.color = i.min(PALETTE.len() - 1);
-        let ids = self.selection();
+        self.set_prop(ui, "color", i as i32);
+    }
+
+    /// Selected ids whose kind `ok` accepts.
+    fn selected_where(&self, ok: impl Fn(&Object) -> bool) -> Vec<ObjectId> {
+        let Some(s) = self.s.as_ref() else {
+            return Vec::new();
+        };
+        s.ed.selection()
+            .iter()
+            .copied()
+            .filter(|id| s.ed.doc.get(*id).is_some_and(&ok))
+            .collect()
+    }
+
+    fn patch_selected(
+        &mut self,
+        ui: &AppWindow,
+        ok: impl Fn(&Object) -> bool,
+        patch: ObjectPatch,
+        merge: Option<MergeKey>,
+    ) {
+        let ids = self.selected_where(ok);
         if !ids.is_empty() {
-            let patch = ObjectPatch {
-                style: Some(StylePatch {
-                    color: Some(PALETTE[self.color]),
-                    ..Default::default()
-                }),
-                ..Default::default()
-            };
-            self.apply(
-                ui,
-                Command::UpdateObjects {
-                    ids,
-                    patch,
-                    merge: None,
-                },
-            );
+            self.apply(ui, Command::UpdateObjects { ids, patch, merge });
+        }
+    }
+
+    /// One inspector control (ZK-54): changes the default for new marks and, when marks are
+    /// selected, those of them it applies to — one undo step per click.
+    pub fn set_prop(&mut self, ui: &AppWindow, name: &str, v: i32) {
+        let outline = |o: &Object| {
+            matches!(
+                o.kind(),
+                Kind::Rect | Kind::Ellipse | Kind::Line | Kind::Pen
+            )
+        };
+        let style = |sp: StylePatch| ObjectPatch {
+            style: Some(sp),
+            ..Default::default()
+        };
+        match name {
+            "color" => {
+                self.color = (v.max(0) as usize).min(PALETTE.len() - 1);
+                let c = PALETTE[self.color];
+                self.patch_selected(
+                    ui,
+                    |o| !matches!(o.kind(), Kind::Hide | Kind::Image),
+                    style(StylePatch {
+                        color: Some(c),
+                        ..Default::default()
+                    }),
+                    None,
+                );
+            }
+            "thick" => {
+                self.thick = (v.max(0) as usize).min(THICK.len() - 1);
+                let t = THICK[self.thick];
+                self.patch_selected(
+                    ui,
+                    outline,
+                    style(StylePatch {
+                        thick: Some(t),
+                        ..Default::default()
+                    }),
+                    None,
+                );
+            }
+            "fill" => {
+                self.fill = (v >= 0).then(|| (v as usize).min(PALETTE.len() - 1));
+                let c2 = self.fill.map(|i| PALETTE[i]);
+                self.patch_selected(
+                    ui,
+                    |o| matches!(o.kind(), Kind::Rect | Kind::Ellipse),
+                    style(StylePatch {
+                        color2: Some(c2),
+                        ..Default::default()
+                    }),
+                    None,
+                );
+            }
+            "dash" => {
+                self.dash = match v {
+                    1 => Dash::Dashed,
+                    2 => Dash::DashDot,
+                    _ => Dash::Solid,
+                };
+                let d = self.dash;
+                self.patch_selected(
+                    ui,
+                    outline,
+                    style(StylePatch {
+                        dash: Some(d),
+                        ..Default::default()
+                    }),
+                    None,
+                );
+            }
+            "corners" => {
+                self.corners = match v {
+                    1 => Corners::Soft,
+                    2 => Corners::Round,
+                    _ => Corners::Sharp,
+                };
+                let c = self.corners;
+                self.patch_selected(
+                    ui,
+                    |o| o.kind() == Kind::Rect,
+                    style(StylePatch {
+                        corners: Some(c),
+                        corner_px: Some(0),
+                        ..Default::default()
+                    }),
+                    None,
+                );
+            }
+            "head-start" | "head-end" => {
+                let h = match v {
+                    1 => Head::Triangle,
+                    2 => Head::Chevron,
+                    3 => Head::Dot,
+                    _ => Head::None,
+                };
+                let start = name == "head-start";
+                if start {
+                    self.head_start = h;
+                } else {
+                    self.head_end = h;
+                }
+                // Heads are line data: each selected line gets its own patch.
+                let lines: Vec<(ObjectId, Data)> = {
+                    let Some(s) = self.s.as_ref() else { return };
+                    s.ed.selection()
+                        .iter()
+                        .filter_map(|id| s.ed.doc.get(*id))
+                        .filter_map(|o| match o.data {
+                            Data::Line {
+                                head_front,
+                                head_back,
+                                head_size,
+                            } => Some((
+                                o.id,
+                                Data::Line {
+                                    head_front: if start { head_front } else { h },
+                                    head_back: if start { h } else { head_back },
+                                    head_size,
+                                },
+                            )),
+                            _ => None,
+                        })
+                        .collect()
+                };
+                let merge = (lines.len() > 1).then(|| self.merge_key());
+                for (id, data) in lines {
+                    self.apply(
+                        ui,
+                        Command::UpdateObjects {
+                            ids: vec![id],
+                            patch: ObjectPatch {
+                                data: Some(data),
+                                ..Default::default()
+                            },
+                            merge: merge.clone(),
+                        },
+                    );
+                }
+            }
+            "text-size" | "bold" | "italic" => {
+                match name {
+                    "text-size" => self.text_size_i = (v.max(0) as usize).min(2),
+                    "bold" => self.bold = v != 0,
+                    _ => self.italic = v != 0,
+                }
+                let patch = match name {
+                    "text-size" => ObjectPatch {
+                        size: Some(self.text_size()),
+                        ..Default::default()
+                    },
+                    "bold" => ObjectPatch {
+                        bold: Some(self.bold),
+                        ..Default::default()
+                    },
+                    _ => ObjectPatch {
+                        italic: Some(self.italic),
+                        ..Default::default()
+                    },
+                };
+                let ids = self.selected_where(|o| o.kind() == Kind::Text);
+                if !ids.is_empty() {
+                    let merge = self.merge_key();
+                    self.apply(
+                        ui,
+                        Command::UpdateObjects {
+                            ids: ids.clone(),
+                            patch,
+                            merge: Some(merge.clone()),
+                        },
+                    );
+                    for id in ids {
+                        self.fit_text(ui, id, Some(merge.clone()));
+                    }
+                }
+            }
+            _ => {}
         }
         self.sync(ui);
         ui.window().request_redraw();
     }
 
-    pub fn set_thick(&mut self, ui: &AppWindow, i: usize) {
-        self.thick = i.min(THICK.len() - 1);
-        // Thickness means the outline for these kinds; for badges and the marker it is a size.
-        let ids: Vec<ObjectId> = {
-            let Some(s) = self.s.as_ref() else { return };
-            s.ed.selection()
-                .iter()
-                .copied()
-                .filter(|id| {
-                    s.ed.doc.get(*id).is_some_and(|o| {
-                        matches!(
-                            o.kind(),
-                            Kind::Rect | Kind::Ellipse | Kind::Line | Kind::Pen
-                        )
-                    })
-                })
-                .collect()
+    /// Opacity slider: one undo step per drag (`last` = the knob was released).
+    pub fn set_alpha(&mut self, ui: &AppWindow, v: f32, last: bool) {
+        self.alpha = ((v * 100.0).round() as i32).clamp(10, 100) as u8;
+        let merge = match &self.alpha_merge {
+            Some(m) => m.clone(),
+            None => {
+                let m = self.merge_key();
+                self.alpha_merge = Some(m.clone());
+                m
+            }
         };
-        if !ids.is_empty() {
-            let patch = ObjectPatch {
+        let a = self.alpha;
+        self.patch_selected(
+            ui,
+            |o| o.kind() != Kind::Hide,
+            ObjectPatch {
                 style: Some(StylePatch {
-                    thick: Some(THICK[self.thick]),
+                    alpha: Some(a),
                     ..Default::default()
                 }),
                 ..Default::default()
-            };
-            self.apply(
-                ui,
-                Command::UpdateObjects {
-                    ids,
-                    patch,
-                    merge: None,
-                },
-            );
+            },
+            Some(merge),
+        );
+        if last {
+            self.alpha_merge = None;
         }
+        self.sync(ui);
+        ui.window().request_redraw();
+    }
+
+    /// X / Y move the mark (pen points too), W / H resize it.
+    pub fn set_geom(&mut self, ui: &AppWindow, field: &str, text: &str) {
+        let Ok(v) = text.trim().parse::<i32>() else {
+            self.sync(ui);
+            return;
+        };
+        let Some((id, r)) = self
+            .s
+            .as_ref()
+            .and_then(|s| s.ed.selection().first().copied())
+            .and_then(|id| self.s.as_ref()?.ed.doc.get(id).map(|o| (id, o.rect)))
+        else {
+            return;
+        };
+        let cmd = match field {
+            "x" => Command::MoveObjects {
+                ids: vec![id],
+                dx: v - r.x,
+                dy: 0,
+                merge: None,
+            },
+            "y" => Command::MoveObjects {
+                ids: vec![id],
+                dx: 0,
+                dy: v - r.y,
+                merge: None,
+            },
+            "w" | "h" => {
+                let mut n = r;
+                if field == "w" {
+                    n.w = v.max(1);
+                } else {
+                    n.h = v.max(1);
+                }
+                Command::UpdateObjects {
+                    ids: vec![id],
+                    patch: ObjectPatch {
+                        rect: Some(n),
+                        ..Default::default()
+                    },
+                    merge: None,
+                }
+            }
+            _ => return,
+        };
+        self.apply(ui, cmd);
+        self.sync(ui);
+        ui.window().request_redraw();
+    }
+
+    /// Layers list: click selects (Shift/Ctrl toggles), the eye hides and shows.
+    pub fn layer_click(&mut self, ui: &AppWindow, id: i32, add: bool) {
+        let id = id as ObjectId;
+        let sel = self.selection();
+        let cmd = if add && sel.contains(&id) {
+            let rest: Vec<ObjectId> = sel.into_iter().filter(|s| *s != id).collect();
+            if rest.is_empty() {
+                Command::ClearSelection
+            } else {
+                Command::Select {
+                    ids: rest,
+                    add: false,
+                }
+            }
+        } else {
+            Command::Select { ids: vec![id], add }
+        };
+        self.apply(ui, cmd);
+        self.sync(ui);
+        ui.window().request_redraw();
+    }
+
+    pub fn layer_eye(&mut self, ui: &AppWindow, id: i32) {
+        let id = id as ObjectId;
+        let Some(hidden) = self
+            .s
+            .as_ref()
+            .and_then(|s| s.ed.doc.get(id))
+            .map(|o| o.hidden)
+        else {
+            return;
+        };
+        self.apply(
+            ui,
+            Command::UpdateObjects {
+                ids: vec![id],
+                patch: ObjectPatch {
+                    hidden: Some(!hidden),
+                    ..Default::default()
+                },
+                merge: None,
+            },
+        );
+        self.sync(ui);
+        ui.window().request_redraw();
+    }
+
+    /// Zoom slider: 0…1 ↔ 6.25 %…1600 % on a log scale, about the canvas centre.
+    pub fn zoom_to(&mut self, ui: &AppWindow, pos: f32) {
+        if self.s.is_none() {
+            return;
+        }
+        self.stop_anim();
+        let scale = 2f64.powf(pos.clamp(0.0, 1.0) as f64 * 8.0 - 4.0);
+        let c = Point::new(self.view.width as f64 / 2.0, self.view.height as f64 / 2.0);
+        self.set_zoom(scale, Some(c));
         self.sync(ui);
         ui.window().request_redraw();
     }
@@ -1739,16 +2111,148 @@ impl App {
         let sel = s.ed.selection();
         ui.set_has_selection(!sel.is_empty());
         ui.set_selection_count(sel.len() as i32);
-        if let Some(o) = sel.first().and_then(|id| doc.get(*id)) {
-            if let Some(i) = PALETTE.iter().position(|c| *c == o.style.color) {
-                self.color = i;
+        // Inspector: the primary selected mark, or the current tool's defaults.
+        let primary = sel.first().and_then(|id| doc.get(*id));
+        let kind = match primary {
+            Some(o) => kind_index(o.kind()),
+            None => tool_kind(self.tool),
+        };
+        ui.set_prop_kind(kind);
+        ui.set_prop_for_selection(primary.is_some());
+        let tool_name = |k: i32| -> String {
+            let id = match k {
+                0 => "tool-rect-name",
+                1 => "tool-ellipse-name",
+                2 => "tool-line-name",
+                3 => "tool-pen-name",
+                4 => "tool-text-name",
+                5 => "tool-hide-name",
+                6 => "tool-highlighter-name",
+                7 => "tool-counter-name",
+                8 => "tool-stamp-name",
+                _ => "tool-image-name",
+            };
+            self.tr.tr(id)
+        };
+        match primary {
+            Some(o) => {
+                let title = o.name.clone().unwrap_or_else(|| tool_name(kind));
+                ui.set_prop_title(title.into());
+                let st = &o.style;
+                ui.set_color_index(
+                    PALETTE
+                        .iter()
+                        .position(|c| *c == st.color)
+                        .map_or(-1, |i| i as i32),
+                );
+                ui.set_thick_index(
+                    THICK
+                        .iter()
+                        .position(|t| *t == st.thick)
+                        .map_or(-1, |i| i as i32),
+                );
+                ui.set_fill_index(
+                    st.color2
+                        .and_then(|c| PALETTE.iter().position(|p| *p == c))
+                        .map_or(-1, |i| i as i32),
+                );
+                ui.set_dash_index(dash_index(st.dash));
+                ui.set_corners_index(corners_index(st.corners));
+                ui.set_alpha(st.alpha as f32 / 100.0);
+                if let Data::Line {
+                    head_front,
+                    head_back,
+                    ..
+                } = o.data
+                {
+                    ui.set_head_start(head_index(head_back));
+                    ui.set_head_end(head_index(head_front));
+                }
+                if let Data::Text {
+                    size, bold, italic, ..
+                } = o.data
+                {
+                    let base = self.text_size_base();
+                    let i = [18, 24, 36]
+                        .iter()
+                        .position(|b| ((*b as f64 * base).round() as i32).max(10) == size)
+                        .map_or(-1, |i| i as i32);
+                    ui.set_text_size_index(i);
+                    ui.set_text_bold(bold);
+                    ui.set_text_italic(italic);
+                }
+                ui.set_geom_x(o.rect.x.to_string().into());
+                ui.set_geom_y(o.rect.y.to_string().into());
+                ui.set_geom_w(o.rect.w.to_string().into());
+                ui.set_geom_h(o.rect.h.to_string().into());
             }
-            if let Some(i) = THICK.iter().position(|t| *t == o.style.thick) {
-                self.thick = i;
+            None => {
+                ui.set_prop_title(
+                    if kind >= 0 {
+                        tool_name(kind)
+                    } else {
+                        String::new()
+                    }
+                    .into(),
+                );
+                ui.set_color_index(self.color as i32);
+                ui.set_thick_index(self.thick as i32);
+                ui.set_fill_index(self.fill.map_or(-1, |i| i as i32));
+                ui.set_dash_index(dash_index(self.dash));
+                ui.set_corners_index(corners_index(self.corners));
+                ui.set_alpha(self.alpha as f32 / 100.0);
+                ui.set_head_start(head_index(self.head_start));
+                ui.set_head_end(head_index(self.head_end));
+                ui.set_text_size_index(self.text_size_i as i32);
+                ui.set_text_bold(self.bold);
+                ui.set_text_italic(self.italic);
             }
         }
-        ui.set_color_index(self.color as i32);
-        ui.set_thick_index(self.thick as i32);
+        // Layers: front first; unnamed marks are "<kind> <n>", numbered per kind bottom-up.
+        let mut counts = [0usize; 10];
+        let mut rows: Vec<LayerRow> = doc
+            .objects
+            .iter()
+            .map(|o| {
+                let k = kind_index(o.kind());
+                counts[k as usize] += 1;
+                LayerRow {
+                    id: o.id as i32,
+                    name: o
+                        .name
+                        .clone()
+                        .unwrap_or_else(|| format!("{} {}", tool_name(k), counts[k as usize]))
+                        .into(),
+                    kind: k,
+                    hidden: o.hidden,
+                    selected: sel.contains(&o.id),
+                }
+            })
+            .collect();
+        rows.reverse();
+        ui.set_layers(std::rc::Rc::new(VecModel::from(rows)).into());
+        // Image tab
+        ui.set_info_size(format!("{iw} × {ih}").into());
+        let source = match doc.meta.source.as_str() {
+            "region" => self.tr.tr("shot-source-region"),
+            "clipboard" => self.tr.tr("shot-source-clipboard"),
+            "window" => self.tr.tr("capture-window"),
+            "screen" => self.tr.tr("capture-whole-screen"),
+            "file" => self
+                .tr
+                .tr_args("shot-source-file", &args(&[("name", doc.name.clone())])),
+            other => other.to_string(),
+        };
+        ui.set_info_source(source.into());
+        let taken = chrono::Local
+            .timestamp_millis_opt(doc.meta.created_ms)
+            .single()
+            .map(|t| t.format("%d.%m.%Y %H:%M:%S").to_string())
+            .unwrap_or_default();
+        ui.set_info_taken(taken.into());
+        ui.set_info_path(s.path.display().to_string().into());
+        // Zoom slider: log2 scale −4…+4 → 0…1
+        ui.set_zoom_pos((((self.view.scale.log2() + 4.0) / 8.0).clamp(0.0, 1.0)) as f32);
         ui.set_hint(self.tr.tr(tool::NAMES[self.tool]).into());
         ui.set_autosave(self.autosave);
     }
@@ -1983,5 +2487,61 @@ fn draw_selection(pix: &mut Pixmap, view: &View, o: &Object, dpr: f64) {
                 put(cx + x, cy + y, if edge { blue } else { white });
             }
         }
+    }
+}
+
+/// Kind order of the inspector and the layers list (see `prop-kind` in app.slint).
+fn kind_index(k: Kind) -> i32 {
+    match k {
+        Kind::Rect => 0,
+        Kind::Ellipse => 1,
+        Kind::Line => 2,
+        Kind::Pen => 3,
+        Kind::Text => 4,
+        Kind::Hide => 5,
+        Kind::Mark => 6,
+        Kind::Counter => 7,
+        Kind::Stamp => 8,
+        _ => 9,
+    }
+}
+
+fn tool_kind(t: usize) -> i32 {
+    match t {
+        tool::RECT => 0,
+        tool::ELLIPSE => 1,
+        tool::ARROW => 2,
+        tool::PEN => 3,
+        tool::TEXT => 4,
+        tool::HIDE => 5,
+        tool::MARKER => 6,
+        tool::COUNTER => 7,
+        tool::STAMP => 8,
+        _ => -1,
+    }
+}
+
+fn dash_index(d: Dash) -> i32 {
+    match d {
+        Dash::Solid => 0,
+        Dash::Dashed => 1,
+        Dash::DashDot => 2,
+    }
+}
+
+fn corners_index(c: Corners) -> i32 {
+    match c {
+        Corners::Sharp => 0,
+        Corners::Soft => 1,
+        Corners::Round => 2,
+    }
+}
+
+fn head_index(h: Head) -> i32 {
+    match h {
+        Head::None => 0,
+        Head::Triangle => 1,
+        Head::Chevron => 2,
+        Head::Dot => 3,
     }
 }
