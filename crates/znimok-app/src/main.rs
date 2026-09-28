@@ -10,6 +10,7 @@
 
 mod app;
 mod capture;
+mod crash;
 #[cfg(target_os = "macos")]
 mod hotkey_mac;
 #[cfg(windows)]
@@ -64,11 +65,17 @@ macro_rules! on {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Log file and crash reports (ZK-32); keep the guard until the end of main to flush the log.
+    let _log = znimok_log::init(znimok_log::Config::for_app(
+        "znimok-app",
+        env!("CARGO_PKG_VERSION"),
+    ));
     #[cfg(windows)]
     znimok_win::init_process();
 
     let lang = znimok_i18n::choose_language(None, znimok_i18n::system_language().as_deref());
     let tr = znimok_i18n::Localizer::new(lang);
+    crash::offer_last_crash(&tr);
 
     // Backend pinned per OS: letting wgpu probe every backend crashed natively on a machine
     // with Intel UHD 630 under RDP (ZK-14). WGPU_BACKEND still overrides.

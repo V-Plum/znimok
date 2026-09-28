@@ -6544,6 +6544,7 @@ dependencies = [
  "znimok-core",
  "znimok-format",
  "znimok-i18n",
+ "znimok-log",
  "znimok-mac",
  "znimok-platform",
  "znimok-render",
