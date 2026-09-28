@@ -178,10 +178,9 @@ mod tests {
     use znimok_ipc::{RpcError, Server};
 
     fn cfg(tag: &str) -> Config {
-        let dir =
-            std::env::temp_dir().join(format!("znimok-agents-ipc-{tag}-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("zka-{tag}-{}", std::process::id()));
         Config {
-            suffix: Some(format!("agents-{tag}-{}", std::process::id())),
+            suffix: Some(format!("a{tag}{}", std::process::id())),
             dir: Some(dir),
             ..Config::default()
         }

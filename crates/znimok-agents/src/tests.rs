@@ -62,7 +62,7 @@ fn env(tag: &str, enabled: bool) -> Env {
     let _ = std::fs::remove_dir_all(&dir);
     // An IPC config nobody listens on: «no app running».
     let gui = Gui::with_config(znimok_ipc::Config {
-        suffix: Some(format!("nobody-{tag}-{}", std::process::id())),
+        suffix: Some(format!("n{tag}{}", std::process::id())),
         dir: Some(dir.join("ipc")),
         ..Default::default()
     });
