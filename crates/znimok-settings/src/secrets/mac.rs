@@ -3,13 +3,17 @@
 use super::{Result, SecretError};
 use objc2_core_foundation::{CFBoolean, CFData, CFDictionary, CFRetained, CFString, CFType};
 use objc2_security::{
-    SecItemAdd, SecItemCopyMatching, SecItemDelete, errSecItemNotFound, errSecSuccess,
-    kSecAttrAccount, kSecAttrService, kSecClass, kSecClassGenericPassword, kSecMatchLimit,
-    kSecMatchLimitOne, kSecReturnData, kSecValueData,
+    SecCopyErrorMessageString, SecItemAdd, SecItemCopyMatching, SecItemDelete, errSecItemNotFound,
+    errSecSuccess, kSecAttrAccount, kSecAttrService, kSecClass, kSecClassGenericPassword,
+    kSecMatchLimit, kSecMatchLimitOne, kSecReturnData, kSecValueData,
 };
 
 fn os(status: i32) -> SecretError {
-    SecretError::Os(status, format!("OSStatus {status}"))
+    // SAFETY: plain lookup of the framework's message for a status code.
+    let text = unsafe { SecCopyErrorMessageString(status, std::ptr::null_mut()) }
+        .map(|m| m.to_string())
+        .unwrap_or_else(|| format!("OSStatus {status}"));
+    SecretError::Os(status, text)
 }
 
 /// class + service + account, plus extra pairs.

@@ -6718,6 +6718,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "znimok-settings"
+version = "0.0.0"
+dependencies = [
+ "objc2-core-foundation",
+ "objc2-security",
+ "schemars",
+ "serde",
+ "serde_json",
+ "windows",
+ "znimok-platform",
+]
+
+[[package]]
 name = "znimok-win"
 version = "0.0.0"
 dependencies = [
