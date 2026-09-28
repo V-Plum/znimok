@@ -1429,14 +1429,47 @@ export component AppWindow inherits Window {
                                         vertical-alignment: center;
                                     }
                                 }
-                                // ---- Stroke (text: the letters' colour)
-                                if root.prop-kind >= 0 && root.prop-kind != 5 && root.prop-kind != 9: PropSection {
-                                    title: root.prop-kind == 4 ? @tr("ctx-text-colour" => "Text colour") : @tr("insp-stroke" => "Stroke");
-                                    action-icon: root.prop-kind <= 1 || root.prop-kind == 4 ? "M7 4 L3 8 l4 4 M3 8 h13 a4 4 0 0 1 4 4 M17 20 l4 -4 -4 -4 M21 16 H8 a4 4 0 0 1 -4 -4" : "";
-                                    action-tip: @tr("insp-swap-colours" => "Swap stroke and fill");
-                                    action-enabled: root.fill-index >= 0 || root.color-index >= 0;
-                                    action => { root.set-prop("swap", 0); }
-                                    ColourRow {
+                                // ---- Colours. Kinds with two colours show them as a pair with the swap
+                                // button between (owner, 28.09): shapes Fill ⇅ Stroke — the stroke's
+                                // thickness, style and corners follow it; text Letters ⇅ Outline.
+                                if root.prop-kind >= 0 && root.prop-kind != 5 && root.prop-kind != 9: VerticalLayout {
+                                    spacing: 8px;
+                                    // first colour of a pair: fill (shapes) / letters (text)
+                                    if root.prop-kind <= 1 || root.prop-kind == 4: VerticalLayout {
+                                        spacing: 8px;
+                                        Text { height: 22px; text: root.prop-kind == 4 ? @tr("ctx-text-colour" => "Text colour") : @tr("insp-fill" => "Fill"); color: Theme.text3; font-size: 11px; font-weight: 600; letter-spacing: 0.4px; vertical-alignment: center; }
+                                        if root.prop-kind <= 1: ColourRow {
+                                            selected: root.fill-index;
+                                            with-none: true;
+                                            none-tip: @tr("ctx-fill-none" => "Fill colour: none");
+                                            picked(i) => { root.set-prop("fill", i); }
+                                        }
+                                        if root.prop-kind == 4: ColourRow {
+                                            selected: root.color-index;
+                                            picked(i) => { root.set-prop("color", i); }
+                                        }
+                                    }
+                                    // second colour: caption on the left, the swap button on the right —
+                                    // between the two rows it swaps
+                                    HorizontalLayout {
+                                        height: 22px;
+                                        Text { text: root.prop-kind == 4 ? @tr("ctx-text-outline" => "Outline colour") : @tr("insp-stroke" => "Stroke"); color: Theme.text3; font-size: 11px; font-weight: 600; letter-spacing: 0.4px; vertical-alignment: center; horizontal-stretch: 1; }
+                                        if root.prop-kind <= 1 || root.prop-kind == 4: IconButton {
+                                            width: 26px;
+                                            height: 22px;
+                                            icon: "M7 4 L3 8 l4 4 M3 8 h13 a4 4 0 0 1 4 4 M17 20 l4 -4 -4 -4 M21 16 H8 a4 4 0 0 1 -4 -4";
+                                            label: @tr("insp-swap-colours" => "Swap stroke and fill");
+                                            enabled: root.fill-index >= 0 || root.color-index >= 0;
+                                            clicked => { root.set-prop("swap", 0); }
+                                        }
+                                    }
+                                    if root.prop-kind == 4: ColourRow {
+                                        selected: root.fill-index;
+                                        with-none: true;
+                                        none-tip: @tr("ctx-fill-none" => "Fill colour: none");
+                                        picked(i) => { root.set-prop("fill", i); }
+                                    }
+                                    if root.prop-kind != 4: ColourRow {
                                         selected: root.color-index;
                                         with-none: root.prop-kind <= 1;
                                         none-tip: @tr("insp-stroke-none" => "No outline");
@@ -1466,16 +1499,6 @@ export component AppWindow inherits Window {
                                             SegOption { icon: "M5 19 V9 a4 4 0 0 1 4 -4 h10"; on: root.corners-index == 1; tip: @tr("insp-corners-soft" => "Soft"); clicked => { root.set-prop("corners", 1); } }
                                             SegOption { icon: "M5 19 V14 a9 9 0 0 1 9 -9 h5"; on: root.corners-index == 2; tip: @tr("insp-corners-round" => "Round"); clicked => { root.set-prop("corners", 2); } }
                                         }
-                                    }
-                                }
-                                // ---- Fill (rectangle, ellipse) / outline (text)
-                                if root.prop-kind >= 0 && (root.prop-kind <= 1 || root.prop-kind == 4): PropSection {
-                                    title: root.prop-kind == 4 ? @tr("ctx-text-outline" => "Outline colour") : @tr("insp-fill" => "Fill");
-                                    ColourRow {
-                                        selected: root.fill-index;
-                                        with-none: true;
-                                        none-tip: @tr("ctx-fill-none" => "Fill colour: none");
-                                        picked(i) => { root.set-prop("fill", i); }
                                     }
                                 }
                                 // ---- Arrowheads: a property of the line
