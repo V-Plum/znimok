@@ -4,9 +4,10 @@
 
 use super::{Line, Ocr, OcrError, OcrResult, Rect, match_languages};
 use crate::Rgba;
+use objc2::rc::Allocated;
 use objc2::rc::{Retained, autoreleasepool};
 use objc2::runtime::AnyObject;
-use objc2::{AnyThread, class, msg_send};
+use objc2::{class, msg_send};
 use objc2_foundation::{NSArray, NSData, NSDictionary, NSError, NSRect, NSString};
 
 #[link(name = "Vision", kind = "framework")]
@@ -72,11 +73,8 @@ impl Ocr for VisionOcr {
             let options = NSDictionary::<NSString, AnyObject>::new();
             // SAFETY: documented initialiser taking image data and an options dictionary.
             let handler: Retained<AnyObject> = unsafe {
-                msg_send![
-                    AnyObject::alloc_class(class!(VNImageRequestHandler)),
-                    initWithData: &*data,
-                    options: &*options
-                ]
+                let a: Allocated<AnyObject> = msg_send![class!(VNImageRequestHandler), alloc];
+                msg_send![a, initWithData: &*data, options: &*options]
             };
             let reqs = NSArray::from_retained_slice(std::slice::from_ref(&req));
             // SAFETY: as above; the error form maps to `Result`.
