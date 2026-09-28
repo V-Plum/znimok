@@ -33,7 +33,10 @@ to PNG/JPEG/WebP, opening files, pasting from the clipboard and dropping an imag
 window. New screenshot, Ctrl+Shift+4 (Windows) or ⌃⇧4 (macOS) freeze the screen under the
 pointer: drag for a region, click for a window, Space for the whole screen, Shift on release
 to go straight to the clipboard and the library, Esc to cancel. Znimok lives in the tray /
-menu bar; closing the window hides it there, and Quit is in the icon's menu.
+menu bar; closing the window hides it there, and Quit is in the icon's menu. Selection: a
+rubber band over empty space, Shift/Ctrl-click, holding Ctrl makes any tool Select for the
+moment; Ctrl+D duplicates, Ctrl+]/[ changes the order, Ctrl+G groups; align and distribute
+live in the inspector.
 
 ```sh
 cargo run --release -p znimok-app              # the library
