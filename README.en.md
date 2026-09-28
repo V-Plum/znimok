@@ -25,6 +25,25 @@ compatibility with Little Helpers files — the features move over, not the form
 Video recording with a synchronised DevTools log comes in the second version. The full
 plan is in [docs/PLAN.md](docs/PLAN.md) (in Ukrainian).
 
+## Try the prototype
+
+The first working prototype of the app is the `znimok-app` crate. It has the library with
+thumbnails and search, an editor with ten tools, undo, autosave to the library, Copy, export
+to PNG/JPEG/WebP, opening files, pasting from the clipboard and dropping an image onto the
+window. On Windows there is New screenshot and Ctrl+Shift+4 (the whole screen under the
+pointer for now). Screen capture on macOS is not enabled yet.
+
+```sh
+cargo run --release -p znimok-app              # the library
+cargo run --release -p znimok-app -- shot.png  # open an image right away
+```
+
+The library is `%LOCALAPPDATA%\Znimok\Library` or
+`~/Library/Application Support/Znimok/Library`; `ZNIMOK_LIBRARY` points elsewhere.
+A self-test that needs no screen or mouse: `ZNIMOK_SELFTEST=<dir> znimok-app <image>` runs a
+scenario, writes window snapshots and `report.txt` into the folder and exits with 0 when every
+check passed.
+
 ## Development
 
 - Language — Rust (edition 2024, stable); the crate workspace is in `crates/`.

@@ -1,0 +1,36 @@
+[package]
+name = "znimok-app"
+description = "Znimok — the application: library, editor, capture"
+version.workspace = true
+edition.workspace = true
+license-file.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "znimok-app"
+path = "src/main.rs"
+
+[dependencies]
+znimok-core = { path = "../znimok-core" }
+znimok-format = { path = "../znimok-format" }
+znimok-render = { path = "../znimok-render" }
+znimok-platform = { path = "../znimok-platform" }
+znimok-i18n = { path = "../znimok-i18n" }
+slint = { version = "~1.18", default-features = false, features = ["std", "compat-1-2", "backend-winit", "renderer-femtovg-wgpu", "unstable-wgpu-30", "unstable-winit-030"] }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp", "gif", "bmp"] }
+rfd = "0.17"
+arboard = "3"
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+
+[target.'cfg(windows)'.dependencies]
+znimok-win = { path = "../znimok-win" }
+windows = { version = "0.62", features = ["Win32_Foundation", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_WindowsAndMessaging", "Win32_System_Threading"] }
+
+[build-dependencies]
+slint-build = "~1.18"
+znimok-i18n = { path = "../znimok-i18n" }
