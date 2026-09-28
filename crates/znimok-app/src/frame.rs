@@ -31,11 +31,28 @@ pub fn before_show(ui: &AppWindow) {
     }
 }
 
+/// The native window may not exist yet right after `show()` (owner's Mac 28.09: the title bar
+/// stayed white and the lights moved — the dressing ran before the window existed, the light
+/// placement later on a resize). So the set-up is idempotent and runs on show, on a few
+/// timers after it and on every resize.
 pub fn after_show(ui: &AppWindow) {
+    dress(ui);
+    for ms in [30u64, 150, 400, 1000] {
+        let weak = ui.as_weak();
+        slint::Timer::single_shot(std::time::Duration::from_millis(ms), move || {
+            if let Some(ui) = weak.upgrade() {
+                dress(&ui);
+            }
+        });
+    }
+}
+
+fn dress(ui: &AppWindow) {
     #[cfg(windows)]
     ui.window().with_winit_window(|w| {
         use winit::platform::windows::WindowExtWindows;
         w.set_undecorated_shadow(true);
+        win::round_corners(w);
     });
     #[cfg(target_os = "macos")]
     mac::dress(ui);
@@ -49,7 +66,41 @@ pub fn on_resized(ui: &AppWindow) {
         .unwrap_or(false);
     ui.set_win_maximized(max);
     #[cfg(target_os = "macos")]
-    mac::place_lights(ui);
+    {
+        mac::dress(ui);
+        mac::place_lights(ui);
+    }
+}
+
+#[cfg(windows)]
+mod win {
+    use super::winit;
+    use windows::Win32::Foundation::HWND;
+    use windows::Win32::Graphics::Dwm::{
+        DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_ROUND, DwmSetWindowAttribute,
+    };
+    use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
+
+    /// Windows 11 rounds the corners of framed windows only; a frameless one has to ask
+    /// (owner 28.09: "every program here has rounded corners"). No effect on Windows 10.
+    pub fn round_corners(w: &winit::window::Window) {
+        let Ok(h) = w.window_handle() else { return };
+        let RawWindowHandle::Win32(h) = h.as_raw() else {
+            return;
+        };
+        let hwnd = HWND(h.hwnd.get() as *mut core::ffi::c_void);
+        let pref = DWMWCP_ROUND;
+        // SAFETY: a live top-level window of this process; the value is a DWORD-sized enum.
+        let _ = unsafe {
+            DwmSetWindowAttribute(
+                hwnd,
+                DWMWA_WINDOW_CORNER_PREFERENCE,
+                (&pref as *const windows::Win32::Graphics::Dwm::DWM_WINDOW_CORNER_PREFERENCE)
+                    .cast(),
+                std::mem::size_of_val(&pref) as u32,
+            )
+        };
+    }
 }
 
 pub fn drag(ui: &AppWindow) {
@@ -111,9 +162,18 @@ mod mac {
     pub fn dress(ui: &AppWindow) {
         let Some(win) = ns_window(ui) else { return };
         let r = objc2::exception::catch(std::panic::AssertUnwindSafe(|| {
-            win.setTitlebarAppearsTransparent(true);
-            win.setTitleVisibility(NSWindowTitleVisibility::Hidden);
-            win.setStyleMask(win.styleMask() | NSWindowStyleMask::FullSizeContentView);
+            if !win.titlebarAppearsTransparent() {
+                win.setTitlebarAppearsTransparent(true);
+            }
+            if win.titleVisibility() != NSWindowTitleVisibility::Hidden {
+                win.setTitleVisibility(NSWindowTitleVisibility::Hidden);
+            }
+            if !win
+                .styleMask()
+                .contains(NSWindowStyleMask::FullSizeContentView)
+            {
+                win.setStyleMask(win.styleMask() | NSWindowStyleMask::FullSizeContentView);
+            }
             // SAFETY: a constant AppKit appearance name.
             if let Some(dark) = NSAppearance::appearanceNamed(unsafe { NSAppearanceNameDarkAqua }) {
                 // SAFETY: NSWindow conforms to NSAppearanceCustomization.
@@ -172,6 +232,19 @@ mod mac {
         }
     }
 
+    pub fn titlebar_state(ui: &AppWindow) -> Option<(bool, String)> {
+        let win = ns_window(ui)?;
+        let t = win.titlebarAppearsTransparent();
+        let h = win.titleVisibility() == NSWindowTitleVisibility::Hidden;
+        let f = win
+            .styleMask()
+            .contains(NSWindowStyleMask::FullSizeContentView);
+        Some((
+            t && h && f,
+            format!("transparent {t} · title hidden {h} · full-size content {f}"),
+        ))
+    }
+
     /// For the self-test: vertical centre of the close button, from the top of the window.
     pub fn lights_centre(ui: &AppWindow) -> Option<f64> {
         let win = ns_window(ui)?;
@@ -183,6 +256,58 @@ mod mac {
         let in_container = f.origin.y + f.size.height / 2.0 + tv.frame().origin.y;
         let from_bottom = c.frame().origin.y + in_container;
         Some(win.frame().size.height - from_bottom)
+    }
+}
+
+/// For the self-test (Windows): the corner preference DWM holds for our window.
+pub fn corners_rounded(ui: &AppWindow) -> Option<bool> {
+    #[cfg(windows)]
+    {
+        use windows::Win32::Foundation::HWND;
+        use windows::Win32::Graphics::Dwm::{
+            DWM_WINDOW_CORNER_PREFERENCE, DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_ROUND,
+            DwmGetWindowAttribute,
+        };
+        use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
+        ui.window()
+            .with_winit_window(|w| {
+                let h = w.window_handle().ok()?;
+                let RawWindowHandle::Win32(h) = h.as_raw() else {
+                    return None;
+                };
+                let hwnd = HWND(h.hwnd.get() as *mut core::ffi::c_void);
+                let mut v = DWM_WINDOW_CORNER_PREFERENCE(0);
+                // SAFETY: a live window of this process; out-pointer to a DWORD-sized value.
+                unsafe {
+                    DwmGetWindowAttribute(
+                        hwnd,
+                        DWMWA_WINDOW_CORNER_PREFERENCE,
+                        (&mut v as *mut DWM_WINDOW_CORNER_PREFERENCE).cast(),
+                        std::mem::size_of_val(&v) as u32,
+                    )
+                }
+                .ok()?;
+                Some(v == DWMWCP_ROUND)
+            })
+            .flatten()
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = ui;
+        None
+    }
+}
+
+/// For the self-test (macOS): transparent title bar, hidden title, full-size content.
+pub fn titlebar_state(ui: &AppWindow) -> Option<(bool, String)> {
+    #[cfg(target_os = "macos")]
+    {
+        mac::titlebar_state(ui)
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = ui;
+        None
     }
 }
 

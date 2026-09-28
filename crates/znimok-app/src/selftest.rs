@@ -115,6 +115,12 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
                 String::new(),
             );
         }
+        if let Some(round) = crate::frame::corners_rounded(ui) {
+            r.check("rounded corners (Windows 11)", round, String::new());
+        }
+        if let Some((ok, detail)) = crate::frame::titlebar_state(ui) {
+            r.check("dark transparent title bar (macOS)", ok, detail);
+        }
         if let Some(c) = crate::frame::lights_centre(ui) {
             r.check(
                 "traffic lights centred on the bar",
