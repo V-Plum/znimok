@@ -38,6 +38,8 @@ pub fn detect(img: &Rgba) -> Result<Vec<Rect>, FaceError> {
 }
 
 /// Luma of straight RGBA, transparency on white (BT.601 weights — what detectors are trained on).
+/// Windows' detector takes Gray8; Vision reads the PNG itself.
+#[cfg_attr(not(windows), allow(dead_code))]
 pub(crate) fn gray(img: &Rgba) -> Vec<u8> {
     img.pixels
         .as_chunks::<4>()
