@@ -156,6 +156,72 @@ fn capture_display_at(mouse: Option<(f64, f64)>) -> Result<String, String> {
     ))
 }
 
+/// One frame from a short-lived `SCStream`. Without the Screen Recording permission this is
+/// the only way to capture what the user picked: macOS exempts picker filters for streams,
+/// but `SCScreenshotManager` still refuses ("The user declined TCCs…", live test 28.09).
+fn capture_one_frame(
+    filter: &SCContentFilter,
+    pw: u32,
+    ph: u32,
+) -> Result<(u32, u32, Vec<u8>), String> {
+    use screencapturekit::cv::CVPixelBufferLockFlags;
+    use std::sync::mpsc;
+
+    type Frame = (u32, u32, Vec<u8>);
+    struct First(Mutex<Option<mpsc::Sender<Frame>>>);
+    impl SCStreamOutputTrait for First {
+        fn did_output_sample_buffer(&self, sample: CMSampleBuffer, kind: SCStreamOutputType) {
+            if !matches!(kind, SCStreamOutputType::Screen) {
+                return;
+            }
+            let Some(pb) = sample.pixel_buffer() else {
+                return;
+            };
+            let Ok(guard) = pb.lock(CVPixelBufferLockFlags::READ_ONLY) else {
+                return;
+            };
+            let (w, h, stride) = (guard.width(), guard.height(), guard.bytes_per_row());
+            let Some(bytes) = (unsafe { guard.as_slice() }) else {
+                return;
+            };
+            // BGRA with row padding → tight RGBA.
+            let mut rgba = Vec::with_capacity(w * h * 4);
+            for y in 0..h {
+                for px in bytes[y * stride..y * stride + w * 4].as_chunks::<4>().0 {
+                    rgba.extend_from_slice(&[px[2], px[1], px[0], px[3]]);
+                }
+            }
+            if let Ok(mut tx) = self.0.lock()
+                && let Some(tx) = tx.take()
+            {
+                let _ = tx.send((w as u32, h as u32, rgba));
+            }
+        }
+    }
+
+    let cfg = SCStreamConfiguration::new()
+        .with_width(pw.max(1))
+        .with_height(ph.max(1))
+        .with_pixel_format(PixelFormat::BGRA)
+        .with_shows_cursor(false);
+    let (tx, rx) = mpsc::channel();
+    let mut stream = SCStream::new(filter, &cfg).map_err(|e| format!("SCStream: {e}"))?;
+    stream
+        .add_output_handler(First(Mutex::new(Some(tx))), SCStreamOutputType::Screen)
+        .map_err(|e| format!("output: {e}"))?;
+    stream.start_capture().map_err(|e| format!("start: {e}"))?;
+    let frame = rx.recv_timeout(Duration::from_secs(5));
+    let _ = stream.stop_capture();
+    frame.map_err(|_| "кадр не прийшов за 5 с".to_string())
+}
+
+fn save_rgba(w: u32, h: u32, rgba: &[u8], tag: &str) -> Result<PathBuf, String> {
+    let path = shots_dir().join(format!("{}-{tag}-{w}x{h}.png", stamp().replace('.', "-")));
+    image::save_buffer(&path, rgba, w, h, image::ExtendedColorType::Rgba8)
+        .map_err(|e| format!("png: {e}"))?;
+    Ok(path)
+}
+
 /// Opens the system content picker and captures the pick.
 ///
 /// ⚠ The picker's callback arrives on the main thread, and `capture_image` blocks until
@@ -190,25 +256,35 @@ fn capture_via_picker(done: impl Fn(Result<String, String>) + Send + 'static) {
                 }
             );
             std::thread::spawn(move || {
-                let cfg = SCStreamConfiguration::new()
-                    .with_width(pw.max(1))
-                    .with_height(ph.max(1))
-                    .with_shows_cursor(false);
+                let granted = unsafe { CGPreflightScreenCaptureAccess() };
                 let t1 = Instant::now();
-                let r = match SCScreenshotManager::capture_image(&filter, &cfg) {
-                    Ok(img) => save_png(&img, "picker").map(|p| {
-                        format!(
-                            "пікер ({what}): вибір {:.1} с, кадр {:.0} мс, {}×{} px → {}",
-                            picked.as_secs_f64(),
-                            t1.elapsed().as_secs_f64() * 1e3,
-                            img.width(),
-                            img.height(),
-                            p.display()
-                        )
-                    }),
-                    Err(e) => Err(format!("capture_image після пікера ({what}): {e}")),
+                let r = if granted {
+                    let cfg = SCStreamConfiguration::new()
+                        .with_width(pw.max(1))
+                        .with_height(ph.max(1))
+                        .with_shows_cursor(false);
+                    SCScreenshotManager::capture_image(&filter, &cfg)
+                        .map_err(|e| format!("capture_image після пікера ({what}): {e}"))
+                        .and_then(|img| {
+                            let (w, h) = (img.width() as u32, img.height() as u32);
+                            save_png(&img, "picker-shot").map(|p| (w, h, p, "SCScreenshotManager"))
+                        })
+                } else {
+                    capture_one_frame(&filter, pw, ph)
+                        .map_err(|e| format!("кадр потоку після пікера ({what}): {e}"))
+                        .and_then(|(w, h, rgba)| {
+                            save_rgba(w, h, &rgba, "picker-stream")
+                                .map(|p| (w, h, p, "SCStream, без дозволу"))
+                        })
                 };
-                done(r);
+                done(r.map(|(w, h, p, how)| {
+                    format!(
+                        "пікер ({what}, {how}): вибір {:.1} с, кадр {:.0} мс, {w}×{h} px → {}",
+                        picked.as_secs_f64(),
+                        t1.elapsed().as_secs_f64() * 1e3,
+                        p.display()
+                    )
+                }));
             });
         }
         SCPickerOutcome::Cancelled => done(Err("пікер скасовано".into())),
