@@ -48,7 +48,9 @@ pub mod tool {
     pub const MARKER: usize = 7;
     pub const COUNTER: usize = 8;
     pub const STAMP: usize = 9;
-    pub const NAMES: [&str; 10] = [
+    /// Crop (ZK-53): not a mark tool — it edits the document's frame.
+    pub const CROP: usize = 10;
+    pub const NAMES: [&str; 11] = [
         "tool-select",
         "tool-rect",
         "tool-ellipse",
@@ -59,6 +61,7 @@ pub mod tool {
         "tool-highlighter",
         "tool-counter",
         "tool-stamp",
+        "tool-crop",
     ];
 }
 
@@ -99,6 +102,17 @@ enum Drag {
     Marquee {
         start: (i32, i32),
         add: bool,
+    },
+    /// A new crop frame dragged out on the picture (ZK-53); `prev` comes back on a stray click.
+    CropNew {
+        start: (i32, i32),
+        prev: IRect,
+    },
+    /// A crop handle (0 top-left, clockwise to 7 left) or the inside (8, move).
+    CropEdit {
+        handle: usize,
+        orig: IRect,
+        start: (i32, i32),
     },
 }
 
@@ -153,6 +167,17 @@ pub struct App {
     italic: bool,
     /// One undo step per drag of the opacity slider.
     alpha_merge: Option<MergeKey>,
+    /// Crop being edited (Crop tool), picture pixels. The document gets it as one `SetCrop`
+    /// on Enter / another tool; Esc drops it (ZK-53).
+    crop: Option<IRect>,
+    crop_lock: bool,
+    /// "Compare" held: the picture is drawn with the tone as captured.
+    compare: bool,
+    /// One undo step per drag of a tone slider.
+    tone_merge: Option<MergeKey>,
+    /// Picture size last pushed to the "Image size" fields (they are not overwritten while
+    /// the user types).
+    size_shown: (u32, u32),
     drag: Option<Drag>,
     next_merge: u64,
     editing: Option<Editing>,
@@ -221,6 +246,11 @@ impl App {
             bold: false,
             italic: false,
             alpha_merge: None,
+            crop: None,
+            crop_lock: false,
+            compare: false,
+            tone_merge: None,
+            size_shown: (0, 0),
             drag: None,
             next_merge: 1,
             editing: None,
@@ -348,6 +378,13 @@ impl App {
         });
         self.drag = None;
         self.editing = None;
+        self.crop = None;
+        self.compare = false;
+        self.size_shown = (0, 0);
+        if self.tool == tool::CROP {
+            self.tool = tool::SELECT;
+            ui.set_tool(self.tool as i32);
+        }
         ui.set_editing(false);
         self.fit_pending = true;
         self.dirty = true;
@@ -549,6 +586,7 @@ impl App {
 
     pub fn close_document(&mut self, ui: &AppWindow) {
         drop(SAVE_LOCK.lock());
+        self.commit_crop(ui);
         self.s = None;
         self.drag = None;
         self.editing = None;
@@ -587,13 +625,23 @@ impl App {
     pub fn undo(&mut self, ui: &AppWindow) {
         self.finish_text(ui);
         self.apply(ui, Command::Undo);
+        self.reset_crop_draft();
         self.sync(ui);
     }
 
     pub fn redo(&mut self, ui: &AppWindow) {
         self.finish_text(ui);
         self.apply(ui, Command::Redo);
+        self.reset_crop_draft();
         self.sync(ui);
+    }
+
+    /// Undo / redo may change the picture under the crop being edited: start it again from
+    /// the document's frame.
+    fn reset_crop_draft(&mut self) {
+        if self.crop.is_some() {
+            self.crop = self.s.as_ref().map(|s| s.ed.doc.frame());
+        }
     }
 
     fn selection(&self) -> Vec<ObjectId> {
@@ -755,6 +803,10 @@ impl App {
             return;
         }
         self.finish_text(ui);
+        if self.tool == tool::CROP {
+            self.crop_down(out, p);
+            return;
+        }
         let px = self.view.scale / self.dpr;
         let sel = self.selection();
 
@@ -888,6 +940,18 @@ impl App {
             return;
         };
         match drag {
+            Drag::CropNew { start, .. } => {
+                self.crop = Some(self.crop_from(start, p, shift));
+                self.dirty = true;
+            }
+            Drag::CropEdit {
+                handle,
+                orig,
+                start,
+            } => {
+                self.crop = Some(self.crop_edit(handle, orig, (p.0 - start.0, p.1 - start.1)));
+                self.dirty = true;
+            }
             Drag::Pending { start, start_out } => {
                 if (out - start_out).hypot() < 3.0 * self.dpr {
                     return;
@@ -1063,6 +1127,12 @@ impl App {
     }
 
     fn pointer_up(&mut self, _ui: &AppWindow) {
+        // A click without a drag on the picture keeps the frame that was there.
+        if let Some(Drag::CropNew { prev, .. }) = self.drag
+            && self.crop.is_none_or(|c| c.w < 2 || c.h < 2)
+        {
+            self.crop = Some(prev);
+        }
         self.drag = None;
         self.marquee = None;
         self.dirty = true;
@@ -1399,9 +1469,29 @@ impl App {
 
     pub fn set_tool(&mut self, ui: &AppWindow, t: usize) {
         self.finish_text(ui);
-        self.tool = t.min(tool::STAMP);
+        let t = t.min(tool::CROP);
+        let was_crop = self.tool == tool::CROP;
+        if was_crop && t != tool::CROP {
+            self.commit_crop(ui);
+        }
+        self.tool = t;
         ui.set_tool(self.tool as i32);
+        if t == tool::CROP && !was_crop && self.s.is_some() {
+            // The whole picture comes into view, the frame on it can be pulled anywhere.
+            self.crop = self.s.as_ref().map(|s| s.ed.doc.frame());
+            if !self.selection().is_empty() {
+                self.apply(ui, Command::ClearSelection);
+            }
+            ui.set_insp_tab(2);
+            let k = self.fit_scale();
+            self.animate_zoom(k, None);
+        } else if was_crop && t != tool::CROP {
+            let k = self.fit_scale();
+            self.animate_zoom(k, None);
+        }
+        self.dirty = true;
         self.sync(ui);
+        ui.window().request_redraw();
     }
 
     /// Keys of the canvas. Letters are matched on both the Latin and the Ukrainian layout, so a
@@ -1471,7 +1561,7 @@ impl App {
             ui.window().request_redraw();
             return KeyAction::None;
         }
-        let tools = ['v', 'r', 'e', 'l', 'p', 't', 'b', 'h', 'n', 's'];
+        let tools = ['v', 'r', 'e', 'l', 'p', 't', 'b', 'h', 'n', 's', 'c'];
         if let Some(i) = latin.and_then(|c| tools.iter().position(|t| *t == c)) {
             self.set_tool(ui, i);
             return KeyAction::None;
@@ -1504,6 +1594,14 @@ impl App {
                     if !ids.is_empty() {
                         self.apply(ui, Command::DeleteObjects { ids });
                     }
+                }
+                "\n" | "\r" if self.tool == tool::CROP => {
+                    self.set_tool(ui, tool::SELECT);
+                }
+                "\u{1b}" if self.tool == tool::CROP => {
+                    self.drag = None;
+                    self.crop = None;
+                    self.set_tool(ui, tool::SELECT);
                 }
                 "\u{1b}" => {
                     if self.drag.take().is_none() {
@@ -2043,7 +2141,433 @@ impl App {
         ui.window().request_redraw();
     }
 
+    // ------------------------------------------------------------------ picture (ZK-53)
+
+    fn image_rect(&self) -> IRect {
+        let (w, h) = self
+            .s
+            .as_ref()
+            .map(|s| s.ed.doc.image_size())
+            .unwrap_or((1, 1));
+        IRect::new(0, 0, w as i32, h as i32)
+    }
+
+    /// Screen positions of the crop handles, in the order of [`Drag::CropEdit`].
+    fn crop_handles(&self, c: IRect) -> [Point; 8] {
+        let (x0, y0) = (c.x as f64, c.y as f64);
+        let (x1, y1) = (c.right() as f64, c.bottom() as f64);
+        let (mx, my) = ((x0 + x1) / 2.0, (y0 + y1) / 2.0);
+        [
+            (x0, y0),
+            (mx, y0),
+            (x1, y0),
+            (x1, my),
+            (x1, y1),
+            (mx, y1),
+            (x0, y1),
+            (x0, my),
+        ]
+        .map(|(x, y)| self.view.to_out(Point::new(x, y)))
+    }
+
+    fn crop_down(&mut self, out: Point, p: (i32, i32)) {
+        let img = self.image_rect();
+        let c = self.crop.unwrap_or(img);
+        let reach = 12.0 * self.dpr;
+        let handle = self
+            .crop_handles(c)
+            .iter()
+            .enumerate()
+            .map(|(i, h)| (i, (*h - out).hypot()))
+            .filter(|(_, d)| *d <= reach)
+            .min_by(|a, b| a.1.total_cmp(&b.1))
+            .map(|(i, _)| i);
+        let inside = p.0 > c.x && p.0 < c.right() && p.1 > c.y && p.1 < c.bottom();
+        self.drag = Some(match handle {
+            Some(h) => Drag::CropEdit {
+                handle: h,
+                orig: c,
+                start: p,
+            },
+            None if inside => Drag::CropEdit {
+                handle: 8,
+                orig: c,
+                start: p,
+            },
+            None => Drag::CropNew { start: p, prev: c },
+        });
+    }
+
+    /// A new frame from two corners, inside the picture; Shift or the lock keep a square /
+    /// the locked proportions.
+    fn crop_from(&self, a: (i32, i32), b: (i32, i32), shift: bool) -> IRect {
+        let img = self.image_rect();
+        let cl = |p: (i32, i32)| (p.0.clamp(0, img.w), p.1.clamp(0, img.h));
+        let (a, mut b) = (cl(a), cl(b));
+        let ratio = if shift {
+            Some(1.0)
+        } else if self.crop_lock {
+            self.crop.map(|c| c.w.max(1) as f64 / c.h.max(1) as f64)
+        } else {
+            None
+        };
+        if let Some(r) = ratio {
+            let (dx, dy) = ((b.0 - a.0) as f64, (b.1 - a.1) as f64);
+            let w = dx.abs().max(dy.abs() * r);
+            let h = w / r;
+            b = cl((
+                a.0 + (w.copysign(dx)).round() as i32,
+                a.1 + (h.copysign(dy)).round() as i32,
+            ));
+        }
+        IRect::new(
+            a.0.min(b.0),
+            a.1.min(b.1),
+            (a.0 - b.0).abs(),
+            (a.1 - b.1).abs(),
+        )
+    }
+
+    fn crop_edit(&self, handle: usize, o: IRect, d: (i32, i32)) -> IRect {
+        let img = self.image_rect();
+        if handle == 8 {
+            return IRect::new(
+                (o.x + d.0).clamp(0, (img.w - o.w).max(0)),
+                (o.y + d.1).clamp(0, (img.h - o.h).max(0)),
+                o.w,
+                o.h,
+            );
+        }
+        let (mut x0, mut y0, mut x1, mut y1) = (o.x, o.y, o.right(), o.bottom());
+        if matches!(handle, 0 | 6 | 7) {
+            x0 += d.0;
+        }
+        if matches!(handle, 2..=4) {
+            x1 += d.0;
+        }
+        if matches!(handle, 0..=2) {
+            y0 += d.1;
+        }
+        if matches!(handle, 4..=6) {
+            y1 += d.1;
+        }
+        if self.crop_lock && o.w > 0 && o.h > 0 {
+            let r = o.w as f64 / o.h as f64;
+            match handle {
+                // Edges: the other side follows about the centre.
+                1 | 5 => {
+                    let w = ((y1 - y0).abs() as f64 * r).round() as i32;
+                    let cx = o.x + o.w / 2;
+                    x0 = cx - w / 2;
+                    x1 = x0 + w;
+                }
+                3 | 7 => {
+                    let h = ((x1 - x0).abs() as f64 / r).round() as i32;
+                    let cy = o.y + o.h / 2;
+                    y0 = cy - h / 2;
+                    y1 = y0 + h;
+                }
+                // Corners: the opposite corner stays.
+                _ => {
+                    let w = (x1 - x0).abs() as f64;
+                    let h = (y1 - y0).abs() as f64;
+                    let (w, h) = if w / r >= h { (w, w / r) } else { (h * r, h) };
+                    let (w, h) = (w.round() as i32, h.round() as i32);
+                    if matches!(handle, 0 | 6) {
+                        x0 = x1 - w;
+                    } else {
+                        x1 = x0 + w;
+                    }
+                    if matches!(handle, 0 | 2) {
+                        y0 = y1 - h;
+                    } else {
+                        y1 = y0 + h;
+                    }
+                }
+            }
+        }
+        let (x0, x1) = (x0.min(x1).clamp(0, img.w), x0.max(x1).clamp(0, img.w));
+        let (y0, y1) = (y0.min(y1).clamp(0, img.h), y0.max(y1).clamp(0, img.h));
+        IRect::new(x0, y0, (x1 - x0).max(1), (y1 - y0).max(1))
+    }
+
+    /// The crop being edited goes into the document: one undo step.
+    fn commit_crop(&mut self, ui: &AppWindow) {
+        let Some(c) = self.crop.take() else { return };
+        self.drag = None;
+        let Some(s) = self.s.as_ref() else { return };
+        if c == s.ed.doc.frame() || c.w < 1 || c.h < 1 {
+            return;
+        }
+        let img = self.image_rect();
+        self.apply(
+            ui,
+            Command::SetCrop {
+                rect: (c != img).then_some(c),
+            },
+        );
+        self.dirty = true;
+    }
+
+    /// W / H typed in the crop panel; the frame grows from its top-left corner.
+    pub fn set_crop_size(&mut self, ui: &AppWindow, field: &str, text: &str) {
+        let (Some(c), Ok(v)) = (self.crop, text.trim().parse::<i32>()) else {
+            self.sync(ui);
+            return;
+        };
+        let img = self.image_rect();
+        let r = c.w.max(1) as f64 / c.h.max(1) as f64;
+        let (mut w, mut h) = (c.w, c.h);
+        if field == "w" {
+            w = v.clamp(1, img.w);
+            if self.crop_lock {
+                h = (w as f64 / r).round() as i32;
+            }
+        } else {
+            h = v.clamp(1, img.h);
+            if self.crop_lock {
+                w = (h as f64 * r).round() as i32;
+            }
+        }
+        let (w, h) = (w.clamp(1, img.w), h.clamp(1, img.h));
+        let x = c.x.min(img.w - w);
+        let y = c.y.min(img.h - h);
+        self.crop = Some(IRect::new(x, y, w, h));
+        self.dirty = true;
+        self.sync(ui);
+        ui.window().request_redraw();
+    }
+
+    /// Buttons of the Image tab and the crop panel.
+    pub fn image_action(&mut self, ui: &AppWindow, what: &str) {
+        self.finish_text(ui);
+        match what {
+            "crop" => {
+                self.set_tool(ui, tool::CROP);
+                return;
+            }
+            "crop-done" => {
+                self.set_tool(ui, tool::SELECT);
+                return;
+            }
+            "crop-cancel" => {
+                self.crop = None;
+                self.set_tool(ui, tool::SELECT);
+                return;
+            }
+            "crop-whole" => {
+                if self.crop.is_some() {
+                    self.crop = Some(self.image_rect());
+                } else {
+                    self.apply(ui, Command::SetCrop { rect: None });
+                    self.fit();
+                }
+            }
+            "crop-lock" => self.crop_lock = !self.crop_lock,
+            "tone-reset" => {
+                self.apply(ui, Command::ResetTone);
+            }
+            "rotate-left" | "rotate-right" | "mirror-h" | "mirror-v" => {
+                // A turn moves the picture under the frame: the crop being edited goes in first.
+                let cropping = self.crop.is_some();
+                self.commit_crop(ui);
+                let cmd = match what {
+                    "rotate-left" => Command::Rotate { quarters: -1 },
+                    "rotate-right" => Command::Rotate { quarters: 1 },
+                    "mirror-h" => Command::Mirror,
+                    _ => Command::MirrorVertical,
+                };
+                self.apply(ui, cmd);
+                if cropping {
+                    self.crop = self.s.as_ref().map(|s| s.ed.doc.frame());
+                }
+                self.stop_anim();
+                self.fit();
+            }
+            "size-apply" => self.resize_image(ui),
+            _ => return,
+        }
+        self.dirty = true;
+        self.sync(ui);
+        ui.window().request_redraw();
+    }
+
+    /// Exposure / gamma / contrast sliders, position 0…1; one undo step per drag.
+    pub fn set_tone(&mut self, ui: &AppWindow, field: &str, pos: f32, last: bool) {
+        let pos = pos.clamp(0.0, 1.0) as f64;
+        // A little stickiness at the neutral middle, so "back to zero" is easy to hit.
+        let pos = if (pos - 0.5).abs() < 0.02 { 0.5 } else { pos };
+        let merge = match &self.tone_merge {
+            Some(m) => m.clone(),
+            None => {
+                let m = self.merge_key();
+                self.tone_merge = Some(m.clone());
+                m
+            }
+        };
+        let (mut exposure, mut gamma, mut contrast) = (None, None, None);
+        match field {
+            "exposure" => exposure = Some(((pos * 4.0 - 2.0) * 20.0).round() as f32 / 20.0),
+            "gamma" => gamma = Some((2f64.powf(pos * 2.0 - 1.0) * 100.0).round() as f32 / 100.0),
+            _ => contrast = Some((pos * 100.0 - 50.0).round() as i32),
+        }
+        self.apply(
+            ui,
+            Command::SetTone {
+                exposure,
+                gamma,
+                contrast,
+                merge: Some(merge),
+            },
+        );
+        if last {
+            self.tone_merge = None;
+        }
+        self.dirty = true;
+        self.sync(ui);
+        ui.window().request_redraw();
+    }
+
+    pub fn set_compare(&mut self, ui: &AppWindow, on: bool) {
+        if self.compare != on {
+            self.compare = on;
+            self.dirty = true;
+            ui.window().request_redraw();
+        }
+    }
+
+    /// Typing W or H with "keep proportions" fills in the other one.
+    pub fn size_edited(&mut self, ui: &AppWindow, field: &str, text: &str) {
+        let Ok(v) = text.trim().parse::<u32>() else {
+            return;
+        };
+        if !ui.get_size_keep() {
+            return;
+        }
+        let img = self.image_rect();
+        let (w, h) = (img.w, img.h);
+        if field == "w" {
+            let nh = (v as f64 * h as f64 / w.max(1) as f64).round().max(1.0) as u32;
+            ui.set_size_h(nh.to_string().into());
+        } else {
+            let nw = (v as f64 * w as f64 / h.max(1) as f64).round().max(1.0) as u32;
+            ui.set_size_w(nw.to_string().into());
+        }
+    }
+
+    fn resize_image(&mut self, ui: &AppWindow) {
+        let parse = |t: slint::SharedString| t.trim().parse::<u32>().ok().filter(|v| *v > 0);
+        let (Some(w), Some(h)) = (parse(ui.get_size_w()), parse(ui.get_size_h())) else {
+            self.size_shown = (0, 0);
+            return;
+        };
+        let img = self.image_rect();
+        let (cw, ch) = (img.w, img.h);
+        if (w, h) == (cw as u32, ch as u32) {
+            return;
+        }
+        self.commit_crop(ui);
+        self.apply(
+            ui,
+            Command::ResizeImage {
+                width: w.min(16384),
+                height: h.min(16384),
+                scale_text: ui.get_size_scale_text(),
+            },
+        );
+        self.size_shown = (0, 0);
+        self.stop_anim();
+        self.fit();
+    }
+
+    /// Marks lying wholly outside a frame (they stay in the document, just out of the picture).
+    fn outside(&self, c: IRect) -> usize {
+        let Some(s) = self.s.as_ref() else { return 0 };
+        s.ed.doc
+            .objects
+            .iter()
+            .filter(|o| {
+                let b = o.bounds();
+                b.right() <= c.x || b.x >= c.right() || b.bottom() <= c.y || b.y >= c.bottom()
+            })
+            .count()
+    }
+
+    /// Image tab and crop panel state.
+    fn sync_picture(&mut self, ui: &AppWindow) {
+        let Some(s) = self.s.as_ref() else { return };
+        let doc = &s.ed.doc;
+        let r = doc.recipe;
+        let (iw, ih) = doc.image_size();
+        ui.set_tone_exposure(((r.exposure as f64 + 2.0) / 4.0).clamp(0.0, 1.0) as f32);
+        ui.set_tone_gamma((((r.gamma as f64).log2() + 1.0) / 2.0).clamp(0.0, 1.0) as f32);
+        ui.set_tone_contrast(((r.contrast as f64 + 50.0) / 100.0).clamp(0.0, 1.0) as f32);
+        let signed = |v: f64, digits: usize| -> String {
+            if v.abs() < 1e-9 {
+                format!("{:.*}", digits, 0.0)
+            } else {
+                format!("{:+.*}", digits, v)
+            }
+        };
+        ui.set_tone_exposure_text(format!("{} EV", signed(r.exposure as f64, 2)).into());
+        ui.set_tone_gamma_text(format!("γ {:.2}", r.gamma).into());
+        ui.set_tone_contrast_text(signed(r.contrast as f64, 0).into());
+        ui.set_tone_default(znimok_render::develop::tone_is_default(&r));
+        ui.set_cropped(doc.crop.is_some());
+        ui.set_crop_lock(self.crop_lock);
+        let shown = self.crop.unwrap_or_else(|| doc.frame());
+        ui.set_crop_w(shown.w.to_string().into());
+        ui.set_crop_h(shown.h.to_string().into());
+        ui.set_crop_sizes(
+            self.tr
+                .tr_args(
+                    "crop-sizes",
+                    &args(&[
+                        ("width", iw.to_string()),
+                        ("height", ih.to_string()),
+                        ("cw", shown.w.to_string()),
+                        ("ch", shown.h.to_string()),
+                    ]),
+                )
+                .into(),
+        );
+        let out = self.outside(shown);
+        ui.set_crop_outside(if out > 0 {
+            let mut a = FluentArgs::new();
+            a.set("count", out as i64);
+            self.tr.tr_args("crop-outside-kept", &a).into()
+        } else {
+            "".into()
+        });
+        ui.set_crop_text(if self.crop.is_some() || doc.crop.is_some() {
+            self.tr
+                .tr_args(
+                    "status-crop-size",
+                    &args(&[("width", shown.w.to_string()), ("height", shown.h.to_string())]),
+                )
+                .into()
+        } else {
+            "".into()
+        });
+        if self.size_shown != (iw, ih) {
+            self.size_shown = (iw, ih);
+            ui.set_size_w(iw.to_string().into());
+            ui.set_size_h(ih.to_string().into());
+        }
+    }
+
     // ------------------------------------------------------------------ view
+
+    /// What the view fits and keeps in sight: the frame, or the whole picture while cropping.
+    fn view_frame(&self) -> Option<IRect> {
+        let s = self.s.as_ref()?;
+        Some(if self.crop.is_some() {
+            let (w, h) = s.ed.doc.image_size();
+            IRect::new(0, 0, w as i32, h as i32)
+        } else {
+            s.ed.doc.frame()
+        })
+    }
 
     fn canvas_px(&self, ui: &AppWindow) -> (u32, u32) {
         let w = (ui.get_canvas_width() as f64 * self.dpr).round().max(1.0) as u32;
@@ -2052,9 +2576,8 @@ impl App {
     }
 
     fn set_zoom(&mut self, scale: f64, around_out: Option<Point>) {
-        let Some(s) = self.s.as_ref() else { return };
+        let Some(f) = self.view_frame() else { return };
         let scale = scale.clamp(0.05, 16.0);
-        let f = s.ed.doc.frame();
         match around_out {
             Some(p) => {
                 let d = self.view.to_doc(p.x, p.y);
@@ -2077,8 +2600,7 @@ impl App {
     /// Keeps the picture in view (owner, 28.09): smaller than the canvas → centred on that
     /// axis; bigger → it may not be pulled away from an edge further than a small margin.
     fn constrain(&mut self) {
-        let Some(s) = self.s.as_ref() else { return };
-        let f = s.ed.doc.frame();
+        let Some(f) = self.view_frame() else { return };
         let sc = self.view.scale.max(1e-6);
         let (vw, vh) = (self.view.width as f64 / sc, self.view.height as f64 / sc);
         let m = 24.0 * self.dpr / sc;
@@ -2095,8 +2617,9 @@ impl App {
 
     /// Fit with a margin; never enlarge beyond 100 % (a small shot stays sharp, LH behaviour).
     fn fit_scale(&self) -> f64 {
-        let Some(s) = self.s.as_ref() else { return 1.0 };
-        let f = s.ed.doc.frame();
+        let Some(f) = self.view_frame() else {
+            return 1.0;
+        };
         let margin = 24.0 * self.dpr;
         let w = (self.view.width as f64 - 2.0 * margin).max(16.0);
         let h = (self.view.height as f64 - 2.0 * margin).max(16.0);
@@ -2414,8 +2937,21 @@ impl App {
         ui.set_info_path(s.path.display().to_string().into());
         // Zoom slider: log2 scale −4…+4 → 0…1
         ui.set_zoom_pos((((self.view.scale.log2() + 4.0) / 8.0).clamp(0.0, 1.0)) as f32);
-        ui.set_hint(self.tr.tr(tool::NAMES[self.tool]).into());
+        ui.set_hint(
+            if self.crop.is_some() {
+                format!(
+                    "Enter — {} · Esc — {} · {}",
+                    self.tr.tr("crop-hint-done"),
+                    self.tr.tr("crop-hint-cancel"),
+                    self.tr.tr("crop-hint-move")
+                )
+            } else {
+                self.tr.tr(tool::NAMES[self.tool])
+            }
+            .into(),
+        );
         ui.set_autosave(self.autosave);
+        self.sync_picture(ui);
     }
 
     // ------------------------------------------------------------------ rendering
@@ -2458,7 +2994,25 @@ impl App {
             return;
         }
         let s = self.s.as_ref().unwrap();
-        self.renderer.render(&s.ed.doc, self.view, &mut self.pixmap);
+        // Cropping shows the whole picture; "Compare" shows the tone as captured.
+        let doc: std::borrow::Cow<Document> = if self.crop.is_some() || self.compare {
+            let mut d = s.ed.doc.clone();
+            if self.crop.is_some() {
+                d.crop = None;
+            }
+            if self.compare {
+                d.recipe.exposure = 0.0;
+                d.recipe.gamma = 1.0;
+                d.recipe.contrast = 0;
+            }
+            std::borrow::Cow::Owned(d)
+        } else {
+            std::borrow::Cow::Borrowed(&s.ed.doc)
+        };
+        self.renderer.render(&doc, self.view, &mut self.pixmap);
+        if let Some(c) = self.crop {
+            draw_crop(&mut self.pixmap, &self.view, c, self.dpr);
+        }
         for id in s.ed.selection() {
             if let Some(o) = s.ed.doc.get(*id) {
                 draw_selection(&mut self.pixmap, &self.view, o, self.dpr);
@@ -2597,6 +3151,95 @@ fn draw_marquee(pix: &mut Pixmap, view: &View, m: IRect) {
             put(x1, y);
         }
     }
+}
+
+/// Crop frame over the whole picture (ZK-53): outside dimmed, the rule of thirds inside, and
+/// corner brackets / edge bars as handles — white with a dark rim, readable on any picture.
+fn draw_crop(pix: &mut Pixmap, view: &View, c: IRect, dpr: f64) {
+    use znimok_render::vello_cpu::color::PremulRgba8;
+    let (w, h) = (pix.width() as i64, pix.height() as i64);
+    let p0 = view.to_out(Point::new(c.x as f64, c.y as f64));
+    let p1 = view.to_out(Point::new(c.right() as f64, c.bottom() as f64));
+    let (x0, y0, x1, y1) = (
+        p0.x.round() as i64,
+        p0.y.round() as i64,
+        p1.x.round() as i64,
+        p1.y.round() as i64,
+    );
+    let data = pix.data_mut();
+    for y in 0..h {
+        for x in 0..w {
+            if x >= x0 && x < x1 && y >= y0 && y < y1 {
+                continue;
+            }
+            let p = &mut data[(y * w + x) as usize];
+            p.r = (p.r as u16 * 2 / 5) as u8;
+            p.g = (p.g as u16 * 2 / 5) as u8;
+            p.b = (p.b as u16 * 2 / 5) as u8;
+        }
+    }
+    let mut blend = |x: i64, y: i64, v: u8, k: u16| {
+        if x >= 0 && y >= 0 && x < w && y < h {
+            let p = &mut data[(y * w + x) as usize];
+            let mix = |d: u8| ((d as u16 * (255 - k) + v as u16 * k) / 255) as u8;
+            *p = PremulRgba8 {
+                r: mix(p.r),
+                g: mix(p.g),
+                b: mix(p.b),
+                a: mix(p.a).max(p.a),
+            };
+        }
+    };
+    // Thirds: faint white lines.
+    for i in 1..3 {
+        let gx = x0 + (x1 - x0) * i / 3;
+        let gy = y0 + (y1 - y0) * i / 3;
+        for y in y0..y1 {
+            blend(gx, y, 255, 90);
+        }
+        for x in x0..x1 {
+            blend(x, gy, 255, 90);
+        }
+    }
+    // Frame: a dark rim just outside, a white line on the edge.
+    for x in x0 - 1..=x1 {
+        blend(x, y0 - 1, 0, 120);
+        blend(x, y1, 0, 120);
+        blend(x, y0, 255, 230);
+        blend(x, y1 - 1, 255, 230);
+    }
+    for y in y0 - 1..=y1 {
+        blend(x0 - 1, y, 0, 120);
+        blend(x1, y, 0, 120);
+        blend(x0, y, 255, 230);
+        blend(x1 - 1, y, 255, 230);
+    }
+    // Handles: L-brackets at the corners, short bars on the edges, 3 px thick (logical).
+    let t = (3.0 * dpr).round().max(2.0) as i64;
+    let len = ((18.0 * dpr).round() as i64).min((x1 - x0) / 2).min((y1 - y0) / 2).max(t);
+    let mut bar = |ax: i64, ay: i64, bw: i64, bh: i64| {
+        for y in ay - 1..ay + bh + 1 {
+            for x in ax - 1..ax + bw + 1 {
+                let edge = x < ax || y < ay || x >= ax + bw || y >= ay + bh;
+                blend(x, y, if edge { 0 } else { 255 }, if edge { 110 } else { 255 });
+            }
+        }
+    };
+    let (mx, my) = ((x0 + x1) / 2, (y0 + y1) / 2);
+    // corners: horizontal and vertical arms, drawn outside the frame line
+    bar(x0 - t, y0 - t, len + t, t);
+    bar(x0 - t, y0, t, len);
+    bar(x1 - len, y0 - t, len + t, t);
+    bar(x1, y0, t, len);
+    bar(x0 - t, y1, len + t, t);
+    bar(x0 - t, y1 - len, t, len);
+    bar(x1 - len, y1, len + t, t);
+    bar(x1, y1 - len, t, len);
+    // edges
+    bar(mx - len / 2, y0 - t, len, t);
+    bar(mx - len / 2, y1, len, t);
+    bar(x0 - t, my - len / 2, t, len);
+    bar(x1, my - len / 2, t, len);
 }
 
 /// Selection outline and handles drawn straight into the pixmap, in screen pixels.

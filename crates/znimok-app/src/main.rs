@@ -683,6 +683,21 @@ fn wire(ui: &AppWindow, app: &Shared) {
     on!(ui, app, on_meta_edited, |a, w, field, value| {
         a.meta_edited(&w, &field, &value);
     });
+    on!(ui, app, on_image_action, |a, w, what| {
+        a.image_action(&w, &what);
+    });
+    on!(ui, app, on_set_tone, |a, w, field, v, last| {
+        a.set_tone(&w, &field, v, last);
+    });
+    on!(ui, app, on_compare, |a, w, on| {
+        a.set_compare(&w, on);
+    });
+    on!(ui, app, on_set_crop_size, |a, w, field, text| {
+        a.set_crop_size(&w, &field, &text);
+    });
+    on!(ui, app, on_size_edited, |a, w, field, text| {
+        a.size_edited(&w, &field, &text);
+    });
     on!(ui, app, on_zoom_to, |a, w, pos| {
         a.zoom_to(&w, pos);
     });

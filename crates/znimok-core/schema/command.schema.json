@@ -1501,9 +1501,24 @@
     },
     {
       "additionalProperties": false,
+      "description": "Mirrors left to right.",
       "properties": {
         "cmd": {
           "const": "mirror",
+          "type": "string"
+        }
+      },
+      "required": [
+        "cmd"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "description": "Mirrors top to bottom — one undo step (a half turn plus a horizontal mirror).",
+      "properties": {
+        "cmd": {
+          "const": "mirror_vertical",
           "type": "string"
         }
       },

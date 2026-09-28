@@ -651,7 +651,10 @@ impl Editor {
                     created: None,
                 })
             }
-            Command::Mirror => {
+            Command::Mirror | Command::MirrorVertical => {
+                if matches!(cmd, Command::MirrorVertical) {
+                    self.doc.rotate_quarters(2);
+                }
                 self.doc.mirror_horizontal();
                 Ok(Applied {
                     changes: vec![

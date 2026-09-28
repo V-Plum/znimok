@@ -27,6 +27,7 @@ use znimok_core::{
     Object, Raster, Rgb, Style,
 };
 
+pub mod develop;
 pub mod hide;
 pub mod reference;
 mod text;
@@ -144,6 +145,8 @@ pub struct Renderer {
     layouts: LayoutContext<text::Brush>,
     /// Cached uploads of `Document::banks`, keyed by bank index and generation.
     bank_cache: Vec<Option<(usize, Arc<Pixmap>)>>,
+    /// The source developed by the recipe (mirror, turns, tone), keyed by `develop::key`.
+    developed: Option<(u64, Arc<znimok_core::Raster>, Arc<Pixmap>)>,
     /// Hide tiles are computed in screenshot resolution and reused while nothing under them
     /// changes: key = (region, mode, strength, source generation).
     hide_cache: HashMap<(IRect, HideMode, u8, usize), Arc<Pixmap>>,
@@ -181,6 +184,7 @@ impl Renderer {
             fonts: FontContext::new(),
             layouts: LayoutContext::new(),
             bank_cache: Vec::new(),
+            developed: None,
             hide_cache: HashMap::new(),
             fx_cache: HashMap::new(),
             threads,
@@ -221,7 +225,7 @@ impl Renderer {
 
         // Source image, cropped to the frame.
         let frame = doc.frame();
-        let src = self.bank_pixmap(doc, doc.source as usize);
+        let (_, src) = self.developed(doc);
         self.ctx.set_transform(base);
         self.ctx.push_clip_layer(&irect(frame).to_path(0.1));
         let (iw, ih) = doc.image_size();
@@ -249,6 +253,31 @@ impl Renderer {
         if self.fx_cache.len() > 256 {
             self.fx_cache.clear();
         }
+    }
+
+    /// The picture as the document shows it (see [`develop`]); the identity recipe reuses the
+    /// source bank without a copy.
+    pub fn developed(&mut self, doc: &Document) -> (Arc<znimok_core::Raster>, Arc<Pixmap>) {
+        let src = doc.source();
+        let r = &doc.recipe;
+        let key = develop::key(src, r);
+        if let Some((k, raster, pix)) = &self.developed
+            && *k == key
+        {
+            return (raster.clone(), pix.clone());
+        }
+        let (raster, pix) = if develop::is_identity(r) {
+            (
+                doc.banks[doc.source as usize].clone(),
+                self.bank_pixmap(doc, doc.source as usize),
+            )
+        } else {
+            let d = Arc::new(develop::develop(src, r));
+            let p = Arc::new(raster_to_pixmap(&d));
+            (d, p)
+        };
+        self.developed = Some((key, raster.clone(), pix.clone()));
+        (raster, pix)
     }
 
     fn bank_pixmap(&mut self, doc: &Document, bank: usize) -> Arc<Pixmap> {
@@ -563,12 +592,11 @@ impl Renderer {
                         self.ctx.fill_rect(&rect);
                     }
                     HideMode::Blur | HideMode::Pixelate => {
-                        let src = doc.source();
                         let key = (
                             region,
                             *mode,
                             *strength,
-                            src.rgba.as_ptr() as usize ^ src.rgba.len(),
+                            develop::key(doc.source(), &doc.recipe) as usize,
                         );
                         let tile = match self.hide_cache.get(&key) {
                             Some(p) => Some(p.clone()),
@@ -817,7 +845,8 @@ impl Renderer {
     /// Pixels of everything below object `index` inside `region`, as a straight-alpha raster.
     /// Prototype: the source only, already rotated/cropped as the document shows it.
     fn below_pixels(&mut self, doc: &Document, _index: usize, region: IRect) -> Option<Raster> {
-        let src = doc.source();
+        let (src, _) = self.developed(doc);
+        let src = &*src;
         let (iw, ih) = (src.width as i32, src.height as i32);
         let x0 = region.x.max(0);
         let y0 = region.y.max(0);

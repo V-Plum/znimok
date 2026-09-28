@@ -262,7 +262,10 @@ pub enum Command {
         #[serde(default)]
         fill: Option<Rgb>,
     },
+    /// Mirrors left to right.
     Mirror,
+    /// Mirrors top to bottom — one undo step (a half turn plus a horizontal mirror).
+    MirrorVertical,
     SetName {
         name: String,
     },
@@ -652,6 +655,7 @@ pub fn examples() -> (Vec<Command>, Vec<Query>) {
             fill: Some(Rgb::WHITE),
         },
         Command::Mirror,
+        Command::MirrorVertical,
         Command::SetName {
             name: "Налаштування друку".into(),
         },

@@ -576,6 +576,51 @@ component ColourRow inherits HorizontalLayout {
     }
 }
 
+// Button that acts while held ("Compare": the original tone while the finger is down).
+component HoldButton inherits Rectangle {
+    in property <string> text;
+    in property <string> tip;
+    callback held(bool);
+    height: 28px;
+    border-radius: 7px;
+    background: ta.pressed ? Theme.control-on : (ta.has-hover ? #FFFFFF0D : Theme.elevated);
+    animate background { duration: 120ms; easing: ease-out; }
+    transform-origin: { x: self.width / 2, y: self.height / 2 };
+    transform-scale: ta.pressed ? 0.96 : 1.0;
+    animate transform-scale { duration: 140ms; easing: cubic-bezier(0.2, 0.8, 0.2, 1); }
+    Text {
+        text: root.text;
+        color: ta.pressed ? Theme.text : Theme.text2;
+        font-size: 12px;
+        font-weight: 600;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        width: parent.width;
+        height: parent.height;
+    }
+    ta := TipTouch {
+        tip: root.tip;
+        pointer-event(e) => {
+            if (e.kind == PointerEventKind.down) { root.held(true); }
+            if (e.kind == PointerEventKind.up || e.kind == PointerEventKind.cancel) { root.held(false); }
+        }
+    }
+}
+
+// A switch with its caption on the left.
+component SwitchRow inherits HorizontalLayout {
+    in property <string> text;
+    in-out property <bool> checked;
+    callback toggled;
+    spacing: 8px;
+    height: 24px;
+    Text { text: root.text; color: Theme.text2; font-size: 12px; vertical-alignment: center; horizontal-stretch: 1; wrap: word-wrap; }
+    VerticalLayout {
+        alignment: center;
+        Switch { checked <=> root.checked; toggled => { root.toggled(); } }
+    }
+}
+
 component CardView inherits Rectangle {
     in property <CardData> data;
     callback open;
@@ -914,6 +959,24 @@ export component AppWindow inherits Window {
     in property <int> selection-count;
     // inspector (ZK-54)
     in-out property <int> insp-tab: 0;
+    // Image tab (ZK-53): tone sliders as positions 0…1 plus their readings, crop panel, size.
+    in-out property <float> tone-exposure: 0.5;
+    in-out property <float> tone-gamma: 0.5;
+    in-out property <float> tone-contrast: 0.5;
+    in property <string> tone-exposure-text;
+    in property <string> tone-gamma-text;
+    in property <string> tone-contrast-text;
+    in property <bool> tone-default: true;
+    in property <bool> cropped;
+    in property <bool> crop-lock;
+    in-out property <string> crop-w;
+    in-out property <string> crop-h;
+    in property <string> crop-sizes;
+    in property <string> crop-outside;
+    in-out property <string> size-w;
+    in-out property <string> size-h;
+    in-out property <bool> size-keep: true;
+    in-out property <bool> size-scale-text: false;
     // Kind whose properties are shown (-1 none): 0 rect, 1 ellipse, 2 line, 3 pen, 4 text,
     // 5 hide, 6 marker, 7 counter, 8 stamp, 9 image. For a selection or, without one, for the
     // current tool's defaults.
@@ -995,6 +1058,11 @@ export component AppWindow inherits Window {
     callback layer-click(int, bool);
     callback layer-eye(int);
     callback meta-edited(string, string);
+    callback image-action(string);
+    callback set-tone(string, float, bool);
+    callback compare(bool);
+    callback set-crop-size(string, string);
+    callback size-edited(string, string);
 
     public function focus-library() { lib-keys.focus(); }
     public function focus-canvas() { keys.focus(); }
@@ -1308,7 +1376,7 @@ export component AppWindow inherits Window {
                         // Stable layout from v1: tools not implemented yet stay in place, disabled.
                         IconButton { width: 40px; height: 36px; tip-side: 1; label: @tr("tool-image" => "Image (I)"); tip: self.label + " — " + @tr("common-in-development" => "Coming soon"); icon: "M5 5 h14 a2 2 0 0 1 2 2 v10 a2 2 0 0 1 -2 2 H5 a2 2 0 0 1 -2 -2 V7 a2 2 0 0 1 2 -2 z M7 10 a1.5 1.5 0 1 0 3 0 a1.5 1.5 0 1 0 -3 0 M4 17 l5 -5 4 4 3 -3 4 4"; enabled: false; }
                         Rectangle { height: 9px; Rectangle { y: 4px; height: 1px; x: 8px; width: parent.width - 16px; background: Theme.line; } }
-                        IconButton { width: 40px; height: 36px; tip-side: 1; label: @tr("tool-crop" => "Crop (C)"); tip: self.label + " — " + @tr("common-in-development" => "Coming soon"); icon: "M6 2 v14 a2 2 0 0 0 2 2 h14 M2 6 h14 a2 2 0 0 1 2 2 v14"; enabled: false; }
+                        IconButton { width: 40px; height: 36px; tip-side: 1; label: @tr("tool-crop" => "Crop (C)"); icon: "M6 2 v14 a2 2 0 0 0 2 2 h14 M2 6 h14 a2 2 0 0 1 2 2 v14"; active: root.tool == 10; clicked => { root.tool-chosen(10); } }
                     }
                 }
                 Rectangle { width: 1px; background: Theme.line; }
@@ -1682,25 +1750,109 @@ export component AppWindow inherits Window {
                                 }
                             }
                         }
-                        // ---- Image
-                        if root.insp-tab == 2: VerticalLayout {
+                        // ---- Image (ZK-53): crop, turns, tone, size — a recipe over the original.
+                        if root.insp-tab == 2: ScrollView {
                             vertical-stretch: 1;
-                            spacing: 10px;
-                            alignment: start;
-                            Text { text: root.info-size; color: Theme.text; font-size: 16px; font-weight: 600; }
                             VerticalLayout {
-                                spacing: 2px;
-                                Text { text: @tr("meta-source" => "Source"); color: Theme.text3; font-size: 11px; }
-                                Text { text: root.info-source; color: Theme.text2; font-size: 12px; wrap: word-wrap; }
+                                spacing: 18px;
+                                // room for the scroll bar: this tab is taller than the panel
+                                padding-right: 12px;
+                                alignment: start;
+                                // Crop: the panel while the Crop tool is on, a button otherwise.
+                                if root.tool == 10: PropSection {
+                                    title: @tr("crop-title" => "Crop");
+                                    action-icon: "M4.5 12 a7.5 7.5 0 1 0 2.2 -5.3 M4.5 4 v4 h4";
+                                    action-tip: @tr("status-crop-whole" => "Crop: whole screenshot");
+                                    action => { root.image-action("crop-whole"); }
+                                    HorizontalLayout {
+                                        spacing: 8px;
+                                        NumField { label: @tr("insp-w" => "W"); value <=> root.crop-w; committed(v) => { root.set-crop-size("w", v); } }
+                                        NumField { label: @tr("insp-h" => "H"); value <=> root.crop-h; committed(v) => { root.set-crop-size("h", v); } }
+                                        IconButton { width: 28px; height: 26px; icon: "M8 11 V8 a4 4 0 0 1 8 0 v3 M6 11 h12 v9 H6 z"; active: root.crop-lock; label: @tr("crop-lock-ratio" => "Lock proportions"); clicked => { root.image-action("crop-lock"); } }
+                                    }
+                                    Text { text: root.crop-sizes; color: Theme.text2; font-size: 12px; wrap: word-wrap; }
+                                    if root.crop-outside != "": Text { text: root.crop-outside; color: Theme.text3; font-size: 11px; wrap: word-wrap; }
+                                    HorizontalLayout {
+                                        spacing: 8px;
+                                        alignment: end;
+                                        TextButton { text: @tr("common-cancel" => "Cancel"); clicked => { root.image-action("crop-cancel"); } }
+                                        TextButton { text: @tr("common-done" => "Done"); primary: true; clicked => { root.image-action("crop-done"); } }
+                                    }
+                                }
+                                if root.tool != 10: PropSection {
+                                    title: @tr("shot-crop" => "Crop");
+                                    action-icon: root.cropped ? "M4.5 12 a7.5 7.5 0 1 0 2.2 -5.3 M4.5 4 v4 h4" : "";
+                                    action-tip: @tr("status-crop-whole" => "Crop: whole screenshot");
+                                    action => { root.image-action("crop-whole"); }
+                                    HorizontalLayout {
+                                        spacing: 10px;
+                                        TextButton { text: @tr("shot-crop-button" => "Crop (C)"); icon: "M6 2 v14 a2 2 0 0 0 2 2 h14 M2 6 h14 a2 2 0 0 1 2 2 v14"; clicked => { root.image-action("crop"); } }
+                                        Text { text: root.crop-text; color: Theme.text3; font-size: 11px; vertical-alignment: center; overflow: elide; horizontal-stretch: 1; }
+                                    }
+                                }
+                                PropSection {
+                                    title: @tr("shot-rotate-mirror" => "Rotate and mirror");
+                                    HorizontalLayout {
+                                        spacing: 2px;
+                                        SegOption { icon: "M4 4 v5 h5 M4.6 9 A8 8 0 1 1 5.5 16.5"; tip: @tr("shot-rotate-left" => "Rotate left"); clicked => { root.image-action("rotate-left"); } }
+                                        SegOption { icon: "M20 4 v5 h-5 M19.4 9 A8 8 0 1 0 18.5 16.5"; tip: @tr("shot-rotate-right" => "Rotate right"); clicked => { root.image-action("rotate-right"); } }
+                                        SegOption { icon: "M12 2 v20 M8.5 6 L2.5 18 h6 z M15.5 6 l6 12 h-6 z"; tip: @tr("shot-mirror-h" => "Mirror horizontally"); clicked => { root.image-action("mirror-h"); } }
+                                        SegOption { icon: "M2 12 h20 M6 8.5 L18 2.5 v6 z M6 15.5 l12 6 v-6 z"; tip: @tr("shot-mirror-v" => "Mirror vertically"); clicked => { root.image-action("mirror-v"); } }
+                                    }
+                                }
+                                PropSection {
+                                    title: @tr("shot-tone" => "Tone");
+                                    action-icon: "M4.5 12 a7.5 7.5 0 1 0 2.2 -5.3 M4.5 4 v4 h4";
+                                    action-tip: @tr("shot-tone-reset-tip" => "Back to the tone as captured");
+                                    action-enabled: !root.tone-default;
+                                    action => { root.image-action("tone-reset"); }
+                                    PropRow {
+                                        label: @tr("shot-exposure" => "Exposure");
+                                        MiniSlider { horizontal-stretch: 1; value <=> root.tone-exposure; tip: @tr("shot-exposure" => "Exposure"); moved(v) => { root.set-tone("exposure", v, false); } released => { root.set-tone("exposure", root.tone-exposure, true); } }
+                                        Text { text: root.tone-exposure-text; color: Theme.text2; font-size: 11px; vertical-alignment: center; horizontal-alignment: right; width: 56px; }
+                                    }
+                                    PropRow {
+                                        label: @tr("shot-gamma" => "Gamma");
+                                        MiniSlider { horizontal-stretch: 1; value <=> root.tone-gamma; tip: @tr("shot-gamma" => "Gamma"); moved(v) => { root.set-tone("gamma", v, false); } released => { root.set-tone("gamma", root.tone-gamma, true); } }
+                                        Text { text: root.tone-gamma-text; color: Theme.text2; font-size: 11px; vertical-alignment: center; horizontal-alignment: right; width: 56px; }
+                                    }
+                                    PropRow {
+                                        label: @tr("shot-contrast" => "Contrast");
+                                        MiniSlider { horizontal-stretch: 1; value <=> root.tone-contrast; tip: @tr("shot-contrast" => "Contrast"); moved(v) => { root.set-tone("contrast", v, false); } released => { root.set-tone("contrast", root.tone-contrast, true); } }
+                                        Text { text: root.tone-contrast-text; color: Theme.text2; font-size: 11px; vertical-alignment: center; horizontal-alignment: right; width: 56px; }
+                                    }
+                                    HoldButton { text: @tr("shot-compare" => "Compare"); tip: @tr("shot-compare-tip" => "Hold to see the original frame"); held(on) => { root.compare(on); } }
+                                    Text { text: @tr("shot-tone-hint" => "A recipe over the original: the original stays untouched; Compare shows it while you hold."); color: Theme.text3; font-size: 11px; wrap: word-wrap; }
+                                }
+                                PropSection {
+                                    title: @tr("size-image-title" => "Image size");
+                                    HorizontalLayout {
+                                        spacing: 8px;
+                                        NumField { label: @tr("insp-w" => "W"); value <=> root.size-w; committed(v) => { root.size-edited("w", v); } }
+                                        NumField { label: @tr("insp-h" => "H"); value <=> root.size-h; committed(v) => { root.size-edited("h", v); } }
+                                    }
+                                    SwitchRow { text: @tr("size-keep-ratio" => "Keep proportions"); checked <=> root.size-keep; }
+                                    SwitchRow { text: @tr("size-scale-text" => "Scale text with the image"); checked <=> root.size-scale-text; }
+                                    Text { text: @tr("size-note-image" => "Line widths, counters and stamps keep their size; text scales only with the checkbox above."); color: Theme.text3; font-size: 11px; wrap: word-wrap; }
+                                    HorizontalLayout {
+                                        alignment: end;
+                                        TextButton { text: @tr("size-apply" => "Resize"); clicked => { root.image-action("size-apply"); } }
+                                    }
+                                }
+                                Rectangle { height: 1px; background: Theme.line; }
+                                VerticalLayout {
+                                    spacing: 2px;
+                                    Text { text: root.info-size; color: Theme.text; font-size: 14px; font-weight: 600; }
+                                    Text { text: @tr("meta-source" => "Source"); color: Theme.text3; font-size: 11px; }
+                                    Text { text: root.info-source; color: Theme.text2; font-size: 12px; wrap: word-wrap; }
+                                }
+                                VerticalLayout {
+                                    spacing: 2px;
+                                    Text { text: @tr("meta-taken" => "Date taken"); color: Theme.text3; font-size: 11px; }
+                                    Text { text: root.info-taken; color: Theme.text2; font-size: 12px; }
+                                }
+                                Text { text: root.info-path; color: Theme.text3; font-size: 10px; wrap: word-wrap; }
                             }
-                            VerticalLayout {
-                                spacing: 2px;
-                                Text { text: @tr("meta-taken" => "Date taken"); color: Theme.text3; font-size: 11px; }
-                                Text { text: root.info-taken; color: Theme.text2; font-size: 12px; }
-                            }
-                            Text { text: root.info-path; color: Theme.text3; font-size: 10px; wrap: word-wrap; }
-                            Rectangle { height: 1px; background: Theme.line; }
-                            Text { text: @tr("shot-crop" => "Crop") + " · " + @tr("shot-tone" => "Tone") + " · " + @tr("shot-rotate-mirror" => "Rotate and mirror") + " — " + @tr("common-in-development" => "Coming soon"); color: Theme.text3; font-size: 12px; wrap: word-wrap; }
                         }
                         // ---- Meta
                         if root.insp-tab == 3: ScrollView {

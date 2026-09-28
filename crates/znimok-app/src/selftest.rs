@@ -563,8 +563,102 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
         );
         ui.set_insp_tab(2);
     }));
-    steps.push(Box::new(|_, ui, r| {
+    steps.push(Box::new(|app, ui, r| {
         r.snapshot(ui, "11-image-tab");
+        // ZK-53: turns, mirrors, tone — the developed picture follows the recipe.
+        let size = |app: &Shared| app.borrow().s.as_ref().map(|s| s.ed.doc.image_size());
+        let before = size(app);
+        ui.invoke_image_action("rotate-right".into());
+        let turned = size(app);
+        r.check(
+            "rotate right swaps width and height",
+            before.zip(turned).is_some_and(|(b, t)| b == (t.1, t.0)),
+            format!("{before:?} → {turned:?}"),
+        );
+        ui.invoke_image_action("rotate-left".into());
+        ui.invoke_image_action("mirror-v".into());
+        ui.invoke_image_action("mirror-v".into());
+        let rec = app.borrow().s.as_ref().map(|s| s.ed.doc.recipe);
+        r.check(
+            "rotate back, mirror twice = as captured",
+            rec.is_some_and(|r| r.rot_quarters % 4 == 0 && !r.mirror),
+            format!("{rec:?}"),
+        );
+        ui.invoke_set_tone("exposure".into(), 0.6, false);
+        ui.invoke_set_tone("exposure".into(), 0.75, true);
+        ui.invoke_set_tone("contrast".into(), 0.7, true);
+        let rec = app.borrow().s.as_ref().map(|s| s.ed.doc.recipe);
+        r.check(
+            "tone sliders: +1 EV, +20 contrast",
+            rec.is_some_and(|r| r.exposure == 1.0 && r.contrast == 20),
+            format!("{rec:?} · {}", ui.get_tone_exposure_text()),
+        );
+        ui.invoke_compare(true);
+    }));
+    steps.push(Box::new(|app, ui, r| {
+        r.snapshot(ui, "17-compare");
+        ui.invoke_compare(false);
+        // One slider drag = one undo step: two drags (exposure, contrast) → two undos.
+        ui.invoke_undo();
+        let rec = app.borrow().s.as_ref().map(|s| s.ed.doc.recipe);
+        r.check(
+            "tone drag is one undo step",
+            rec.is_some_and(|r| r.exposure == 1.0 && r.contrast == 0),
+            format!("{rec:?}"),
+        );
+        ui.invoke_redo();
+    }));
+    steps.push(Box::new(|app, ui, r| {
+        r.snapshot(ui, "16-tone");
+        ui.invoke_image_action("tone-reset".into());
+        let def = ui.get_tone_default();
+        r.check("tone reset", def, String::new());
+        // Crop tool: the whole picture in view, a 200 × 100 frame typed in, Enter applies.
+        ui.invoke_tool_chosen(10);
+        ui.invoke_set_crop_size("w".into(), "200".into());
+        ui.invoke_set_crop_size("h".into(), "100".into());
+        let _ = app;
+    }));
+    steps.push(Box::new(|app, ui, r| {
+        r.snapshot(ui, "18-crop");
+        r.check(
+            "crop tool opens the Image tab",
+            ui.get_tool() == 10 && ui.get_insp_tab() == 2,
+            format!("tool {} tab {}", ui.get_tool(), ui.get_insp_tab()),
+        );
+        ui.invoke_key("\n".into(), false, false, false);
+        let crop = app.borrow().s.as_ref().and_then(|s| s.ed.doc.crop);
+        r.check(
+            "Enter applies the crop",
+            crop.is_some_and(|c| (c.w, c.h) == (200, 100)) && ui.get_tool() == 0,
+            format!("{crop:?}"),
+        );
+        ui.invoke_undo();
+        let crop = app.borrow().s.as_ref().and_then(|s| s.ed.doc.crop);
+        r.check("crop is one undo step", crop.is_none(), format!("{crop:?}"));
+        // Esc drops a crop being edited.
+        ui.invoke_tool_chosen(10);
+        ui.invoke_set_crop_size("w".into(), "50".into());
+        ui.invoke_key("\u{1b}".into(), false, false, false);
+        let crop = app.borrow().s.as_ref().and_then(|s| s.ed.doc.crop);
+        r.check("Esc cancels the crop", crop.is_none(), format!("{crop:?}"));
+        // Image size: half the width, proportions kept, then undone.
+        let (w, h) = app
+            .borrow()
+            .s
+            .as_ref()
+            .map(|s| s.ed.doc.image_size())
+            .unwrap_or((2, 2));
+        ui.set_size_w((w / 2).to_string().into());
+        ui.invoke_size_edited("w".into(), (w / 2).to_string().into());
+        ui.invoke_image_action("size-apply".into());
+        let now = app.borrow().s.as_ref().map(|s| s.ed.doc.image_size());
+        r.check(
+            "image size: half, proportions kept",
+            now.is_some_and(|(nw, nh)| nw == w / 2 && (nh as i64 - (h / 2) as i64).abs() <= 1),
+            format!("{w}×{h} → {now:?}"),
+        );
+        ui.invoke_undo();
         ui.set_insp_tab(3);
     }));
     steps.push(Box::new(|app, ui, r| {
