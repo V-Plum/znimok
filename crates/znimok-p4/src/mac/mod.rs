@@ -170,7 +170,9 @@ impl Reader {
     fn seek(&mut self, index: u32) -> Result<(f64, Retained<CMSampleBuffer>, CFRetained<CVImageBuffer>, u32), String> {
         // SAFETY: cancelling our own reader, then a fresh one.
         unsafe { self.reader.cancelReading() };
-        let from = (f64::from(index) - 0.25) / self.fps;
+        // AVAssetReader returns the frame that covers the range start and stamps it with the start
+        // time: starting a quarter frame early gave frame t−1 labelled as t. Start just inside t.
+        let from = (f64::from(index) + 0.1) / self.fps;
         let (r, o) = unsafe { Self::start(&self.asset, &self.track, Some(from.max(0.0)))? };
         self.reader = r;
         self.output = o;
