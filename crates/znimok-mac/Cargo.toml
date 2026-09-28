@@ -16,3 +16,5 @@ znimok-platform = { path = "../znimok-platform" }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 screencapturekit = { version = "11", features = ["macos_15_0"] }
+objc2-service-management = "0.3"
+objc2-foundation = "0.3"
