@@ -56,6 +56,12 @@ component IconButton inherits Rectangle {
     background: active ? Theme.control-on : (ta.has-hover && enabled ? Theme.elevated : transparent);
     accessible-role: button;
     accessible-label: label;
+    // Tactile press: a quick dip and back (iOS-like).
+    transform-origin: { x: self.width / 2, y: self.height / 2 };
+    transform-scale: ta.pressed ? 0.94 : 1.0;
+    animate transform-scale { duration: 140ms; easing: cubic-bezier(0.2, 0.8, 0.2, 1); }
+    animate background { duration: 120ms; easing: ease-out; }
+
     Icon {
         d: icon;
         tint: !enabled ? Theme.disabled : (active ? Theme.text : Theme.text2);
@@ -78,6 +84,12 @@ component TextButton inherits Rectangle {
     horizontal-stretch: 0;
     border-radius: 8px;
     background: primary ? (enabled ? (ta.has-hover ? #5189F7 : Theme.accent) : Theme.control-on) : (ta.has-hover && enabled ? Theme.elevated : transparent);
+    // Tactile press: a quick dip and back (iOS-like).
+    transform-origin: { x: self.width / 2, y: self.height / 2 };
+    transform-scale: ta.pressed ? 0.94 : 1.0;
+    animate transform-scale { duration: 140ms; easing: cubic-bezier(0.2, 0.8, 0.2, 1); }
+    animate background { duration: 120ms; easing: ease-out; }
+
     border-width: primary ? 0 : 1px;
     border-color: Theme.control-on;
     accessible-role: button;
@@ -115,6 +127,7 @@ component MenuItemRow inherits Rectangle {
     height: 34px;
     border-radius: 8px;
     background: ta.has-hover && enabled ? Theme.control-on : transparent;
+    animate background { duration: 100ms; easing: ease-out; }
     HorizontalLayout {
         padding-left: 10px;
         padding-right: 10px;
@@ -161,6 +174,13 @@ component CardView inherits Rectangle {
     background: Theme.panel;
     border-width: ta.has-hover ? 1.5px : 0;
     border-color: Theme.accent;
+    // Lifts a little under the pointer, dips when pressed.
+    transform-origin: { x: self.width / 2, y: self.height / 2 };
+    transform-scale: ta.pressed ? 0.98 : (ta.has-hover ? 1.02 : 1.0);
+    animate transform-scale { duration: 180ms; easing: cubic-bezier(0.2, 0.8, 0.2, 1); }
+    drop-shadow-blur: ta.has-hover ? 18px : 0px;
+    drop-shadow-color: #00000066;
+    animate drop-shadow-blur { duration: 180ms; easing: ease-out; }
     Rectangle {
         x: 8px;
         y: 8px;
@@ -229,10 +249,10 @@ export component Overlay inherits Window {
     in property <image> shot;
     // Selection, or the window under the pointer when nothing is dragged.
     in property <bool> has-sel;
-    in property <length> sel-x;
-    in property <length> sel-y;
-    in property <length> sel-w;
-    in property <length> sel-h;
+    in-out property <length> sel-x;
+    in-out property <length> sel-y;
+    in-out property <length> sel-w;
+    in-out property <length> sel-h;
     in property <string> sel-label;
     in property <bool> is-window;
     // Pointer (for the guides, the lens and the hint strip).
@@ -251,6 +271,11 @@ export component Overlay inherits Window {
     callback pointer(int, length, length, bool);
     callback key(string, bool);
     callback wheel(length);
+
+    // The frame glides from window to window while hovering (like the system screenshot tool);
+    // while dragging a region it follows the pointer exactly.
+    animate sel-x, sel-y, sel-w, sel-h { duration: root.is-window ? 140ms : 0ms; easing: cubic-bezier(0.2, 0.8, 0.2, 1); }
+    in property <bool> lens-pulse;
 
     Image {
         width: parent.width;
@@ -291,6 +316,8 @@ export component Overlay inherits Window {
         property <bool> up: root.pointer-y > parent.height - self.height - 28px - 80px;
         x: (parent.width - self.width) / 2;
         y: self.up ? 28px : parent.height - self.height - 28px;
+        // Moves out of the pointer's way with a small overshoot — a physical "hop".
+        animate y { duration: 320ms; easing: ease-out-back; }
         width: hints.preferred-width + 32px;
         height: 40px;
         border-radius: 12px;
@@ -309,7 +336,13 @@ export component Overlay inherits Window {
         }
     }
     // Magnifier: above-right of the pointer (like Little Helpers), flipping at the edges.
-    if root.lens-visible: Rectangle {
+    Rectangle {
+        opacity: root.lens-visible ? 1 : 0;
+        visible: self.opacity > 0.01;
+        animate opacity { duration: 140ms; easing: ease-in-out; }
+        transform-origin: { x: self.width / 2, y: self.height / 2 };
+        transform-scale: root.lens-pulse ? 1.07 : 1.0;
+        animate transform-scale { duration: 160ms; easing: ease-in-out; }
         property <length> info-h: 44px;
         property <length> gap: 24px;
         property <length> fx: root.pointer-x + self.gap + root.lens-size > parent.width ? root.pointer-x - self.gap - root.lens-size : root.pointer-x + self.gap;
@@ -477,7 +510,7 @@ export component AppWindow inherits Window {
     callback autosave-toggled(bool);
     callback tool-chosen(int);
     callback pointer(int, length, length, int, bool, bool);
-    callback wheel(length, length, length, bool, bool);
+    callback wheel(length, length, length, length, bool, bool, bool);
     callback key(string, bool, bool, bool);
     callback commit-text(string);
     callback cancel-text();
@@ -491,7 +524,9 @@ export component AppWindow inherits Window {
 
     // ================================================================= library
     Rectangle {
-        visible: root.page == 0;
+        opacity: root.page == 0 ? 1 : 0;
+        visible: self.opacity > 0.01;
+        animate opacity { duration: 160ms; easing: ease-in-out; }
         background: Theme.app;
         lib-keys := FocusScope {
             key-pressed(e) => {
@@ -604,7 +639,9 @@ export component AppWindow inherits Window {
 
     // ================================================================== editor
     Rectangle {
-        visible: root.page == 1;
+        opacity: root.page == 1 ? 1 : 0;
+        visible: self.opacity > 0.01;
+        animate opacity { duration: 160ms; easing: ease-in-out; }
         background: Theme.app;
         VerticalLayout {
             // top bar
@@ -811,7 +848,7 @@ export component AppWindow inherits Window {
                                 }
                             }
                             scroll-event(e) => {
-                                root.wheel(self.mouse-x, self.mouse-y, e.delta-y, e.modifiers.control, e.modifiers.alt);
+                                root.wheel(self.mouse-x, self.mouse-y, e.delta-x, e.delta-y, e.modifiers.control, e.modifiers.alt, e.modifiers.shift);
                                 return accept;
                             }
                         }
@@ -874,6 +911,7 @@ export component AppWindow inherits Window {
                                 border-radius: 7px;
                                 background: c;
                                 border-width: root.color-index == i ? 2px : 1px;
+                                animate border-width { duration: 140ms; easing: ease-out; }
                                 border-color: root.color-index == i ? Theme.text : #FFFFFF22;
                                 TouchArea { clicked => { root.set-color(i); } }
                             }
@@ -885,6 +923,7 @@ export component AppWindow inherits Window {
                                 horizontal-stretch: 1;
                                 border-radius: 7px;
                                 background: root.thick-index == i ? Theme.control-on : Theme.elevated;
+                                animate background { duration: 140ms; easing: ease-out; }
                                 Text { text: t; color: root.thick-index == i ? Theme.text : Theme.text2; font-size: 12px; font-weight: 600; horizontal-alignment: center; vertical-alignment: center; width: parent.width; height: parent.height; }
                                 TouchArea { clicked => { root.set-thick(i); } }
                             }

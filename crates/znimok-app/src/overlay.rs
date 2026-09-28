@@ -30,6 +30,8 @@ struct Session {
     window: Option<u64>,
     /// 0 = magnifier off, else 4 / 8 / 16 screen pixels per frame pixel.
     zoom: u32,
+    wheel_acc: f32,
+    wheel_pause: Option<std::time::Instant>,
     last_pointer: (f32, f32),
     /// The editor window was visible before the capture (show it again on cancel).
     editor_was_visible: bool,
@@ -53,21 +55,78 @@ pub fn cancel() {
     with_session(|_| Some(Outcome::Cancel));
 }
 
-/// macOS keeps ordinary windows below the menu bar, so a window the size of the display ends up
-/// shifted down and squeezed (the frozen menu bar showed twice, owner's live test 28.09).
-/// "Simple fullscreen" covers the whole display — menu bar and Dock hidden — without the
-/// animated move to a separate Space that native fullscreen makes.
-fn cover_display(ui: &Overlay, on: bool) {
+/// macOS keeps ordinary windows below the menu bar, so a window the size of the display ends
+/// up shifted down and squeezed (the frozen menu bar showed twice — owner's live tests 28.09;
+/// "simple fullscreen" did not help: it hides the menu bar only while Znimok is the active app,
+/// and a global hotkey leaves another app active). Like the system screenshot tool, the overlay
+/// goes above the menu bar and the Dock (screen-saver window level), on every Space and over
+/// full-screen apps, with its frame set to the whole screen.
+#[cfg(target_os = "macos")]
+fn ns_window(ui: &Overlay) -> Option<objc2::rc::Retained<objc2_app_kit::NSWindow>> {
+    use slint::winit_030::WinitWindowAccessor;
+    use slint::winit_030::winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
+    ui.window()
+        .with_winit_window(|w| {
+            let handle = w.window_handle().ok()?;
+            let RawWindowHandle::AppKit(a) = handle.as_raw() else {
+                return None;
+            };
+            // SAFETY: winit hands out the NSView of a live window; we are on the main thread.
+            let view: &objc2_app_kit::NSView = unsafe { a.ns_view.cast().as_ref() };
+            view.window()
+        })
+        .flatten()
+}
+
+fn cover_display(ui: &Overlay) {
     #[cfg(target_os = "macos")]
-    {
-        use slint::winit_030::WinitWindowAccessor;
-        use slint::winit_030::winit::platform::macos::WindowExtMacOS;
-        ui.window().with_winit_window(|w| {
-            w.set_simple_fullscreen(on);
-        });
+    if let Some(win) = ns_window(ui) {
+        use objc2_app_kit::{NSScreenSaverWindowLevel, NSWindowCollectionBehavior};
+        win.setLevel(NSScreenSaverWindowLevel);
+        win.setCollectionBehavior(
+            NSWindowCollectionBehavior::CanJoinAllSpaces
+                | NSWindowCollectionBehavior::FullScreenAuxiliary
+                | NSWindowCollectionBehavior::Stationary,
+        );
+        if let Some(screen) = win.screen() {
+            win.setFrame_display(screen.frame(), true);
+        }
     }
     #[cfg(not(target_os = "macos"))]
-    let _ = (ui, on);
+    let _ = ui;
+}
+
+/// For the self-test: does the overlay window cover its whole screen, menu bar included?
+/// `None` where the question does not apply (Windows places the window by pixels).
+pub fn covers_screen() -> Option<(bool, String)> {
+    #[cfg(target_os = "macos")]
+    {
+        let ui = handle()?;
+        let win = ns_window(&ui)?;
+        let screen = win.screen()?;
+        let (f, s) = (win.frame(), screen.frame());
+        let same = (f.origin.x - s.origin.x).abs() < 1.0
+            && (f.origin.y - s.origin.y).abs() < 1.0
+            && (f.size.width - s.size.width).abs() < 1.0
+            && (f.size.height - s.size.height).abs() < 1.0;
+        Some((
+            same,
+            format!(
+                "window {:.0},{:.0} {:.0}×{:.0} · screen {:.0},{:.0} {:.0}×{:.0} · level {}",
+                f.origin.x,
+                f.origin.y,
+                f.size.width,
+                f.size.height,
+                s.origin.x,
+                s.origin.y,
+                s.size.width,
+                s.size.height,
+                win.level()
+            ),
+        ))
+    }
+    #[cfg(not(target_os = "macos"))]
+    None
 }
 
 /// Shows the overlay over the frozen display. Runs on the UI thread.
@@ -94,6 +153,24 @@ pub fn open(frozen: Frozen, editor_was_visible: bool) -> Result<(), slint::Platf
     ui.on_key(|text, shift| with_session(|s| s.key(&text, shift)));
     ui.on_wheel(|dy| {
         with_session(|s| {
+            // A trackpad sends a stream of small deltas (and keeps going with momentum): add
+            // them up, step once past a threshold, then ignore the rest of the gesture for a
+            // moment — one flick = one zoom level (owner, MacBook, 28.09).
+            let now = std::time::Instant::now();
+            if s.wheel_pause.is_some_and(|t| now < t) {
+                return None;
+            }
+            if s.wheel_acc.signum() != dy.signum() {
+                s.wheel_acc = 0.0;
+            }
+            s.wheel_acc += dy;
+            if s.wheel_acc.abs() < 24.0 {
+                return None;
+            }
+            let dy = s.wheel_acc;
+            s.wheel_acc = 0.0;
+            s.wheel_pause = Some(now + std::time::Duration::from_millis(260));
+            let before = s.zoom;
             s.zoom = if dy > 0.0 {
                 match s.zoom {
                     0 => 4,
@@ -106,11 +183,21 @@ pub fn open(frozen: Frozen, editor_was_visible: bool) -> Result<(), slint::Platf
             };
             let (x, y) = s.last_pointer;
             s.update_lens(x, y);
+            if s.zoom != 0 && s.zoom != before {
+                // A short "breath" of the lens on each level change.
+                s.ui.set_lens_pulse(true);
+                let weak = s.ui.as_weak();
+                slint::Timer::single_shot(std::time::Duration::from_millis(90), move || {
+                    if let Some(ui) = weak.upgrade() {
+                        ui.set_lens_pulse(false);
+                    }
+                });
+            }
             None
         })
     });
     ui.show()?;
-    cover_display(&ui, true);
+    cover_display(&ui);
     {
         use slint::winit_030::WinitWindowAccessor;
         ui.window().with_winit_window(|w| w.focus_window());
@@ -126,6 +213,8 @@ pub fn open(frozen: Frozen, editor_was_visible: bool) -> Result<(), slint::Platf
         sel: None,
         window: None,
         zoom: 0,
+        wheel_acc: 0.0,
+        wheel_pause: None,
         last_pointer: (-100.0, -100.0),
         editor_was_visible,
     };
@@ -146,8 +235,6 @@ fn with_session(f: impl FnOnce(&mut Session) -> Option<Outcome>) {
     let Some(session) = SESSION.with(|s| s.borrow_mut().take()) else {
         return;
     };
-    // Give the menu bar and the Dock back before the window goes.
-    cover_display(&session.ui, false);
     let _ = session.ui.hide();
     let Session {
         frozen,

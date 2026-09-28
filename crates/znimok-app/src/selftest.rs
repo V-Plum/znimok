@@ -122,6 +122,46 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
         r.check("document open", open, format!("page {}", ui.get_page()));
         r.snapshot(ui, "01-editor");
     }));
+    // View: a picture smaller than the canvas is centred; zoom buttons animate; sideways scroll.
+    steps.push(Box::new(|app, ui, r| {
+        let (sc, dx, dy, _) = app.borrow().view_probe();
+        r.check(
+            "fit: picture centred",
+            sc < 1.0 && dx.abs() <= 1.0 && dy.abs() <= 1.0,
+            format!("scale {sc:.3}, off-centre {dx:.1}, {dy:.1}"),
+        );
+        ui.invoke_zoom_100();
+        let (s_now, ..) = app.borrow().view_probe();
+        r.check(
+            "100 % animates (not instant)",
+            (s_now - sc).abs() < 0.05,
+            format!("scale right after the click {s_now:.3}"),
+        );
+    }));
+    steps.push(Box::new(|app, ui, r| {
+        let (sc, _, _, ox) = app.borrow().view_probe();
+        r.check(
+            "100 % reached",
+            (sc - 1.0).abs() < 1e-6,
+            format!("scale {sc:.4}"),
+        );
+        ui.invoke_wheel(300.0, 300.0, -120.0, 0.0, false, false, false);
+        let (_, _, _, ox2) = app.borrow().view_probe();
+        r.check(
+            "sideways scroll moves the canvas",
+            ox2 > ox + 50.0,
+            format!("origin x {ox:.0} → {ox2:.0}"),
+        );
+        ui.invoke_zoom_fit();
+    }));
+    steps.push(Box::new(|app, _ui, r| {
+        let (sc, dx, dy, _) = app.borrow().view_probe();
+        r.check(
+            "fit again: centred",
+            sc < 1.0 && dx.abs() <= 1.0 && dy.abs() <= 1.0,
+            format!("scale {sc:.3}, off-centre {dx:.1}, {dy:.1}"),
+        );
+    }));
     steps.push(Box::new(|app, ui, r| {
         let (cx, cy) = centre(ui);
         app.borrow_mut().set_tool(ui, crate::app::tool::RECT);
@@ -355,6 +395,10 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
             has && win,
             format!("label {}", ov.get_sel_label()),
         );
+        // macOS: the overlay must sit above the menu bar, covering the whole screen.
+        if let Some((ok, detail)) = crate::overlay::covers_screen() {
+            r.check("overlay covers the whole screen (menu bar too)", ok, detail);
+        }
         // Guides: over the white window (lit, not veiled) the line must be dark.
         let gh = ov.get_guide_h().to_rgba8();
         let px300 = gh.as_ref().map(|b| b.as_slice()[300]);
@@ -371,11 +415,15 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
             !ov.get_lens_visible(),
             String::new(),
         );
-        ov.invoke_wheel(1.0);
-        let on4 = ov.get_lens_visible();
-        ov.invoke_wheel(1.0);
+        // A trackpad-like stream of small deltas turns the lens on one level only.
+        for _ in 0..30 {
+            ov.invoke_wheel(3.0);
+        }
+        let on4 = ov.get_lens_visible() && ov.get_lens_coords().ends_with("×4");
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        ov.invoke_wheel(30.0);
         r.check(
-            "wheel turns the magnifier on (×4, ×8)",
+            "wheel: one gesture = one level (×4, then ×8)",
             on4 && ov.get_lens_visible() && ov.get_lens_coords().starts_with("300, 250   ×8"),
             format!(
                 "{} · {} · {:.0} px",

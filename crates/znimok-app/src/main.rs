@@ -408,6 +408,19 @@ fn wire(ui: &AppWindow, app: &Shared) {
     {
         use slint::winit_030::{EventResult, WinitWindowAccessor, winit};
         ui.window().on_winit_window_event(move |_, ev| {
+            // macOS trackpad: pinch to zoom, double tap = fit ↔ 100 %.
+            match ev {
+                winit::event::WindowEvent::PinchGesture { delta, .. } => {
+                    let delta = *delta;
+                    with_ctx(|a, ui| a.pinch(ui, delta));
+                    return EventResult::PreventDefault;
+                }
+                winit::event::WindowEvent::DoubleTapGesture { .. } => {
+                    with_ctx(|a, ui| a.smart_zoom(ui));
+                    return EventResult::PreventDefault;
+                }
+                _ => {}
+            }
             if let winit::event::WindowEvent::DroppedFile(path) = ev {
                 let path = path.clone();
                 // Leave winit's handler first: the confirmation dialog runs a nested loop.
@@ -536,8 +549,8 @@ fn wire(ui: &AppWindow, app: &Shared) {
                               _alt| {
         a.pointer(&w, kind, x, y, button, shift);
     });
-    on!(ui, app, on_wheel, |a, w, x, y, dy, ctrl, alt| {
-        a.wheel(&w, x, y, dy, ctrl || alt);
+    on!(ui, app, on_wheel, |a, w, x, y, dx, dy, ctrl, alt, shift| {
+        a.wheel(&w, x, y, dx, dy, ctrl || alt, shift);
     });
     {
         let app = app.clone();

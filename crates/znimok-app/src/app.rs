@@ -136,6 +136,11 @@ pub struct App {
     pub autosave: bool,
     pub saving: bool,
     toast_at: Option<Instant>,
+    /// Zoom / fit animation in progress (ease-in-out, about a fixed screen point).
+    anim: Option<ViewAnim>,
+    anim_timer: slint::Timer,
+    /// Last pointer position on the canvas, output pixels (anchor for pinch and double tap).
+    last_out: Point,
 }
 
 fn args(pairs: &[(&'static str, String)]) -> FluentArgs<'static> {
@@ -185,6 +190,9 @@ impl App {
             autosave: true,
             saving: false,
             toast_at: None,
+            anim: None,
+            anim_timer: slint::Timer::default(),
+            last_out: Point::ZERO,
         }
     }
 
@@ -599,6 +607,10 @@ impl App {
             return;
         }
         let (out, p) = self.to_doc(x, y);
+        self.last_out = out;
+        if kind == 0 {
+            self.stop_anim();
+        }
         match kind {
             0 => self.pointer_down(ui, out, p, button, shift),
             1 => self.pointer_move(ui, out, p, shift),
@@ -860,6 +872,7 @@ impl App {
                     orig.x - (out.x - start_out.x) / sc,
                     orig.y - (out.y - start_out.y) / sc,
                 );
+                self.constrain();
                 self.dirty = true;
             }
         }
@@ -1010,21 +1023,76 @@ impl App {
         }
     }
 
-    pub fn wheel(&mut self, ui: &AppWindow, x: f32, y: f32, dy: f32, zoom: bool) {
+    /// Wheel and trackpad. With Ctrl (⌘ on macOS) or Alt it zooms about the pointer: a mouse
+    /// notch is one animated step, a trackpad's small deltas (and Windows' pinch, which arrives
+    /// as Ctrl+wheel) zoom smoothly in proportion. Without a modifier it scrolls both ways —
+    /// two-finger trackpad scrolling, Shift+wheel for sideways with a mouse (as in LH).
+    #[allow(clippy::too_many_arguments)]
+    pub fn wheel(
+        &mut self,
+        ui: &AppWindow,
+        x: f32,
+        y: f32,
+        dx: f32,
+        dy: f32,
+        zoom: bool,
+        shift: bool,
+    ) {
         if self.s.is_none() {
             return;
         }
         let out = Point::new(x as f64 * self.dpr, y as f64 * self.dpr);
+        self.last_out = out;
         if zoom {
-            let factor = if dy > 0.0 { 1.15 } else { 1.0 / 1.15 };
-            let z = self.view.scale * factor;
-            self.set_zoom(z, Some(out));
+            if dy.abs() >= 40.0 {
+                // A mouse notch: continue from where a running animation is heading.
+                let from = self.anim.as_ref().map_or(self.view.scale, |a| a.s1);
+                let target = from * if dy > 0.0 { 1.25 } else { 1.0 / 1.25 };
+                self.animate_zoom(target, Some(out));
+            } else {
+                self.stop_anim();
+                let factor = 1.0025_f64.powf(dy as f64);
+                self.set_zoom(self.view.scale * factor, Some(out));
+            }
         } else {
+            self.stop_anim();
+            let (dx, dy) = if shift && dx == 0.0 {
+                (dy, 0.0)
+            } else {
+                (dx, dy)
+            };
+            self.view.origin.x -= dx as f64 * self.dpr / self.view.scale;
             self.view.origin.y -= dy as f64 * self.dpr / self.view.scale;
+            self.constrain();
             self.dirty = true;
         }
         self.sync(ui);
         ui.window().request_redraw();
+    }
+
+    /// macOS trackpad pinch: `delta` is the change of magnification (+0.02 = 2 % bigger).
+    pub fn pinch(&mut self, ui: &AppWindow, delta: f64) {
+        if self.s.is_none() {
+            return;
+        }
+        self.stop_anim();
+        let out = self.last_out;
+        self.set_zoom(self.view.scale * (1.0 + delta).max(0.2), Some(out));
+        self.sync(ui);
+        ui.window().request_redraw();
+    }
+
+    /// Trackpad double tap ("smart zoom"): fit ↔ 100 % about the pointer.
+    pub fn smart_zoom(&mut self, ui: &AppWindow) {
+        if self.s.is_none() {
+            return;
+        }
+        let fit = self.fit_scale();
+        if (self.view.scale - fit).abs() < 0.01 {
+            self.animate_zoom(1.0, Some(self.last_out));
+        } else {
+            self.zoom_fit(ui);
+        }
     }
 
     // ------------------------------------------------------------------ keys and tools
@@ -1266,29 +1334,124 @@ impl App {
                 );
             }
         }
+        self.constrain();
         self.dirty = true;
     }
 
-    /// Fit with a margin; never enlarge beyond 100 % (a small shot stays sharp, LH behaviour).
-    fn fit(&mut self) {
+    /// Keeps the picture in view (owner, 28.09): smaller than the canvas → centred on that
+    /// axis; bigger → it may not be pulled away from an edge further than a small margin.
+    fn constrain(&mut self) {
         let Some(s) = self.s.as_ref() else { return };
+        let f = s.ed.doc.frame();
+        let sc = self.view.scale.max(1e-6);
+        let (vw, vh) = (self.view.width as f64 / sc, self.view.height as f64 / sc);
+        let m = 24.0 * self.dpr / sc;
+        let axis = |o: f64, start: f64, len: f64, view: f64| -> f64 {
+            if len + 2.0 * m <= view {
+                start + len / 2.0 - view / 2.0
+            } else {
+                o.clamp(start - m, start + len - view + m)
+            }
+        };
+        self.view.origin.x = axis(self.view.origin.x, f.x as f64, f.w as f64, vw);
+        self.view.origin.y = axis(self.view.origin.y, f.y as f64, f.h as f64, vh);
+    }
+
+    /// Fit with a margin; never enlarge beyond 100 % (a small shot stays sharp, LH behaviour).
+    fn fit_scale(&self) -> f64 {
+        let Some(s) = self.s.as_ref() else { return 1.0 };
         let f = s.ed.doc.frame();
         let margin = 24.0 * self.dpr;
         let w = (self.view.width as f64 - 2.0 * margin).max(16.0);
         let h = (self.view.height as f64 - 2.0 * margin).max(16.0);
-        let k = (w / f.w as f64).min(h / f.h as f64).min(1.0);
+        (w / f.w as f64).min(h / f.h as f64).min(1.0)
+    }
+
+    fn fit(&mut self) {
+        let k = self.fit_scale();
         self.set_zoom(k, None);
     }
 
     pub fn zoom_fit(&mut self, ui: &AppWindow) {
-        self.fit();
+        let k = self.fit_scale();
+        self.animate_zoom(k, None);
         self.sync(ui);
-        ui.window().request_redraw();
     }
 
     pub fn zoom_100(&mut self, ui: &AppWindow) {
         // 100 % = one screenshot pixel per physical screen pixel.
-        self.set_zoom(1.0, None);
+        self.animate_zoom(1.0, None);
+        self.sync(ui);
+    }
+
+    /// Animates the view to `scale` about `around` (output pixels; `None` = the picture's
+    /// centre): 220 ms, ease-in-out, the zoom anchored at the point both ends share, so the
+    /// picture grows or shrinks "about" a fixed spot like on iOS.
+    fn animate_zoom(&mut self, scale: f64, around: Option<Point>) {
+        let (s0, o0) = (self.view.scale, self.view.origin);
+        self.set_zoom(scale, around);
+        let (s1, o1) = (self.view.scale, self.view.origin);
+        self.view.scale = s0;
+        self.view.origin = o0;
+        if (s1 - s0).abs() < 1e-6 && (o1 - o0).hypot() < 1e-3 {
+            return;
+        }
+        self.anim = Some(ViewAnim {
+            s0,
+            s1,
+            o0,
+            o1,
+            start: Instant::now(),
+        });
+        if !self.anim_timer.running() {
+            self.anim_timer.start(
+                slint::TimerMode::Repeated,
+                std::time::Duration::from_millis(16),
+                || crate::with_ctx(|a, ui| a.tick_anim(ui)),
+            );
+        }
+    }
+
+    fn stop_anim(&mut self) {
+        if let Some(a) = self.anim.take() {
+            // Jump to where it was heading, so the next gesture starts from a settled view.
+            self.view.scale = a.s1;
+            self.view.origin = a.o1;
+            self.dirty = true;
+        }
+        self.anim_timer.stop();
+    }
+
+    /// For the self-test: scale, and where the picture's centre sits on the canvas relative to
+    /// the canvas centre (output pixels).
+    pub fn view_probe(&self) -> (f64, f64, f64, f64) {
+        let Some(s) = self.s.as_ref() else {
+            return (0.0, 0.0, 0.0, 0.0);
+        };
+        let (cx, cy) = s.ed.doc.frame().center();
+        let p = self.view.to_out(Point::new(cx, cy));
+        (
+            self.view.scale,
+            p.x - self.view.width as f64 / 2.0,
+            p.y - self.view.height as f64 / 2.0,
+            self.view.origin.x,
+        )
+    }
+
+    pub fn tick_anim(&mut self, ui: &AppWindow) {
+        let Some(a) = self.anim.as_ref() else {
+            self.anim_timer.stop();
+            return;
+        };
+        let t = (a.start.elapsed().as_secs_f64() / 0.22).min(1.0);
+        let (scale, origin) = a.at(t);
+        self.view.scale = scale;
+        self.view.origin = origin;
+        if t >= 1.0 {
+            self.anim = None;
+            self.anim_timer.stop();
+        }
+        self.dirty = true;
         self.sync(ui);
         ui.window().request_redraw();
     }
@@ -1391,8 +1554,19 @@ impl App {
             .map(|(_, tw, th)| (*tw, *th) != (w, h))
             .unwrap_or(true);
         if size_changed {
+            // Keep the doc point at the centre of the canvas where it was, then re-centre /
+            // clamp for the new size (owner, 28.09: a picture smaller than the window stays
+            // centred while the window is resized).
+            let c = self
+                .view
+                .to_doc(self.view.width as f64 / 2.0, self.view.height as f64 / 2.0);
             self.view.width = w.min(65535) as u16;
             self.view.height = h.min(65535) as u16;
+            let sc = self.view.scale.max(1e-6);
+            self.view.origin = Point::new(c.x - w as f64 / 2.0 / sc, c.y - h as f64 / 2.0 / sc);
+            if !self.fit_pending {
+                self.constrain();
+            }
             self.dirty = true;
         }
         if self.fit_pending && w > 1 && h > 1 {
@@ -1460,6 +1634,42 @@ impl App {
     pub fn gpu_lost(&mut self) {
         self.gpu = None;
         self.dirty = true;
+    }
+}
+
+/// One zoom / fit animation. Both ends are exact; in between the scale moves geometrically and
+/// the origin keeps the point both ends share fixed on screen.
+struct ViewAnim {
+    s0: f64,
+    s1: f64,
+    o0: Point,
+    o1: Point,
+    start: Instant,
+}
+
+impl ViewAnim {
+    fn at(&self, t: f64) -> (f64, Point) {
+        // ease-in-out (cubic)
+        let e = if t < 0.5 {
+            4.0 * t * t * t
+        } else {
+            1.0 - (-2.0 * t + 2.0).powi(3) / 2.0
+        };
+        let scale = (self.s0.ln() + (self.s1.ln() - self.s0.ln()) * e).exp();
+        let inv = 1.0 / self.s1 - 1.0 / self.s0;
+        let origin = if inv.abs() < 1e-9 {
+            Point::new(
+                self.o0.x + (self.o1.x - self.o0.x) * e,
+                self.o0.y + (self.o1.y - self.o0.y) * e,
+            )
+        } else {
+            // Fixed screen point p and doc point d: o(s) = d - p / s at both ends.
+            let px = (self.o0.x - self.o1.x) / inv;
+            let py = (self.o0.y - self.o1.y) / inv;
+            let (dx, dy) = (self.o0.x + px / self.s0, self.o0.y + py / self.s0);
+            Point::new(dx - px / scale, dy - py / scale)
+        };
+        (scale, origin)
     }
 }
 
