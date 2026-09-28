@@ -88,6 +88,36 @@ enum Cmd {
         #[arg(value_enum, default_value_t = SchemaKind::Command)]
         kind: SchemaKind,
     },
+    /// MCP server for AI agents on standard input/output (e.g. `claude mcp add znimok -- znimok mcp`).
+    Mcp,
+    /// What AI agents may do: switch MCP on/off, list, allow and revoke permissions, the journal.
+    Agents {
+        #[command(subcommand)]
+        cmd: AgentsCmd,
+    },
+}
+
+#[derive(Subcommand)]
+enum AgentsCmd {
+    /// Clients with lasting permissions and whether MCP is on.
+    List,
+    /// Switches the MCP server on.
+    Enable,
+    /// Switches the MCP server off (tools refuse).
+    Disable,
+    /// Allows a client a scope for good: capture, library_read, library_write, settings.
+    Allow { client: String, scopes: Vec<String> },
+    /// Takes back everything from one client, or from all with --all.
+    Revoke {
+        client: Option<String>,
+        #[arg(long)]
+        all: bool,
+    },
+    /// The latest entries of the agents' journal.
+    Log {
+        #[arg(long, default_value_t = 20)]
+        last: usize,
+    },
 }
 
 #[derive(Subcommand)]
@@ -506,6 +536,10 @@ fn run(cli: Cli) -> Result<(), Fail> {
                 text,
             );
         }
+        Cmd::Mcp => {
+            znimok_agents::serve_stdio().map_err(|e| Fail(3, e.to_string()))?;
+        }
+        Cmd::Agents { cmd } => agents(cmd, &out)?,
         Cmd::Schema { kind } => {
             let s = match kind {
                 SchemaKind::Command => znimok_core::command::command_schema(),
@@ -515,6 +549,118 @@ fn run(cli: Cli) -> Result<(), Fail> {
         }
     }
     Ok(())
+}
+
+fn agents(cmd: AgentsCmd, out: &dyn Fn(serde_json::Value, String)) -> Result<(), Fail> {
+    use znimok_agents::permissions::{Grant, Permissions, Scope};
+    let data = znimok_agents::data_dir();
+    let perms = Permissions::new(data.join("agents.json"));
+    let settings = znimok_settings::Store::open_default()
+        .ok_or_else(|| Fail(3, "no settings folder for this user".into()))?;
+    let set_enabled = |on: bool| -> Result<(), Fail> {
+        settings
+            .update(|s| s.agents.mcp_enabled = on)
+            .map(|_| ())
+            .map_err(|e| Fail(3, e.to_string()))
+    };
+    match cmd {
+        AgentsCmd::List => {
+            let on = settings.get().agents.mcp_enabled;
+            let clients = perms.clients();
+            let text = std::iter::once(format!("MCP: {}", if on { "on" } else { "off" }))
+                .chain(clients.iter().map(|(c, s)| {
+                    let names: Vec<&str> = s.iter().map(|x| x.name()).collect();
+                    format!("  {c}: {}", names.join(", "))
+                }))
+                .collect::<Vec<_>>()
+                .join("\n");
+            out(json!({"mcp_enabled": on, "clients": clients}), text);
+        }
+        AgentsCmd::Enable => {
+            set_enabled(true)?;
+            out(json!({"mcp_enabled": true}), "MCP: on".into());
+        }
+        AgentsCmd::Disable => {
+            set_enabled(false)?;
+            out(json!({"mcp_enabled": false}), "MCP: off".into());
+        }
+        AgentsCmd::Allow { client, scopes } => {
+            if scopes.is_empty() {
+                return Err(Fail(
+                    2,
+                    "name at least one scope: capture, library_read, library_write, settings"
+                        .into(),
+                ));
+            }
+            for s in &scopes {
+                let scope =
+                    Scope::parse(s).ok_or_else(|| Fail(2, format!("unknown scope «{s}»")))?;
+                perms
+                    .grant(&client, scope, Grant::Always)
+                    .map_err(|e| Fail(3, e.to_string()))?;
+            }
+            out(
+                json!({"client": client, "allowed": scopes}),
+                format!("{client}: allowed {}", scopes.join(", ")),
+            );
+        }
+        AgentsCmd::Revoke { client, all } => {
+            match (client, all) {
+                (_, true) => perms.revoke_all(),
+                (Some(c), false) => perms.revoke(&c),
+                (None, false) => return Err(Fail(2, "name a client or use --all".into())),
+            }
+            .map_err(|e| Fail(3, e.to_string()))?;
+            out(json!({"revoked": true}), "revoked".into());
+        }
+        AgentsCmd::Log { last } => {
+            let audit = znimok_agents::audit::Audit::open(data.join("agents-audit.jsonl"));
+            let e = audit.entries();
+            let tail: Vec<_> = e.iter().rev().take(last).rev().collect();
+            let text = tail
+                .iter()
+                .map(|x| {
+                    format!(
+                        "{} {} {} {}",
+                        chrono_ms(x.ts),
+                        x.client,
+                        x.tool,
+                        if x.ok {
+                            "ok"
+                        } else {
+                            x.error.as_deref().unwrap_or("error")
+                        }
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
+            out(json!(tail), text);
+        }
+    }
+    Ok(())
+}
+
+/// Unix milliseconds as local `YYYY-MM-DD HH:MM:SS` (no chrono in the CLI: via the std clock).
+fn chrono_ms(ms: i64) -> String {
+    let secs = ms.div_euclid(1000);
+    let days = secs.div_euclid(86_400);
+    let (h, m, s) = (
+        secs.rem_euclid(86_400) / 3600,
+        secs.rem_euclid(3600) / 60,
+        secs.rem_euclid(60),
+    );
+    // Civil from days (H. Hinnant), UTC.
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let mo = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = if mo <= 2 { y + 1 } else { y };
+    format!("{y:04}-{mo:02}-{d:02} {h:02}:{m:02}:{s:02} UTC")
 }
 
 fn main() -> ExitCode {

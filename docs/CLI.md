@@ -25,6 +25,26 @@ znimok apply shot.znimok \
 znimok query shot.znimok '{"query":"hit_test","x":120,"y":130}'
 ```
 
+## Agents (MCP)
+
+`znimok mcp` is an MCP server on standard input/output for AI agents — it speaks the stateless
+2026-07-28 protocol and the 2025-11-25 handshake. Tools: `list_displays`, `list_windows`,
+`capture_screen`, `capture_window`, `capture_region`, `annotate`, `export`, `library_search`,
+`library_get`, `ocr`, `redact_pii`; library documents are resources `znimok://library/<id>`.
+
+```sh
+claude mcp add znimok -- znimok mcp      # Claude Code
+znimok agents enable                     # MCP is off until switched on
+znimok agents list                       # on/off and lasting permissions per client
+znimok agents allow "Claude Code" capture library_read
+znimok agents revoke "Claude Code"       # or --all
+znimok agents log --last 20              # the journal: who, what, when (90 days, no contents)
+```
+
+The first use of a scope (`capture`, `library_read`, `library_write`, `settings`) by a client is
+approved by the person in the app («цей раз / ця сесія / завжди»); without the app running, only
+what was allowed with `znimok agents allow` works. See `docs/IPC.md` for what the app answers.
+
 ## Exit codes
 
 | Code | Meaning |
