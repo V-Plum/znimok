@@ -163,6 +163,7 @@ pub fn read(rgba: &[u8], width: u32) -> Reading {
 }
 
 /// Rows of the frame that `read` needs.
+#[cfg_attr(not(windows), allow(dead_code))]
 pub fn band_rows(width: u32) -> u32 {
     5 * block(width)
 }
