@@ -98,6 +98,17 @@ enum Drag {
         start_out: Point,
         orig: Point,
     },
+    /// Shift / Ctrl pressed on a mark: toggle on release, or move once dragged.
+    Toggle {
+        id: ObjectId,
+        was_selected: bool,
+        start: (i32, i32),
+        start_out: Point,
+    },
+    /// Selecting in the text being typed with the mouse (ZK-49).
+    TextSelect {
+        anchor: usize,
+    },
     /// Rubber-band selection with the Select tool from empty space (ZK-52).
     Marquee {
         start: (i32, i32),
@@ -134,9 +145,19 @@ enum LayerDrop {
     Into(usize),
 }
 
-enum Editing {
-    New { at: (i32, i32) },
-    Existing { id: ObjectId },
+/// A text mark being typed right on the canvas (ZK-49): every keystroke goes into the document,
+/// the canvas draws the real text with the caret and the selection over it; a hidden TextInput
+/// only takes the keys (and the input method).
+struct TextEdit {
+    /// The mark; `None` until the first character of a new text.
+    id: Option<ObjectId>,
+    at: (i32, i32),
+    /// All the typing is one undo step.
+    merge: MergeKey,
+    /// Something went into the document (Esc takes it back).
+    changed: bool,
+    cursor: usize,
+    anchor: usize,
 }
 
 pub struct Gpu {
@@ -188,6 +209,8 @@ pub struct App {
     text_px: i32,
     bold: bool,
     italic: bool,
+    /// Alignment of new texts (and of the selection's, ZK-49).
+    align: Align,
     /// One undo step per drag of the opacity slider.
     alpha_merge: Option<MergeKey>,
     /// Crop being edited (Crop tool), picture pixels. The document gets it as one `SetCrop`
@@ -203,7 +226,10 @@ pub struct App {
     size_shown: (u32, u32),
     drag: Option<Drag>,
     next_merge: u64,
-    editing: Option<Editing>,
+    editing: Option<TextEdit>,
+    /// Caret blink phase while typing.
+    caret_on: bool,
+    caret_timer: slint::Timer,
     pub autosave: bool,
     pub saving: bool,
     toast_at: Option<Instant>,
@@ -272,6 +298,7 @@ impl App {
             text_px: 0,
             bold: false,
             italic: false,
+            align: Align::Left,
             alpha_merge: None,
             crop: None,
             crop_lock: false,
@@ -281,6 +308,8 @@ impl App {
             drag: None,
             next_merge: 1,
             editing: None,
+            caret_on: true,
+            caret_timer: slint::Timer::default(),
             autosave: true,
             saving: false,
             toast_at: None,
@@ -850,6 +879,9 @@ impl App {
         if button != 0 {
             return;
         }
+        if self.editing.is_some() && self.text_press(ui, out, shift) {
+            return;
+        }
         self.finish_text(ui);
         if self.tool == tool::CROP {
             self.crop_down(out, p);
@@ -888,29 +920,15 @@ impl App {
         match tool {
             tool::SELECT => match hit_id {
                 Some(id) if extend => {
-                    // Toggle: a selected mark leaves the selection, another one joins it.
-                    if sel.contains(&id) {
-                        let rest: Vec<ObjectId> = sel.into_iter().filter(|s| *s != id).collect();
-                        if rest.is_empty() {
-                            self.apply(ui, Command::ClearSelection);
-                        } else {
-                            self.apply(
-                                ui,
-                                Command::Select {
-                                    ids: rest,
-                                    add: false,
-                                },
-                            );
-                        }
-                    } else {
-                        self.apply(
-                            ui,
-                            Command::Select {
-                                ids: vec![id],
-                                add: true,
-                            },
-                        );
-                    }
+                    // Shift / Ctrl on a mark: a click toggles it in the selection, a drag moves
+                    // the selection with it (owner, 29.09: Ctrl as a temporary Select must move
+                    // marks too). Which one it is shows once the pointer moves.
+                    self.drag = Some(Drag::Toggle {
+                        id,
+                        was_selected: sel.contains(&id),
+                        start: p,
+                        start_out: out,
+                    });
                 }
                 Some(id) => {
                     if !sel.contains(&id) {
@@ -988,6 +1006,37 @@ impl App {
             return;
         };
         match drag {
+            Drag::Toggle {
+                id,
+                was_selected,
+                start,
+                start_out,
+            } => {
+                if (out - start_out).hypot() < 3.0 * self.dpr {
+                    return;
+                }
+                if !was_selected {
+                    self.apply(
+                        ui,
+                        Command::Select {
+                            ids: vec![id],
+                            add: true,
+                        },
+                    );
+                }
+                let merge = self.merge_key();
+                self.drag = Some(Drag::Move { last: start, merge });
+                self.pointer_move(ui, out, p, shift);
+            }
+            Drag::TextSelect { anchor } => {
+                if let Some(o) = self.edited_object().cloned() {
+                    let pd = self.view.to_doc(out.x, out.y);
+                    if let Some(i) = self.renderer.text_hit(&o, pd.x, pd.y) {
+                        ui.invoke_edit_select(anchor as i32, i as i32);
+                        self.text_cursor(ui, i as i32, anchor as i32);
+                    }
+                }
+            }
             Drag::CropNew { start, .. } => {
                 self.crop = Some(self.crop_from(start, p, shift));
                 self.dirty = true;
@@ -1168,7 +1217,14 @@ impl App {
         }
     }
 
-    fn pointer_up(&mut self, _ui: &AppWindow) {
+    fn pointer_up(&mut self, ui: &AppWindow) {
+        if let Some(Drag::Toggle {
+            id, was_selected, ..
+        }) = self.drag
+        {
+            self.drag = None;
+            self.toggle_selected(ui, id, was_selected);
+        }
         // A click without a drag on the picture keeps the frame that was there.
         if let Some(Drag::CropNew { prev, .. }) = self.drag
             && self.crop.is_none_or(|c| c.w < 2 || c.h < 2)
@@ -1178,6 +1234,32 @@ impl App {
         self.drag = None;
         self.marquee = None;
         self.dirty = true;
+    }
+
+    /// Shift / Ctrl click on a mark: a selected one leaves the selection, another one joins it.
+    fn toggle_selected(&mut self, ui: &AppWindow, id: ObjectId, was_selected: bool) {
+        if was_selected {
+            let rest: Vec<ObjectId> = self.selection().into_iter().filter(|s| *s != id).collect();
+            if rest.is_empty() {
+                self.apply(ui, Command::ClearSelection);
+            } else {
+                self.apply(
+                    ui,
+                    Command::Select {
+                        ids: rest,
+                        add: false,
+                    },
+                );
+            }
+        } else {
+            self.apply(
+                ui,
+                Command::Select {
+                    ids: vec![id],
+                    add: true,
+                },
+            );
+        }
     }
 
     // ------------------------------------------------------------------ cursor (ZK-47)
@@ -1191,6 +1273,12 @@ impl App {
         if ui.get_canvas_cursor() != c {
             ui.set_canvas_cursor(c);
         }
+    }
+
+    /// For the self-test: where a document point is on the canvas, in logical pixels.
+    pub fn doc_to_logical(&self, x: f64, y: f64) -> (f32, f32) {
+        let o = self.view.to_out(Point::new(x, y));
+        ((o.x / self.dpr) as f32, (o.y / self.dpr) as f32)
     }
 
     /// For the self-test: the cursor over a document point.
@@ -1211,9 +1299,21 @@ impl App {
             return ARROW;
         };
         let doc = &s.ed.doc;
+        if let Some(o) = self.edited_object() {
+            let pd = self.view.to_doc(out.x, out.y);
+            let b = o.bounds();
+            if pd.x >= b.x as f64
+                && pd.x <= b.right() as f64
+                && pd.y >= b.y as f64
+                && pd.y <= b.bottom() as f64
+            {
+                return TEXT;
+            }
+        }
         match &self.drag {
+            Some(Drag::TextSelect { .. }) => return TEXT,
             Some(Drag::Pan { .. }) => return GRABBING,
-            Some(Drag::Move { .. }) => return MOVE,
+            Some(Drag::Move { .. } | Drag::Toggle { .. }) => return MOVE,
             Some(Drag::Resize { id, handle, .. }) => {
                 return match doc.get(*id).map(|o| o.kind()) {
                     Some(Kind::Line) => CROSS,
@@ -1425,94 +1525,194 @@ impl App {
     }
 
     fn start_text(&mut self, ui: &AppWindow, p: (i32, i32), existing: Option<ObjectId>) {
-        let (at, text) =
-            match existing.and_then(|id| self.s.as_ref()?.ed.doc.get(id).map(|o| (id, o))) {
-                Some((id, o)) => {
-                    let t = match &o.data {
-                        Data::Text { text, .. } => text.clone(),
-                        _ => String::new(),
-                    };
-                    let at = (o.rect.x, o.rect.y);
-                    self.editing = Some(Editing::Existing { id });
-                    (at, t)
-                }
-                None => {
-                    self.editing = Some(Editing::New { at: p });
-                    (p, String::new())
-                }
-            };
+        let existing = existing.and_then(|id| {
+            let o = self.s.as_ref()?.ed.doc.get(id)?;
+            match &o.data {
+                Data::Text { text, .. } => Some((id, (o.rect.x, o.rect.y), text.clone())),
+                _ => None,
+            }
+        });
+        let (id, at, text) = match existing {
+            Some((id, at, t)) => (Some(id), at, t),
+            None => (None, p, String::new()),
+        };
+        if let Some(id) = id
+            && !self.selection().contains(&id)
+        {
+            self.apply(
+                ui,
+                Command::Select {
+                    ids: vec![id],
+                    add: false,
+                },
+            );
+        }
+        let merge = self.merge_key();
+        let len = text.len();
+        self.editing = Some(TextEdit {
+            id,
+            at,
+            merge,
+            changed: false,
+            cursor: len,
+            anchor: if id.is_some() { 0 } else { len },
+        });
+        // The hidden input sits where the text is, so an input method's window appears there.
         let o = self.view.to_out(Point::new(at.0 as f64, at.1 as f64));
         ui.set_edit_x((o.x / self.dpr) as f32);
-        ui.set_edit_y((o.y / self.dpr - 6.0) as f32);
+        ui.set_edit_y((o.y / self.dpr) as f32);
         ui.set_edit_text(text.into());
         ui.set_editing(true);
-    }
-
-    pub fn commit_text(&mut self, ui: &AppWindow, text: &str) {
-        let Some(editing) = self.editing.take() else {
-            return;
-        };
-        ui.set_editing(false);
-        let text = text.trim_end().to_string();
-        match editing {
-            Editing::New { at } => {
-                if !text.trim().is_empty() {
-                    let size = self.text_size();
-                    let obj = Object::new(
-                        IRect::new(at.0, at.1, 1, 1),
-                        Data::Text {
-                            text,
-                            size,
-                            bold: self.bold,
-                            italic: self.italic,
-                            align: Align::Left,
-                            box_w: 0,
-                        },
-                    )
-                    .with_style(self.style_for(tool::TEXT));
-                    let merge = self.merge_key();
-                    if let Some(a) = self.apply(
-                        ui,
-                        Command::AddObject {
-                            object: obj,
-                            select: true,
-                            merge: Some(merge.clone()),
-                        },
-                    ) && let Some(id) = a.created
-                    {
-                        self.fit_text(ui, id, Some(merge));
-                    }
-                }
-            }
-            Editing::Existing { id } => {
-                if text.trim().is_empty() {
-                    self.apply(ui, Command::DeleteObjects { ids: vec![id] });
-                } else {
-                    let merge = self.merge_key();
-                    self.apply(
-                        ui,
-                        Command::UpdateObjects {
-                            ids: vec![id],
-                            patch: ObjectPatch {
-                                text: Some(text),
-                                ..Default::default()
-                            },
-                            merge: Some(merge.clone()),
-                        },
-                    );
-                    self.fit_text(ui, id, Some(merge));
-                }
-            }
-        }
-        ui.invoke_focus_canvas();
+        // An existing text opens all selected (typing replaces it), a new one empty.
+        ui.invoke_edit_select(if id.is_some() { 0 } else { len as i32 }, len as i32);
+        self.blink_restart();
+        self.dirty = true;
         self.sync(ui);
         ui.window().request_redraw();
     }
 
-    pub fn cancel_text(&mut self, ui: &AppWindow) {
-        self.editing = None;
+    /// The hidden input changed: the text goes into the document at once.
+    pub fn text_edited(&mut self, ui: &AppWindow, cursor: i32, anchor: i32) {
+        let text = ui.get_edit_text().to_string();
+        let Some(ed) = self.editing.as_mut() else {
+            return;
+        };
+        ed.cursor = cursor.max(0) as usize;
+        ed.anchor = anchor.max(0) as usize;
+        let (id, at, merge) = (ed.id, ed.at, ed.merge.clone());
+        match id {
+            None if text.is_empty() => {}
+            None => {
+                let size = self.text_size();
+                let obj = Object::new(
+                    IRect::new(at.0, at.1, 1, 1),
+                    Data::Text {
+                        text,
+                        size,
+                        bold: self.bold,
+                        italic: self.italic,
+                        align: self.align,
+                        box_w: 0,
+                    },
+                )
+                .with_style(self.style_for(tool::TEXT));
+                if let Some(a) = self.apply(
+                    ui,
+                    Command::AddObject {
+                        object: obj,
+                        select: true,
+                        merge: Some(merge.clone()),
+                    },
+                ) && let Some(id) = a.created
+                {
+                    self.fit_text(ui, id, Some(merge));
+                    if let Some(ed) = self.editing.as_mut() {
+                        ed.id = Some(id);
+                        ed.changed = true;
+                    }
+                }
+            }
+            Some(id) => {
+                self.apply(
+                    ui,
+                    Command::UpdateObjects {
+                        ids: vec![id],
+                        patch: ObjectPatch {
+                            text: Some(text),
+                            ..Default::default()
+                        },
+                        merge: Some(merge.clone()),
+                    },
+                );
+                self.fit_text(ui, id, Some(merge));
+                if let Some(ed) = self.editing.as_mut() {
+                    ed.changed = true;
+                }
+            }
+        }
+        self.blink_restart();
+        self.dirty = true;
+        self.sync(ui);
+        ui.window().request_redraw();
+    }
+
+    /// The caret moved or the selection changed in the hidden input.
+    pub fn text_cursor(&mut self, ui: &AppWindow, cursor: i32, anchor: i32) {
+        if let Some(ed) = self.editing.as_mut() {
+            ed.cursor = cursor.max(0) as usize;
+            ed.anchor = anchor.max(0) as usize;
+            self.blink_restart();
+            self.dirty = true;
+            ui.window().request_redraw();
+        }
+    }
+
+    fn blink_restart(&mut self) {
+        self.caret_on = true;
+        self.caret_timer.start(
+            slint::TimerMode::Repeated,
+            std::time::Duration::from_millis(530),
+            || {
+                crate::with_ctx(|a, ui| {
+                    if a.editing.is_some() {
+                        a.caret_on = !a.caret_on;
+                        a.dirty = true;
+                        ui.window().request_redraw();
+                    } else {
+                        a.caret_timer.stop();
+                    }
+                })
+            },
+        );
+    }
+
+    /// Enter / a click elsewhere / another tool: the text stays; an emptied text goes away.
+    pub fn commit_text(&mut self, ui: &AppWindow, text: &str) {
+        let Some(ed) = self.editing.take() else {
+            return;
+        };
+        self.caret_timer.stop();
         ui.set_editing(false);
+        let trimmed = text.trim_end().to_string();
+        if let Some(id) = ed.id {
+            if trimmed.trim().is_empty() {
+                self.apply(ui, Command::DeleteObjects { ids: vec![id] });
+            } else if trimmed != text {
+                // Trailing spaces and newlines do not stay.
+                self.apply(
+                    ui,
+                    Command::UpdateObjects {
+                        ids: vec![id],
+                        patch: ObjectPatch {
+                            text: Some(trimmed),
+                            ..Default::default()
+                        },
+                        merge: Some(ed.merge.clone()),
+                    },
+                );
+                self.fit_text(ui, id, Some(ed.merge));
+            }
+        }
         ui.invoke_focus_canvas();
+        self.dirty = true;
+        self.sync(ui);
+        ui.window().request_redraw();
+    }
+
+    /// Esc: the text as it was before typing started.
+    pub fn cancel_text(&mut self, ui: &AppWindow) {
+        let Some(ed) = self.editing.take() else {
+            return;
+        };
+        self.caret_timer.stop();
+        ui.set_editing(false);
+        if ed.changed {
+            self.apply(ui, Command::Undo);
+        }
+        ui.invoke_focus_canvas();
+        self.dirty = true;
+        self.sync(ui);
+        ui.window().request_redraw();
     }
 
     /// Commits a text being typed (clicking elsewhere, saving, undo).
@@ -1520,6 +1720,61 @@ impl App {
         if self.editing.is_some() {
             let t = ui.get_edit_text().to_string();
             self.commit_text(ui, &t);
+        }
+    }
+
+    /// The mark being typed into, for the caret and clicks.
+    fn edited_object(&self) -> Option<&Object> {
+        let id = self.editing.as_ref()?.id?;
+        self.s.as_ref()?.ed.doc.get(id)
+    }
+
+    /// A press inside the text being typed places the caret there (Shift extends); returns
+    /// false when the press is elsewhere.
+    fn text_press(&mut self, ui: &AppWindow, out: Point, shift: bool) -> bool {
+        let Some(o) = self.edited_object().cloned() else {
+            return false;
+        };
+        let pd = self.view.to_doc(out.x, out.y);
+        let b = o.bounds();
+        let slack = 6.0 / self.view.scale.max(1e-6);
+        if pd.x < b.x as f64 - slack
+            || pd.x > b.right() as f64 + slack
+            || pd.y < b.y as f64 - slack
+            || pd.y > b.bottom() as f64 + slack
+        {
+            return false;
+        }
+        let Some(i) = self.renderer.text_hit(&o, pd.x, pd.y) else {
+            return false;
+        };
+        let anchor = if shift {
+            self.editing.as_ref().map_or(i, |e| e.anchor)
+        } else {
+            i
+        };
+        ui.invoke_edit_select(anchor as i32, i as i32);
+        self.text_cursor(ui, i as i32, anchor as i32);
+        self.drag = Some(Drag::TextSelect { anchor });
+        true
+    }
+
+    /// Double click with Select on a text mark: type into it.
+    pub fn canvas_double(&mut self, ui: &AppWindow, x: f32, y: f32) {
+        let (_, p) = self.to_doc(x, y);
+        let px = self.view.scale / self.dpr;
+        let hit = self.s.as_ref().and_then(|s| {
+            let doc = &s.ed.doc;
+            hit::pick(doc, (p.0 as f64, p.1 as f64), px)
+                .map(|i| &doc.objects[i])
+                .filter(|o| o.kind() == Kind::Text)
+                .map(|o| o.id)
+        });
+        if let Some(id) = hit
+            && self.editing.is_none()
+        {
+            self.drag = None;
+            self.start_text(ui, p, Some(id));
         }
     }
 
@@ -1891,6 +2146,27 @@ impl App {
                 };
                 self.patch_selected(ui, |o| o.kind().fx_allowed(), style(sp), None);
             }
+            "align" => {
+                self.align = match v {
+                    1 => Align::Center,
+                    2 => Align::Right,
+                    _ => Align::Left,
+                };
+                let a = self.align;
+                self.patch_text(ui, move |t| {
+                    if let Data::Text { align, .. } = t {
+                        *align = a;
+                    }
+                });
+            }
+            "box-auto" => {
+                // The block is as wide as its longest line again.
+                self.patch_text(ui, |t| {
+                    if let Data::Text { box_w, .. } = t {
+                        *box_w = 0;
+                    }
+                });
+            }
             "stroke-none" => {
                 self.no_stroke = true;
                 self.patch_selected(
@@ -2192,6 +2468,50 @@ impl App {
                 self.fit_text(ui, id, Some(merge.clone()));
             }
         }
+        self.sync(ui);
+        ui.window().request_redraw();
+    }
+
+    /// Changes the data of every selected text mark (one undo step) and re-measures them.
+    fn patch_text(&mut self, ui: &AppWindow, f: impl Fn(&mut Data)) {
+        let texts: Vec<(ObjectId, Data)> = {
+            let Some(s) = self.s.as_ref() else { return };
+            s.ed.selection()
+                .iter()
+                .filter_map(|id| s.ed.doc.get(*id))
+                .filter(|o| o.kind() == Kind::Text)
+                .map(|o| {
+                    let mut d = o.data.clone();
+                    f(&mut d);
+                    (o.id, d)
+                })
+                .collect()
+        };
+        let merge = self.merge_key();
+        for (id, data) in texts {
+            self.apply(
+                ui,
+                Command::UpdateObjects {
+                    ids: vec![id],
+                    patch: ObjectPatch {
+                        data: Some(data),
+                        ..Default::default()
+                    },
+                    merge: Some(merge.clone()),
+                },
+            );
+            self.fit_text(ui, id, Some(merge.clone()));
+        }
+    }
+
+    /// Typed block width of a text: 0 or empty = as wide as the text.
+    pub fn set_text_box(&mut self, ui: &AppWindow, text: &str) {
+        let w = text.trim().parse::<i32>().unwrap_or(0).clamp(0, 20000);
+        self.patch_text(ui, move |t| {
+            if let Data::Text { box_w, .. } = t {
+                *box_w = if w < 8 { 0 } else { w };
+            }
+        });
         self.sync(ui);
         ui.window().request_redraw();
     }
@@ -3416,6 +3736,17 @@ impl App {
                     ui.set_text_bold(bold);
                     ui.set_text_italic(italic);
                 }
+                if let Data::Text { align, box_w, .. } = o.data {
+                    ui.set_text_align(align_index(align));
+                    ui.set_text_box(
+                        if box_w > 0 {
+                            box_w.to_string()
+                        } else {
+                            String::new()
+                        }
+                        .into(),
+                    );
+                }
                 ui.set_geom_x(o.rect.x.to_string().into());
                 ui.set_geom_y(o.rect.y.to_string().into());
                 ui.set_geom_w(o.rect.w.to_string().into());
@@ -3455,6 +3786,8 @@ impl App {
                 ui.set_text_size_px(self.text_size().to_string().into());
                 ui.set_text_bold(self.bold);
                 ui.set_text_italic(self.italic);
+                ui.set_text_align(align_index(self.align));
+                ui.set_text_box("".into());
             }
         }
         // Layers: front first; unnamed marks are "<kind> <n>", numbered per kind bottom-up. A
@@ -3545,6 +3878,13 @@ impl App {
                     self.tr.tr("crop-hint-cancel"),
                     self.tr.tr("crop-hint-move")
                 )
+            } else if self.editing.is_some() {
+                format!(
+                    "Enter — {} · Shift+Enter — {} · Esc — {}",
+                    self.tr.tr("text-hint-done"),
+                    self.tr.tr("text-hint-newline"),
+                    self.tr.tr("text-hint-cancel")
+                )
             } else {
                 self.tr.tr(tool::NAMES[self.tool])
             }
@@ -3613,7 +3953,32 @@ impl App {
         if let Some(c) = self.crop {
             draw_crop(&mut self.pixmap, &self.view, c, self.dpr);
         }
-        for id in s.ed.selection() {
+        let typing = self.editing.as_ref().and_then(|e| e.id);
+        if let Some(ed) = self.editing.as_ref() {
+            let caret = match ed.id.and_then(|id| s.ed.doc.get(id)) {
+                Some(o) => self.renderer.text_caret(o, ed.cursor, ed.anchor),
+                None => {
+                    // Nothing typed yet: a caret one line high where the text will start.
+                    let h = self.text_size() as f64 * 1.25;
+                    let (x, y) = (ed.at.0 as f64, ed.at.1 as f64);
+                    Some((
+                        znimok_render::vello_cpu::kurbo::Rect::new(x, y, x + 1.0, y + h),
+                        Vec::new(),
+                    ))
+                }
+            };
+            if let Some((c, sel)) = caret {
+                draw_text_caret(
+                    &mut self.pixmap,
+                    &self.view,
+                    c,
+                    &sel,
+                    self.caret_on,
+                    self.dpr,
+                );
+            }
+        }
+        for id in s.ed.selection().iter().filter(|id| Some(**id) != typing) {
             if let Some(o) = s.ed.doc.get(*id) {
                 draw_selection(&mut self.pixmap, &self.view, o, self.dpr);
             }
@@ -3787,6 +4152,58 @@ pub fn release_pointer(w: &slint::Window) {
         button: PointerEventButton::Left,
     });
     w.dispatch_event(WindowEvent::PointerExited);
+}
+
+/// Caret and selection of the text being typed, in screen pixels: the selection as a translucent
+/// accent under a thin outline, the caret as a 2-point bar with a light rim (readable on dark and
+/// light pictures), blinking.
+fn draw_text_caret(
+    pix: &mut Pixmap,
+    view: &View,
+    caret: znimok_render::vello_cpu::kurbo::Rect,
+    sel: &[znimok_render::vello_cpu::kurbo::Rect],
+    on: bool,
+    dpr: f64,
+) {
+    use znimok_render::vello_cpu::color::PremulRgba8;
+    let (w, h) = (pix.width() as i64, pix.height() as i64);
+    let data = pix.data_mut();
+    let mut blend = |x: i64, y: i64, c: [u8; 3], k: u16| {
+        if x >= 0 && y >= 0 && x < w && y < h {
+            let p = &mut data[(y * w + x) as usize];
+            let mix = |d: u8, v: u8| ((d as u16 * (255 - k) + v as u16 * k) / 255) as u8;
+            *p = PremulRgba8 {
+                r: mix(p.r, c[0]),
+                g: mix(p.g, c[1]),
+                b: mix(p.b, c[2]),
+                a: mix(p.a, 255).max(p.a),
+            };
+        }
+    };
+    let accent = [0x3D, 0x7B, 0xF5];
+    for r in sel {
+        let a = view.to_out(Point::new(r.x0, r.y0));
+        let b = view.to_out(Point::new(r.x1, r.y1));
+        for y in a.y.round() as i64..b.y.round() as i64 {
+            for x in a.x.round() as i64..b.x.round() as i64 {
+                blend(x, y, accent, 90);
+            }
+        }
+    }
+    if !on || !sel.is_empty() {
+        return;
+    }
+    let a = view.to_out(Point::new(caret.x0, caret.y0));
+    let b = view.to_out(Point::new(caret.x0, caret.y1));
+    let x = a.x.round() as i64;
+    let bar = (2.0 * dpr).round().max(2.0) as i64;
+    for y in a.y.round() as i64..b.y.round() as i64 {
+        blend(x - 1, y, [255, 255, 255], 160);
+        blend(x + bar, y, [255, 255, 255], 160);
+        for dx in 0..bar {
+            blend(x + dx, y, accent, 255);
+        }
+    }
 }
 
 /// Crop frame over the whole picture (ZK-53): outside dimmed, the rule of thirds inside, and
@@ -3982,6 +4399,14 @@ fn corners_index(c: Corners) -> i32 {
         Corners::Sharp => 0,
         Corners::Soft => 1,
         Corners::Round => 2,
+    }
+}
+
+fn align_index(a: Align) -> i32 {
+    match a {
+        Align::Left => 0,
+        Align::Center => 1,
+        Align::Right => 2,
     }
 }
 

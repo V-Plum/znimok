@@ -215,6 +215,31 @@ impl Renderer {
         text::measure(&mut self.fonts, &mut self.layouts, &spec)
     }
 
+    /// Caret and selection of a text mark being edited, in document pixels (ZK-49).
+    pub fn text_caret(
+        &mut self,
+        obj: &Object,
+        cursor: usize,
+        anchor: usize,
+    ) -> Option<(Rect, Vec<Rect>)> {
+        let spec = text_spec(obj)?;
+        let (c, sel) = text::caret(&mut self.fonts, &mut self.layouts, &spec, cursor, anchor);
+        let o = Point::new(obj.rect.x as f64, obj.rect.y as f64).to_vec2();
+        Some((c + o, sel.into_iter().map(|r| r + o).collect()))
+    }
+
+    /// Byte offset in a text mark under a document point.
+    pub fn text_hit(&mut self, obj: &Object, x: f64, y: f64) -> Option<usize> {
+        let spec = text_spec(obj)?;
+        Some(text::hit(
+            &mut self.fonts,
+            &mut self.layouts,
+            &spec,
+            (x - obj.rect.x as f64) as f32,
+            (y - obj.rect.y as f64) as f32,
+        ))
+    }
+
     /// Renders `doc` through `view` into `out`, which is resized to the view.
     pub fn render(&mut self, doc: &Document, view: View, out: &mut Pixmap) {
         if out.width() != view.width || out.height() != view.height {
@@ -956,6 +981,33 @@ fn rotation(o: &Object) -> Affine {
 }
 
 /// Head length in screenshot pixels (LH `EdHeadLen`): size step 0..2, thickness adds a little.
+/// The layout request of a text mark, as `draw_raw` makes it.
+fn text_spec(obj: &Object) -> Option<text::TextSpec<'_>> {
+    let Data::Text {
+        text,
+        size,
+        bold,
+        italic,
+        align,
+        box_w,
+    } = &obj.data
+    else {
+        return None;
+    };
+    Some(text::TextSpec {
+        text,
+        size_px: *size as f32,
+        bold: *bold,
+        italic: *italic,
+        align: *align,
+        box_w: if *box_w > 0 {
+            Some(*box_w as f32)
+        } else {
+            None
+        },
+    })
+}
+
 pub fn head_len(o: &Object) -> f64 {
     let size = match &o.data {
         Data::Line { head_size, .. } => *head_size,

@@ -84,6 +84,16 @@ fn key(app: &Shared, ui: &AppWindow, text: &str, ctrl: bool, shift: bool) {
     let _ = app.borrow_mut().key(ui, text, ctrl, shift);
 }
 
+fn text_of(app: &Shared, id: u32) -> Option<String> {
+    app.borrow()
+        .s
+        .as_ref()
+        .and_then(|s| match &s.ed.doc.get(id)?.data {
+            znimok_core::Data::Text { text, .. } => Some(text.clone()),
+            _ => None,
+        })
+}
+
 fn count(app: &Shared) -> usize {
     app.borrow()
         .s
@@ -265,7 +275,18 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
         key(app, ui, "t", false, false);
         click(app, ui, (cx + 40.0, cy + 90.0));
         r.check("text editor opened", ui.get_editing(), String::new());
+        // Typing goes into the document at once (ZK-49): the mark exists before Enter.
+        ui.set_edit_text("Привіт".into());
+        app.borrow_mut().text_edited(ui, 12, 12);
+        let live = count(app);
         ui.set_edit_text("Привіт, Znimok".into());
+        let n = "Привіт, Znimok".len() as i32;
+        app.borrow_mut().text_edited(ui, n, n);
+        r.check(
+            "typing shows on the canvas at once",
+            live == 7,
+            format!("{live} marks while typing"),
+        );
         app.borrow_mut().commit_text(ui, "Привіт, Znimok");
         let w = app
             .borrow()
@@ -280,6 +301,89 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
         );
     }));
     steps.push(Box::new(|_, ui, r| r.snapshot(ui, "02-marks")));
+    // ZK-49: a second text — caret on the canvas, Esc takes the typing back, one undo step,
+    // alignment and block width from the inspector.
+    steps.push(Box::new(|app, ui, _| {
+        let (cx, cy) = centre(ui);
+        key(app, ui, "t", false, false);
+        click(app, ui, (cx - 200.0, cy + 150.0));
+        ui.set_edit_text("Два\nрядки".into());
+        let n = "Два\nрядки".len() as i32;
+        app.borrow_mut().text_edited(ui, n, n);
+        ui.invoke_edit_select(0, 3 * 2);
+        app.borrow_mut().text_cursor(ui, 6, 0);
+    }));
+    steps.push(Box::new(|app, ui, r| {
+        r.snapshot(ui, "23-text-caret");
+        let before = count(app);
+        app.borrow_mut().cancel_text(ui);
+        let after = count(app);
+        r.check(
+            "Esc takes the new text back",
+            before == 8 && after == 7 && !ui.get_editing(),
+            format!("{before} → {after}"),
+        );
+        // Edit the first text: type, Enter; one undo step brings the old text back.
+        let text_id = app.borrow().s.as_ref().and_then(|s| {
+            s.ed.doc
+                .objects
+                .iter()
+                .find(|o| o.kind() == znimok_core::Kind::Text)
+                .map(|o| (o.id, o.rect.center()))
+        });
+        if let Some((id, (x, y))) = text_id {
+            let (sx, sy) = {
+                let a = app.borrow();
+                let _ = &a;
+                (x, y)
+            };
+            let _ = (sx, sy);
+            app.borrow_mut().layer_click(ui, id as i32, false);
+            ui.invoke_tool_chosen(0);
+            // Double click with Select opens it for typing.
+            let out = {
+                let a = app.borrow();
+                a.doc_to_logical(x, y)
+            };
+            app.borrow_mut().canvas_double(ui, out.0, out.1);
+            let opened = ui.get_editing();
+            ui.set_edit_text("Інший".into());
+            app.borrow_mut().text_edited(ui, 10, 10);
+            ui.set_edit_text("Інший текст".into());
+            app.borrow_mut().text_edited(ui, 21, 21);
+            app.borrow_mut().commit_text(ui, "Інший текст");
+            let now = text_of(app, id);
+            key(app, ui, "z", true, false);
+            let back = text_of(app, id);
+            r.check(
+                "double click edits a text; typing is one undo step",
+                opened
+                    && now.as_deref() == Some("Інший текст")
+                    && back.as_deref() == Some("Привіт, Znimok"),
+                format!("{opened} {now:?} → {back:?}"),
+            );
+            // Alignment and block width.
+            app.borrow_mut().layer_click(ui, id as i32, false);
+            ui.invoke_set_prop("align".into(), 1);
+            ui.invoke_set_text_box("60".into());
+            let d = app
+                .borrow()
+                .s
+                .as_ref()
+                .and_then(|s| s.ed.doc.get(id).map(|o| o.data.clone()));
+            let ok = matches!(
+                d,
+                Some(znimok_core::Data::Text {
+                    align: znimok_core::Align::Center,
+                    box_w: 60,
+                    ..
+                })
+            );
+            r.check("text: centre alignment, block 60 px", ok, format!("{d:?}"));
+            key(app, ui, "z", true, false);
+            key(app, ui, "z", true, false);
+        }
+    }));
     steps.push(Box::new(|app, ui, r| {
         key(app, ui, "a", true, false);
         app.borrow_mut().set_color(ui, 4);
@@ -428,6 +532,45 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
                 ui.get_tool()
             ),
         );
+        // Ctrl+drag on a mark with the Rectangle tool moves it (owner, 29.09), draws nothing.
+        let first = app.borrow().s.as_ref().and_then(|s| {
+            s.ed.doc
+                .objects
+                .iter()
+                .find(|o| o.kind() == znimok_core::Kind::Rect)
+                .map(|o| (o.id, o.rect.x))
+        });
+        if let Some((id, x0)) = first {
+            let n1 = count(app);
+            {
+                let mut a = app.borrow_mut();
+                a.pointer(ui, 0, cx - 135.0, cy - 70.0, 0, false, true);
+                for i in 1..=6 {
+                    a.pointer(
+                        ui,
+                        1,
+                        cx - 135.0 + 5.0 * i as f32,
+                        cy - 70.0,
+                        0,
+                        false,
+                        true,
+                    );
+                }
+                a.pointer(ui, 2, cx - 105.0, cy - 70.0, 0, false, true);
+            }
+            let x1 = app
+                .borrow()
+                .s
+                .as_ref()
+                .and_then(|s| s.ed.doc.get(id).map(|o| o.rect.x))
+                .unwrap_or(x0);
+            r.check(
+                "Ctrl+drag moves a mark with a drawing tool",
+                x1 > x0 && count(app) == n1 && ui.get_tool() == 1,
+                format!("x {x0} → {x1}, {} marks", count(app)),
+            );
+            key(app, ui, "z", true, false);
+        }
     }));
     // ZK-54: inspector properties, layers, meta, zoom slider; snapshots of every tab.
     steps.push(Box::new(|app, ui, r| {

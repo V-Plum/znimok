@@ -90,6 +90,11 @@ common-apply = Apply
 # @max: 16
 common-reset = Reset
 
+# @where: Option: size taken from the content (text block width)
+# @kind: option
+# @max: 8
+common-auto = Auto
+
 # @where: Save to the library (Ctrl+S); also confirm-on-close dialog
 # @kind: button
 # @max: 16

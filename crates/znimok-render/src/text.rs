@@ -1,6 +1,6 @@
 //! Text marks: Parley lays the text out, vello_cpu fills the glyphs. The outline of a text mark
-//! is, as in Little Helpers, twelve copies of the text around a circle (radius `size/11`, 1–8 px)
-//! in the second colour, drawn before the text itself.
+//! is the glyphs' own contour stroked in the second colour under the text (ZK-49; LH drew twelve
+//! shifted copies — same thickness, `size/11` clamped to 1–8 px, but round and even all round).
 
 use std::borrow::Cow;
 
@@ -9,7 +9,7 @@ use parley::{
     LayoutContext, PositionedLayoutItem, StyleProperty,
 };
 use vello_cpu::color::{AlphaColor, Srgb};
-use vello_cpu::kurbo::{Affine, Point};
+use vello_cpu::kurbo::{Affine, Join, Point, Rect, Stroke};
 use vello_cpu::{Glyph, RenderContext, Resources};
 use znimok_core::Align;
 
@@ -92,10 +92,11 @@ pub fn draw_text(
         if a2 < 1.0 {
             ctx.push_opacity_layer(a2);
         }
-        for i in 0..12 {
-            let a = i as f64 * std::f64::consts::TAU / 12.0;
-            fill_layout(ctx, res, &l, origin + (r * a.cos(), r * a.sin()), paint);
-        }
+        let saved = ctx.stroke().clone();
+        // A stroke of 2r centred on the contour reaches r outside it; the fill covers the inside.
+        ctx.set_stroke(Stroke::new(2.0 * r).with_join(Join::Round));
+        glyphs(ctx, res, &l, origin, paint, true);
+        ctx.set_stroke(saved);
         if a2 < 1.0 {
             ctx.pop_layer();
         }
@@ -137,6 +138,57 @@ fn fill_layout(
     origin: Point,
     paint: AlphaColor<Srgb>,
 ) {
+    glyphs(ctx, res, l, origin, paint, false);
+}
+
+/// Where the text cursor and the selection of a text being edited are (ZK-49), relative to the
+/// block's top-left corner: the caret as a thin box, the selection as one box per line piece.
+pub fn caret(
+    fonts: &mut FontContext,
+    layouts: &mut LayoutContext<Brush>,
+    spec: &TextSpec<'_>,
+    cursor: usize,
+    anchor: usize,
+) -> (Rect, Vec<Rect>) {
+    let l = layout(fonts, layouts, spec);
+    let len = spec.text.len();
+    let (cursor, anchor) = (cursor.min(len), anchor.min(len));
+    let focus = parley::Cursor::from_byte_index(&l, cursor, parley::Affinity::Downstream);
+    let bb = focus.geometry(&l, 1.0);
+    let caret = Rect::new(bb.x0, bb.y0, bb.x1, bb.y1);
+    let sel = if cursor == anchor {
+        Vec::new()
+    } else {
+        let a = parley::Cursor::from_byte_index(&l, anchor, parley::Affinity::Downstream);
+        parley::Selection::new(a, focus)
+            .geometry(&l)
+            .into_iter()
+            .map(|(b, _)| Rect::new(b.x0, b.y0, b.x1, b.y1))
+            .collect()
+    };
+    (caret, sel)
+}
+
+/// The byte offset in the text nearest to a point relative to the block's top-left corner.
+pub fn hit(
+    fonts: &mut FontContext,
+    layouts: &mut LayoutContext<Brush>,
+    spec: &TextSpec<'_>,
+    x: f32,
+    y: f32,
+) -> usize {
+    let l = layout(fonts, layouts, spec);
+    parley::Cursor::from_point(&l, x, y).index()
+}
+
+fn glyphs(
+    ctx: &mut RenderContext,
+    res: &mut Resources,
+    l: &Layout<Brush>,
+    origin: Point,
+    paint: AlphaColor<Srgb>,
+    stroke: bool,
+) {
     let base = *ctx.transform();
     ctx.set_paint(paint);
     for line in l.lines() {
@@ -154,11 +206,16 @@ fn fill_layout(
                 })
                 .collect();
             ctx.set_transform(base * Affine::translate(origin.to_vec2()));
-            ctx.glyph_run(res, r.font())
+            let run = ctx
+                .glyph_run(res, r.font())
                 .font_size(r.font_size())
                 .normalized_coords(r.normalized_coords())
-                .hint(false)
-                .fill_glyphs(glyphs.into_iter());
+                .hint(false);
+            if stroke {
+                run.stroke_glyphs(glyphs.into_iter());
+            } else {
+                run.fill_glyphs(glyphs.into_iter());
+            }
         }
     }
     ctx.set_transform(base);

@@ -119,7 +119,7 @@ pub fn round_window(w: &slint::Window) {
     #[cfg(windows)]
     {
         use slint::winit_030::WinitWindowAccessor;
-        w.with_winit_window(|ww| win::round_corners(ww));
+        w.with_winit_window(win::round_corners);
     }
     #[cfg(not(windows))]
     let _ = w;

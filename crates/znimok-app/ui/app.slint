@@ -285,7 +285,8 @@ component MiniSlider inherits Rectangle {
     ta := TipTouch {
         tip: root.tip;
         tip-side: 2;
-        mouse-cursor: self.pressed ? MouseCursor.grabbing : MouseCursor.grab;
+        // Only left and right: a two-way arrow (Windows draws "grab" as four arrows, owner 29.09).
+        mouse-cursor: MouseCursor.ew-resize;
         pointer-event(e) => {
             if (e.kind == PointerEventKind.down) { root.set-from(self.mouse-x); }
             if (e.kind == PointerEventKind.up) { root.released(); }
@@ -1221,6 +1222,16 @@ export component AppWindow inherits Window {
     callback key(string, bool, bool, bool);
     callback commit-text(string);
     callback cancel-text();
+    // ZK-49: typing right on the canvas — the hidden input reports its caret and selection.
+    callback text-edited(int, int);
+    callback text-cursor(int, int);
+    callback canvas-double(length, length);
+    public function edit-select(anchor: int, focus: int) {
+        edit.set-selection-offsets(anchor, focus);
+    }
+    in property <int> text-align;
+    in-out property <string> text-box;
+    callback set-text-box(string);
     callback arrange(int);
     callback align(int);
     callback distribute(int);
@@ -1645,6 +1656,7 @@ export component AppWindow inherits Window {
                                     root.pointer(1, self.mouse-x, self.mouse-y, 0, e.modifiers.shift, e.modifiers.control);
                                 }
                             }
+                            double-clicked => { root.canvas-double(self.mouse-x, self.mouse-y); }
                             scroll-event(e) => {
                                 root.wheel(self.mouse-x, self.mouse-y, e.delta-x, e.delta-y, e.modifiers.control, e.modifiers.alt, e.modifiers.shift);
                                 return accept;
@@ -1652,28 +1664,39 @@ export component AppWindow inherits Window {
                         }
                         init => { self.focus(); }
                     }
-                    if root.editing: Rectangle {
+                    // The keys of the text being typed (ZK-49). Invisible: the canvas draws the text,
+                    // the caret and the selection itself, at the real size and zoom. It sits where the
+                    // text starts so an input method's window appears next to it.
+                    edit := TextInput {
                         x: root.edit-x;
                         y: root.edit-y;
-                        width: 280px;
-                        height: 36px;
-                        edit := LineEdit {
-                            width: parent.width;
-                            height: parent.height;
-                            text <=> root.edit-text;
-                            font-size: 16px;
-                            accepted(t) => { root.commit-text(t); }
-                            key-pressed(e) => {
-                                if (e.text == Key.Escape) {
-                                    root.cancel-text();
-                                    return accept;
-                                }
-                                return reject;
+                        width: 2px;
+                        height: 2px;
+                        enabled: root.editing;
+                        visible: root.editing;
+                        single-line: false;
+                        color: transparent;
+                        selection-background-color: transparent;
+                        selection-foreground-color: transparent;
+                        text-cursor-width: 0px;
+                        font-size: 12px;
+                        text <=> root.edit-text;
+                        edited => { root.text-edited(self.cursor-position-byte-offset, self.anchor-position-byte-offset); }
+                        cursor-position-changed(pos) => { root.text-cursor(self.cursor-position-byte-offset, self.anchor-position-byte-offset); }
+                        key-pressed(e) => {
+                            if (e.text == Key.Escape) {
+                                root.cancel-text();
+                                return accept;
                             }
+                            // Enter finishes, Shift+Enter starts a new line (as in LH).
+                            if (e.text == Key.Return && !e.modifiers.shift) {
+                                root.commit-text(self.text);
+                                return accept;
+                            }
+                            return reject;
                         }
-                        init => {
-                            edit.focus();
-                            edit.select-all();
+                        changed enabled => {
+                            if (self.enabled) { self.focus(); }
                         }
                     }
                 }
@@ -1854,6 +1877,23 @@ export component AppWindow inherits Window {
                                             SegOption { width: 32px; horizontal-stretch: 0; icon: "M10 5 h8 M6 19 h8 M14 5 l-4 14"; on: root.text-italic; tip: @tr("ctx-italic" => "Italic"); clicked => { root.set-prop("italic", root.text-italic ? 0 : 1); } }
                                         }
                                     }
+                                    PropRow {
+                                        label: @tr("text-block" => "Block");
+                                        HorizontalLayout {
+                                            spacing: 2px;
+                                            SegOption { icon: "M4 6 h16 M4 10 h10 M4 14 h16 M4 18 h8"; on: root.text-align == 0; tip: @tr("ctx-align-left" => "Left"); clicked => { root.set-prop("align", 0); } }
+                                            SegOption { icon: "M4 6 h16 M7 10 h10 M4 14 h16 M8 18 h8"; on: root.text-align == 1; tip: @tr("ctx-align-centre" => "Centre"); clicked => { root.set-prop("align", 1); } }
+                                            SegOption { icon: "M4 6 h16 M10 10 h10 M4 14 h16 M12 18 h8"; on: root.text-align == 2; tip: @tr("ctx-align-right" => "Right"); clicked => { root.set-prop("align", 2); } }
+                                        }
+                                    }
+                                    if root.prop-for-selection: PropRow {
+                                        label: @tr("insp-width" => "Width");
+                                        HorizontalLayout {
+                                            spacing: 6px;
+                                            NumField { label: ""; value <=> root.text-box; committed(v) => { root.set-text-box(v); } }
+                                            SegOption { width: 64px; horizontal-stretch: 0; text: @tr("common-auto" => "Auto"); on: root.text-box == ""; tip: @tr("text-block-hint" => "Width 0 — no wrapping; the side handles change the width."); clicked => { root.set-prop("box-auto", 0); } }
+                                        }
+                                    }
                                 }
                                 // ---- Effects (ZK-48): shadow and glow, off / light / strong
                                 if root.prop-kind == 0 || root.prop-kind == 1 || root.prop-kind == 2 || root.prop-kind == 4 || root.prop-kind == 7 || root.prop-kind == 8 || root.prop-kind == 9: PropSection {
@@ -1987,7 +2027,7 @@ export component AppWindow inherits Window {
                                             animate background, opacity { duration: 120ms; }
                                             row-ta := TouchArea {
                                                 property <bool> dragging;
-                                                mouse-cursor: root.layer-drag-from >= 0 ? MouseCursor.grabbing : MouseCursor.pointer;
+                                                mouse-cursor: root.layer-drag-from >= 0 ? MouseCursor.ns-resize : MouseCursor.pointer;
                                                 pointer-event(e) => {
                                                     if (e.kind == PointerEventKind.down && e.button == PointerEventButton.left) {
                                                         self.dragging = false;

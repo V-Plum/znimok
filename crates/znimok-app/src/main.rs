@@ -699,6 +699,35 @@ fn wire(ui: &AppWindow, app: &Shared) {
             }
         });
     }
+    // The hidden text input also reports caret moves the app itself made (placing the caret
+    // with the mouse, opening a text): those arrive while the app is busy and are skipped.
+    {
+        let app = app.clone();
+        let weak = ui.as_weak();
+        ui.on_text_edited(move |cursor, anchor| {
+            let Some(w) = weak.upgrade() else { return };
+            if let Ok(mut a) = app.try_borrow_mut() {
+                a.text_edited(&w, cursor, anchor);
+            }
+        });
+    }
+    {
+        let app = app.clone();
+        let weak = ui.as_weak();
+        ui.on_text_cursor(move |cursor, anchor| {
+            let Some(w) = weak.upgrade() else { return };
+            if let Ok(mut a) = app.try_borrow_mut() {
+                a.text_cursor(&w, cursor, anchor);
+            }
+        });
+    }
+    on!(ui, app, on_canvas_double, |a, w, x, y| {
+        a.canvas_double(&w, x, y);
+    });
+    on!(ui, app, on_set_text_box, |a, w, text| {
+        a.set_text_box(&w, &text);
+        w.invoke_focus_canvas();
+    });
     on!(ui, app, on_commit_text, |a, w, text| {
         a.commit_text(&w, &text);
     });
