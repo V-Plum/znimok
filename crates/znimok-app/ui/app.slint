@@ -492,6 +492,7 @@ export component AppWindow inherits Window {
     in property <int> color-index: 0;
     in property <int> thick-index: 1;
     in property <bool> has-selection;
+    in property <int> selection-count;
     in property <string> hint;
     in-out property <string> hover-hint;
 
@@ -517,13 +518,21 @@ export component AppWindow inherits Window {
     callback export();
     callback autosave-toggled(bool);
     callback tool-chosen(int);
+    // kind (0 down, 1 move, 2 up), x, y, button (0 left, 1 right, 2 middle), shift, ctrl (⌘ on macOS)
     callback pointer(int, length, length, int, bool, bool);
+    // Ctrl held on the canvas = the Select tool for the moment (owner, 28.09).
+    in-out property <bool> ctrl-held;
     callback wheel(length, length, length, length, bool, bool, bool);
     callback key(string, bool, bool, bool);
     callback commit-text(string);
     callback cancel-text();
     callback set-color(int);
     callback set-thick(int);
+    callback arrange(int);
+    callback align(int);
+    callback distribute(int);
+    callback group(bool);
+    callback duplicate();
     callback zoom-fit();
     callback zoom-100();
 
@@ -805,17 +814,17 @@ export component AppWindow inherits Window {
                         padding: 8px;
                         spacing: 4px;
                         alignment: start;
-                        IconButton { width: 40px; height: 36px; label: @tr("tool-select" => "Select (V)"); icon: "M5 3 l14 8 -6 2 -3 6 -5 -16 z"; active: root.tool == 0; clicked => { root.tool-chosen(0); } hovered(h) => { root.hover-hint = h ? self.label : ""; } }
-                        IconButton { width: 40px; height: 36px; label: @tr("tool-rect" => "Rectangle (R)"); icon: "M6 5 h12 a2 2 0 0 1 2 2 v10 a2 2 0 0 1 -2 2 H6 a2 2 0 0 1 -2 -2 V7 a2 2 0 0 1 2 -2 z"; active: root.tool == 1; clicked => { root.tool-chosen(1); } hovered(h) => { root.hover-hint = h ? self.label : ""; } }
-                        IconButton { width: 40px; height: 36px; label: @tr("tool-ellipse" => "Ellipse (E)"); icon: "M4 12 a8 6 0 1 0 16 0 a8 6 0 1 0 -16 0 z"; active: root.tool == 2; clicked => { root.tool-chosen(2); } hovered(h) => { root.hover-hint = h ? self.label : ""; } }
-                        IconButton { width: 40px; height: 36px; label: @tr("tool-arrow" => "Arrow (L)"); icon: "M4 20 L20 4 M11 4 h9 v9"; active: root.tool == 3; clicked => { root.tool-chosen(3); } hovered(h) => { root.hover-hint = h ? self.label : ""; } }
-                        IconButton { width: 40px; height: 36px; label: @tr("tool-pen" => "Pen (P)"); icon: "M15.5 4.5 a2.1 2.1 0 0 1 3 3 L8 18 l-4 1 1 -4 z M13.5 6.5 l3 3 M12 20 q2 -3 4 0 t4 0"; active: root.tool == 4; clicked => { root.tool-chosen(4); } hovered(h) => { root.hover-hint = h ? self.label : ""; } }
-                        IconButton { width: 40px; height: 36px; label: @tr("tool-text" => "Text (T)"); icon: "M5 6 h14 M12 6 v14"; active: root.tool == 5; clicked => { root.tool-chosen(5); } hovered(h) => { root.hover-hint = h ? self.label : ""; } }
+                        IconButton { width: 40px; height: 36px; label: @tr("tool-select" => "Select (V)"); icon: "M5 3 l14 8 -6 2 -3 6 -5 -16 z"; active: root.tool == 0 || root.ctrl-held; clicked => { root.tool-chosen(0); } hovered(h) => { root.hover-hint = h ? self.label : ""; } }
+                        IconButton { width: 40px; height: 36px; label: @tr("tool-rect" => "Rectangle (R)"); icon: "M6 5 h12 a2 2 0 0 1 2 2 v10 a2 2 0 0 1 -2 2 H6 a2 2 0 0 1 -2 -2 V7 a2 2 0 0 1 2 -2 z"; active: root.tool == 1 && !root.ctrl-held; clicked => { root.tool-chosen(1); } hovered(h) => { root.hover-hint = h ? self.label : ""; } }
+                        IconButton { width: 40px; height: 36px; label: @tr("tool-ellipse" => "Ellipse (E)"); icon: "M4 12 a8 6 0 1 0 16 0 a8 6 0 1 0 -16 0 z"; active: root.tool == 2 && !root.ctrl-held; clicked => { root.tool-chosen(2); } hovered(h) => { root.hover-hint = h ? self.label : ""; } }
+                        IconButton { width: 40px; height: 36px; label: @tr("tool-arrow" => "Arrow (L)"); icon: "M4 20 L20 4 M11 4 h9 v9"; active: root.tool == 3 && !root.ctrl-held; clicked => { root.tool-chosen(3); } hovered(h) => { root.hover-hint = h ? self.label : ""; } }
+                        IconButton { width: 40px; height: 36px; label: @tr("tool-pen" => "Pen (P)"); icon: "M15.5 4.5 a2.1 2.1 0 0 1 3 3 L8 18 l-4 1 1 -4 z M13.5 6.5 l3 3 M12 20 q2 -3 4 0 t4 0"; active: root.tool == 4 && !root.ctrl-held; clicked => { root.tool-chosen(4); } hovered(h) => { root.hover-hint = h ? self.label : ""; } }
+                        IconButton { width: 40px; height: 36px; label: @tr("tool-text" => "Text (T)"); icon: "M5 6 h14 M12 6 v14"; active: root.tool == 5 && !root.ctrl-held; clicked => { root.tool-chosen(5); } hovered(h) => { root.hover-hint = h ? self.label : ""; } }
                         Rectangle { height: 9px; Rectangle { y: 4px; height: 1px; x: 8px; width: parent.width - 16px; background: Theme.line; } }
-                        IconButton { width: 40px; height: 36px; label: @tr("tool-hide" => "Hide (B)"); icon: "M3 3 l18 18 M10.6 10.6 a2 2 0 0 0 2.8 2.8 M9.9 5.1 A10 10 0 0 1 21 12 a17 17 0 0 1 -2.8 3.6 M6.6 6.6 A17 17 0 0 0 3 12 s3.5 6 9 6 a9 9 0 0 0 3.6 -0.7"; active: root.tool == 6; clicked => { root.tool-chosen(6); } hovered(h) => { root.hover-hint = h ? self.label : ""; } }
-                        IconButton { width: 40px; height: 36px; label: @tr("tool-highlighter" => "Highlighter (H)"); icon: "M14 3.5 L20.5 10 L13 17.5 L6.5 11 Z M6.5 11 L4 16.5 L7.5 20 L13 17.5 M16.5 6 L10 12.5 M3 22.3 h9"; active: root.tool == 7; clicked => { root.tool-chosen(7); } hovered(h) => { root.hover-hint = h ? self.label : ""; } }
-                        IconButton { width: 40px; height: 36px; label: @tr("tool-counter" => "Counter (N)"); icon: "M3 12 a9 9 0 1 0 18 0 a9 9 0 1 0 -18 0 z M10.5 9 l2 -1.2 V16"; active: root.tool == 8; clicked => { root.tool-chosen(8); } hovered(h) => { root.hover-hint = h ? self.label : ""; } }
-                        IconButton { width: 40px; height: 36px; label: @tr("tool-stamp" => "Stamp (S)"); icon: "M8 12 V7 a4 4 0 0 1 8 0 v5 M5 12 h14 v4 H5 z M7 16 v4 h10 v-4"; active: root.tool == 9; clicked => { root.tool-chosen(9); } hovered(h) => { root.hover-hint = h ? self.label : ""; } }
+                        IconButton { width: 40px; height: 36px; label: @tr("tool-hide" => "Hide (B)"); icon: "M3 3 l18 18 M10.6 10.6 a2 2 0 0 0 2.8 2.8 M9.9 5.1 A10 10 0 0 1 21 12 a17 17 0 0 1 -2.8 3.6 M6.6 6.6 A17 17 0 0 0 3 12 s3.5 6 9 6 a9 9 0 0 0 3.6 -0.7"; active: root.tool == 6 && !root.ctrl-held; clicked => { root.tool-chosen(6); } hovered(h) => { root.hover-hint = h ? self.label : ""; } }
+                        IconButton { width: 40px; height: 36px; label: @tr("tool-highlighter" => "Highlighter (H)"); icon: "M14 3.5 L20.5 10 L13 17.5 L6.5 11 Z M6.5 11 L4 16.5 L7.5 20 L13 17.5 M16.5 6 L10 12.5 M3 22.3 h9"; active: root.tool == 7 && !root.ctrl-held; clicked => { root.tool-chosen(7); } hovered(h) => { root.hover-hint = h ? self.label : ""; } }
+                        IconButton { width: 40px; height: 36px; label: @tr("tool-counter" => "Counter (N)"); icon: "M3 12 a9 9 0 1 0 18 0 a9 9 0 1 0 -18 0 z M10.5 9 l2 -1.2 V16"; active: root.tool == 8 && !root.ctrl-held; clicked => { root.tool-chosen(8); } hovered(h) => { root.hover-hint = h ? self.label : ""; } }
+                        IconButton { width: 40px; height: 36px; label: @tr("tool-stamp" => "Stamp (S)"); icon: "M8 12 V7 a4 4 0 0 1 8 0 v5 M5 12 h14 v4 H5 z M7 16 v4 h10 v-4"; active: root.tool == 9 && !root.ctrl-held; clicked => { root.tool-chosen(9); } hovered(h) => { root.hover-hint = h ? self.label : ""; } }
                         // Stable layout from v1: tools not implemented yet stay in place, disabled.
                         IconButton { width: 40px; height: 36px; label: @tr("tool-image" => "Image (I)"); icon: "M5 5 h14 a2 2 0 0 1 2 2 v10 a2 2 0 0 1 -2 2 H5 a2 2 0 0 1 -2 -2 V7 a2 2 0 0 1 2 -2 z M7 10 a1.5 1.5 0 1 0 3 0 a1.5 1.5 0 1 0 -3 0 M4 17 l5 -5 4 4 3 -3 4 4"; enabled: false; hovered(h) => { root.hover-hint = h ? @tr("common-in-development" => "Coming soon") : ""; } }
                         Rectangle { height: 9px; Rectangle { y: 4px; height: 1px; x: 8px; width: parent.width - 16px; background: Theme.line; } }
@@ -839,20 +848,26 @@ export component AppWindow inherits Window {
                     }
                     keys := FocusScope {
                         key-pressed(e) => {
+                            if (e.text == Key.Control || e.text == Key.Meta) { root.ctrl-held = true; }
                             if (root.editing) { return reject; }
                             root.key(e.text, e.modifiers.control, e.modifiers.shift, e.modifiers.alt);
                             return accept;
                         }
+                        key-released(e) => {
+                            if (e.text == Key.Control || e.text == Key.Meta) { root.ctrl-held = false; }
+                            return accept;
+                        }
+                        changed has-focus => { if (!self.has-focus) { root.ctrl-held = false; } }
                         TouchArea {
-                            mouse-cursor: root.tool == 0 ? default : crosshair;
+                            mouse-cursor: (root.tool == 0 || root.ctrl-held) ? default : crosshair;
                             pointer-event(e) => {
                                 if (!root.editing) { keys.focus(); }
                                 if (e.kind == PointerEventKind.down) {
-                                    root.pointer(0, self.mouse-x, self.mouse-y, e.button == PointerEventButton.left ? 0 : (e.button == PointerEventButton.right ? 1 : 2), e.modifiers.shift, e.modifiers.alt);
+                                    root.pointer(0, self.mouse-x, self.mouse-y, e.button == PointerEventButton.left ? 0 : (e.button == PointerEventButton.right ? 1 : 2), e.modifiers.shift, e.modifiers.control);
                                 } else if (e.kind == PointerEventKind.up) {
-                                    root.pointer(2, self.mouse-x, self.mouse-y, e.button == PointerEventButton.left ? 0 : (e.button == PointerEventButton.right ? 1 : 2), e.modifiers.shift, e.modifiers.alt);
+                                    root.pointer(2, self.mouse-x, self.mouse-y, e.button == PointerEventButton.left ? 0 : (e.button == PointerEventButton.right ? 1 : 2), e.modifiers.shift, e.modifiers.control);
                                 } else if (e.kind == PointerEventKind.move) {
-                                    root.pointer(1, self.mouse-x, self.mouse-y, 0, e.modifiers.shift, e.modifiers.alt);
+                                    root.pointer(1, self.mouse-x, self.mouse-y, 0, e.modifiers.shift, e.modifiers.control);
                                 }
                             }
                             scroll-event(e) => {
@@ -934,6 +949,35 @@ export component AppWindow inherits Window {
                                 animate background { duration: 140ms; easing: ease-out; }
                                 Text { text: t; color: root.thick-index == i ? Theme.text : Theme.text2; font-size: 12px; font-weight: 600; horizontal-alignment: center; vertical-alignment: center; width: parent.width; height: parent.height; }
                                 TouchArea { clicked => { root.set-thick(i); } }
+                            }
+                        }
+                        if root.selection-count >= 1: VerticalLayout {
+                            spacing: 6px;
+                            Text { text: @tr("arrange-selected" => "Selected: {0}", root.selection-count); color: Theme.text2; font-size: 12px; }
+                            HorizontalLayout {
+                                spacing: 2px;
+                                IconButton { label: @tr("arrange-front" => "Bring to front"); icon: "M4 4 h16 M12 20 V8 M7 13 l5 -5 5 5"; clicked => { root.arrange(0); } hovered(h) => { root.hover-hint = h ? self.label : ""; } }
+                                IconButton { label: @tr("layers-up" => "Bring forward"); icon: "M12 19 V5 M6 11 l6 -6 6 6"; clicked => { root.arrange(2); } hovered(h) => { root.hover-hint = h ? self.label : ""; } }
+                                IconButton { label: @tr("layers-down" => "Send backward"); icon: "M12 5 v14 M6 13 l6 6 6 -6"; clicked => { root.arrange(3); } hovered(h) => { root.hover-hint = h ? self.label : ""; } }
+                                IconButton { label: @tr("arrange-back" => "Send to back"); icon: "M4 20 h16 M12 4 v12 M7 11 l5 5 5 -5"; clicked => { root.arrange(1); } hovered(h) => { root.hover-hint = h ? self.label : ""; } }
+                                IconButton { label: @tr("common-duplicate" => "Duplicate"); icon: "M9 9 h11 v11 H9 z M15 9 V4 H4 v11 h5"; clicked => { root.duplicate(); } hovered(h) => { root.hover-hint = h ? self.label : ""; } }
+                            }
+                            if root.selection-count >= 2: HorizontalLayout {
+                                spacing: 2px;
+                                IconButton { label: @tr("arrange-align-left" => "Align left edges"); icon: "M4 3 v18 M8 7 h9 v3 H8 z M8 14 h13 v3 H8 z"; clicked => { root.align(0); } hovered(h) => { root.hover-hint = h ? self.label : ""; } }
+                                IconButton { label: @tr("arrange-align-hcentre" => "Align vertical centres"); icon: "M12 3 v18 M7 7 h10 v3 H7 z M5 14 h14 v3 H5 z"; clicked => { root.align(1); } hovered(h) => { root.hover-hint = h ? self.label : ""; } }
+                                IconButton { label: @tr("arrange-align-right" => "Align right edges"); icon: "M20 3 v18 M7 7 h9 v3 H7 z M3 14 h13 v3 H3 z"; clicked => { root.align(2); } hovered(h) => { root.hover-hint = h ? self.label : ""; } }
+                                IconButton { label: @tr("arrange-align-top" => "Align top edges"); icon: "M3 4 h18 M7 8 v9 h3 V8 z M14 8 v13 h3 V8 z"; clicked => { root.align(3); } hovered(h) => { root.hover-hint = h ? self.label : ""; } }
+                                IconButton { label: @tr("arrange-align-vcentre" => "Align horizontal centres"); icon: "M3 12 h18 M7 7 v10 h3 V7 z M14 5 v14 h3 V5 z"; clicked => { root.align(4); } hovered(h) => { root.hover-hint = h ? self.label : ""; } }
+                                IconButton { label: @tr("arrange-align-bottom" => "Align bottom edges"); icon: "M3 20 h18 M7 7 v9 h3 V7 z M14 3 v13 h3 V3 z"; clicked => { root.align(5); } hovered(h) => { root.hover-hint = h ? self.label : ""; } }
+                            }
+                            if root.selection-count >= 2: HorizontalLayout {
+                                spacing: 2px;
+                                IconButton { label: @tr("arrange-distribute-x" => "Even gaps across"); icon: "M3 3 v18 M21 3 v18 M9 8 h6 v8 H9 z"; enabled: root.selection-count >= 3; clicked => { root.distribute(0); } hovered(h) => { root.hover-hint = h ? self.label : ""; } }
+                                IconButton { label: @tr("arrange-distribute-y" => "Even gaps down"); icon: "M3 3 h18 M3 21 h18 M8 9 h8 v6 H8 z"; enabled: root.selection-count >= 3; clicked => { root.distribute(1); } hovered(h) => { root.hover-hint = h ? self.label : ""; } }
+                                Rectangle { width: 8px; }
+                                IconButton { label: @tr("arrange-group" => "Group"); icon: "M4 4 h7 v7 H4 z M13 13 h7 v7 h-7 z M2 2 h20 v20 H2 z"; clicked => { root.group(true); } hovered(h) => { root.hover-hint = h ? self.label : ""; } }
+                                IconButton { label: @tr("arrange-ungroup" => "Ungroup"); icon: "M4 4 h7 v7 H4 z M13 13 h7 v7 h-7 z"; clicked => { root.group(false); } hovered(h) => { root.hover-hint = h ? self.label : ""; } }
                             }
                         }
                     }

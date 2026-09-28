@@ -58,7 +58,7 @@ impl Report {
 
 fn drag(app: &Shared, ui: &AppWindow, from: (f32, f32), to: (f32, f32)) {
     let mut a = app.borrow_mut();
-    a.pointer(ui, 0, from.0, from.1, 0, false);
+    a.pointer(ui, 0, from.0, from.1, 0, false, false);
     for i in 1..=12 {
         let t = i as f32 / 12.0;
         a.pointer(
@@ -68,15 +68,16 @@ fn drag(app: &Shared, ui: &AppWindow, from: (f32, f32), to: (f32, f32)) {
             from.1 + (to.1 - from.1) * t,
             0,
             false,
+            false,
         );
     }
-    a.pointer(ui, 2, to.0, to.1, 0, false);
+    a.pointer(ui, 2, to.0, to.1, 0, false, false);
 }
 
 fn click(app: &Shared, ui: &AppWindow, at: (f32, f32)) {
     let mut a = app.borrow_mut();
-    a.pointer(ui, 0, at.0, at.1, 0, false);
-    a.pointer(ui, 2, at.0, at.1, 0, false);
+    a.pointer(ui, 0, at.0, at.1, 0, false, false);
+    a.pointer(ui, 2, at.0, at.1, 0, false, false);
 }
 
 fn key(app: &Shared, ui: &AppWindow, text: &str, ctrl: bool, shift: bool) {
@@ -196,7 +197,7 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
         key(app, ui, "p", false, false);
         {
             let mut a = app.borrow_mut();
-            a.pointer(ui, 0, cx - 250.0, cy + 120.0, 0, false);
+            a.pointer(ui, 0, cx - 250.0, cy + 120.0, 0, false, false);
             for i in 1..=40 {
                 let t = i as f32 / 40.0;
                 a.pointer(
@@ -206,9 +207,10 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
                     cy + 120.0 + 40.0 * (t * std::f32::consts::TAU).sin(),
                     0,
                     false,
+                    false,
                 );
             }
-            a.pointer(ui, 2, cx - 50.0, cy + 120.0, 0, false);
+            a.pointer(ui, 2, cx - 50.0, cy + 120.0, 0, false, false);
         }
         key(app, ui, "b", false, false);
         drag(app, ui, (cx - 240.0, cy - 60.0), (cx - 120.0, cy - 20.0));
@@ -284,6 +286,108 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
         key(app, ui, "\u{1b}", false, false);
         let can = ui.get_can_undo();
         r.check("undo available", can, String::new());
+    }));
+    // ZK-52: rubber band, duplicate, align, z-order, group.
+    steps.push(Box::new(|app, ui, r| {
+        let (cx, cy) = centre(ui);
+        key(app, ui, "\u{1b}", false, false);
+        app.borrow_mut().set_tool(ui, crate::app::tool::SELECT);
+        // A band over the two counters only.
+        drag(app, ui, (cx + 40.0, cy - 150.0), (cx + 200.0, cy - 70.0));
+        let n = ui.get_selection_count();
+        r.check(
+            "rubber band selects the two counters",
+            n == 2,
+            format!("{n} selected"),
+        );
+        let before = count(app);
+        key(app, ui, "d", true, false);
+        let (after, sel) = (count(app), ui.get_selection_count());
+        r.check(
+            "Ctrl+D duplicates the selection as the new selection",
+            after == before + 2 && sel == 2,
+            format!("{before} → {after} marks, {sel} selected"),
+        );
+        key(app, ui, "z", true, false);
+        r.check(
+            "duplicate is one undo step",
+            count(app) == before,
+            format!("{} marks", count(app)),
+        );
+        // Align the (re-selected) counters to the top edge, then bring them to the front.
+        drag(app, ui, (cx + 40.0, cy - 150.0), (cx + 200.0, cy - 70.0));
+        let tops = |app: &Shared| -> Vec<i32> {
+            let a = app.borrow();
+            let s = a.s.as_ref().unwrap();
+            s.ed.selection()
+                .iter()
+                .filter_map(|id| s.ed.doc.get(*id).map(|o| o.bounds().y))
+                .collect()
+        };
+        ui.invoke_align(3);
+        let t = tops(app);
+        r.check("align top", t.len() == 2 && t[0] == t[1], format!("{t:?}"));
+        key(app, ui, "]", true, true);
+        let last_selected = {
+            let a = app.borrow();
+            let s = a.s.as_ref().unwrap();
+            let sel = s.ed.selection().to_vec();
+            s.ed.doc
+                .objects
+                .iter()
+                .rev()
+                .take(2)
+                .all(|o| sel.contains(&o.id))
+        };
+        r.check("Ctrl+Shift+] brings to front", last_selected, String::new());
+        key(app, ui, "g", true, false);
+        let grouped = {
+            let a = app.borrow();
+            let s = a.s.as_ref().unwrap();
+            let sel = s.ed.selection().to_vec();
+            sel.len() == 2
+                && sel
+                    .iter()
+                    .filter_map(|id| s.ed.doc.get(*id))
+                    .all(|o| o.group != 0)
+        };
+        r.check("Ctrl+G groups", grouped, String::new());
+        key(app, ui, "g", true, true);
+        let ungrouped = {
+            let a = app.borrow();
+            let s = a.s.as_ref().unwrap();
+            s.ed.selection()
+                .iter()
+                .filter_map(|id| s.ed.doc.get(*id))
+                .all(|o| o.group == 0)
+        };
+        r.check("Ctrl+Shift+G ungroups", ungrouped, String::new());
+        key(app, ui, "\u{1b}", false, false);
+        // Ctrl held = temporary Select (owner, 28.09): with the Rectangle tool active, Ctrl+click
+        // on the first rectangle selects it, Ctrl+click again deselects it, nothing is drawn.
+        app.borrow_mut().set_tool(ui, crate::app::tool::RECT);
+        let n0 = count(app);
+        {
+            let mut a = app.borrow_mut();
+            a.pointer(ui, 0, cx - 135.0, cy - 70.0, 0, false, true);
+            a.pointer(ui, 2, cx - 135.0, cy - 70.0, 0, false, true);
+        }
+        let s1 = ui.get_selection_count();
+        {
+            let mut a = app.borrow_mut();
+            a.pointer(ui, 0, cx - 135.0, cy - 70.0, 0, false, true);
+            a.pointer(ui, 2, cx - 135.0, cy - 70.0, 0, false, true);
+        }
+        let s2 = ui.get_selection_count();
+        r.check(
+            "Ctrl+click with a drawing tool toggles selection, draws nothing",
+            s1 == 1 && s2 == 0 && count(app) == n0 && ui.get_tool() == 1,
+            format!(
+                "{s1} → {s2} selected, {} marks, tool {}",
+                count(app),
+                ui.get_tool()
+            ),
+        );
     }));
     // Autosave fires ~0.7 s after the last change on the 400 ms timer; give it time.
     steps.push(Box::new(|_, _, _| {}));

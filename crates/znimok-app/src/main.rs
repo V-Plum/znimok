@@ -546,8 +546,8 @@ fn wire(ui: &AppWindow, app: &Shared) {
                               y,
                               button,
                               shift,
-                              _alt| {
-        a.pointer(&w, kind, x, y, button, shift);
+                              ctrl| {
+        a.pointer(&w, kind, x, y, button, shift, ctrl);
     });
     on!(ui, app, on_wheel, |a, w, x, y, dx, dy, ctrl, alt, shift| {
         a.wheel(&w, x, y, dx, dy, ctrl || alt, shift);
@@ -578,6 +578,26 @@ fn wire(ui: &AppWindow, app: &Shared) {
     });
     on!(ui, app, on_set_thick, |a, w, i| {
         a.set_thick(&w, i.max(0) as usize);
+        w.invoke_focus_canvas();
+    });
+    on!(ui, app, on_arrange, |a, w, to| {
+        a.arrange(&w, to);
+        w.invoke_focus_canvas();
+    });
+    on!(ui, app, on_align, |a, w, edge| {
+        a.align(&w, edge);
+        w.invoke_focus_canvas();
+    });
+    on!(ui, app, on_distribute, |a, w, axis| {
+        a.distribute(&w, axis);
+        w.invoke_focus_canvas();
+    });
+    on!(ui, app, on_group, |a, w, on| {
+        a.group(&w, on);
+        w.invoke_focus_canvas();
+    });
+    on!(ui, app, on_duplicate, |a, w| {
+        a.duplicate(&w);
         w.invoke_focus_canvas();
     });
     on!(ui, app, on_zoom_fit, |a, w| {

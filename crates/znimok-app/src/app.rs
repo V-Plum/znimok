@@ -7,6 +7,7 @@ use std::time::Instant;
 
 use slint::wgpu_30::wgpu;
 use slint::{ComponentHandle, SharedString, VecModel};
+use znimok_core::command::{AlignEdge, Arrange, Axis};
 use znimok_core::hit;
 use znimok_core::*;
 use znimok_i18n::{FluentArgs, Localizer};
@@ -93,6 +94,11 @@ enum Drag {
         start_out: Point,
         orig: Point,
     },
+    /// Rubber-band selection with the Select tool from empty space (ZK-52).
+    Marquee {
+        start: (i32, i32),
+        add: bool,
+    },
 }
 
 enum Editing {
@@ -139,6 +145,8 @@ pub struct App {
     /// Zoom / fit animation in progress (ease-in-out, about a fixed screen point).
     anim: Option<ViewAnim>,
     anim_timer: slint::Timer,
+    /// Rubber band being dragged, document pixels (drawn over the render).
+    marquee: Option<IRect>,
     /// Last pointer position on the canvas, output pixels (anchor for pinch and double tap).
     last_out: Point,
 }
@@ -192,6 +200,7 @@ impl App {
             toast_at: None,
             anim: None,
             anim_timer: slint::Timer::default(),
+            marquee: None,
             last_out: Point::ZERO,
         }
     }
@@ -602,7 +611,19 @@ impl App {
         (out, (p.x.round() as i32, p.y.round() as i32))
     }
 
-    pub fn pointer(&mut self, ui: &AppWindow, kind: i32, x: f32, y: f32, button: i32, shift: bool) {
+    /// `ctrl` held turns any tool into Select for the duration (owner, 28.09): Ctrl+click
+    /// toggles a mark in the selection, Ctrl+drag on empty space adds with a rubber band.
+    #[allow(clippy::too_many_arguments)]
+    pub fn pointer(
+        &mut self,
+        ui: &AppWindow,
+        kind: i32,
+        x: f32,
+        y: f32,
+        button: i32,
+        shift: bool,
+        ctrl: bool,
+    ) {
         if self.s.is_none() {
             return;
         }
@@ -612,7 +633,7 @@ impl App {
             self.stop_anim();
         }
         match kind {
-            0 => self.pointer_down(ui, out, p, button, shift),
+            0 => self.pointer_down(ui, out, p, button, shift, ctrl),
             1 => self.pointer_move(ui, out, p, shift),
             _ => self.pointer_up(ui),
         }
@@ -627,6 +648,7 @@ impl App {
         p: (i32, i32),
         button: i32,
         shift: bool,
+        ctrl: bool,
     ) {
         if button == 2 {
             self.drag = Some(Drag::Pan {
@@ -667,15 +689,42 @@ impl App {
             let doc = &self.s.as_ref().unwrap().ed.doc;
             hit::pick(doc, (p.0 as f64, p.1 as f64), px).map(|i| doc.objects[i].id)
         };
-        match self.tool {
+        let tool = if ctrl { tool::SELECT } else { self.tool };
+        let extend = shift || ctrl;
+        match tool {
             tool::SELECT => match hit_id {
+                Some(id) if extend => {
+                    // Toggle: a selected mark leaves the selection, another one joins it.
+                    if sel.contains(&id) {
+                        let rest: Vec<ObjectId> = sel.into_iter().filter(|s| *s != id).collect();
+                        if rest.is_empty() {
+                            self.apply(ui, Command::ClearSelection);
+                        } else {
+                            self.apply(
+                                ui,
+                                Command::Select {
+                                    ids: rest,
+                                    add: false,
+                                },
+                            );
+                        }
+                    } else {
+                        self.apply(
+                            ui,
+                            Command::Select {
+                                ids: vec![id],
+                                add: true,
+                            },
+                        );
+                    }
+                }
                 Some(id) => {
                     if !sel.contains(&id) {
                         self.apply(
                             ui,
                             Command::Select {
                                 ids: vec![id],
-                                add: shift,
+                                add: false,
                             },
                         );
                     }
@@ -683,7 +732,13 @@ impl App {
                     self.drag = Some(Drag::Move { last: p, merge });
                 }
                 None => {
-                    self.apply(ui, Command::ClearSelection);
+                    if !extend {
+                        self.apply(ui, Command::ClearSelection);
+                    }
+                    self.drag = Some(Drag::Marquee {
+                        start: p,
+                        add: extend,
+                    });
                 }
             },
             tool::TEXT => {
@@ -866,6 +921,38 @@ impl App {
                 );
                 self.fit_text(ui, id, Some(merge));
             }
+            Drag::Marquee { start, add } => {
+                let r = IRect::new(start.0, start.1, p.0 - start.0, p.1 - start.1).normalized();
+                self.marquee = Some(r);
+                let ids: Vec<ObjectId> = {
+                    let doc = &self.s.as_ref().unwrap().ed.doc;
+                    hit::pick_in_rect(doc, r)
+                        .into_iter()
+                        .map(|i| doc.objects[i].id)
+                        .collect()
+                };
+                let current = self.selection();
+                if add {
+                    let missing: Vec<ObjectId> =
+                        ids.into_iter().filter(|id| !current.contains(id)).collect();
+                    if !missing.is_empty() {
+                        self.apply(
+                            ui,
+                            Command::Select {
+                                ids: missing,
+                                add: true,
+                            },
+                        );
+                    }
+                } else if ids != current {
+                    if ids.is_empty() {
+                        self.apply(ui, Command::ClearSelection);
+                    } else {
+                        self.apply(ui, Command::Select { ids, add: false });
+                    }
+                }
+                self.dirty = true;
+            }
             Drag::Pan { start_out, orig } => {
                 let sc = self.view.scale;
                 self.view.origin = Point::new(
@@ -880,7 +967,123 @@ impl App {
 
     fn pointer_up(&mut self, _ui: &AppWindow) {
         self.drag = None;
+        self.marquee = None;
         self.dirty = true;
+    }
+
+    // ------------------------------------------------------------------ arrange (ZK-52)
+
+    /// Copies of the selected marks, offset a little, become the new selection — one undo step.
+    pub fn duplicate(&mut self, ui: &AppWindow) {
+        self.finish_text(ui);
+        let ids = self.selection();
+        if ids.is_empty() {
+            return;
+        }
+        let copies: Vec<Object> = {
+            let doc = &self.s.as_ref().unwrap().ed.doc;
+            ids.iter()
+                .filter_map(|id| doc.get(*id))
+                .map(|o| {
+                    let mut c = o.clone();
+                    c.translate(16, 16);
+                    c
+                })
+                .collect()
+        };
+        let merge = self.merge_key();
+        let mut new_ids = Vec::new();
+        for object in copies {
+            if let Some(a) = self.apply(
+                ui,
+                Command::AddObject {
+                    object,
+                    select: false,
+                    merge: Some(merge.clone()),
+                },
+            ) && let Some(id) = a.created
+            {
+                new_ids.push(id);
+            }
+        }
+        if !new_ids.is_empty() {
+            self.apply(
+                ui,
+                Command::Select {
+                    ids: new_ids,
+                    add: false,
+                },
+            );
+        }
+        self.sync(ui);
+        ui.window().request_redraw();
+    }
+
+    /// 0 front, 1 back, 2 forward, 3 backward.
+    pub fn arrange(&mut self, ui: &AppWindow, to: i32) {
+        let ids = self.selection();
+        if ids.is_empty() {
+            return;
+        }
+        let to = match to {
+            0 => Arrange::Front,
+            1 => Arrange::Back,
+            2 => Arrange::Forward,
+            _ => Arrange::Backward,
+        };
+        self.apply(ui, Command::Arrange { ids, to });
+        self.sync(ui);
+        ui.window().request_redraw();
+    }
+
+    /// 0 left, 1 h-centre, 2 right, 3 top, 4 v-centre, 5 bottom.
+    pub fn align(&mut self, ui: &AppWindow, edge: i32) {
+        let ids = self.selection();
+        if ids.is_empty() {
+            return;
+        }
+        let edge = match edge {
+            0 => AlignEdge::Left,
+            1 => AlignEdge::HCenter,
+            2 => AlignEdge::Right,
+            3 => AlignEdge::Top,
+            4 => AlignEdge::VCenter,
+            _ => AlignEdge::Bottom,
+        };
+        self.apply(ui, Command::Align { ids, edge });
+        self.sync(ui);
+        ui.window().request_redraw();
+    }
+
+    /// 0 across, 1 down.
+    pub fn distribute(&mut self, ui: &AppWindow, axis: i32) {
+        let ids = self.selection();
+        if ids.len() < 3 {
+            return;
+        }
+        let axis = if axis == 0 {
+            Axis::Horizontal
+        } else {
+            Axis::Vertical
+        };
+        self.apply(ui, Command::Distribute { ids, axis });
+        self.sync(ui);
+        ui.window().request_redraw();
+    }
+
+    pub fn group(&mut self, ui: &AppWindow, group: bool) {
+        let ids = self.selection();
+        if ids.is_empty() {
+            return;
+        }
+        let cmd = if group {
+            Command::Group { ids }
+        } else {
+            Command::Ungroup { ids }
+        };
+        self.apply(ui, cmd);
+        self.sync(ui);
+        ui.window().request_redraw();
     }
 
     /// Text marks size themselves from their text.
@@ -1107,7 +1310,11 @@ impl App {
     /// Keys of the canvas. Letters are matched on both the Latin and the Ukrainian layout, so a
     /// tool key works whatever layout is on (the physical-key API comes with ZK-35's hotkeys).
     pub fn key(&mut self, ui: &AppWindow, text: &str, ctrl: bool, shift: bool) -> KeyAction {
-        const PAIRS: [(char, char); 16] = [
+        const PAIRS: [(char, char); 20] = [
+            ('d', 'в'),
+            ('g', 'п'),
+            ('[', 'х'),
+            (']', 'ї'),
             ('v', 'м'),
             ('r', 'к'),
             ('e', 'у'),
@@ -1152,6 +1359,13 @@ impl App {
                 Some('a') => {
                     self.apply(ui, Command::SelectAll);
                 }
+                Some('d') => self.duplicate(ui),
+                Some('g') if shift => self.group(ui, false),
+                Some('g') => self.group(ui, true),
+                Some(']') if shift => self.arrange(ui, 0),
+                Some(']') => self.arrange(ui, 2),
+                Some('[') if shift => self.arrange(ui, 1),
+                Some('[') => self.arrange(ui, 3),
                 Some('0') => self.zoom_fit(ui),
                 Some('1') => self.zoom_100(ui),
                 _ => return KeyAction::None,
@@ -1524,6 +1738,7 @@ impl App {
         ui.set_zoom_text(format!("{:.0} %", self.view.scale * 100.0).into());
         let sel = s.ed.selection();
         ui.set_has_selection(!sel.is_empty());
+        ui.set_selection_count(sel.len() as i32);
         if let Some(o) = sel.first().and_then(|id| doc.get(*id)) {
             if let Some(i) = PALETTE.iter().position(|c| *c == o.style.color) {
                 self.color = i;
@@ -1583,6 +1798,9 @@ impl App {
             if let Some(o) = s.ed.doc.get(*id) {
                 draw_selection(&mut self.pixmap, &self.view, o, self.dpr);
             }
+        }
+        if let Some(m) = self.marquee {
+            draw_marquee(&mut self.pixmap, &self.view, m);
         }
         let Some(gpu) = self.gpu.as_mut() else { return };
         if size_changed || gpu.texture.is_none() {
@@ -1678,6 +1896,42 @@ pub enum KeyAction {
     Copy,
     Export,
     Open,
+}
+
+/// The rubber band: a dashed white rectangle in screen pixels.
+fn draw_marquee(pix: &mut Pixmap, view: &View, m: IRect) {
+    let (w, h) = (pix.width() as i64, pix.height() as i64);
+    let data = pix.data_mut();
+    let mut put = |x: i64, y: i64| {
+        if x >= 0 && y >= 0 && x < w && y < h {
+            data[(y * w + x) as usize] = znimok_render::vello_cpu::color::PremulRgba8 {
+                r: 0xFF,
+                g: 0xFF,
+                b: 0xFF,
+                a: 0xFF,
+            };
+        }
+    };
+    let p0 = view.to_out(Point::new(m.x as f64, m.y as f64));
+    let p1 = view.to_out(Point::new(m.right() as f64, m.bottom() as f64));
+    let (x0, y0, x1, y1) = (
+        p0.x.round() as i64,
+        p0.y.round() as i64,
+        p1.x.round() as i64,
+        p1.y.round() as i64,
+    );
+    for x in x0.max(0)..=x1.min(w - 1) {
+        if (x - x0) % 6 < 3 {
+            put(x, y0);
+            put(x, y1);
+        }
+    }
+    for y in y0.max(0)..=y1.min(h - 1) {
+        if (y - y0) % 6 < 3 {
+            put(x0, y);
+            put(x1, y);
+        }
+    }
 }
 
 /// Selection outline and handles drawn straight into the pixmap, in screen pixels.
