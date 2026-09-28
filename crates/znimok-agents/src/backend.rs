@@ -164,6 +164,35 @@ impl Capturer for ViaGui {
     }
 }
 
+/// Any `znimok-platform` implementation (the synthetic OS in end-to-end tests, or the app's own
+/// `Platform` when it runs the tools itself).
+pub struct FromPlatform {
+    pub capture: std::sync::Arc<dyn znimok_platform::Capture>,
+    pub windows: std::sync::Arc<dyn znimok_platform::WindowList>,
+}
+
+impl Capturer for FromPlatform {
+    fn displays(&self) -> Result<Vec<DisplayInfo>, String> {
+        self.capture.displays().map_err(|e| e.to_string())
+    }
+    fn windows(&self) -> Result<Vec<WindowInfo>, String> {
+        Ok(self
+            .windows
+            .windows()
+            .map_err(|e| e.to_string())?
+            .into_iter()
+            .filter(|w| !w.own && !w.minimized)
+            .collect())
+    }
+    fn take(&self, target: &CaptureTarget) -> Result<Shot, String> {
+        let f = self
+            .capture
+            .capture(target, &Default::default())
+            .map_err(|e| e.to_string())?;
+        Ok(Shot::Pixels(Raster::new(f.width, f.height, f.to_srgb8())))
+    }
+}
+
 /// The capturer for this OS.
 pub fn capturer() -> Box<dyn Capturer> {
     #[cfg(windows)]
