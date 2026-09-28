@@ -400,11 +400,15 @@ pub struct Updates {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(default)]
 pub struct Agents {
-    /// Model of the Ctrl+K assistant (owner, 28.09: Sonnet 5 by default, Opus 5.5 selectable).
+    /// Model of the Ctrl+K assistant (owner, 28.09: the current Sonnet by default, Opus
+    /// selectable — Sonnet 5.5 since its release on 29.09).
     pub assistant_model: String,
     pub cloud_enabled: bool,
     /// The local MCP server for agents on this machine.
     pub mcp_enabled: bool,
+    /// Per cloud feature: ask before sending, send without asking, or never (ZK-70). A feature
+    /// missing here is «ask».
+    pub consent: std::collections::BTreeMap<CloudFeature, Consent>,
 }
 
 impl Default for Agents {
@@ -413,11 +417,44 @@ impl Default for Agents {
             assistant_model: DEFAULT_MODEL.into(),
             cloud_enabled: false,
             mcp_enabled: false,
+            consent: Default::default(),
         }
     }
 }
 
-pub const DEFAULT_MODEL: &str = "claude-sonnet-5";
+impl Agents {
+    pub fn consent_for(&self, f: CloudFeature) -> Consent {
+        self.consent.get(&f).copied().unwrap_or_default()
+    }
+}
+
+/// Things that send a picture or text to the cloud model.
+#[derive(
+    Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, JsonSchema,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum CloudFeature {
+    /// The Ctrl+K assistant sees the picture.
+    Assistant,
+    /// «Опиши знімок» / alt text.
+    Describe,
+    /// Text recognition in the cloud (e.g. Ukrainian on Windows, where the OS has no OCR for it).
+    Ocr,
+    /// Smart masking suggestions from the cloud.
+    SmartMask,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum Consent {
+    /// Show what will be sent and wait for «Надіслати».
+    #[default]
+    Ask,
+    Allowed,
+    Never,
+}
+
+pub const DEFAULT_MODEL: &str = "claude-sonnet-5-5";
 
 // ---------------------------------------------------------------------------------------------
 
@@ -609,6 +646,24 @@ mod tests {
         let v = serde_json::to_value(&s).unwrap();
         assert_eq!(v["capture"]["hotkeys"]["video"], Value::Null);
         assert!(v["capture"]["hotkeys"]["region"].is_string());
+    }
+
+    #[test]
+    fn consent_defaults_to_ask_and_round_trips() {
+        let mut s = Settings::default();
+        assert_eq!(s.agents.consent_for(CloudFeature::Describe), Consent::Ask);
+        s.agents.consent.insert(CloudFeature::Ocr, Consent::Allowed);
+        s.agents
+            .consent
+            .insert(CloudFeature::SmartMask, Consent::Never);
+        let v = serde_json::to_value(&s).unwrap();
+        assert_eq!(v["agents"]["consent"]["ocr"], "allowed");
+        let back: Settings = serde_json::from_value(v).unwrap();
+        assert_eq!(
+            back.agents.consent_for(CloudFeature::SmartMask),
+            Consent::Never
+        );
+        assert_eq!(back.agents.assistant_model, "claude-sonnet-5-5");
     }
 
     #[test]

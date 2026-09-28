@@ -12,8 +12,8 @@ pub struct Price {
     pub output: f64,
 }
 
-/// Default for the assistant (owner, 28.09: the current Sonnet; Sonnet 5.5 since 29.09).
-pub const DEFAULT_MODEL: &str = "claude-sonnet-5-5";
+/// Default for the assistant — one place for it: the settings.
+pub use znimok_settings::DEFAULT_MODEL;
 
 /// Offered in the settings: (id, name).
 pub const MODELS: &[(&str, &str)] = &[
