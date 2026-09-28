@@ -6160,6 +6160,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "znimok-platform"
+version = "0.0.0"
+dependencies = [
+ "schemars",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "znimok-proto"
 version = "0.0.0"
 dependencies = [
