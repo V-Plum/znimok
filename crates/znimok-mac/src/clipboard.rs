@@ -10,9 +10,9 @@
 
 use std::path::PathBuf;
 
-use objc2::{AllocAnyThread, ClassType};
 use objc2::rc::Retained;
 use objc2::runtime::ProtocolObject;
+use objc2::{AllocAnyThread, ClassType};
 use objc2_app_kit::{
     NSBitmapImageFileType, NSBitmapImageRep, NSImage, NSPasteboard, NSPasteboardItem,
     NSPasteboardTypeFileURL, NSPasteboardTypePNG, NSPasteboardTypeString, NSPasteboardTypeTIFF,
@@ -40,9 +40,9 @@ fn general() -> Result<Retained<NSPasteboard>> {
     // SAFETY: a class method without arguments returning an autoreleased object or nil.
     let pb: Option<Retained<NSPasteboard>> =
         unsafe { objc2::msg_send![NSPasteboard::class(), generalPasteboard] };
-    pb.ok_or_else(|| {
-        PlatformError::Unsupported("no pasteboard in this session (no GUI login, e.g. ssh)")
-    })
+    pb.ok_or(PlatformError::Unsupported(
+        "no pasteboard in this session (no GUI login, e.g. ssh)",
+    ))
 }
 
 impl Clipboard for MacClipboard {
