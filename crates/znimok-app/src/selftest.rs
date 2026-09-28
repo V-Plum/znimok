@@ -672,6 +672,27 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
             format!("scale {sc:.3}"),
         );
         ui.invoke_zoom_fit();
+        // Autosave off + a change: leaving asks in our own dialog, not a system box.
+        ui.invoke_autosave_toggled(false);
+        ui.invoke_meta_edited("title".into(), "Питання".into());
+        ui.invoke_back();
+        let buttons = slint::Model::row_count(&ui.get_dialog_buttons());
+        r.check(
+            "leaving unsaved asks in the window",
+            ui.get_dialog_open() && buttons == 3 && ui.get_page() == 1,
+            format!("open {} · {buttons} buttons", ui.get_dialog_open()),
+        );
+    }));
+    steps.push(Box::new(|_, ui, r| {
+        r.snapshot(ui, "19-dialog");
+        ui.invoke_dialog_answer(1);
+        r.check(
+            "Cancel stays in the editor",
+            !ui.get_dialog_open() && ui.get_page() == 1,
+            format!("page {}", ui.get_page()),
+        );
+        ui.invoke_meta_edited("title".into(), "Тестова назва".into());
+        ui.invoke_autosave_toggled(true);
     }));
     // Tooltip bubble: arm it as a hover over the Undo button would, wait past the delay.
     steps.push(Box::new(|_, ui, _| {

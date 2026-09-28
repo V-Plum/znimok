@@ -11,6 +11,7 @@
 mod app;
 mod capture;
 mod crash;
+mod dialog;
 mod frame;
 #[cfg(target_os = "macos")]
 mod hotkey_mac;
@@ -76,7 +77,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let lang = znimok_i18n::choose_language(None, znimok_i18n::system_language().as_deref());
     let tr = znimok_i18n::Localizer::new(lang);
-    crash::offer_last_crash(&tr);
 
     // Backend pinned per OS: letting wgpu probe every backend crashed natively on a machine
     // with Intel UHD 630 under RDP (ZK-14). WGPU_BACKEND still overrides.
@@ -124,6 +124,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     app.borrow_mut().refresh_library(&ui);
 
     wire(&ui, &app);
+    if selftest_dir.is_none() {
+        // Once the loop runs and the window exists: the report question is asked in it.
+        let _ = slint::invoke_from_event_loop(|| {
+            let ctx = CTX.with(|c| c.borrow().clone());
+            if let Some((app, weak)) = ctx
+                && let Some(ui) = weak.upgrade()
+            {
+                crash::offer_last_crash(&app, &ui);
+            }
+        });
+    }
 
     // Files from the command line (and "Open with…" on Windows).
     let files: Vec<PathBuf> = std::env::args_os().skip(1).map(PathBuf::from).collect();
@@ -172,14 +183,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         {
             let app = app.clone();
             let weak = ui.as_weak();
-            t.on_quit(move || {
-                if let Some(ui) = weak.upgrade()
-                    && !confirm_leave(&app, &ui)
-                {
-                    show_window(&ui);
-                    return;
+            t.on_quit(move || match weak.upgrade() {
+                Some(ui) => confirm_leave(&app, &ui, |_, _| {
+                    let _ = slint::quit_event_loop();
+                }),
+                None => {
+                    let _ = slint::quit_event_loop();
                 }
-                let _ = slint::quit_event_loop();
             });
         }
         t.show()?;
@@ -260,24 +270,23 @@ fn shot_from_hotkey() {
     }
 }
 
-/// Asks what to do with unsaved changes when autosave is off. `false` = stay.
-fn confirm_leave(app: &Shared, ui: &AppWindow) -> bool {
-    let (unsaved, autosave, saving, name) = {
-        let a = app.borrow();
-        (a.is_unsaved(), a.autosave, a.saving, a.doc_name())
-    };
-    if !unsaved && !saving {
-        return true;
+/// Leaving the document (another one, a shot, closing): saves, or — autosave off and changes
+/// unsaved — asks in the window first. `then` runs once it is fine to leave.
+fn confirm_leave(app: &Shared, ui: &AppWindow, then: impl FnOnce(&Shared, &AppWindow) + 'static) {
+    if !must_ask(app) {
+        if leave_quietly(app, ui) {
+            then(app, ui);
+        }
+        return;
     }
-    // A background save may still be running (and may fail): save once more, synchronously,
-    // after it — the save lock orders the two writers.
-    if autosave || !unsaved {
-        return app.borrow_mut().save_now(ui);
+    if dialog::is_open(ui) {
+        return;
     }
+    show_window(ui);
     let (title, body, save, dont, cancel) = {
         let a = app.borrow();
         let mut args = znimok_i18n::FluentArgs::new();
-        args.set("name", name);
+        args.set("name", a.doc_name());
         (
             a.tr.tr_args("confirm-save-title", &args),
             a.tr.tr("confirm-save-body"),
@@ -286,23 +295,45 @@ fn confirm_leave(app: &Shared, ui: &AppWindow) -> bool {
             a.tr.tr("common-cancel"),
         )
     };
-    // No borrow is held while the modal dialog runs its own message loop.
-    let answer = rfd::MessageDialog::new()
-        .set_title(&title)
-        .set_description(&body)
-        .set_buttons(rfd::MessageButtons::YesNoCancelCustom(
-            save.clone(),
-            dont.clone(),
-            cancel,
-        ))
-        .show();
-    match answer {
-        rfd::MessageDialogResult::Custom(c) if c == save => app.borrow_mut().save_now(ui),
-        rfd::MessageDialogResult::Custom(c) if c == dont => true,
-        rfd::MessageDialogResult::Yes => app.borrow_mut().save_now(ui),
-        rfd::MessageDialogResult::No => true,
-        _ => false,
+    let app = app.clone();
+    // Order as on both systems: the destructive choice apart on the left, Save on the right.
+    dialog::ask(
+        ui,
+        title,
+        body,
+        vec![dont, cancel, save],
+        2,
+        Some(1),
+        move |ui, answer| {
+            let go = match answer {
+                Some(2) => app.borrow_mut().save_now(ui),
+                Some(0) => true,
+                _ => false,
+            };
+            if go {
+                then(&app, ui);
+            }
+        },
+    );
+}
+
+/// Unsaved changes with autosave off: the owner decides.
+fn must_ask(app: &Shared) -> bool {
+    let a = app.borrow();
+    a.is_unsaved() && !a.autosave
+}
+
+/// Leaving without a question: a background save may still be running (and may fail), so
+/// save once more, synchronously, after it — the save lock orders the two writers.
+fn leave_quietly(app: &Shared, ui: &AppWindow) -> bool {
+    let (unsaved, saving) = {
+        let a = app.borrow();
+        (a.is_unsaved(), a.saving)
+    };
+    if !unsaved && !saving {
+        return true;
     }
+    app.borrow_mut().save_now(ui)
 }
 
 fn pick_open(app: &Shared) -> Option<PathBuf> {
@@ -316,12 +347,11 @@ fn pick_open(app: &Shared) -> Option<PathBuf> {
 }
 
 fn open_with_dialog(app: &Shared, ui: &AppWindow) {
-    if !confirm_leave(app, ui) {
-        return;
-    }
-    if let Some(p) = pick_open(app) {
-        app.borrow_mut().open_path(ui, &p);
-    }
+    confirm_leave(app, ui, |app, ui| {
+        if let Some(p) = pick_open(app) {
+            app.borrow_mut().open_path(ui, &p);
+        }
+    });
 }
 
 fn export_with_dialog(app: &Shared, ui: &AppWindow) {
@@ -346,9 +376,13 @@ fn new_shot(app: &Shared, ui: &AppWindow) {
         overlay::cancel();
         return;
     }
-    if !capture::available() || !confirm_leave(app, ui) {
+    if !capture::available() {
         return;
     }
+    confirm_leave(app, ui, start_shot);
+}
+
+fn start_shot(_app: &Shared, ui: &AppWindow) {
     // The editor steps aside so the frozen screen does not contain it (on macOS the capture
     // filter would drop it anyway, but the overlay should not sit on top of it either).
     let was_visible = ui.window().is_visible();
@@ -447,9 +481,10 @@ fn wire(ui: &AppWindow, app: &Shared) {
                     let ctx = CTX.with(|c| c.borrow().clone());
                     if let Some((app, weak)) = ctx
                         && let Some(ui) = weak.upgrade()
-                        && confirm_leave(&app, &ui)
                     {
-                        app.borrow_mut().open_path(&ui, &path);
+                        confirm_leave(&app, &ui, move |app, ui| {
+                            app.borrow_mut().open_path(ui, &path);
+                        });
                     }
                 });
                 return EventResult::PreventDefault;
@@ -466,7 +501,17 @@ fn wire(ui: &AppWindow, app: &Shared) {
             let Some(ui) = weak.upgrade() else {
                 return slint::CloseRequestResponse::HideWindow;
             };
-            if !confirm_leave(&app, &ui) {
+            if must_ask(&app) {
+                // The question is answered later; the window stays until then.
+                confirm_leave(&app, &ui, |_, ui| {
+                    let _ = ui.hide();
+                    if !TRAY.with(|c| c.get()) {
+                        let _ = slint::quit_event_loop();
+                    }
+                });
+                return slint::CloseRequestResponse::KeepWindowShown;
+            }
+            if !leave_quietly(&app, &ui) {
                 return slint::CloseRequestResponse::KeepWindowShown;
             }
             // With a tray icon the app stays (hotkey, "Quit" in the tray menu); without one
@@ -517,13 +562,12 @@ fn wire(ui: &AppWindow, app: &Shared) {
         ui.on_window_close(move || {
             let Some(ui) = weak.upgrade() else { return };
             // Same as the system close button: save or ask, then hide to the tray (or quit).
-            if !confirm_leave(&app, &ui) {
-                return;
-            }
-            let _ = ui.hide();
-            if !TRAY.with(|c| c.get()) {
-                let _ = slint::quit_event_loop();
-            }
+            confirm_leave(&app, &ui, |_, ui| {
+                let _ = ui.hide();
+                if !TRAY.with(|c| c.get()) {
+                    let _ = slint::quit_event_loop();
+                }
+            });
         });
     }
 
@@ -563,9 +607,7 @@ fn wire(ui: &AppWindow, app: &Shared) {
         let weak = ui.as_weak();
         ui.on_open_clipboard(move || {
             let Some(ui) = weak.upgrade() else { return };
-            if confirm_leave(&app, &ui) {
-                app.borrow_mut().open_clipboard(&ui);
-            }
+            confirm_leave(&app, &ui, |app, ui| app.borrow_mut().open_clipboard(ui));
         });
     }
 
@@ -575,9 +617,7 @@ fn wire(ui: &AppWindow, app: &Shared) {
         let weak = ui.as_weak();
         ui.on_back(move || {
             let Some(ui) = weak.upgrade() else { return };
-            if confirm_leave(&app, &ui) {
-                app.borrow_mut().close_document(&ui);
-            }
+            confirm_leave(&app, &ui, |app, ui| app.borrow_mut().close_document(ui));
         });
     }
     on!(ui, app, on_undo, |a, w| {
@@ -698,6 +738,14 @@ fn wire(ui: &AppWindow, app: &Shared) {
     on!(ui, app, on_size_edited, |a, w, field, text| {
         a.size_edited(&w, &field, &text);
     });
+    {
+        let weak = ui.as_weak();
+        ui.on_dialog_answer(move |i| {
+            if let Some(ui) = weak.upgrade() {
+                dialog::answered(&ui, i);
+            }
+        });
+    }
     on!(ui, app, on_zoom_to, |a, w, pos| {
         a.zoom_to(&w, pos);
     });

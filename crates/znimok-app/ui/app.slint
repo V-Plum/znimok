@@ -1940,6 +1940,77 @@ export component AppWindow inherits Window {
         ResizeEdge { x: parent.width - 10px; y: parent.height - 10px; width: 10px; height: 10px; dir: 5; mouse-cursor: nwse-resize; resize(d) => { root.window-resize(d); } }
     }
 
+    // ---- in-window dialog (owner, 28.09): questions in the app's own look, not the system box.
+    // A scrim swallows the clicks; the card springs in; Enter = the primary button, Esc = cancel.
+    in property <bool> dialog-open;
+    in property <string> dialog-title;
+    in property <string> dialog-body;
+    in property <[string]> dialog-buttons;
+    in property <int> dialog-primary: -1;
+    in property <int> dialog-cancel: -1;
+    callback dialog-answer(int);
+    changed dialog-open => {
+        if (root.dialog-open) {
+            Tip.armed = false;
+            dialog-keys.focus();
+        }
+    }
+    Rectangle {
+        x: 0;
+        y: 0;
+        width: root.width;
+        height: root.height;
+        background: #00000088;
+        opacity: root.dialog-open ? 1 : 0;
+        visible: self.opacity > 0.01;
+        animate opacity { duration: 160ms; easing: ease-out; }
+        TouchArea { }
+        dialog-keys := FocusScope {
+            enabled: root.dialog-open;
+            key-pressed(e) => {
+                if (e.text == Key.Escape) {
+                    root.dialog-answer(root.dialog-cancel);
+                } else if (e.text == Key.Return) {
+                    root.dialog-answer(root.dialog-primary);
+                }
+                accept
+            }
+        }
+        Rectangle {
+            width: min(440px, root.width - 32px);
+            height: dialog-lay.preferred-height;
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2 - 20px;
+            border-radius: 14px;
+            background: Theme.panel;
+            border-width: 1px;
+            border-color: Theme.control-on;
+            drop-shadow-blur: 32px;
+            drop-shadow-color: #000000A0;
+            transform-origin: { x: self.width / 2, y: self.height / 2 };
+            transform-scale: root.dialog-open ? 1.0 : 0.92;
+            animate transform-scale { duration: 260ms; easing: cubic-bezier(0.2, 0.9, 0.3, 1.12); }
+            TouchArea { }
+            dialog-lay := VerticalLayout {
+                padding: 22px;
+                padding-bottom: 18px;
+                spacing: 8px;
+                Text { text: root.dialog-title; color: Theme.text; font-size: 15px; font-weight: 600; wrap: word-wrap; }
+                if root.dialog-body != "": Text { text: root.dialog-body; color: Theme.text2; font-size: 13px; wrap: word-wrap; }
+                HorizontalLayout {
+                    padding-top: 14px;
+                    spacing: 8px;
+                    alignment: end;
+                    for b[i] in root.dialog-buttons: TextButton {
+                        text: b;
+                        primary: i == root.dialog-primary;
+                        clicked => { root.dialog-answer(i); }
+                    }
+                }
+            }
+        }
+    }
+
     // ---- tooltip bubble (drawn last: above everything but popups)
     property <bool> tip-show: false;
     property <int> tip-serial: Tip.serial;

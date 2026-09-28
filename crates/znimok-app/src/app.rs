@@ -2543,7 +2543,10 @@ impl App {
             self.tr
                 .tr_args(
                     "status-crop-size",
-                    &args(&[("width", shown.w.to_string()), ("height", shown.h.to_string())]),
+                    &args(&[
+                        ("width", shown.w.to_string()),
+                        ("height", shown.h.to_string()),
+                    ]),
                 )
                 .into()
         } else {
@@ -3216,12 +3219,20 @@ fn draw_crop(pix: &mut Pixmap, view: &View, c: IRect, dpr: f64) {
     }
     // Handles: L-brackets at the corners, short bars on the edges, 3 px thick (logical).
     let t = (3.0 * dpr).round().max(2.0) as i64;
-    let len = ((18.0 * dpr).round() as i64).min((x1 - x0) / 2).min((y1 - y0) / 2).max(t);
+    let len = ((18.0 * dpr).round() as i64)
+        .min((x1 - x0) / 2)
+        .min((y1 - y0) / 2)
+        .max(t);
     let mut bar = |ax: i64, ay: i64, bw: i64, bh: i64| {
         for y in ay - 1..ay + bh + 1 {
             for x in ax - 1..ax + bw + 1 {
                 let edge = x < ax || y < ay || x >= ax + bw || y >= ay + bh;
-                blend(x, y, if edge { 0 } else { 255 }, if edge { 110 } else { 255 });
+                blend(
+                    x,
+                    y,
+                    if edge { 0 } else { 255 },
+                    if edge { 110 } else { 255 },
+                );
             }
         }
     };
