@@ -81,7 +81,15 @@ fn ns_window(ui: &Overlay) -> Option<objc2::rc::Retained<objc2_app_kit::NSWindow
 fn cover_display(ui: &Overlay) {
     #[cfg(target_os = "macos")]
     if let Some(win) = ns_window(ui) {
-        use objc2_app_kit::{NSScreenSaverWindowLevel, NSWindowCollectionBehavior};
+        use objc2_app_kit::{
+            NSScreenSaverWindowLevel, NSWindowCollectionBehavior, NSWindowStyleMask,
+        };
+        // winit's frameless window keeps a titled/resizable style mask, and AppKit constrains
+        // such windows below the menu bar (Mac self-test: 1800×1098 on a 1800×1169 screen).
+        // A truly borderless window is not constrained.
+        if win.styleMask() != NSWindowStyleMask::Borderless {
+            win.setStyleMask(NSWindowStyleMask::Borderless);
+        }
         win.setLevel(NSScreenSaverWindowLevel);
         win.setCollectionBehavior(
             NSWindowCollectionBehavior::CanJoinAllSpaces
@@ -112,7 +120,7 @@ pub fn covers_screen() -> Option<(bool, String)> {
         Some((
             same,
             format!(
-                "window {:.0},{:.0} {:.0}×{:.0} · screen {:.0},{:.0} {:.0}×{:.0} · level {}",
+                "window {:.0},{:.0} {:.0}×{:.0} · screen {:.0},{:.0} {:.0}×{:.0} · level {} · style {:?}",
                 f.origin.x,
                 f.origin.y,
                 f.size.width,
@@ -121,7 +129,8 @@ pub fn covers_screen() -> Option<(bool, String)> {
                 s.origin.y,
                 s.size.width,
                 s.size.height,
-                win.level()
+                win.level(),
+                win.styleMask()
             ),
         ))
     }

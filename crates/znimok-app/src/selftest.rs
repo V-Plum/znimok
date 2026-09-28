@@ -393,8 +393,11 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
         let sf = ov.window().scale_factor();
         // Logical coordinates of frame pixel (300, 250) — inside the test window.
         let lw = ov.window().size().width as f32 / sf;
-        let kk = 1600.0 / lw.max(1.0);
-        ov.invoke_pointer(1, 300.0 / kk, 250.0 / kk, false);
+        let lh = ov.window().size().height as f32 / sf;
+        // Frame pixels per logical pixel, per axis (the synthetic frame need not have the
+        // screen's aspect — on the Mac it does not).
+        let (kx, ky) = (1600.0 / lw.max(1.0), 1000.0 / lh.max(1.0));
+        ov.invoke_pointer(1, 300.0 / kx, 250.0 / ky, false);
         let (has, win) = (ov.get_has_sel(), ov.get_is_window());
         r.check(
             "overlay hover highlights the window",
@@ -446,10 +449,10 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
         );
         r.snapshot_window(ov.window(), "07-overlay-hover");
         // Drag frame pixels (600, 500) → (900, 700): a 300 × 200 region.
-        ov.invoke_pointer(0, 600.0 / kk, 500.0 / kk, false);
+        ov.invoke_pointer(0, 600.0 / kx, 500.0 / ky, false);
         for i in 1..=10 {
             let t = i as f32 / 10.0;
-            ov.invoke_pointer(1, (600.0 + 300.0 * t) / kk, (500.0 + 200.0 * t) / kk, false);
+            ov.invoke_pointer(1, (600.0 + 300.0 * t) / kx, (500.0 + 200.0 * t) / ky, false);
         }
         r.check(
             "overlay drag",
@@ -457,7 +460,7 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
             format!("label {}", ov.get_sel_label()),
         );
         r.snapshot_window(ov.window(), "08-overlay-drag");
-        ov.invoke_pointer(2, 900.0 / kk, 700.0 / kk, false);
+        ov.invoke_pointer(2, 900.0 / kx, 700.0 / ky, false);
     }));
     steps.push(Box::new(|app, ui, r| {
         let size = app.borrow().s.as_ref().map(|s| s.ed.doc.image_size());
