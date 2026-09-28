@@ -145,6 +145,8 @@ pub struct App {
     head_start: Head,
     head_end: Head,
     text_size_i: usize,
+    /// Point size for new text, screenshot pixels (0 = automatic, from the picture height).
+    text_px: i32,
     bold: bool,
     italic: bool,
     /// One undo step per drag of the opacity slider.
@@ -212,6 +214,7 @@ impl App {
             head_start: Head::None,
             head_end: Head::Triangle,
             text_size_i: 1,
+            text_px: 0,
             bold: false,
             italic: false,
             alpha_merge: None,
@@ -664,6 +667,9 @@ impl App {
     }
 
     fn text_size(&self) -> i32 {
+        if self.text_px > 0 {
+            return self.text_px;
+        }
         let base = [18, 24, 36][self.text_size_i.min(2)];
         ((base as f64 * self.text_size_base()).round() as i32).max(10)
     }
@@ -1713,6 +1719,73 @@ impl App {
                     );
                 }
             }
+            "text-step" => {
+                // The type ladder (point sizes in screenshot pixels); the next one up or down
+                // from the current size, so a custom size snaps back onto the ladder.
+                const LADDER: [i32; 24] = [
+                    8, 9, 10, 11, 12, 14, 16, 18, 20, 22, 24, 28, 32, 36, 40, 48, 56, 64, 72, 84,
+                    96, 112, 128, 160,
+                ];
+                let cur = self
+                    .selected_where(|o| o.kind() == Kind::Text)
+                    .first()
+                    .and_then(|id| self.s.as_ref()?.ed.doc.get(*id))
+                    .and_then(|o| match o.data {
+                        Data::Text { size, .. } => Some(size),
+                        _ => None,
+                    })
+                    .unwrap_or_else(|| self.text_size());
+                let next = if v > 0 {
+                    LADDER.iter().copied().find(|s| *s > cur).unwrap_or(cur)
+                } else {
+                    LADDER
+                        .iter()
+                        .rev()
+                        .copied()
+                        .find(|s| *s < cur)
+                        .unwrap_or(cur)
+                };
+                self.set_text_px(ui, next);
+                return;
+            }
+            "swap" => {
+                // Stroke ↔ fill (text: letters ↔ outline) of each selected mark that has both.
+                let pairs: Vec<(ObjectId, Rgb, Rgb)> = {
+                    let Some(s) = self.s.as_ref() else { return };
+                    s.ed.selection()
+                        .iter()
+                        .filter_map(|id| s.ed.doc.get(*id))
+                        .filter(|o| matches!(o.kind(), Kind::Rect | Kind::Ellipse | Kind::Text))
+                        .filter_map(|o| o.style.color2.map(|c2| (o.id, o.style.color, c2)))
+                        .collect()
+                };
+                if pairs.is_empty() {
+                    if let Some(f) = self.fill {
+                        let (c, f2) = (self.color, f);
+                        self.color = f2;
+                        self.fill = Some(c);
+                    }
+                } else {
+                    let merge = (pairs.len() > 1).then(|| self.merge_key());
+                    for (id, c, c2) in pairs {
+                        self.apply(
+                            ui,
+                            Command::UpdateObjects {
+                                ids: vec![id],
+                                patch: ObjectPatch {
+                                    style: Some(StylePatch {
+                                        color: Some(c2),
+                                        color2: Some(Some(c)),
+                                        ..Default::default()
+                                    }),
+                                    ..Default::default()
+                                },
+                                merge: merge.clone(),
+                            },
+                        );
+                    }
+                }
+            }
             "text-size" | "bold" | "italic" => {
                 match name {
                     "text-size" => self.text_size_i = (v.max(0) as usize).min(2),
@@ -1750,6 +1823,38 @@ impl App {
                 }
             }
             _ => {}
+        }
+        self.sync(ui);
+        ui.window().request_redraw();
+    }
+
+    /// Size field of the text section: any point size 4…1600.
+    pub fn set_text_size(&mut self, ui: &AppWindow, text: &str) {
+        match text.trim().parse::<i32>() {
+            Ok(px) => self.set_text_px(ui, px.clamp(4, 1600)),
+            Err(_) => self.sync(ui),
+        }
+    }
+
+    fn set_text_px(&mut self, ui: &AppWindow, px: i32) {
+        self.text_px = px;
+        let ids = self.selected_where(|o| o.kind() == Kind::Text);
+        if !ids.is_empty() {
+            let merge = self.merge_key();
+            self.apply(
+                ui,
+                Command::UpdateObjects {
+                    ids: ids.clone(),
+                    patch: ObjectPatch {
+                        size: Some(px),
+                        ..Default::default()
+                    },
+                    merge: Some(merge.clone()),
+                },
+            );
+            for id in ids {
+                self.fit_text(ui, id, Some(merge.clone()));
+            }
         }
         self.sync(ui);
         ui.window().request_redraw();
@@ -2181,6 +2286,7 @@ impl App {
                         .position(|b| ((*b as f64 * base).round() as i32).max(10) == size)
                         .map_or(-1, |i| i as i32);
                     ui.set_text_size_index(i);
+                    ui.set_text_size_px(size.to_string().into());
                     ui.set_text_bold(bold);
                     ui.set_text_italic(italic);
                 }
@@ -2207,6 +2313,7 @@ impl App {
                 ui.set_head_start(head_index(self.head_start));
                 ui.set_head_end(head_index(self.head_end));
                 ui.set_text_size_index(self.text_size_i as i32);
+                ui.set_text_size_px(self.text_size().to_string().into());
                 ui.set_text_bold(self.bold);
                 ui.set_text_italic(self.italic);
             }

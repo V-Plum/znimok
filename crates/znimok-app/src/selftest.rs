@@ -458,6 +458,15 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
                 c2 == Some(crate::app::PALETTE[2]),
                 format!("{c2:?}"),
             );
+            // Stroke ↔ fill in one click.
+            let before = get(app, id).map(|o| (o.style.color, o.style.color2));
+            ui.invoke_set_prop("swap".into(), 0);
+            let after = get(app, id).map(|o| (o.style.color, o.style.color2));
+            r.check(
+                "swap stroke and fill",
+                matches!((before, after), (Some((c, Some(f))), Some((c2, Some(f2)))) if c2 == f && f2 == c),
+                format!("{before:?} → {after:?}"),
+            );
             ui.invoke_set_prop("corners".into(), 2);
             let c = get(app, id).map(|o| o.style.corners);
             r.check(
@@ -472,6 +481,24 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
             ui.invoke_set_geom("x".into(), "10".into());
             let x = get(app, id).map(|o| o.rect.x);
             r.check("X field moves the mark", x == Some(10), format!("{x:?}"));
+        }
+        // Type size: the ladder steps and any value typed in.
+        if let Some(id) = find(app, znimok_core::Kind::Text) {
+            app.borrow_mut().layer_click(ui, id as i32, false);
+            let size = |app: &Shared| match get(app, id).map(|o| o.data) {
+                Some(znimok_core::Data::Text { size, .. }) => size,
+                _ => 0,
+            };
+            let s0 = size(app);
+            ui.invoke_set_prop("text-step".into(), 1);
+            let s1 = size(app);
+            ui.invoke_set_text_size("30".into());
+            let s2 = size(app);
+            r.check(
+                "type size: + steps up the ladder, a typed 30 is kept",
+                s1 > s0 && s2 == 30 && ui.get_text_size_px() == "30",
+                format!("{s0} → {s1} → {s2}"),
+            );
         }
         // Arrowheads are line properties.
         if let Some(id) = find(app, znimok_core::Kind::Line) {

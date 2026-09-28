@@ -821,6 +821,11 @@ insp-stroke = Stroke
 # @max: 16
 insp-fill = Fill
 
+# @where: Fill section: button that swaps the stroke and fill colours (text: letters and outline)
+# @kind: tooltip
+# @max: 40
+insp-swap-colours = Swap stroke and fill
+
 # @where: Section: corner rounding
 # @kind: label
 # @max: 16

@@ -823,6 +823,11 @@ insp-stroke = Контур
 # @max: 16
 insp-fill = Заливка
 
+# @where: Fill section: button that swaps the stroke and fill colours (text: letters and outline)
+# @kind: tooltip
+# @max: 40
+insp-swap-colours = Поміняти контур і заливку
+
 # @where: Section: corner rounding
 # @kind: label
 # @max: 16

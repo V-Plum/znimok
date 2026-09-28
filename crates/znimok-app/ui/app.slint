@@ -874,6 +874,8 @@ export component AppWindow inherits Window {
     in property <int> head-start;
     in property <int> head-end: 1;
     in property <int> text-size-index: 1;
+    // Point size of the text in screenshot pixels (editable; − / + step through the ladder).
+    in-out property <string> text-size-px: "24";
     in property <bool> text-bold;
     in property <bool> text-italic;
     in-out property <float> alpha: 1.0;
@@ -937,6 +939,7 @@ export component AppWindow inherits Window {
     callback set-prop(string, int);
     callback set-alpha(float, bool);
     callback set-geom(string, string);
+    callback set-text-size(string);
     callback layer-click(int, bool);
     callback layer-eye(int);
     callback meta-edited(string, string);
@@ -1365,7 +1368,7 @@ export component AppWindow inherits Window {
                                 // stroke colour
                                 if root.prop-kind >= 0 && root.prop-kind != 5 && root.prop-kind != 9: VerticalLayout {
                                     spacing: 6px;
-                                    Text { text: @tr("insp-stroke" => "Stroke"); color: Theme.text2; font-size: 12px; }
+                                    Text { text: root.prop-kind == 4 ? @tr("ctx-text-colour" => "Text colour") : @tr("insp-stroke" => "Stroke"); color: Theme.text2; font-size: 12px; }
                                     HorizontalLayout {
                                         spacing: 7px;
                                         for c[i] in Palette.colors: Swatch { c: c; on: root.color-index == i; clicked => { root.set-prop("color", i); } }
@@ -1379,7 +1382,17 @@ export component AppWindow inherits Window {
                                 // fill (rectangle, ellipse)
                                 if root.prop-kind >= 0 && root.prop-kind <= 1: VerticalLayout {
                                     spacing: 6px;
-                                    Text { text: @tr("insp-fill" => "Fill"); color: Theme.text2; font-size: 12px; }
+                                    HorizontalLayout {
+                                        Text { text: @tr("insp-fill" => "Fill"); color: Theme.text2; font-size: 12px; vertical-alignment: center; horizontal-stretch: 1; }
+                                        IconButton {
+                                            width: 28px;
+                                            height: 24px;
+                                            label: @tr("insp-swap-colours" => "Swap stroke and fill");
+                                            icon: "M7 4 L3 8 l4 4 M3 8 h13 a4 4 0 0 1 4 4 M17 20 l4 -4 -4 -4 M21 16 H8 a4 4 0 0 1 -4 -4";
+                                            enabled: root.fill-index >= 0;
+                                            clicked => { root.set-prop("swap", 0); }
+                                        }
+                                    }
                                     HorizontalLayout {
                                         spacing: 3px;
                                         Swatch { none: true; on: root.fill-index < 0; tip: @tr("ctx-fill-none" => "Fill colour: none"); clicked => { root.set-prop("fill", -1); } }
@@ -1426,14 +1439,38 @@ export component AppWindow inherits Window {
                                     }
                                 }
                                 // text
-                                if root.prop-kind == 4: HorizontalLayout {
-                                    spacing: 2px;
-                                    SegOption { text: @tr("insp-size-s" => "S"); on: root.text-size-index == 0; clicked => { root.set-prop("text-size", 0); } }
-                                    SegOption { text: @tr("insp-size-m" => "M"); on: root.text-size-index == 1; clicked => { root.set-prop("text-size", 1); } }
-                                    SegOption { text: @tr("insp-size-l" => "L"); on: root.text-size-index == 2; clicked => { root.set-prop("text-size", 2); } }
-                                    Rectangle { width: 8px; }
-                                    SegOption { icon: "M7 5 h6 a3.5 3.5 0 0 1 0 7 H7 z M7 12 h7 a3.5 3.5 0 0 1 0 7 H7 z"; on: root.text-bold; tip: @tr("ctx-bold" => "Bold"); clicked => { root.set-prop("bold", root.text-bold ? 0 : 1); } }
-                                    SegOption { icon: "M10 5 h8 M6 19 h8 M14 5 l-4 14"; on: root.text-italic; tip: @tr("ctx-italic" => "Italic"); clicked => { root.set-prop("italic", root.text-italic ? 0 : 1); } }
+                                if root.prop-kind == 4: VerticalLayout {
+                                    spacing: 6px;
+                                    Text { text: @tr("text-size" => "Size"); color: Theme.text2; font-size: 12px; }
+                                    HorizontalLayout {
+                                        spacing: 2px;
+                                        SegOption { icon: "M6 12 h12"; tip: @tr("text-size-down" => "Smaller type"); clicked => { root.set-prop("text-step", -1); } }
+                                        Rectangle {
+                                            width: 64px;
+                                            height: 28px;
+                                            border-radius: 7px;
+                                            background: Theme.elevated;
+                                            border-width: 1px;
+                                            border-color: size-input.has-focus ? Theme.accent : Theme.control-on;
+                                            animate border-color { duration: 120ms; }
+                                            size-input := TextInput {
+                                                width: parent.width - 12px;
+                                                height: parent.height;
+                                                horizontal-alignment: center;
+                                                vertical-alignment: center;
+                                                color: Theme.text;
+                                                font-size: 12px;
+                                                input-type: number;
+                                                text <=> root.text-size-px;
+                                                accepted => { root.set-text-size(self.text); }
+                                                changed has-focus => { if (!self.has-focus) { root.set-text-size(self.text); } }
+                                            }
+                                        }
+                                        SegOption { icon: "M6 12 h12 M12 6 v12"; tip: @tr("text-size-up" => "Larger type"); clicked => { root.set-prop("text-step", 1); } }
+                                        Rectangle { width: 8px; }
+                                        SegOption { icon: "M7 5 h6 a3.5 3.5 0 0 1 0 7 H7 z M7 12 h7 a3.5 3.5 0 0 1 0 7 H7 z"; on: root.text-bold; tip: @tr("ctx-bold" => "Bold"); clicked => { root.set-prop("bold", root.text-bold ? 0 : 1); } }
+                                        SegOption { icon: "M10 5 h8 M6 19 h8 M14 5 l-4 14"; on: root.text-italic; tip: @tr("ctx-italic" => "Italic"); clicked => { root.set-prop("italic", root.text-italic ? 0 : 1); } }
+                                    }
                                 }
                                 // opacity
                                 if root.prop-kind >= 0 && root.prop-kind != 5: VerticalLayout {

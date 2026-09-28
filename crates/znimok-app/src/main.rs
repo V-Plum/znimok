@@ -662,6 +662,10 @@ fn wire(ui: &AppWindow, app: &Shared) {
     on!(ui, app, on_set_prop, |a, w, name, v| {
         a.set_prop(&w, &name, v);
     });
+    on!(ui, app, on_set_text_size, |a, w, text| {
+        a.set_text_size(&w, &text);
+        w.invoke_focus_canvas();
+    });
     on!(ui, app, on_set_alpha, |a, w, v, last| {
         a.set_alpha(&w, v, last);
     });
