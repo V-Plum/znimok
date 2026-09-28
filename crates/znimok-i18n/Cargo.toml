@@ -1,0 +1,19 @@
+[package]
+name = "znimok-i18n"
+description = "Znimok localisation: the reference i18n/*.ftl files (Fluent), language choice with English fallback, checks for CI, comment sync and .po generation for Slint"
+version.workspace = true
+edition.workspace = true
+license-file.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+fluent-bundle = "0.16"
+fluent-syntax = "0.12"
+unic-langid = "0.9"
+intl_pluralrules = "7"
+sys-locale = "0.3"
