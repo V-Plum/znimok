@@ -1,0 +1,19 @@
+[package]
+name = "znimok-platform"
+description = "Platform interfaces of Znimok (capture, window list, hotkeys, tray, clipboard, permissions, autostart, file associations...) and synthetic implementations for tests — no OS types"
+version.workspace = true
+edition.workspace = true
+license-file.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+schemars = "1"
+
+[dev-dependencies]
+serde_json = "1"
