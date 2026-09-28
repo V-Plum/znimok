@@ -1,14 +1,15 @@
 name: supply-chain
 
-# ZK-21 / PLAN §5.10: licences, advisories, bans and sources of every dependency (cargo-deny, policy
-# in deny.toml) and the RustSec database (cargo-audit). Weekly as well: new advisories appear
+# ZK-21 / ZK-110 / PLAN §5.10: licences, advisories, bans and sources of every dependency (cargo-deny,
+# policy in deny.toml), the RustSec database (cargo-audit), audits (cargo-vet, supply-chain/), an SBOM
+# (CycloneDX) and an auditable CLI binary. Weekly as well: new advisories appear
 # without any change on our side.
 
 on:
   push:
     branches: [main]
   pull_request:
-    paths: ["**/Cargo.toml", "Cargo.lock", "deny.toml", ".github/workflows/supply-chain.yml"]
+    paths: ["**/Cargo.toml", "Cargo.lock", "deny.toml", "supply-chain/**", ".github/workflows/supply-chain.yml"]
   schedule:
     - cron: "17 5 * * 1"
   workflow_dispatch:
@@ -37,3 +38,49 @@ jobs:
           tool: cargo-audit
       - name: cargo audit
         run: cargo audit
+
+  vet:
+    name: cargo-vet
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-vet
+      # Every dependency must be audited (ours or imported from Mozilla, Google, ISRG…) or listed
+      # as an exemption in supply-chain/config.toml; a new unaudited crate fails the PR.
+      - name: cargo vet
+        run: cargo vet --locked
+
+  sbom:
+    name: SBOM (CycloneDX)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-cyclonedx
+      - name: cargo cyclonedx
+        # All targets: the Windows and macOS dependencies are part of what we ship.
+        run: cargo cyclonedx --format json --target all
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sbom-cyclonedx
+          path: "**/*.cdx.json"
+          retention-days: 30
+
+  auditable:
+    name: cargo-auditable (CLI)
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-auditable,cargo-audit
+      # The dependency list is embedded into the binary, so a shipped exe can be audited later.
+      - name: build
+        run: cargo auditable build --release -p znimok-cli
+      - name: audit the binary
+        run: cargo audit bin target/release/znimok-cli.exe
