@@ -6192,6 +6192,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "znimok-win"
+version = "0.0.0"
+dependencies = [
+ "image",
+ "windows",
+ "windows-core",
+ "windows-future",
+ "znimok-platform",
+]
+
+[[package]]
 name = "zune-core"
 version = "0.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
