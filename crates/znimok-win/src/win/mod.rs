@@ -21,17 +21,30 @@ use znimok_platform::{
     Transfer, WindowInfo, WindowList,
 };
 
-/// Make the process Per-Monitor-v2 DPI aware and initialise WinRT (multithreaded). Call at start-up,
-/// before any window exists (later calls cannot change the DPI mode); [`WinCapture::new`] calls it too.
+/// Make the process Per-Monitor-v2 DPI aware. Call at start-up, before any window exists (later
+/// calls cannot change the DPI mode); [`WinCapture::new`] calls it too.
 pub fn init_process() {
     static ONCE: Once = Once::new();
     ONCE.call_once(|| {
-        // SAFETY: process-wide settings; failures (already set) are harmless.
+        // SAFETY: process-wide setting; failure (already set) is harmless.
         unsafe {
             let _ = SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
-            let _ = RoInitialize(RO_INIT_MULTITHREADED);
         }
     });
+}
+
+/// Join the multithreaded apartment on the calling thread, once per thread, and stay in it.
+/// Every entry point that touches WinRT/COM calls this: relying on another thread's MTA crashed
+/// (ACCESS_VIOLATION) when that thread ended while this one still held WinRT objects.
+pub(crate) fn com_thread() {
+    thread_local! {
+        static JOINED: () = {
+            // SAFETY: plain apartment init; S_FALSE (already in MTA) and RPC_E_CHANGED_MODE (an STA
+            // thread, e.g. a UI thread — WinRT capture works there too) are both fine to ignore.
+            let _ = unsafe { RoInitialize(RO_INIT_MULTITHREADED) };
+        };
+    }
+    JOINED.with(|_| {});
 }
 
 pub(crate) fn e2p(e: windows_core::Error) -> PlatformError {

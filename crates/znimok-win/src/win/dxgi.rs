@@ -26,6 +26,7 @@ use super::{Raw, e2p, read_texture};
 
 /// One frame of the monitor; also says whether the desktop is in PQ (HDR10) or scRGB.
 pub fn capture(mon: HMONITOR) -> znimok_platform::Result<(Raw, Transfer)> {
+    super::com_thread();
     // SAFETY: DXGI/D3D11 calls with owned interfaces.
     unsafe {
         let f = CreateDXGIFactory1::<IDXGIFactory1>().map_err(e2p)?;
