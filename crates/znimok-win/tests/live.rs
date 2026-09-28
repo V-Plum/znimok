@@ -10,13 +10,23 @@ use znimok_platform::{
 };
 use znimok_win::{Api, WinCapture};
 
+/// One desktop, one test at a time: the window test puts a topmost window on the screen that the
+/// region test would capture, and parallel captures from test threads are covered by threads.rs.
+static DESKTOP: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+fn desktop() -> std::sync::MutexGuard<'static, ()> {
+    DESKTOP.lock().unwrap_or_else(|e| e.into_inner())
+}
+
 #[test]
 fn conformance_capture_wgc() {
+    let _desktop = desktop();
     conformance::capture(&WinCapture::new()).unwrap();
 }
 
 #[test]
 fn conformance_capture_dxgi() {
+    let _desktop = desktop();
     // Duplication is refused inside some sessions (RDP, service desktops) — then say so, don't fail.
     match conformance::capture(&WinCapture::with_api(Api::Dxgi)) {
         Ok(()) => {}
@@ -33,11 +43,13 @@ fn conformance_capture_dxgi() {
 
 #[test]
 fn conformance_windows() {
+    let _desktop = desktop();
     conformance::windows(&WinCapture::new()).unwrap();
 }
 
 #[test]
 fn region_is_an_exact_crop_of_the_display() {
+    let _desktop = desktop();
     let c = WinCapture::new();
     let d = &c.displays().unwrap()[0];
     if d.color.hdr {
@@ -74,6 +86,7 @@ impl Drop for Win {
 
 #[test]
 fn window_frame_equals_dwm_bounds() {
+    let _desktop = desktop();
     // A window of our own: PowerShell with a WinForms form at a known size and title.
     let title = format!("znimok-win test {}", std::process::id());
     let script = format!(
