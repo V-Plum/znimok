@@ -24,6 +24,7 @@ znimok-i18n = { path = "../znimok-i18n" }
 znimok-log = { path = "../znimok-log" }
 slint = { version = "~1.18", default-features = false, features = ["std", "compat-1-2", "backend-winit", "renderer-femtovg-wgpu", "unstable-wgpu-30", "unstable-winit-030", "system-tray"] }
 png = "0.18"
+znimok-settings = { path = "../znimok-settings" }
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp", "gif", "bmp"] }
 rfd = "0.17"
 arboard = "3"
@@ -32,7 +33,7 @@ chrono = { version = "0.4", default-features = false, features = ["clock", "std"
 [target.'cfg(windows)'.dependencies]
 znimok-win = { path = "../znimok-win" }
 windows-core = "0.62"
-windows = { version = "0.62", features = ["Win32_Foundation", "Win32_Graphics_Dwm", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_WindowsAndMessaging", "Win32_System_Threading", "Win32_System_Com", "Win32_System_Com_StructuredStorage", "Win32_System_Ole", "Win32_System_Memory", "Win32_UI_Shell", "Win32_System_SystemServices", "Win32_Graphics_Gdi"] }
+windows = { version = "0.62", features = ["Win32_Foundation", "Win32_Graphics_Dwm", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_WindowsAndMessaging", "Win32_System_Threading", "Win32_System_Com", "Win32_System_Com_StructuredStorage", "Win32_System_Ole", "Win32_System_Memory", "Win32_UI_Shell", "Win32_System_SystemServices", "Win32_Graphics_Gdi", "Win32_Storage_FileSystem", "Win32_Graphics_Imaging"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 znimok-mac = { path = "../znimok-mac" }

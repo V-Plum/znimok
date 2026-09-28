@@ -246,6 +246,26 @@ pub struct App {
     /// How the picture last left the editor — Enter repeats it (ZK-60, LH): false copy,
     /// true export.
     last_export: bool,
+    /// settings.json (ZK-56); `None` when the OS gives no config folder.
+    store: Option<znimok_settings::Store>,
+    /// Page shown before the settings (Esc / back returns there).
+    settings_from: i32,
+    /// The last document moved to the trash: (where it is now, where it was) — for "Undo".
+    undo_trash: Option<(PathBuf, PathBuf)>,
+}
+
+/// The library folder: `ZNIMOK_LIBRARY` (tests, the CLI), then the one chosen in the settings,
+/// then the default next to the other app data.
+pub fn library_dir(prefs: &znimok_settings::Settings) -> PathBuf {
+    if std::env::var_os("ZNIMOK_LIBRARY").is_some() {
+        return library::default_dir();
+    }
+    prefs
+        .library
+        .dir
+        .clone()
+        .filter(|d| !d.as_os_str().is_empty())
+        .unwrap_or_else(library::default_dir)
 }
 
 fn args(pairs: &[(&'static str, String)]) -> FluentArgs<'static> {
@@ -320,7 +340,187 @@ impl App {
             layer_rows: Vec::new(),
             collapsed: std::collections::HashSet::new(),
             last_export: false,
+            store: None,
+            settings_from: 0,
+            undo_trash: None,
         }
+    }
+
+    // ------------------------------------------------------------------ settings (ZK-56)
+
+    /// Takes the settings store and applies what the app already honours.
+    pub fn use_settings(&mut self, ui: &AppWindow, store: Option<znimok_settings::Store>) {
+        self.store = store;
+        library::purge_trash(&self.lib_dir);
+        let p = self.prefs();
+        self.autosave = p.editor.autosave;
+        ui.set_autosave(self.autosave);
+        crate::filemeta::set_enabled(p.editor.write_metadata);
+        ui.set_export_meta(p.editor.write_metadata);
+        self.settings_sync(ui);
+    }
+
+    pub fn prefs(&self) -> znimok_settings::Settings {
+        self.store.as_ref().map(|s| s.get()).unwrap_or_default()
+    }
+
+    /// Changes the settings file (a failure to write is shown, the app keeps the value).
+    fn save_prefs(&mut self, ui: &AppWindow, f: impl FnOnce(&mut znimok_settings::Settings)) {
+        let Some(store) = self.store.as_ref() else {
+            return;
+        };
+        if let Err(e) = store.update(f) {
+            let msg = format!("{} ({e})", self.tr.tr("err-library-save"));
+            self.toast(ui, msg);
+        }
+    }
+
+    pub fn settings_open(&mut self, ui: &AppWindow) {
+        self.finish_text(ui);
+        let page = ui.get_page();
+        if page != 2 {
+            self.settings_from = page;
+        }
+        self.settings_sync(ui);
+        ui.set_page(2);
+        ui.invoke_focus_settings();
+    }
+
+    pub fn settings_close(&mut self, ui: &AppWindow) {
+        let back = if self.s.is_some() {
+            self.settings_from.max(0)
+        } else {
+            0
+        };
+        ui.set_page(back);
+        if back == 1 {
+            ui.invoke_focus_canvas();
+        } else {
+            ui.invoke_focus_library();
+        }
+    }
+
+    /// The settings page's controls, from the file.
+    pub fn settings_sync(&self, ui: &AppWindow) {
+        let p = self.prefs();
+        ui.set_pref_capture(p.capture.enabled);
+        ui.set_pref_quick_library(p.capture.quick_save_to_library);
+        ui.set_pref_keep_tool(p.editor.keep_tool);
+        ui.set_pref_autosave(p.editor.autosave);
+        ui.set_pref_metadata(p.editor.write_metadata);
+        ui.set_pref_updates(p.updates.check_daily);
+        ui.set_pref_lang(match p.general.language.as_deref() {
+            Some("uk") => 1,
+            Some("en") => 2,
+            _ => 0,
+        });
+        ui.set_pref_ret_size(p.library.retention.by == znimok_settings::RetentionBy::Size);
+        ui.set_pref_ret_count(p.library.retention.count.to_string().into());
+        ui.set_pref_ret_mb(p.library.retention.size_mb.to_string().into());
+        ui.set_pref_lib_dir(self.lib_dir.display().to_string().into());
+        ui.set_pref_file(
+            self.store
+                .as_ref()
+                .map(|s| s.path().display().to_string())
+                .unwrap_or_default()
+                .into(),
+        );
+        ui.set_pref_version(
+            self.tr
+                .tr_args(
+                    "about-version",
+                    &args(&[("version", env!("CARGO_PKG_VERSION").to_string())]),
+                )
+                .into(),
+        );
+    }
+
+    /// One control of the settings page changed. Numbers come as `value`; texts are read from
+    /// the page's own fields.
+    pub fn setting(&mut self, ui: &AppWindow, key: &str, value: i32) {
+        let on = value != 0;
+        match key {
+            "capture" => self.save_prefs(ui, |p| p.capture.enabled = on),
+            "quick-library" => self.save_prefs(ui, |p| p.capture.quick_save_to_library = on),
+            "keep-tool" => self.save_prefs(ui, |p| p.editor.keep_tool = on),
+            "autosave" => {
+                self.autosave = on;
+                ui.set_autosave(on);
+                self.save_prefs(ui, |p| p.editor.autosave = on);
+            }
+            "metadata" => {
+                crate::filemeta::set_enabled(on);
+                ui.set_export_meta(on);
+                self.save_prefs(ui, |p| p.editor.write_metadata = on);
+            }
+            "updates" => self.save_prefs(ui, |p| p.updates.check_daily = on),
+            "lang" => {
+                let lang = match value {
+                    1 => Some("uk".to_string()),
+                    2 => Some("en".to_string()),
+                    _ => None,
+                };
+                self.save_prefs(ui, |p| p.general.language = lang.clone());
+                // Live: the Slint strings and the app's own messages switch at once.
+                let l = znimok_i18n::choose_language(
+                    lang.as_deref(),
+                    znimok_i18n::system_language().as_deref(),
+                );
+                let _ = slint::select_bundled_translation(l);
+                self.tr = Localizer::new(l);
+                self.show_cards(ui);
+                self.sync(ui);
+            }
+            "ret-by" => self.save_prefs(ui, |p| {
+                p.library.retention.by = if on {
+                    znimok_settings::RetentionBy::Size
+                } else {
+                    znimok_settings::RetentionBy::Count
+                }
+            }),
+            "ret-count" => {
+                let n = ui.get_pref_ret_count().trim().parse::<u32>().unwrap_or(100);
+                self.save_prefs(ui, |p| p.library.retention.count = n);
+            }
+            "ret-mb" => {
+                let n = ui.get_pref_ret_mb().trim().parse::<u64>().unwrap_or(500);
+                self.save_prefs(ui, |p| p.library.retention.size_mb = n);
+            }
+            "lib-folder" => {
+                let Some(dir) = rfd::FileDialog::new()
+                    .set_directory(&self.lib_dir)
+                    .pick_folder()
+                else {
+                    return;
+                };
+                self.save_prefs(ui, |p| p.library.dir = Some(dir.clone()));
+                self.lib_dir = dir;
+                self.refresh_library(ui);
+            }
+            "lib-default" => {
+                self.save_prefs(ui, |p| p.library.dir = None);
+                self.lib_dir = library::default_dir();
+                self.refresh_library(ui);
+            }
+            "show-folder" => crate::library::show_in_folder(&self.lib_dir),
+            "close" => {
+                self.settings_close(ui);
+                return;
+            }
+            "reset" => {
+                if let Some(store) = self.store.as_ref() {
+                    let _ = store.reset();
+                }
+                let store = self.store.take();
+                self.use_settings(ui, store);
+            }
+            _ => {}
+        }
+        // Retention applies when its limit changes.
+        if key.starts_with("ret-") {
+            self.apply_retention(ui);
+        }
+        self.settings_sync(ui);
     }
 
     // ------------------------------------------------------------------ library
@@ -328,6 +528,103 @@ impl App {
     pub fn refresh_library(&mut self, ui: &AppWindow) {
         self.entries = library::scan(&self.lib_dir);
         self.show_cards(ui);
+    }
+
+    /// Card: to the trash, with "Undo" in the status line (ZK-55).
+    pub fn lib_trash(&mut self, ui: &AppWindow, path: &Path) {
+        if self.s.as_ref().is_some_and(|s| s.path == path) {
+            // The open document: leave the editor first (autosave is on, or the user saved).
+            self.close_document(ui);
+        }
+        match library::move_to_trash(&self.lib_dir, path) {
+            Ok(to) => {
+                self.undo_trash = Some((to, path.to_path_buf()));
+                let msg = self.tr.tr("lib-trashed-toast");
+                self.toast(ui, msg);
+                ui.set_toast_action(self.tr.tr("lib-undo").into());
+            }
+            Err(e) => {
+                let msg = format!("{} ({e})", self.tr.tr("lib-error-delete"));
+                self.toast(ui, msg);
+            }
+        }
+        self.refresh_library(ui);
+    }
+
+    /// "Undo" next to the message: the last trashed document comes back.
+    pub fn toast_action(&mut self, ui: &AppWindow) {
+        ui.set_toast_action("".into());
+        if let Some((trashed, original)) = self.undo_trash.take()
+            && library::restore(&trashed, &original).is_ok()
+        {
+            ui.set_toast("".into());
+            self.refresh_library(ui);
+        }
+    }
+
+    /// Card: a new name for the document (inside the file; the file name stays).
+    pub fn lib_rename(&mut self, ui: &AppWindow, path: &Path, name: &str) {
+        let name = name.trim();
+        if name.is_empty() {
+            self.show_cards(ui);
+            return;
+        }
+        if let Some(s) = self.s.as_ref()
+            && s.path == path
+        {
+            self.apply(
+                ui,
+                Command::SetName {
+                    name: name.to_string(),
+                },
+            );
+            self.save_now(ui);
+            self.refresh_library(ui);
+            return;
+        }
+        let r = std::fs::read(path)
+            .map_err(|e| e.to_string())
+            .and_then(|d| znimok_format::read(&d).map_err(|e| e.to_string()))
+            .and_then(|mut doc| {
+                doc.name = name.to_string();
+                let opts = self.options_for(&doc);
+                let _guard = SAVE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+                znimok_format::save(path, &doc, &opts).map_err(|e| e.to_string())
+            });
+        if let Err(e) = r {
+            let msg = format!("{} ({e})", self.tr.tr("lib-error-rename"));
+            self.toast(ui, msg);
+        }
+        self.refresh_library(ui);
+    }
+
+    /// Keeps the library within its limit (settings → library): the oldest screenshots go to
+    /// the trash, never the open one.
+    pub fn apply_retention(&mut self, ui: &AppWindow) {
+        let r = self.prefs().library.retention;
+        let open = self.s.as_ref().map(|s| s.path.clone());
+        let entries = library::scan(&self.lib_dir);
+        let mut used: u64 = 0;
+        let mut kept: u32 = 0;
+        let mut gone = 0;
+        for e in &entries {
+            let size = std::fs::metadata(&e.path).map(|m| m.len()).unwrap_or(0);
+            let over = match r.by {
+                znimok_settings::RetentionBy::Count => kept >= r.count.max(1),
+                znimok_settings::RetentionBy::Size => used + size > r.size_mb.max(1) * 1024 * 1024,
+            };
+            if over && open.as_deref() != Some(e.path.as_path()) {
+                if library::move_to_trash(&self.lib_dir, &e.path).is_ok() {
+                    gone += 1;
+                }
+                continue;
+            }
+            kept += 1;
+            used += size;
+        }
+        if gone > 0 {
+            self.refresh_library(ui);
+        }
     }
 
     pub fn set_filter(&mut self, ui: &AppWindow, f: &str) {
@@ -357,16 +654,25 @@ impl App {
 
     pub fn toast(&mut self, ui: &AppWindow, text: impl Into<SharedString>) {
         ui.set_toast(text.into());
+        ui.set_toast_action(SharedString::new());
         self.toast_at = Some(Instant::now());
     }
 
+    /// Messages go after 3.5 s; one with an action ("Undo") stays 8 s, then the action is gone.
     pub fn tick_toast(&mut self, ui: &AppWindow) {
+        let keep = if ui.get_toast_action().is_empty() {
+            3.5
+        } else {
+            8.0
+        };
         if self
             .toast_at
-            .is_some_and(|t| t.elapsed().as_secs_f32() > 3.5)
+            .is_some_and(|t| t.elapsed().as_secs_f32() > keep)
         {
             self.toast_at = None;
             ui.set_toast(SharedString::new());
+            ui.set_toast_action(SharedString::new());
+            self.undo_trash = None;
         }
     }
 
@@ -407,6 +713,7 @@ impl App {
         let (doc, path) = self.build_document(raster, source, name);
         // Not on disk yet: `fresh` makes the first autosave write it.
         self.open_session(ui, Editor::new(doc), path, true);
+        self.apply_retention(ui);
     }
 
     /// Straight to the library without opening the editor (Shift in the capture overlay).
@@ -425,6 +732,8 @@ impl App {
         let r = znimok_format::save(&path, &doc, &opts)
             .map(|()| (path, name))
             .map_err(|e| format!("{} ({e})", self.tr.tr("err-library-save")));
+        drop(_guard);
+        self.apply_retention(ui);
         if self.s.is_none() {
             self.refresh_library(ui);
         }
@@ -1218,6 +1527,12 @@ impl App {
     }
 
     fn pointer_up(&mut self, ui: &AppWindow) {
+        if matches!(self.drag, Some(Drag::Create { .. } | Drag::Pen { .. }))
+            && !self.prefs().editor.keep_tool
+        {
+            self.drag = None;
+            self.set_tool(ui, tool::SELECT);
+        }
         if let Some(Drag::Toggle {
             id, was_selected, ..
         }) = self.drag
@@ -3586,6 +3901,44 @@ impl App {
         self.toast(ui, msg);
     }
 
+    /// «Зберегти як…» (ZK-65): a copy of the document as a .znimok file anywhere; the folder is
+    /// remembered. The library keeps its own file; the copy is for sending or keeping elsewhere.
+    pub fn save_as(&mut self, ui: &AppWindow) {
+        self.finish_text(ui);
+        let Some(doc) = self.s.as_ref().map(|s| s.ed.doc.clone()) else {
+            return;
+        };
+        let dir = self.prefs().editor.save_dir;
+        let mut dlg = rfd::FileDialog::new()
+            .add_filter("Znimok", &["znimok"])
+            .set_file_name(format!("{}.znimok", file_safe(&doc.name)));
+        if let Some(d) = dir.filter(|d| d.is_dir()) {
+            dlg = dlg.set_directory(d);
+        }
+        let Some(mut path) = dlg.save_file() else {
+            return;
+        };
+        if path.extension().is_none() {
+            path.set_extension("znimok");
+        }
+        let opts = self.options_for(&doc);
+        let r = znimok_format::save(&path, &doc, &opts);
+        let name = path
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        let msg = match r {
+            Ok(()) => {
+                if let Some(parent) = path.parent().map(Path::to_path_buf) {
+                    self.save_prefs(ui, |p| p.editor.save_dir = Some(parent));
+                }
+                self.tr.tr_args("doc-saved-as", &args(&[("name", name)]))
+            }
+            Err(e) => format!("{} ({e})", self.tr.tr("export-error")),
+        };
+        self.toast(ui, msg);
+    }
+
     /// What an exported file says about the document (ZK-61).
     pub fn file_meta(&self) -> Option<crate::filemeta::FileMeta> {
         self.s
@@ -3596,8 +3949,7 @@ impl App {
     /// The "write metadata" switch of the Copy menu.
     pub fn toggle_export_meta(&mut self, ui: &AppWindow) {
         let on = !crate::filemeta::enabled();
-        crate::filemeta::set_enabled(on);
-        ui.set_export_meta(on);
+        self.setting(ui, "metadata", on as i32);
     }
 
     /// Remembers Copy or Export for Enter and shows which one Enter repeats.

@@ -36,6 +36,54 @@ fn main() {
     // SAFETY: the build script is single-threaded at this point.
     unsafe { std::env::set_var("SLINT_ENABLE_EXPERIMENTAL_FEATURES", "1") };
     println!("cargo:rerun-if-changed=ui/cursors");
+    check_tr_texts(&en);
+
     let config = slint_build::CompilerConfiguration::new().with_bundled_translations(&out);
     slint_build::compile_with_config("ui/app.slint", config).expect("slint compile");
+}
+
+/// Slint looks a translation up by the English text, so the text inside `@tr("id" => "…")` must be
+/// the English of `id` in en.ftl word for word — otherwise the UI silently stays in English (or
+/// empty). Checked at every build; messages with variables are left to the reviewer.
+fn check_tr_texts(en: &str) {
+    let mut values = std::collections::HashMap::new();
+    for line in en.lines() {
+        if let Some((k, v)) = line.split_once(" = ")
+            && !k.is_empty()
+            && k.chars()
+                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+        {
+            values.insert(k.to_string(), v.to_string());
+        }
+    }
+    let ui = std::fs::read_to_string("ui/app.slint").expect("ui/app.slint");
+    println!("cargo:rerun-if-changed=ui/app.slint");
+    let mut bad = Vec::new();
+    let mut rest = ui.as_str();
+    while let Some(i) = rest.find("@tr(\"") {
+        rest = &rest[i + 5..];
+        let Some(j) = rest.find('"') else { break };
+        let id = &rest[..j];
+        let after = &rest[j + 1..];
+        let Some(text) = after.strip_prefix(" => \"") else {
+            continue;
+        };
+        let mut end = 0;
+        let bytes = text.as_bytes();
+        while end < bytes.len() && !(bytes[end] == b'"' && (end == 0 || bytes[end - 1] != b'\\')) {
+            end += 1;
+        }
+        let text = text[..end].replace("\\\"", "\"");
+        match values.get(id) {
+            Some(v) if v.contains('{') || *v == text => {}
+            Some(v) => bad.push(format!("{id}: \"{text}\" ≠ en.ftl \"{v}\"")),
+            None => bad.push(format!("{id}: not in en.ftl")),
+        }
+    }
+    if !bad.is_empty() {
+        panic!(
+            "@tr texts in ui/app.slint must match en.ftl (Slint finds translations by them):\n  {}",
+            bad.join("\n  ")
+        );
+    }
 }

@@ -6573,6 +6573,7 @@ dependencies = [
  "znimok-mac",
  "znimok-platform",
  "znimok-render",
+ "znimok-settings",
  "znimok-win",
 ]
 

@@ -1092,6 +1092,51 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
             format!("page {}, {n} cards", ui.get_page()),
         );
         r.snapshot(ui, "04-library");
+        // ZK-55: rename from the card, to the trash, "Undo" brings it back.
+        if let Some(c) = slint::Model::row_data(&ui.get_cards(), 0) {
+            ui.invoke_card_rename(c.path.clone(), "Перейменований".into());
+            let renamed = slint::Model::row_data(&ui.get_cards(), 0).map(|c| c.name.to_string());
+            ui.invoke_card_trash(c.path.clone());
+            let after_trash = slint::Model::row_count(&ui.get_cards());
+            let action = ui.get_toast_action().to_string();
+            ui.invoke_toast_action_clicked();
+            let back = slint::Model::row_count(&ui.get_cards());
+            r.check(
+                "library: rename, trash with Undo",
+                renamed.as_deref() == Some("Перейменований")
+                    && after_trash == 0
+                    && !action.is_empty()
+                    && back == 1,
+                format!(
+                    "{renamed:?}, {after_trash} after trash, action {action:?}, {back} after undo"
+                ),
+            );
+        }
+        // ZK-56: the settings page; a switch goes into settings.json at once; language live.
+        ui.invoke_settings_open();
+        ui.set_settings_page(2);
+    }));
+    steps.push(Box::new(|app, ui, r| {
+        r.snapshot(ui, "24-settings");
+        let page = ui.get_page();
+        ui.invoke_setting("metadata".into(), 0);
+        let file = std::fs::read_to_string(r.dir.join("settings.json")).unwrap_or_default();
+        let saved = file.contains("\"write_metadata\": false");
+        ui.invoke_setting("metadata".into(), 1);
+        ui.invoke_setting("lang".into(), 2);
+        let en = app.borrow().tr.tr("set-title");
+        ui.invoke_setting("lang".into(), 1);
+        let uk = app.borrow().tr.tr("set-title");
+        ui.invoke_setting("lang".into(), 0);
+        ui.invoke_setting("close".into(), 0);
+        r.check(
+            "settings: page, saved at once, language switches live, Esc back",
+            page == 2 && saved && en == "Settings" && uk == "Налаштування" && ui.get_page() == 0,
+            format!(
+                "page {page}, saved {saved}, {en} / {uk}, back to page {}",
+                ui.get_page()
+            ),
+        );
         if let Some(c) = slint::Model::row_data(&ui.get_cards(), 0) {
             ui.invoke_open_card(c.path);
         }

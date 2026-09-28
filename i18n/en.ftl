@@ -424,6 +424,16 @@ share-system-long = System share menu…
 # @max: 32
 share-export = Export file…
 
+# @where: Other ways menu: a copy of the document (.znimok) in any folder
+# @kind: menu
+# @max: 24
+doc-save-as = Save as…
+
+# @where: Status line after «Save as…»
+# @kind: toast
+# @max: 48
+doc-saved-as = Saved “{ $name }”
+
 # @where: Single HTML file with marks that opens anywhere
 # @kind: menu
 # @max: 36

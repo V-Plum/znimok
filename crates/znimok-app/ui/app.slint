@@ -4,7 +4,7 @@
 // inspector and a status bar. Strings come from i18n/*.ftl through @tr (ZK-29).
 // Not yet here: tabs, overlay editor, full inspector, settings (see the tickets of Phase 4).
 
-import { LineEdit, ScrollView, TextEdit } from "std-widgets.slint";
+import { AboutSlint, LineEdit, ScrollView, TextEdit } from "std-widgets.slint";
 
 export global Theme {
     out property <color> canvas: #0B0D11;
@@ -663,9 +663,32 @@ component SwitchRow inherits HorizontalLayout {
     }
 }
 
+// A small round button over a library card (shows while the card is hovered).
+component CardHover inherits Rectangle {
+    out property <bool> hover: ta.has-hover;
+    in property <string> icon;
+    in property <string> tip;
+    in property <bool> danger;
+    callback clicked;
+    width: 28px;
+    height: 28px;
+    border-radius: 14px;
+    background: ta.has-hover ? (root.danger ? #FF5A5F : Theme.control-on) : #0B0D11CC;
+    animate background { duration: 120ms; }
+    transform-origin: { x: self.width / 2, y: self.height / 2 };
+    transform-scale: ta.pressed ? 0.9 : 1.0;
+    animate transform-scale { duration: 140ms; easing: cubic-bezier(0.2, 0.8, 0.2, 1); }
+    Icon { width: 16px; height: 16px; d: root.icon; tint: ta.has-hover ? Theme.text : Theme.text2; }
+    ta := TipTouch { tip: root.tip; clicked => { root.clicked(); } }
+}
+
 component CardView inherits Rectangle {
     in property <CardData> data;
     callback open;
+    callback rename(string);
+    callback trash();
+    callback reveal();
+    property <bool> renaming;
     border-radius: 12px;
     background: Theme.panel;
     border-width: ta.has-hover ? 1.5px : 0;
@@ -692,7 +715,7 @@ component CardView inherits Rectangle {
             image-fit: contain;
         }
     }
-    Text {
+    if !root.renaming: Text {
         x: 12px;
         y: parent.height - 50px;
         width: parent.width - 24px;
@@ -713,7 +736,46 @@ component CardView inherits Rectangle {
     }
     ta := TouchArea {
         mouse-cursor: MouseCursor.pointer;
-        clicked => { root.open(); }
+        clicked => { if (!root.renaming) { root.open(); } }
+    }
+    // Inline rename: Enter keeps the name, Esc or leaving the field drops it.
+    if root.renaming: Rectangle {
+        x: 8px;
+        y: parent.height - 54px;
+        width: parent.width - 16px;
+        height: 26px;
+        border-radius: 6px;
+        background: Theme.elevated;
+        border-width: 1px;
+        border-color: Theme.accent;
+        name-input := TextInput {
+            x: 6px;
+            width: parent.width - 12px;
+            height: parent.height;
+            vertical-alignment: center;
+            color: Theme.text;
+            font-size: 13px;
+            font-weight: 600;
+            text: root.data.name;
+            accepted => { root.renaming = false; root.rename(self.text); }
+            key-pressed(e) => {
+                if (e.text == Key.Escape) { root.renaming = false; return accept; }
+                return reject;
+            }
+            changed has-focus => { if (!self.has-focus) { root.renaming = false; } }
+            init => { self.focus(); self.select-all(); }
+        }
+    }
+    // Actions on the picture's corner while the card is under the pointer.
+    HorizontalLayout {
+        x: parent.width - self.preferred-width - 14px;
+        y: 14px;
+        spacing: 6px;
+        opacity: ta.has-hover || rb.hover || fb.hover || tb.hover ? 1 : 0;
+        animate opacity { duration: 140ms; }
+        rb := CardHover { icon: "M15.5 4.5 a2.1 2.1 0 0 1 3 3 L8 18 l-4 1 1 -4 z"; tip: @tr("common-rename" => "Rename"); clicked => { root.renaming = true; } }
+        fb := CardHover { icon: "M3 7 a2 2 0 0 1 2 -2 h4 l2 2 h8 a2 2 0 0 1 2 2 v8 a2 2 0 0 1 -2 2 H5 a2 2 0 0 1 -2 -2 z"; tip: @tr("lib-show-in-folder" => "Show in folder"); clicked => { root.reveal(); } }
+        tb := CardHover { icon: "M4 7 h16 M10 11 v6 M14 11 v6 M6 7 l1 12 a2 2 0 0 0 2 2 h6 a2 2 0 0 0 2 -2 l1 -12 M9 7 V4 h6 v3"; tip: @tr("lib-trash-long" => "Move to trash"); danger: true; clicked => { root.trash(); } }
     }
 }
 
@@ -1264,6 +1326,31 @@ export component AppWindow inherits Window {
     // ZK-61: write title, description, author, rights, tags and date into exported files.
     in property <bool> export-meta: true;
     callback toggle-export-meta();
+    // Library cards (ZK-55) and the message line's action ("Undo").
+    callback save-as();
+    callback card-trash(string);
+    callback card-rename(string, string);
+    callback card-reveal(string);
+    in property <string> toast-action;
+    callback toast-action-clicked();
+    // Settings page (ZK-56): page 2 of the window.
+    callback settings-open();
+    callback setting(string, int);
+    in-out property <int> settings-page: 0;
+    in property <bool> pref-capture;
+    in property <bool> pref-quick-library;
+    in property <bool> pref-keep-tool;
+    in property <bool> pref-autosave;
+    in property <bool> pref-metadata;
+    in property <bool> pref-updates;
+    in property <int> pref-lang;
+    in property <bool> pref-ret-size;
+    in-out property <string> pref-ret-count;
+    in-out property <string> pref-ret-mb;
+    in property <string> pref-lib-dir;
+    in property <string> pref-file;
+    in property <string> pref-version;
+    public function focus-settings() { set-keys.focus(); }
     callback set-tone(string, float, bool);
     callback compare(bool);
     callback set-crop-size(string, string);
@@ -1339,6 +1426,12 @@ export component AppWindow inherits Window {
                             icon: "M3 7 a2 2 0 0 1 2 -2 h4 l2 2 h8 a2 2 0 0 1 2 2 v9 a2 2 0 0 1 -2 2 H5 a2 2 0 0 1 -2 -2 z";
                             clicked => { root.open-file(); }
                         }
+                        IconButton {
+                            y: (parent.height - self.height) / 2;
+                            icon: "M12 9 a3 3 0 1 0 0 6 a3 3 0 1 0 0 -6 z M19.4 15 a1.7 1.7 0 0 0 .3 1.8 l.1 .1 a2 2 0 1 1 -2.8 2.8 l-.1 -.1 a1.7 1.7 0 0 0 -1.8 -.3 a1.7 1.7 0 0 0 -1 1.5 V21 a2 2 0 1 1 -4 0 v-.1 a1.7 1.7 0 0 0 -1.1 -1.5 a1.7 1.7 0 0 0 -1.8 .3 l-.1 .1 a2 2 0 1 1 -2.8 -2.8 l.1 -.1 a1.7 1.7 0 0 0 .3 -1.8 a1.7 1.7 0 0 0 -1.5 -1 H3 a2 2 0 1 1 0 -4 h.1 a1.7 1.7 0 0 0 1.5 -1.1 a1.7 1.7 0 0 0 -.3 -1.8 l-.1 -.1 a2 2 0 1 1 2.8 -2.8 l.1 .1 a1.7 1.7 0 0 0 1.8 .3 H9 a1.7 1.7 0 0 0 1 -1.5 V3 a2 2 0 1 1 4 0 v.1 a1.7 1.7 0 0 0 1 1.5 a1.7 1.7 0 0 0 1.8 -.3 l.1 -.1 a2 2 0 1 1 2.8 2.8 l-.1 .1 a1.7 1.7 0 0 0 -.3 1.8 V9 a1.7 1.7 0 0 0 1.5 1 H21 a2 2 0 1 1 0 4 h-.1 a1.7 1.7 0 0 0 -1.5 1 z";
+                            label: @tr("nav-settings" => "Settings");
+                            clicked => { root.settings-open(); }
+                        }
                     }
                 }
                 Rectangle { height: 1px; background: Theme.line; }
@@ -1383,16 +1476,238 @@ export component AppWindow inherits Window {
                             height: grid.ch;
                             data: card;
                             open => { root.open-card(card.path); }
+                            rename(name) => { root.card-rename(card.path, name); }
+                            trash => { root.card-trash(card.path); }
+                            reveal => { root.card-reveal(card.path); }
                         }
                     }
                 }
                 Rectangle {
                     height: 30px;
                     background: Theme.panel;
-                    Text { x: 16px; text: root.toast != "" ? root.toast : root.library-dir; color: root.toast != "" ? Theme.accent-text : Theme.text3; font-size: 12px; vertical-alignment: center; height: parent.height; }
+                    HorizontalLayout {
+                        padding-left: 16px;
+                        padding-right: 12px;
+                        spacing: 10px;
+                        Text { text: root.toast != "" ? root.toast : root.library-dir; color: root.toast != "" ? Theme.accent-text : Theme.text3; font-size: 12px; vertical-alignment: center; overflow: elide; horizontal-stretch: 1; }
+                        if root.toast != "" && root.toast-action != "": VerticalLayout {
+                            alignment: center;
+                            SmallButton { text: root.toast-action; clicked => { root.toast-action-clicked(); } }
+                        }
+                    }
                 }
             }
             init => { self.focus(); }
+        }
+    }
+
+    // ================================================================ settings (ZK-56)
+    // Inside the main window (not a separate one, PLAN): pages on the left, the page on the
+    // right; every change applies and saves at once. Esc or the back arrow returns.
+    Rectangle {
+        opacity: root.page == 2 ? 1 : 0;
+        visible: self.opacity > 0.01;
+        animate opacity { duration: 160ms; easing: ease-in-out; }
+        background: Theme.app;
+        set-keys := FocusScope {
+            enabled: root.page == 2;
+            key-pressed(e) => {
+                if (e.text == Key.Escape) { root.setting("close", 0); return accept; }
+                return reject;
+            }
+            VerticalLayout {
+                Rectangle {
+                    height: 52px;
+                    background: Theme.panel;
+                    DragArea { drag => { root.window-drag(); } toggle => { root.window-toggle(); } }
+                    if root.custom-frame: WindowControls {
+                        x: parent.width - self.width;
+                        height: parent.height;
+                        maximized: root.win-maximized;
+                        minimize => { root.window-minimize(); }
+                        toggle => { root.window-toggle(); }
+                        close => { root.window-close(); }
+                    }
+                    HorizontalLayout {
+                        padding-left: 12px + root.lights-inset;
+                        padding-right: root.custom-frame ? 146px : 16px;
+                        spacing: 8px;
+                        IconButton { y: (parent.height - self.height) / 2; icon: "M15 5 l-7 7 7 7"; label: @tr("common-close" => "Close") + "  Esc"; clicked => { root.setting("close", 0); } }
+                        Text { text: @tr("set-title" => "Settings"); color: Theme.text; font-size: 15px; font-weight: 700; vertical-alignment: center; }
+                        Rectangle { horizontal-stretch: 1; }
+                        Text { text: @tr("set-applied-now" => "Changes apply immediately"); color: Theme.text3; font-size: 12px; vertical-alignment: center; }
+                    }
+                }
+                Rectangle { height: 1px; background: Theme.line; }
+                HorizontalLayout {
+                    vertical-stretch: 1;
+                    // pages
+                    Rectangle {
+                        width: 232px;
+                        background: Theme.panel;
+                        VerticalLayout {
+                            padding: 12px;
+                            spacing: 2px;
+                            alignment: start;
+                            for t[i] in [
+                                @tr("set-page-shots" => "Screenshots"),
+                                @tr("set-page-keys" => "Hotkeys"),
+                                @tr("set-page-library" => "Library"),
+                                @tr("set-page-sharing" => "Sharing"),
+                                @tr("set-page-look" => "Appearance and language"),
+                                @tr("set-page-privacy" => "Privacy"),
+                                @tr("set-page-about" => "About Znimok"),
+                            ]: Rectangle {
+                                height: 34px;
+                                border-radius: 8px;
+                                background: root.settings-page == i ? Theme.control-on : (nav-ta.has-hover ? Theme.elevated : transparent);
+                                animate background { duration: 120ms; }
+                                Text { x: 12px; text: t; color: root.settings-page == i ? Theme.text : Theme.text2; font-size: 13px; font-weight: root.settings-page == i ? 600 : 400; vertical-alignment: center; height: parent.height; }
+                                nav-ta := TouchArea { mouse-cursor: MouseCursor.pointer; clicked => { root.settings-page = i; } }
+                            }
+                        }
+                    }
+                    Rectangle { width: 1px; background: Theme.line; }
+                    // the page
+                    set-sv := ScrollView {
+                        horizontal-stretch: 1;
+                        VerticalLayout {
+                            x: 0;
+                            // A readable column: never wider than 680 px, never wider than the view.
+                            width: min(set-sv.visible-width - 12px, 680px);
+                            padding: 28px;
+                            spacing: 18px;
+                            alignment: start;
+                            // ---- Screenshots
+                            if root.settings-page == 0: VerticalLayout {
+                                spacing: 14px;
+                                Text { text: @tr("shots-intro" => "What happens when you release the mouse in the overlay. Each action sits on exactly one gesture."); color: Theme.text3; font-size: 12px; wrap: word-wrap; }
+                                SwitchRow { text: @tr("shots-quick-library" => "Quick captures go to the library too"); checked: root.pref-quick-library; toggled => { root.setting("quick-library", self.checked ? 1 : 0); } }
+                                SwitchRow { text: @tr("shots-tool-stays" => "The tool stays active after drawing"); checked: root.pref-keep-tool; toggled => { root.setting("keep-tool", self.checked ? 1 : 0); } }
+                                SwitchRow { text: @tr("shots-autosave" => "Save automatically (also in the editor title bar)"); checked: root.pref-autosave; toggled => { root.setting("autosave", self.checked ? 1 : 0); } }
+                            }
+                            // ---- Hotkeys (choosing other combinations: ZK-44)
+                            if root.settings-page == 1: VerticalLayout {
+                                spacing: 14px;
+                                Text { text: @tr("keys-intro" => "They work in any program. Click a field and press a combination to change it. On a Mac the standard ⌘⇧3/4/5 belong to the system, so the defaults are different."); color: Theme.text3; font-size: 12px; wrap: word-wrap; }
+                                SwitchRow { text: @tr("keys-enable" => "Capture with hotkeys"); checked: root.pref-capture; toggled => { root.setting("capture", self.checked ? 1 : 0); } }
+                                Text { text: @tr("keys-enable-hint" => "Off — the combinations are free for other programs"); color: Theme.text3; font-size: 11px; wrap: word-wrap; }
+                                HorizontalLayout {
+                                    spacing: 12px;
+                                    Text { text: @tr("keys-region" => "Region screenshot"); color: Theme.text2; font-size: 12px; vertical-alignment: center; horizontal-stretch: 1; }
+                                    Rectangle {
+                                        width: 140px;
+                                        height: 28px;
+                                        border-radius: 7px;
+                                        background: Theme.elevated;
+                                        Text { text: root.capture-key; color: root.pref-capture ? Theme.text : Theme.disabled; font-size: 12px; horizontal-alignment: center; vertical-alignment: center; width: parent.width; height: parent.height; }
+                                        TipTouch { tip: @tr("common-in-development" => "Coming soon"); mouse-cursor: MouseCursor.default; }
+                                    }
+                                }
+                            }
+                            // ---- Library
+                            if root.settings-page == 2: VerticalLayout {
+                                spacing: 14px;
+                                Text { text: @tr("libset-intro" => "The folder is the source of truth. You can keep it on a cloud drive and Znimok will pick up changes."); color: Theme.text3; font-size: 12px; wrap: word-wrap; }
+                                Text { text: @tr("libset-folder" => "Library folder"); color: Theme.text2; font-size: 12px; }
+                                Rectangle {
+                                    height: 32px;
+                                    border-radius: 7px;
+                                    background: Theme.elevated;
+                                    Text { x: 10px; width: parent.width - 20px; text: root.pref-lib-dir; color: Theme.text; font-size: 12px; vertical-alignment: center; height: parent.height; overflow: elide; }
+                                }
+                                HorizontalLayout {
+                                    spacing: 8px;
+                                    alignment: start;
+                                    TextButton { text: @tr("common-change-ellipsis" => "Change…"); clicked => { root.setting("lib-folder", 0); } }
+                                    TextButton { text: @tr("libset-show-folder" => "Show folder"); clicked => { root.setting("show-folder", 0); } }
+                                }
+                                Rectangle { height: 1px; background: Theme.line; }
+                                Text { text: @tr("libset-keep-shots" => "Keep screenshots no more than"); color: Theme.text2; font-size: 12px; }
+                                HorizontalLayout {
+                                    spacing: 8px;
+                                    Rectangle {
+                                        width: 200px;
+                                        height: 30px;
+                                        border-radius: 8px;
+                                        background: Theme.elevated;
+                                        HorizontalLayout {
+                                            padding: 2px;
+                                            spacing: 2px;
+                                            SegOption { text: @tr("libset-by-count" => "count"); on: !root.pref-ret-size; clicked => { root.setting("ret-by", 0); } }
+                                            SegOption { text: @tr("libset-by-size" => "size"); on: root.pref-ret-size; clicked => { root.setting("ret-by", 1); } }
+                                        }
+                                    }
+                                    if !root.pref-ret-size: NumField { width: 110px; label: ""; value <=> root.pref-ret-count; committed(v) => { root.setting("ret-count", 0); } }
+                                    if root.pref-ret-size: NumField { width: 110px; label: ""; value <=> root.pref-ret-mb; committed(v) => { root.setting("ret-mb", 0); } }
+                                    Text { text: root.pref-ret-size ? "MB" : ""; color: Theme.text3; font-size: 12px; vertical-alignment: center; width: 24px; }
+                                }
+                                Text { text: @tr("libset-oldest-trash" => "The oldest go to the trash, not away for good"); color: Theme.text3; font-size: 11px; wrap: word-wrap; }
+                            }
+                            // ---- Sharing
+                            if root.settings-page == 3: VerticalLayout {
+                                spacing: 14px;
+                                Text { text: @tr("sharing-intro" => "What the main Copy button does and which format comes out."); color: Theme.text3; font-size: 12px; wrap: word-wrap; }
+                                SwitchRow { text: @tr("sharing-metadata" => "Write metadata into files"); checked: root.pref-metadata; toggled => { root.setting("metadata", self.checked ? 1 : 0); } }
+                                Text { text: @tr("export-metadata" => "Write metadata (title, description, author, date)"); color: Theme.text3; font-size: 11px; wrap: word-wrap; }
+                            }
+                            // ---- Look and language
+                            if root.settings-page == 4: VerticalLayout {
+                                spacing: 14px;
+                                Text { text: @tr("look-language" => "Language"); color: Theme.text2; font-size: 12px; }
+                                Rectangle {
+                                    height: 32px;
+                                    border-radius: 9px;
+                                    background: Theme.elevated;
+                                    HorizontalLayout {
+                                        padding: 2px;
+                                        spacing: 2px;
+                                        SegOption { text: @tr("look-language-system" => "System"); on: root.pref-lang == 0; clicked => { root.setting("lang", 0); } }
+                                        SegOption { text: "Українська"; on: root.pref-lang == 1; clicked => { root.setting("lang", 1); } }
+                                        SegOption { text: "English"; on: root.pref-lang == 2; clicked => { root.setting("lang", 2); } }
+                                    }
+                                }
+                                Text { text: @tr("look-theme" => "Theme"); color: Theme.text2; font-size: 12px; }
+                                Rectangle {
+                                    height: 32px;
+                                    border-radius: 9px;
+                                    background: Theme.elevated;
+                                    HorizontalLayout {
+                                        padding: 2px;
+                                        spacing: 2px;
+                                        SegOption { text: @tr("look-theme-system" => "As in the system"); enabled: false; tip: @tr("common-in-development" => "Coming soon"); }
+                                        SegOption { text: @tr("look-theme-light" => "Light"); enabled: false; tip: @tr("common-in-development" => "Coming soon"); }
+                                        SegOption { text: @tr("look-theme-dark" => "Dark"); on: true; }
+                                    }
+                                }
+                            }
+                            // ---- Privacy
+                            if root.settings-page == 5: VerticalLayout {
+                                spacing: 14px;
+                                Text { text: @tr("priv-intro" => "Znimok sends nothing anywhere without your action. Everything that touches the network and your data is here."); color: Theme.text3; font-size: 12px; wrap: word-wrap; }
+                                SwitchRow { text: @tr("priv-updates" => "Check for updates daily"); checked: root.pref-updates; toggled => { root.setting("updates", self.checked ? 1 : 0); } }
+                                Text { text: @tr("priv-updates-hint" => "GitHub Releases, version number only"); color: Theme.text3; font-size: 11px; }
+                                for row in [
+                                    { k: @tr("priv-telemetry" => "Telemetry and statistics"), v: @tr("priv-telemetry-none" => "none, and no switch either") },
+                                    { k: @tr("priv-crash" => "Crash reports"), v: @tr("priv-crash-local" => "a local file; you send it yourself") },
+                                    { k: @tr("priv-cloud" => "Cloud models (your own key)"), v: @tr("priv-cloud-off" => "off, no key") },
+                                ]: HorizontalLayout {
+                                    spacing: 12px;
+                                    Text { text: row.k; color: Theme.text2; font-size: 12px; horizontal-stretch: 1; }
+                                    Text { text: row.v; color: Theme.text3; font-size: 12px; }
+                                }
+                                Text { text: root.pref-file; color: Theme.text3; font-size: 10px; wrap: word-wrap; }
+                            }
+                            // ---- About
+                            if root.settings-page == 6: VerticalLayout {
+                                spacing: 14px;
+                                Text { text: root.pref-version; color: Theme.text; font-size: 18px; font-weight: 700; }
+                                HorizontalLayout { alignment: start; AboutSlint { height: 160px; } }
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -1501,6 +1816,7 @@ export component AppWindow inherits Window {
                             IconButton { width: 36px; height: 28px; label: @tr("doc-redo" => "Redo"); tip: self.label + "  " + Keys.k("Ctrl+Shift+Z", "⇧⌘Z"); icon: "M15 14 l5 -5 -5 -5 M20 9 H9 a5 5 0 0 0 0 10 h3"; enabled: root.can-redo; clicked => { root.redo(); } }
                         }
                     }
+                    IconButton { width: 36px; height: 28px; y: (parent.height - self.height) / 2; icon: "M12 9 a3 3 0 1 0 0 6 a3 3 0 1 0 0 -6 z M19.4 15 a1.7 1.7 0 0 0 .3 1.8 l.1 .1 a2 2 0 1 1 -2.8 2.8 l-.1 -.1 a1.7 1.7 0 0 0 -1.8 -.3 a1.7 1.7 0 0 0 -1 1.5 V21 a2 2 0 1 1 -4 0 v-.1 a1.7 1.7 0 0 0 -1.1 -1.5 a1.7 1.7 0 0 0 -1.8 .3 l-.1 .1 a2 2 0 1 1 -2.8 -2.8 l.1 -.1 a1.7 1.7 0 0 0 .3 -1.8 a1.7 1.7 0 0 0 -1.5 -1 H3 a2 2 0 1 1 0 -4 h.1 a1.7 1.7 0 0 0 1.5 -1.1 a1.7 1.7 0 0 0 -.3 -1.8 l-.1 -.1 a2 2 0 1 1 2.8 -2.8 l.1 .1 a1.7 1.7 0 0 0 1.8 .3 H9 a1.7 1.7 0 0 0 1 -1.5 V3 a2 2 0 1 1 4 0 v.1 a1.7 1.7 0 0 0 1 1.5 a1.7 1.7 0 0 0 1.8 -.3 l.1 -.1 a2 2 0 1 1 2.8 2.8 l-.1 .1 a1.7 1.7 0 0 0 -.3 1.8 V9 a1.7 1.7 0 0 0 1.5 1 H21 a2 2 0 1 1 0 4 h-.1 a1.7 1.7 0 0 0 -1.5 1 z"; label: @tr("nav-settings" => "Settings"); clicked => { root.settings-open(); } }
                     Rectangle { width: 4px; }
                     copy-box := Rectangle {
                         width: copy-row.preferred-width;
@@ -1568,6 +1884,7 @@ export component AppWindow inherits Window {
                                     padding: 6px;
                                     MenuItemRow { text: @tr("share-copy-image" => "Copy image"); shortcut: Keys.k("Ctrl+C", "⌘C") + (Keys.last-share == 0 ? "  Enter" : ""); clicked => { root.copy(); } }
                                     MenuItemRow { text: @tr("share-export" => "Export file…"); shortcut: Keys.k("Ctrl+Shift+S", "⇧⌘S") + (Keys.last-share == 1 ? "  Enter" : ""); clicked => { root.export(); } }
+                                    MenuItemRow { text: @tr("doc-save-as" => "Save as…"); clicked => { root.save-as(); } }
                                     MenuItemRow { text: @tr("share-system" => "Share…"); enabled: false; }
                                     Rectangle { height: 1px; background: Theme.line; }
                                     MenuItemRow { text: @tr("export-metadata" => "Write metadata (title, description, author, date)"); shortcut: root.export-meta ? "✓" : ""; clicked => { root.toggle-export-meta(); } }
@@ -1881,9 +2198,9 @@ export component AppWindow inherits Window {
                                         label: @tr("text-block" => "Block");
                                         HorizontalLayout {
                                             spacing: 2px;
-                                            SegOption { icon: "M4 6 h16 M4 10 h10 M4 14 h16 M4 18 h8"; on: root.text-align == 0; tip: @tr("ctx-align-left" => "Left"); clicked => { root.set-prop("align", 0); } }
-                                            SegOption { icon: "M4 6 h16 M7 10 h10 M4 14 h16 M8 18 h8"; on: root.text-align == 1; tip: @tr("ctx-align-centre" => "Centre"); clicked => { root.set-prop("align", 1); } }
-                                            SegOption { icon: "M4 6 h16 M10 10 h10 M4 14 h16 M12 18 h8"; on: root.text-align == 2; tip: @tr("ctx-align-right" => "Right"); clicked => { root.set-prop("align", 2); } }
+                                            SegOption { icon: "M4 6 h16 M4 10 h10 M4 14 h16 M4 18 h8"; on: root.text-align == 0; tip: @tr("ctx-align-left" => "Align left"); clicked => { root.set-prop("align", 0); } }
+                                            SegOption { icon: "M4 6 h16 M7 10 h10 M4 14 h16 M8 18 h8"; on: root.text-align == 1; tip: @tr("ctx-align-centre" => "Align centre"); clicked => { root.set-prop("align", 1); } }
+                                            SegOption { icon: "M4 6 h16 M10 10 h10 M4 14 h16 M12 18 h8"; on: root.text-align == 2; tip: @tr("ctx-align-right" => "Align right"); clicked => { root.set-prop("align", 2); } }
                                         }
                                     }
                                     if root.prop-for-selection: PropRow {

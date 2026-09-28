@@ -426,6 +426,16 @@ share-system-long = Системне меню «Поділитися»…
 # @max: 32
 share-export = Експортувати файл…
 
+# @where: Other ways menu: a copy of the document (.znimok) in any folder
+# @kind: menu
+# @max: 24
+doc-save-as = Зберегти як…
+
+# @where: Status line after «Save as…»
+# @kind: toast
+# @max: 48
+doc-saved-as = Збережено «{ $name }»
+
 # @where: Single HTML file with marks that opens anywhere
 # @kind: menu
 # @max: 36

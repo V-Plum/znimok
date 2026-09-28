@@ -81,8 +81,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(windows)]
     znimok_win::init_process();
 
-    let lang = znimok_i18n::choose_language(None, znimok_i18n::system_language().as_deref());
+    // Settings first (ZK-56): the language and the library folder come from them. The self-test
+    // keeps its own file next to its report.
+    let selftest_dir = std::env::var_os("ZNIMOK_SELFTEST").map(PathBuf::from);
+    let store = match &selftest_dir {
+        Some(d) => Some(znimok_settings::Store::open(d.join("settings.json"))),
+        None => znimok_settings::Store::open_default(),
+    };
+    let prefs = store.as_ref().map(|s| s.get()).unwrap_or_default();
+    let lang = znimok_i18n::choose_language(
+        prefs.general.language.as_deref(),
+        znimok_i18n::system_language().as_deref(),
+    );
     let tr = znimok_i18n::Localizer::new(lang);
+    let lib_dir = app::library_dir(&prefs);
 
     // Backend pinned per OS: letting wgpu probe every backend crashed natively on a machine
     // with Intel UHD 630 under RDP (ZK-14). WGPU_BACKEND still overrides.
@@ -114,10 +126,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let _ = slint::select_bundled_translation(lang);
     }
 
-    let selftest_dir = std::env::var_os("ZNIMOK_SELFTEST").map(PathBuf::from);
     // One Znimok per library: a second start shows the running one's window and exits.
     let instance = if selftest_dir.is_none() {
-        match tray::start(&library::default_dir()) {
+        match tray::start(&lib_dir) {
             tray::Start::First(i) => Some(i),
             tray::Start::Woke => return Ok(()),
         }
@@ -140,7 +151,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .into(),
     );
 
-    let app: Shared = Rc::new(RefCell::new(App::new(tr, library::default_dir())));
+    let app: Shared = Rc::new(RefCell::new(App::new(tr, lib_dir)));
+    app.borrow_mut().use_settings(&ui, store);
     CTX.with(|c| *c.borrow_mut() = Some((app.clone(), ui.as_weak())));
     app.borrow_mut().refresh_library(&ui);
 
@@ -287,6 +299,10 @@ fn shot_from_hotkey() {
     if let Some((app, weak)) = ctx
         && let Some(ui) = weak.upgrade()
     {
+        // "Take screenshots with hotkeys" off in the settings: the key does nothing (ZK-56).
+        if !app.borrow().prefs().capture.enabled {
+            return;
+        }
         new_shot(&app, &ui);
     }
 }
@@ -662,7 +678,7 @@ fn wire(ui: &AppWindow, app: &Shared) {
         });
     }
     on!(ui, app, on_autosave_toggled, |a, w, on| {
-        a.autosave = on;
+        a.setting(&w, "autosave", on as i32);
         a.sync(&w);
     });
     on!(ui, app, on_tool_chosen, |a, w, t| {
@@ -814,6 +830,27 @@ fn wire(ui: &AppWindow, app: &Shared) {
             }
         });
     }
+    on!(ui, app, on_save_as, |a, w| {
+        a.save_as(&w);
+    });
+    on!(ui, app, on_card_trash, |a, w, path| {
+        a.lib_trash(&w, std::path::Path::new(path.as_str()));
+    });
+    on!(ui, app, on_card_rename, |a, w, path, name| {
+        a.lib_rename(&w, std::path::Path::new(path.as_str()), &name);
+    });
+    on!(ui, app, on_card_reveal, |_a, _w, path| {
+        library::show_in_folder(std::path::Path::new(path.as_str()));
+    });
+    on!(ui, app, on_toast_action_clicked, |a, w| {
+        a.toast_action(&w);
+    });
+    on!(ui, app, on_setting, |a, w, key, value| {
+        a.setting(&w, &key, value);
+    });
+    on!(ui, app, on_settings_open, |a, w| {
+        a.settings_open(&w);
+    });
     on!(ui, app, on_toggle_export_meta, |a, w| {
         a.toggle_export_meta(&w);
     });

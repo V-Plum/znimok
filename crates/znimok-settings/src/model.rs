@@ -172,6 +172,8 @@ pub struct Editor {
     pub last_action: SaveAction,
     /// The last folder of «Зберегти як…».
     pub save_dir: Option<PathBuf>,
+    /// Exported files carry the title, description, author, rights, tags and date (ZK-61).
+    pub write_metadata: bool,
 }
 
 impl Default for Editor {
@@ -182,6 +184,7 @@ impl Default for Editor {
             smart_guides: true,
             last_action: SaveAction::Clipboard,
             save_dir: None,
+            write_metadata: true,
         }
     }
 }
