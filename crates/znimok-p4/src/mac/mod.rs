@@ -13,6 +13,7 @@ use objc2::rc::{Retained, autoreleasepool};
 use objc2::runtime::AnyObject;
 use objc2_av_foundation::{
     AVAssetReader, AVAssetReaderTrackOutput, AVAssetTrack, AVMediaTypeVideo, AVURLAsset,
+    NSValueAVFoundationExtensions,
 };
 use objc2_core_foundation::{CFRetained, CFString};
 use objc2_core_media::{CMSampleBuffer, CMTime, CMTimeFlags, CMTimeRange, kCMTimePositiveInfinity};
@@ -24,7 +25,7 @@ use objc2_core_video::{
     kCVPixelBufferMetalCompatibilityKey, kCVPixelBufferPixelFormatTypeKey,
     kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange,
 };
-use objc2_foundation::{NSDictionary, NSNumber, NSString, NSURL};
+use objc2_foundation::{NSArray, NSDictionary, NSNumber, NSString, NSURL, NSValue};
 use objc2_metal::{MTLDevice, MTLPixelFormat, MTLTextureType};
 use serde_json::json;
 use wgpu::hal::api::Metal;
@@ -98,6 +99,10 @@ struct Reader {
     output: Retained<AVAssetReaderTrackOutput>,
     fps: f64,
     duration: f64,
+    /// `--reuse`: one random-access reader for all seeks (`resetForReadingTimeRanges`) instead of a
+    /// new AVAssetReader per seek.
+    reuse: bool,
+    ra: Option<(Retained<AVAssetReader>, Retained<AVAssetReaderTrackOutput>)>,
 }
 
 impl Reader {
@@ -113,7 +118,7 @@ impl Reader {
             let fps = f64::from(track.nominalFrameRate());
             let duration = cm_seconds(asset.duration());
             let (reader, output) = Self::start(&asset, &track, None)?;
-            Ok(Self { track, asset, reader, output, fps, duration })
+            Ok(Self { track, asset, reader, output, fps, duration, reuse: false, ra: None })
         }
     }
 
@@ -122,6 +127,17 @@ impl Reader {
         asset: &AVURLAsset,
         track: &AVAssetTrack,
         from: Option<f64>,
+    ) -> Result<(Retained<AVAssetReader>, Retained<AVAssetReaderTrackOutput>), String> {
+        unsafe { Self::start_with(asset, track, from.map(|t| (t, None)), false) }
+    }
+
+    /// A fresh reader for `range` (start, optional duration); `random` enables later
+    /// `resetForReadingTimeRanges`.
+    unsafe fn start_with(
+        asset: &AVURLAsset,
+        track: &AVAssetTrack,
+        range: Option<(f64, Option<f64>)>,
+        random: bool,
     ) -> Result<(Retained<AVAssetReader>, Retained<AVAssetReaderTrackOutput>), String> {
         unsafe {
             let reader = AVAssetReader::assetReaderWithAsset_error(asset)
@@ -135,8 +151,10 @@ impl Reader {
             let dict: &NSDictionary<NSString, AnyObject> = &*(Retained::as_ptr(&dict).cast());
             let output = AVAssetReaderTrackOutput::assetReaderTrackOutputWithTrack_outputSettings(track, Some(dict));
             output.setAlwaysCopiesSampleData(false);
-            if let Some(t) = from {
-                reader.setTimeRange(CMTimeRange { start: cm_time(t), duration: kCMTimePositiveInfinity });
+            output.setSupportsRandomAccess(random);
+            if let Some((t, d)) = range {
+                let duration = d.map_or(kCMTimePositiveInfinity, cm_time);
+                reader.setTimeRange(CMTimeRange { start: cm_time(t), duration });
             }
             reader.addOutput(&output);
             if !reader.startReading() {
@@ -168,6 +186,9 @@ impl Reader {
     /// New reader from the wanted frame's time; read until that frame. Returns it and how many
     /// frames came out on the way.
     fn seek(&mut self, index: u32) -> Result<(f64, Retained<CMSampleBuffer>, CFRetained<CVImageBuffer>, u32), String> {
+        if self.reuse {
+            return self.seek_reuse(index);
+        }
         // SAFETY: cancelling our own reader, then a fresh one.
         unsafe { self.reader.cancelReading() };
         // AVAssetReader returns the frame that covers the range start and stamps it with the start
@@ -182,6 +203,38 @@ impl Reader {
             n += 1;
             if self.index_of(pts) >= index {
                 return Ok((pts, s, pb, n));
+            }
+        }
+    }
+}
+
+impl Reader {
+    /// Seek through one random-access reader: read the previous range to its end (the API asks
+    /// for that), then `resetForReadingTimeRanges` to half a frame inside the wanted one.
+    fn seek_reuse(&mut self, index: u32) -> Result<(f64, Retained<CMSampleBuffer>, CFRetained<CVImageBuffer>, u32), String> {
+        let start = (f64::from(index) + 0.1) / self.fps;
+        let len = 0.5 / self.fps;
+        // SAFETY: AVFoundation calls on objects we own; ranges are valid CMTimeRanges.
+        unsafe {
+            match &self.ra {
+                None => self.ra = Some(Self::start_with(&self.asset, &self.track, Some((start, Some(len))), true)?),
+                Some((_, o)) => {
+                    while o.copyNextSampleBuffer().is_some() {}
+                    let r = CMTimeRange { start: cm_time(start), duration: cm_time(len) };
+                    let v = NSValue::valueWithCMTimeRange(r);
+                    o.resetForReadingTimeRanges(&NSArray::from_retained_slice(&[v]));
+                }
+            }
+            let (_, o) = self.ra.as_ref().unwrap();
+            let mut n = 0;
+            loop {
+                let s = o.copyNextSampleBuffer().ok_or("порожній діапазон перемотки")?;
+                let Some(pb) = s.image_buffer() else { continue };
+                n += 1;
+                let pts = cm_seconds(s.presentation_time_stamp());
+                if self.index_of(pts) >= index {
+                    return Ok((pts, s, pb, n));
+                }
             }
         }
     }
@@ -360,6 +413,7 @@ impl Player {
             "mode": if self.mode == Mode::Zero { "zero" } else { "cpu" },
             "size": [w, h], "fps": round1(self.reader.fps), "frames_in_file": self.reader.frame_count(),
             "decoder": "AVAssetReader (VideoToolbox)", "wgpu_adapter": self.gpu.adapter.name,
+            "seek_reader": if self.reader.reuse { "one random-access reader" } else { "new reader per seek" },
         })
     }
 }
@@ -448,7 +502,8 @@ fn bench(args: &[String]) -> Result<(), String> {
 }
 
 fn seek(args: &[String]) -> Result<(), String> {
-    let mut p = open_player(args, "seek <файл> [--mode zero|cpu] [--count N] [--gop N] [--seed N] [--rows]")?;
+    let mut p = open_player(args, "seek <файл> [--mode zero|cpu] [--count N] [--gop N] [--seed N] [--reuse] [--rows]")?;
+    p.reader.reuse = args.iter().any(|a| a == "--reuse");
     let total = p.reader.frame_count().max(1);
     let gop: u32 = num(args, "--gop", p.reader.fps.round() as u32)?;
     let count: u32 = num(args, "--count", 40)?;
