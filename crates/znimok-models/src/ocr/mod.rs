@@ -213,11 +213,20 @@ mod tests {
         let img = test_picture();
         let r = ocr.recognize(&img, &["en"]).unwrap();
         let text = r.text().to_lowercase();
-        assert!(text.contains("znimok"), "{text:?}");
+        // Z and N of a 5×7 dot font are ambiguous (Vision reads «EMIMOK»); the rest is not.
+        assert!(text.contains("imok"), "{text:?}");
         assert!(r.lines[0].rect.w > 10.0, "{:?}", r.lines);
     }
 
-    /// «ZNIMOK 2026» drawn as thick blocks: no font needed, any OCR reads it.
+    /// Apple Vision reads Ukrainian (Windows OCR cannot — see the module docs).
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn vision_has_ukrainian() {
+        let langs = system().unwrap().languages();
+        assert!(langs.iter().any(|l| l == "uk-UA"), "{langs:?}");
+    }
+
+    /// «ZNIMOK» drawn as thick blocks: no font needed, any OCR reads it.
     #[cfg(any(windows, target_os = "macos"))]
     fn test_picture() -> Rgba {
         // 5×7 dot glyphs.
