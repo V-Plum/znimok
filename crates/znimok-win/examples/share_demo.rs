@@ -48,7 +48,7 @@ fn main() {
     }
     let share = znimok_win::WinShare::new(hwnd.0 as isize, "Znimok");
     println!("available: {}", share.available());
-    match share.share(&[file.clone()], None) {
+    match share.share(std::slice::from_ref(&file), None) {
         Ok(()) => println!("share sheet requested for {}", file.display()),
         Err(e) => {
             eprintln!("share failed: {e}");

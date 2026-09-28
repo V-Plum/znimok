@@ -7,9 +7,9 @@
 
 use std::path::PathBuf;
 
-use objc2::MainThreadMarker;
 use objc2::rc::Retained;
 use objc2::runtime::AnyObject;
+use objc2::{AnyThread, MainThreadMarker};
 use objc2_app_kit::{NSScreen, NSSharingServicePicker, NSView};
 use objc2_foundation::{NSArray, NSPoint, NSRect, NSRectEdge, NSSize, NSString, NSURL};
 use znimok_platform::{PlatformError, Rect, Result, Share};
@@ -73,7 +73,7 @@ impl Share for MacShare {
         let items = NSArray::from_retained_slice(&urls);
         // SAFETY: an array of file URLs, as documented.
         let picker = unsafe {
-            NSSharingServicePicker::initWithItems(NSSharingServicePicker::alloc(mtm), &items)
+            NSSharingServicePicker::initWithItems(NSSharingServicePicker::alloc(), &items)
         };
         let rect = match (anchor, view.window()) {
             (Some(a), Some(win)) => {
