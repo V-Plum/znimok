@@ -327,10 +327,56 @@ impl Session {
             .map(|w| (w.rect, w.id))
     }
 
+    /// Colour shown on screen at a frame pixel: the frozen frame, darkened by the veil outside
+    /// the selection (veil = black at 0x73 / 255, see `app.slint`).
+    fn shown(&self, x: i32, y: i32) -> [u8; 3] {
+        let f = &self.frozen.raster;
+        let o = ((y * f.width as i32 + x) * 4) as usize;
+        let c = [f.rgba[o], f.rgba[o + 1], f.rgba[o + 2]];
+        let lit = self.sel.is_some_and(|r| r.contains(x, y));
+        if lit {
+            c
+        } else {
+            c.map(|v| ((v as u32 * (255 - 0x73)) / 255) as u8)
+        }
+    }
+
+    /// A guide line: black over light pixels, white over dark ones (owner, 28.09).
+    fn guide(&self, horizontal: bool, at: i32) -> slint::Image {
+        let (fw, fh) = (
+            self.frozen.raster.width as i32,
+            self.frozen.raster.height as i32,
+        );
+        let len = if horizontal { fw } else { fh };
+        let mut rgba = Vec::with_capacity(len as usize * 4);
+        for t in 0..len {
+            let (x, y) = if horizontal {
+                (t, at.clamp(0, fh - 1))
+            } else {
+                (at.clamp(0, fw - 1), t)
+            };
+            let [r, g, b] = self.shown(x, y);
+            // Relative luminance (sRGB weights) against the middle grey.
+            let lum = 0.2126 * r as f32 + 0.7152 * g as f32 + 0.0722 * b as f32;
+            let v = if lum > 128.0 { 0 } else { 255 };
+            rgba.extend_from_slice(&[v, v, v, 230]);
+        }
+        let (w, h) = if horizontal {
+            (len as u32, 1)
+        } else {
+            (1, len as u32)
+        };
+        let buf = slint::SharedPixelBuffer::<slint::Rgba8Pixel>::clone_from_slice(&rgba, w, h);
+        slint::Image::from_rgba8(buf)
+    }
+
     fn update_lens(&mut self, x: f32, y: f32) {
         let ui = &self.ui;
         ui.set_pointer_x(x);
         ui.set_pointer_y(y);
+        let (gx, gy) = self.px(x, y);
+        ui.set_guide_h(self.guide(true, gy));
+        ui.set_guide_v(self.guide(false, gx));
         if self.zoom == 0 {
             ui.set_lens_visible(false);
             return;

@@ -238,6 +238,8 @@ export component Overlay inherits Window {
     // Pointer (for the guides, the lens and the hint strip).
     in property <length> pointer-x: -100px;
     in property <length> pointer-y: -100px;
+    in property <image> guide-h;
+    in property <image> guide-v;
     // Magnifier (ZK-40): off until the wheel turns it on.
     in property <bool> lens-visible;
     in property <image> lens;
@@ -270,9 +272,11 @@ export component Overlay inherits Window {
         border-color: root.is-window ? #50A0FF : #FFFFFFEB;
         background: transparent;
     }
-    // Guides through the pointer: where the frame's corner will land.
-    Rectangle { x: 0; y: root.pointer-y; width: parent.width; height: 1px; background: #FFFFFF96; }
-    Rectangle { x: root.pointer-x; y: 0; width: 1px; height: parent.height; background: #FFFFFF96; }
+    // Guides through the pointer: where the frame's corner will land. Drawn by Rust pixel by
+    // pixel in a colour that contrasts with what is under each pixel (black on light, white on
+    // dark), one physical pixel thick.
+    Image { x: 0; y: root.pointer-y; width: parent.width; height: 1phx; source: root.guide-h; image-fit: fill; image-rendering: pixelated; }
+    Image { x: root.pointer-x; y: 0; width: 1phx; height: parent.height; source: root.guide-v; image-fit: fill; image-rendering: pixelated; }
     if root.has-sel && root.sel-label != "": Rectangle {
         x: min(max(4px, root.sel-x), parent.width - self.width - 4px);
         y: root.sel-y > 34px ? root.sel-y - 30px : min(root.sel-y + root.sel-h + 6px, parent.height - 30px);

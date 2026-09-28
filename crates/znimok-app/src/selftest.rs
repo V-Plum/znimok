@@ -355,6 +355,17 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
             has && win,
             format!("label {}", ov.get_sel_label()),
         );
+        // Guides: over the white window (lit, not veiled) the line must be dark.
+        let gh = ov.get_guide_h().to_rgba8();
+        let px300 = gh.as_ref().map(|b| b.as_slice()[300]);
+        r.check(
+            "guides contrast with the background",
+            px300.is_some_and(|p| p.r < 40 && p.a > 200)
+                && gh
+                    .as_ref()
+                    .is_some_and(|b| b.width() == 1600 && b.height() == 1),
+            format!("{px300:?}"),
+        );
         r.check(
             "magnifier off by default",
             !ov.get_lens_visible(),
