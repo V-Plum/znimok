@@ -258,10 +258,7 @@ pub mod tone {
             let g = map(Transfer::ScRgb, [0.54, 0.54, 0.54], 240.0)[0];
             assert!((116..=120).contains(&g), "{g}");
             // PQ with 203-nit white: just above white clips to white.
-            assert_eq!(
-                map(Transfer::Pq, [0.6, 0.6, 0.6], 203.0),
-                [255, 255, 255]
-            );
+            assert_eq!(map(Transfer::Pq, [0.6, 0.6, 0.6], 203.0), [255, 255, 255]);
         }
 
         #[test]

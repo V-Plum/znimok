@@ -932,6 +932,18 @@
           "const": "add_object",
           "type": "string"
         },
+        "merge": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MergeKey"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "With the same key as following updates, creating and dragging out a mark is one undo step."
+        },
         "object": {
           "$ref": "#/$defs/Object"
         },

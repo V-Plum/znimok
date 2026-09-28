@@ -218,7 +218,8 @@ impl Editor {
         }
 
         let merge = match &cmd {
-            Command::UpdateObjects { merge, .. }
+            Command::AddObject { merge, .. }
+            | Command::UpdateObjects { merge, .. }
             | Command::MoveObjects { merge, .. }
             | Command::ResizeObject { merge, .. }
             | Command::SetTone { merge, .. } => merge.clone(),
@@ -268,7 +269,9 @@ impl Editor {
             created: None,
         };
         match cmd {
-            Command::AddObject { mut object, select } => {
+            Command::AddObject {
+                mut object, select, ..
+            } => {
                 if let Data::Image { bank } = object.data
                     && bank as usize >= self.doc.banks.len()
                 {
@@ -849,6 +852,7 @@ mod tests {
         e.apply(Command::AddObject {
             object: o,
             select: false,
+            merge: None,
         })
         .unwrap()
         .created
@@ -877,6 +881,39 @@ mod tests {
         e.apply(Command::Redo).unwrap();
         e.apply(Command::Redo).unwrap();
         assert_eq!(e.doc.get(id).unwrap().rect.x, 15);
+    }
+
+    #[test]
+    fn drawing_a_mark_is_one_step() {
+        let mut e = editor();
+        let key = Some(MergeKey::Drag { id: 9 });
+        let id = e
+            .apply(Command::AddObject {
+                object: rect(10, 10, 1, 1),
+                select: true,
+                merge: key.clone(),
+            })
+            .unwrap()
+            .created
+            .unwrap();
+        for w in [20, 40, 80] {
+            let patch = ObjectPatch {
+                rect: Some(IRect::new(10, 10, w, w / 2)),
+                ..Default::default()
+            };
+            e.apply(Command::UpdateObjects {
+                ids: vec![id],
+                patch,
+                merge: key.clone(),
+            })
+            .unwrap();
+        }
+        let QueryResult::State { state } = e.query(&Query::GetState) else {
+            unreachable!()
+        };
+        assert_eq!(state.undo_steps, 1);
+        e.apply(Command::Undo).unwrap();
+        assert!(e.doc.objects.is_empty());
     }
 
     #[test]

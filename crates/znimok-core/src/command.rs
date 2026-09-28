@@ -157,6 +157,9 @@ pub enum Command {
         object: Object,
         #[serde(default)]
         select: bool,
+        /// With the same key as following updates, creating and dragging out a mark is one undo step.
+        #[serde(default)]
+        merge: Option<MergeKey>,
     },
     UpdateObjects {
         ids: Vec<ObjectId>,
@@ -546,6 +549,7 @@ pub fn examples() -> (Vec<Command>, Vec<Query>) {
         Command::AddObject {
             object: obj(Data::Rect),
             select: true,
+            merge: None,
         },
         Command::AddObject {
             object: obj(Data::Line {
@@ -554,6 +558,7 @@ pub fn examples() -> (Vec<Command>, Vec<Query>) {
                 head_size: 1,
             }),
             select: false,
+            merge: Some(MergeKey::Drag { id: 3 }),
         },
         Command::AddObject {
             object: obj(Data::Counter {
@@ -563,6 +568,7 @@ pub fn examples() -> (Vec<Command>, Vec<Query>) {
                 shape: CounterShape::Pin,
             }),
             select: false,
+            merge: Some(MergeKey::Drag { id: 3 }),
         },
         Command::AddObject {
             object: obj(Data::Hide {
@@ -570,6 +576,7 @@ pub fn examples() -> (Vec<Command>, Vec<Query>) {
                 strength: 60,
             }),
             select: false,
+            merge: Some(MergeKey::Drag { id: 3 }),
         },
         Command::UpdateObjects {
             ids: vec![1, 2],
