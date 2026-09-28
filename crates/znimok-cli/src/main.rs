@@ -51,7 +51,8 @@ enum Cmd {
         #[arg(long, default_value_t = 1.0)]
         scale: f64,
     },
-    /// Exports to PNG, JPEG or WebP; the format comes from --format or the file extension.
+    /// Exports to PNG, JPEG, WebP or a self-contained HTML page; the format comes from --format
+    /// or the file extension.
     Export {
         file: PathBuf,
         #[arg(short, long)]
@@ -103,6 +104,8 @@ enum Format {
     Png,
     Jpeg,
     Webp,
+    /// One self-contained page: the picture with annotations, their list and the metadata.
+    Html,
 }
 
 #[derive(Clone, Copy, ValueEnum)]
@@ -189,6 +192,7 @@ fn write_image(
         Format::Webp => image::DynamicImage::ImageRgba8(img)
             .write_to(&mut out, image::ImageFormat::WebP)
             .map_err(enc_err)?,
+        Format::Html => return Err(Fail(2, "HTML is written by write_html".into())),
         Format::Jpeg => {
             // No alpha in JPEG: composite over white (Little Helpers rule), quality as asked.
             let rgb = image::RgbImage::from_fn(w, h, |x, y| {
@@ -205,6 +209,19 @@ fn write_image(
     out.flush().map_err(io(path))
 }
 
+/// The self-contained page (ZK-66) in the system language.
+fn write_html(path: &Path, doc: &Document, w: u32, h: u32, rgba: Vec<u8>) -> Result<(), Fail> {
+    let img = image::RgbaImage::from_raw(w, h, rgba)
+        .ok_or_else(|| Fail(3, "image buffer size mismatch".into()))?;
+    let mut png = std::io::Cursor::new(Vec::new());
+    image::DynamicImage::ImageRgba8(img)
+        .write_to(&mut png, image::ImageFormat::Png)
+        .map_err(|e| Fail(3, format!("{}: {e}", path.display())))?;
+    let tr = znimok_i18n::Localizer::for_system(None);
+    let html = znimok_html::page(doc, png.get_ref(), w, h, &tr);
+    std::fs::write(path, html).map_err(io(path))
+}
+
 fn format_for(path: &Path, explicit: Option<Format>) -> Result<Format, Fail> {
     if let Some(f) = explicit {
         return Ok(f);
@@ -218,6 +235,7 @@ fn format_for(path: &Path, explicit: Option<Format>) -> Result<Format, Fail> {
         Some("png") => Ok(Format::Png),
         Some("jpg" | "jpeg") => Ok(Format::Jpeg),
         Some("webp") => Ok(Format::Webp),
+        Some("html" | "htm") => Ok(Format::Html),
         _ => Err(Fail(
             2,
             format!("cannot tell the format of {}; use --format", path.display()),
@@ -357,6 +375,14 @@ fn run(cli: Cli) -> Result<(), Fail> {
             let doc = load(&file)?;
             let pix = render(&doc, 1.0);
             let (w, h) = (pix.width() as u32, pix.height() as u32);
+            if matches!(fmt, Format::Html) {
+                write_html(&output, &doc, w, h, znimok_render::pixmap_to_rgba(&pix))?;
+                out(
+                    json!({ "output": output.display().to_string(), "width": w, "height": h, "format": "html" }),
+                    format!("exported {} ({w}×{h}, HTML)", output.display()),
+                );
+                return Ok(());
+            }
             write_image(
                 &output,
                 w,
