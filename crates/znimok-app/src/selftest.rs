@@ -802,6 +802,50 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
         ui.invoke_meta_edited("title".into(), "Тестова назва".into());
         ui.invoke_autosave_toggled(true);
     }));
+    // ZK-41: the card after a quick capture — its own window in the corner, gone by itself.
+    steps.push(Box::new(|app, _ui, r| {
+        let shot = app.borrow().s.as_ref().map(|s| {
+            (
+                (*s.ed.doc.banks[s.ed.doc.source as usize]).clone(),
+                s.path.clone(),
+            )
+        });
+        if let Some((raster, path)) = shot {
+            crate::pill::show(
+                raster,
+                path,
+                "Знімок".into(),
+                "Знімок ділянки скопійовано".into(),
+                "1600 × 1000 · у буфері й бібліотеці".into(),
+                znimok_platform::Rect::new(0, 0, 1920, 1080),
+            );
+        }
+        r.check(
+            "card after capture shows",
+            crate::pill::is_open(),
+            String::new(),
+        );
+    }));
+    // The slide-in takes ~340 ms; the step timer is 350 ms.
+    steps.push(Box::new(|_, _, _| {}));
+    steps.push(Box::new(|_, _, r| {
+        let shot = crate::pill::with_window(|w| w.take_snapshot().ok()).flatten();
+        match shot {
+            Some(buf) => {
+                let path = r.dir.join("22-pill.png");
+                let saved =
+                    image::RgbaImage::from_raw(buf.width(), buf.height(), buf.as_bytes().to_vec())
+                        .is_some_and(|i| i.save(&path).is_ok());
+                r.check(
+                    "snapshot 22-pill",
+                    saved,
+                    format!("{}×{}", buf.width(), buf.height()),
+                );
+            }
+            None => r.check("snapshot 22-pill", false, "no card window".into()),
+        }
+        crate::pill::close();
+    }));
     // ZK-60: Esc takes off one layer at a time, Enter repeats the last share, [ ] thickness,
     // Ctrl+= zooms in.
     steps.push(Box::new(|app, ui, r| {

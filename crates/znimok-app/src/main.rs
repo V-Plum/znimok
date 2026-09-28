@@ -24,6 +24,7 @@ mod hotkey_win;
 mod io;
 mod library;
 mod overlay;
+mod pill;
 mod selftest;
 mod tray;
 
@@ -94,6 +95,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     slint::BackendSelector::new()
         .require_wgpu_30(slint::wgpu_30::WGPUConfiguration::Automatic(settings))
+        // The card after a capture (ZK-41) must not take the focus or show in the taskbar.
+        .with_winit_window_attributes_hook(|attrs| {
+            if attrs.title != pill::TITLE {
+                return attrs;
+            }
+            let attrs = attrs.with_active(false);
+            #[cfg(windows)]
+            let attrs = {
+                use slint::winit_030::winit::platform::windows::WindowAttributesExtWindows;
+                attrs.with_skip_taskbar(true)
+            };
+            attrs
+        })
         .select()?;
     if lang != znimok_i18n::FALLBACK {
         let _ = slint::select_bundled_translation(lang);

@@ -388,6 +388,7 @@ fn with_session(f: impl FnOnce(&mut Session) -> Option<Outcome>) {
         editor_was_visible,
         ..
     } = session;
+    let display = frozen.bounds;
     match outcome {
         Outcome::Cancel => {
             // (`invoke_from_event_loop` wakes the loop; a zero timer waits for the next event.)
@@ -409,7 +410,7 @@ fn with_session(f: impl FnOnce(&mut Session) -> Option<Outcome>) {
                 let raster = crate::capture::capture_window(id).ok().or(fallback);
                 let _ = slint::invoke_from_event_loop(move || {
                     if let Some(r) = raster {
-                        deliver(r, source, shift, editor_was_visible);
+                        deliver(r, source, shift, editor_was_visible, display);
                     }
                 });
             });
@@ -418,7 +419,7 @@ fn with_session(f: impl FnOnce(&mut Session) -> Option<Outcome>) {
             let raster = frozen.crop(rect);
             let _ = slint::invoke_from_event_loop(move || {
                 if let Some(r) = raster {
-                    deliver(r, source, shift, editor_was_visible);
+                    deliver(r, source, shift, editor_was_visible, display);
                 }
             });
         }
@@ -431,25 +432,36 @@ fn deliver(
     source: &str,
     to_clipboard: bool,
     editor_was_visible: bool,
+    display: znimok_platform::Rect,
 ) {
     crate::with_ctx(|a, ui| {
         if to_clipboard {
             let (w, h) = (raster.width, raster.height);
             let copied = io::copy_image(w, h, raster.rgba.clone());
-            let saved = a.store_quietly(ui, raster, source);
+            let saved = a.store_quietly(ui, raster.clone(), source);
             if editor_was_visible {
                 crate::show_window(ui);
             }
-            let msg = match (copied, saved) {
-                (Ok(()), Ok(())) => {
+            // ZK-41: the card in the corner of this display says where the shot went.
+            match (copied, saved) {
+                (copied, Ok((path, name))) => {
                     let mut args = znimok_i18n::FluentArgs::new();
                     args.set("width", w);
                     args.set("height", h);
-                    a.tr.tr_args("pill-where", &args)
+                    let heading = if copied.is_err() {
+                        a.tr.tr("pill-saved")
+                    } else {
+                        a.tr.tr(match source {
+                            "window" => "pill-window-copied",
+                            "screen" => "pill-screen-copied",
+                            _ => "pill-region-copied",
+                        })
+                    };
+                    let sub = a.tr.tr_args("pill-where", &args);
+                    crate::pill::show(raster, path, name, heading, sub, display);
                 }
-                (Err(e), _) | (_, Err(e)) => e,
-            };
-            a.toast(ui, msg);
+                (_, Err(e)) => a.toast(ui, e),
+            }
         } else {
             crate::show_window(ui);
             a.new_document(ui, raster, source, None);

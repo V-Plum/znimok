@@ -381,17 +381,20 @@ impl App {
     }
 
     /// Straight to the library without opening the editor (Shift in the capture overlay).
+    /// Returns the file and the document's name.
     pub fn store_quietly(
         &mut self,
         ui: &AppWindow,
         raster: Raster,
         source: &str,
-    ) -> Result<(), String> {
+    ) -> Result<(PathBuf, String), String> {
         let (doc, path) = self.build_document(raster, source, None);
+        let name = doc.name.clone();
         let opts = self.options_for(&doc);
         let _guard = SAVE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let _ = std::fs::create_dir_all(&self.lib_dir);
         let r = znimok_format::save(&path, &doc, &opts)
+            .map(|()| (path, name))
             .map_err(|e| format!("{} ({e})", self.tr.tr("err-library-save")));
         if self.s.is_none() {
             self.refresh_library(ui);
@@ -3208,23 +3211,7 @@ impl App {
     /// The picture as a PNG file for dragging out (ZK-64): a messenger or a folder takes a file.
     /// Named after the document; one temporary folder, overwritten on the next drag.
     pub fn drag_file(&mut self) -> Result<PathBuf, String> {
-        let name: String = self
-            .doc_name()
-            .chars()
-            .map(|c| {
-                if c.is_control() || r#"<>:"/\|?*"#.contains(c) {
-                    '_'
-                } else {
-                    c
-                }
-            })
-            .collect();
-        let name = name.trim().trim_end_matches('.').to_string();
-        let name = if name.is_empty() {
-            "Znimok".to_string()
-        } else {
-            name
-        };
+        let name = file_safe(&self.doc_name());
         let dir = std::env::temp_dir().join("Znimok").join("drag");
         std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
         let path = dir.join(format!("{name}.png"));
@@ -3248,7 +3235,7 @@ impl App {
         {
             // OLE runs its own loop until the drop; the button release never reaches Slint.
             let r = crate::dnd_win::drag_files(vec![path]);
-            release_pointer(ui);
+            release_pointer(ui.window());
             if let Err(e) = r {
                 let msg = format!("{} ({e})", self.tr.tr("export-error"));
                 self.toast(ui, msg);
@@ -3257,8 +3244,8 @@ impl App {
         #[cfg(target_os = "macos")]
         {
             // AppKit takes the mouse from here: the release goes to the drag session.
-            let started = crate::dnd_mac::drag_from(ui, &path);
-            release_pointer(ui);
+            let started = crate::dnd_mac::drag_from(ui.window(), &path);
+            release_pointer(ui.window());
             if !started {
                 let msg = self.tr.tr("export-error");
                 self.toast(ui, msg);
@@ -3754,13 +3741,32 @@ fn draw_marquee(pix: &mut Pixmap, view: &View, m: IRect) {
     }
 }
 
+/// A document name as a file name: characters Windows and macOS refuse become "_".
+pub fn file_safe(name: &str) -> String {
+    let s: String = name
+        .chars()
+        .map(|c| {
+            if c.is_control() || r#"<>:"/\|?*"#.contains(c) {
+                '_'
+            } else {
+                c
+            }
+        })
+        .collect();
+    let s = s.trim().trim_end_matches('.').to_string();
+    if s.is_empty() {
+        "Znimok".to_string()
+    } else {
+        s
+    }
+}
+
 /// Tells Slint the button is up after a system drag took the mouse, so the Copy button does
 /// not stay pressed (and does not copy on the next move).
 #[cfg(any(windows, target_os = "macos"))]
-fn release_pointer(ui: &AppWindow) {
+pub fn release_pointer(w: &slint::Window) {
     use slint::platform::{PointerEventButton, WindowEvent};
     let at = slint::LogicalPosition::new(-10.0, -10.0);
-    let w = ui.window();
     w.dispatch_event(WindowEvent::PointerReleased {
         position: at,
         button: PointerEventButton::Left,

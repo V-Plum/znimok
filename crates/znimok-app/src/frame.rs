@@ -114,6 +114,17 @@ mod win {
     }
 }
 
+/// Windows 11 rounded corners for any of our frameless windows (the card after a capture).
+pub fn round_window(w: &slint::Window) {
+    #[cfg(windows)]
+    {
+        use slint::winit_030::WinitWindowAccessor;
+        w.with_winit_window(|ww| win::round_corners(ww));
+    }
+    #[cfg(not(windows))]
+    let _ = w;
+}
+
 pub fn drag(ui: &AppWindow) {
     ui.window().with_winit_window(|w| {
         let _ = w.drag_window();

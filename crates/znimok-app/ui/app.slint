@@ -454,6 +454,7 @@ component IconButton inherits Rectangle {
 
 component TextButton inherits Rectangle {
     in property <string> text;
+    out property <bool> hover: ta.has-hover;
     in property <string> icon;
     in property <bool> primary: false;
     in property <bool> enabled: true;
@@ -735,6 +736,132 @@ component HintChip inherits HorizontalLayout {
 // pointer across the whole screen (they are the cursor, as in Little Helpers), a magnifier drawn
 // by Rust (nearest neighbour, pixel grid from ×8) and the hint strip, which jumps to the top
 // when the pointer comes near it. Coordinates are logical pixels of this window.
+// ---------------------------------------------------------------------------------------------
+// The small card in the corner after a quick capture (ZK-41): the shot is already in the
+// clipboard and the library. Its own window: it must not take the focus from what the user is
+// doing (see the attributes hook in main.rs), so its buttons carry no shared tooltips — the
+// second line of the card says what the button under the pointer does.
+
+component PillButton inherits Rectangle {
+    in property <string> icon;
+    in property <string> label;
+    out property <bool> hover: ta.has-hover;
+    callback clicked;
+    width: 30px;
+    height: 30px;
+    border-radius: 8px;
+    background: ta.pressed ? Theme.control-on : (ta.has-hover ? Theme.elevated : transparent);
+    animate background { duration: 120ms; }
+    transform-origin: { x: self.width / 2, y: self.height / 2 };
+    transform-scale: ta.pressed ? 0.92 : 1.0;
+    animate transform-scale { duration: 140ms; easing: cubic-bezier(0.2, 0.8, 0.2, 1); }
+    accessible-role: button;
+    accessible-label: root.label;
+    Icon { width: 18px; height: 18px; d: root.icon; tint: ta.has-hover ? Theme.text : Theme.text2; }
+    ta := TouchArea {
+        mouse-cursor: MouseCursor.pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+export component Pill inherits Window {
+    // Matched by the window-attributes hook in main.rs: no activation, no taskbar button.
+    title: "Znimok pill";
+    no-frame: true;
+    always-on-top: true;
+    width: 380px;
+    height: 96px;
+    background: Theme.panel;
+    in property <image> thumb;
+    in property <string> heading;
+    in property <string> sub;
+    // Time left, 1 → 0 (the thin bar at the bottom).
+    in property <float> progress: 1;
+    in property <bool> shown;
+    callback edit();
+    callback dismiss();
+    callback save-file();
+    callback show-library();
+    callback drag-out();
+    callback hovered(bool);
+    out property <bool> hover: bg.has-hover || th.has-hover || b-edit.hover || b-save.hover || b-lib.hover || b-close.hover;
+    changed hover => { root.hovered(self.hover); }
+    property <string> hint: b-save.hover ? @tr("pill-save-file" => "Save as file…") : (b-lib.hover ? @tr("pill-show-library" => "Show in library") : (th.has-hover ? @tr("share-drag-tip" => "drag to a chat or a folder") : ""));
+
+    Rectangle {
+        // Slides in from the side and settles with a little overshoot (owner: iOS-like motion).
+        x: root.shown ? 0 : 28px;
+        opacity: root.shown ? 1 : 0;
+        animate x { duration: 340ms; easing: cubic-bezier(0.2, 0.9, 0.3, 1.15); }
+        animate opacity { duration: 200ms; easing: ease-out; }
+        width: root.width;
+        height: root.height;
+        border-width: 1px;
+        border-color: Theme.control-on;
+        background: Theme.panel;
+        bg := TouchArea { }
+        HorizontalLayout {
+            padding: 10px;
+            padding-right: 8px;
+            spacing: 12px;
+            // The picture: click edits, pulling it drags the file out.
+            Rectangle {
+                width: 104px;
+                border-radius: 8px;
+                background: Theme.canvas;
+                clip: true;
+                transform-origin: { x: self.width / 2, y: self.height / 2 };
+                transform-scale: th.pressed ? 0.96 : (th.has-hover ? 1.02 : 1.0);
+                animate transform-scale { duration: 160ms; easing: cubic-bezier(0.2, 0.8, 0.2, 1); }
+                Image { width: parent.width; height: parent.height; source: root.thumb; image-fit: contain; }
+                th := TouchArea {
+                    property <bool> dragged;
+                    mouse-cursor: self.dragged ? MouseCursor.grabbing : MouseCursor.pointer;
+                    pointer-event(e) => { if (e.kind == PointerEventKind.down) { self.dragged = false; } }
+                    moved => {
+                        if (self.pressed && !self.dragged && (abs(self.mouse-x - self.pressed-x) > 6px || abs(self.mouse-y - self.pressed-y) > 6px)) {
+                            self.dragged = true;
+                            root.drag-out();
+                        }
+                    }
+                    clicked => {
+                        if (!self.dragged) { root.edit(); }
+                        self.dragged = false;
+                    }
+                }
+            }
+            VerticalLayout {
+                alignment: center;
+                spacing: 2px;
+                horizontal-stretch: 1;
+                Text { text: root.heading; color: Theme.text; font-size: 13px; font-weight: 600; overflow: elide; }
+                Text { text: root.hint != "" ? root.hint : root.sub; color: root.hint != "" ? Theme.accent-text : Theme.text2; font-size: 11px; overflow: elide; }
+                HorizontalLayout {
+                    padding-top: 8px;
+                    spacing: 4px;
+                    alignment: start;
+                    b-edit := TextButton { text: @tr("pill-edit" => "Edit"); primary: true; clicked => { root.edit(); } }
+                    b-save := PillButton { icon: "M12 4 v11 M7 10 l5 5 5 -5 M5 19 h14"; label: @tr("pill-save-file" => "Save as file…"); clicked => { root.save-file(); } }
+                    b-lib := PillButton { icon: "M4 4 h7 v7 H4 z M13 4 h7 v7 h-7 z M4 13 h7 v7 H4 z M13 13 h7 v7 h-7 z"; label: @tr("pill-show-library" => "Show in library"); clicked => { root.show-library(); } }
+                }
+            }
+            VerticalLayout {
+                alignment: start;
+                b-close := PillButton { width: 26px; height: 26px; icon: "M6 6 l12 12 M18 6 L6 18"; label: @tr("common-close" => "Close"); clicked => { root.dismiss(); } }
+            }
+        }
+        // Time left: a thin accent line that runs out (pauses while the pointer is on the card).
+        Rectangle {
+            x: 0;
+            y: parent.height - 2px;
+            height: 2px;
+            width: parent.width * root.progress;
+            background: Theme.accent;
+            opacity: 0.8;
+        }
+    }
+}
+
 export component Overlay inherits Window {
     no-frame: true;
     // Windows: top-most. macOS: Rust sets a window level above the menu bar instead (Slint's

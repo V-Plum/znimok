@@ -14,7 +14,6 @@ use objc2_app_kit::{
 use slint::winit_030::WinitWindowAccessor;
 use slint::winit_030::winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
 
-use crate::AppWindow;
 use objc2_foundation::{
     MainThreadMarker, NSArray, NSObject, NSObjectProtocol, NSPoint, NSRect, NSSize, NSString, NSURL,
 };
@@ -90,9 +89,8 @@ pub fn drag_file(view: &NSView, path: &Path) -> bool {
 }
 
 /// [`drag_file`] from the editor window's content view.
-pub fn drag_from(ui: &AppWindow, path: &Path) -> bool {
-    use slint::ComponentHandle;
-    ui.window()
+pub fn drag_from(window: &slint::Window, path: &Path) -> bool {
+    window
         .with_winit_window(|w| {
             let handle = w.window_handle().ok()?;
             let RawWindowHandle::AppKit(a) = handle.as_raw() else {
