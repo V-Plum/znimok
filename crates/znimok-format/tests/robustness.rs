@@ -190,3 +190,24 @@ fn write_fuzz_seed_if_asked() {
         .unwrap();
     }
 }
+
+/// Inputs that once crashed the reader (found by cargo-fuzz). Each must now read or fail
+/// cleanly — and whatever reads must survive a write/read round trip.
+#[test]
+fn fuzz_regressions() {
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fuzz-regressions");
+    let mut n = 0;
+    for e in std::fs::read_dir(&dir).unwrap() {
+        let data = std::fs::read(e.unwrap().path()).unwrap();
+        let _ = peek(&data);
+        if let Ok(doc) = read(&data) {
+            for o in &doc.objects {
+                let _ = o.bounds();
+            }
+            let again = read(&write(&doc, &WriteOptions::default())).unwrap();
+            assert_eq!(again.objects.len(), doc.objects.len());
+        }
+        n += 1;
+    }
+    assert!(n >= 1);
+}
