@@ -1,0 +1,24 @@
+[package]
+name = "znimok-cli"
+description = "znimok — command line for Znimok documents: info, render, export, commands, library"
+version.workspace = true
+edition.workspace = true
+license-file.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "znimok"
+path = "src/main.rs"
+
+[dependencies]
+znimok-core = { path = "../znimok-core" }
+znimok-format = { path = "../znimok-format" }
+znimok-render = { path = "../znimok-render" }
+clap = { version = "4", features = ["derive"] }
+serde_json = "1"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp"] }
