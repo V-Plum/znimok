@@ -816,12 +816,15 @@ impl App {
                     self.drag = Some(Drag::Move { last: p, merge });
                 }
                 None => {
-                    if !extend {
+                    // Empty space: Ctrl is just "Select for the moment", so a Ctrl+click clears
+                    // the selection like a plain click (owner, 28.09); only Shift adds a band
+                    // to what is selected.
+                    if !shift {
                         self.apply(ui, Command::ClearSelection);
                     }
                     self.drag = Some(Drag::Marquee {
                         start: p,
-                        add: extend,
+                        add: shift,
                     });
                 }
             },

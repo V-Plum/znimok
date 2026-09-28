@@ -405,6 +405,20 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
             a.pointer(ui, 2, cx - 135.0, cy - 70.0, 0, false, true);
         }
         let s2 = ui.get_selection_count();
+        // Select it again, then Ctrl+click on empty space: the selection goes.
+        {
+            let mut a = app.borrow_mut();
+            a.pointer(ui, 0, cx - 135.0, cy - 70.0, 0, false, true);
+            a.pointer(ui, 2, cx - 135.0, cy - 70.0, 0, false, true);
+            a.pointer(ui, 0, cx + 330.0, cy + 250.0, 0, false, true);
+            a.pointer(ui, 2, cx + 330.0, cy + 250.0, 0, false, true);
+        }
+        let s3 = ui.get_selection_count();
+        r.check(
+            "Ctrl+click on empty space clears the selection",
+            s3 == 0,
+            format!("{s3} selected"),
+        );
         r.check(
             "Ctrl+click with a drawing tool toggles selection, draws nothing",
             s1 == 1 && s2 == 0 && count(app) == n0 && ui.get_tool() == 1,
