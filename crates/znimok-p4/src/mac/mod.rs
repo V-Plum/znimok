@@ -99,7 +99,7 @@ struct Reader {
     output: Retained<AVAssetReaderTrackOutput>,
     fps: f64,
     duration: f64,
-    /// `--reuse`: one random-access reader for all seeks (`resetForReadingTimeRanges`) instead of a
+    /// One random-access reader (default; `--new-reader` turns it off) for all seeks (`resetForReadingTimeRanges`) instead of a
     /// new AVAssetReader per seek.
     reuse: bool,
     ra: Option<(Retained<AVAssetReader>, Retained<AVAssetReaderTrackOutput>)>,
@@ -502,8 +502,9 @@ fn bench(args: &[String]) -> Result<(), String> {
 }
 
 fn seek(args: &[String]) -> Result<(), String> {
-    let mut p = open_player(args, "seek <файл> [--mode zero|cpu] [--count N] [--gop N] [--seed N] [--reuse] [--rows]")?;
-    p.reader.reuse = args.iter().any(|a| a == "--reuse");
+    let mut p = open_player(args, "seek <файл> [--mode zero|cpu] [--count N] [--gop N] [--seed N] [--new-reader] [--rows]")?;
+    // One random-access reader is the default (measured faster); --new-reader for comparison.
+    p.reader.reuse = !args.iter().any(|a| a == "--new-reader");
     let total = p.reader.frame_count().max(1);
     let gop: u32 = num(args, "--gop", p.reader.fps.round() as u32)?;
     let count: u32 = num(args, "--count", 40)?;
