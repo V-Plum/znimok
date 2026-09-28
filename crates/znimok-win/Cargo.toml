@@ -1,6 +1,6 @@
 [package]
 name = "znimok-win"
-description = "Windows implementations of the Znimok platform traits — capture (WGC Borderless, FP16 / DXGI Desktop Duplication), window list with DWM bounds, cursor, autostart (HKCU Run), clipboard"
+description = "Windows implementations of the Znimok platform traits — capture (WGC Borderless, FP16 / DXGI Desktop Duplication), window list with DWM bounds, cursor, autostart (HKCU Run), clipboard, share"
 version.workspace = true
 edition.workspace = true
 license-file.workspace = true
@@ -18,13 +18,17 @@ znimok-platform = { path = "../znimok-platform" }
 windows-core = "0.62"
 image = { version = "0.25", default-features = false, features = ["png"] }
 windows-future = "0.3"
+windows-collections = "0.3"
 windows = { version = "0.62", features = [
+    "ApplicationModel_DataTransfer",
     "Foundation",
     "Graphics",
     "Graphics_Capture",
     "Graphics_DirectX",
     "Graphics_DirectX_Direct3D11",
     "Security_Authorization_AppCapabilityAccess",
+    "Storage",
+    "Storage_Streams",
     "Win32_Foundation",
     "Win32_Devices_Display",
     "Win32_Graphics_Direct3D",

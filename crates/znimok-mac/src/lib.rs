@@ -17,11 +17,15 @@ mod autostart;
 mod clipboard;
 #[cfg(target_os = "macos")]
 mod mac;
+#[cfg(target_os = "macos")]
+mod share;
 
 #[cfg(target_os = "macos")]
 pub use autostart::MacAutostart;
 #[cfg(target_os = "macos")]
 pub use clipboard::MacClipboard;
+#[cfg(target_os = "macos")]
+pub use share::MacShare;
 
 #[cfg(target_os = "macos")]
 pub use mac::MacCapture;
