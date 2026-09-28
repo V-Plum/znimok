@@ -3216,7 +3216,7 @@ impl App {
         std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
         let path = dir.join(format!("{name}.png"));
         let (w, h, rgba) = self.flatten().ok_or("no document")?;
-        io::write_image(&path, w, h, rgba)?;
+        io::write_image(&path, w, h, rgba, self.file_meta().as_ref())?;
         Ok(path)
     }
 
@@ -3266,6 +3266,20 @@ impl App {
         self.toast(ui, msg);
     }
 
+    /// What an exported file says about the document (ZK-61).
+    pub fn file_meta(&self) -> Option<crate::filemeta::FileMeta> {
+        self.s
+            .as_ref()
+            .map(|s| crate::filemeta::FileMeta::from_doc(&s.ed.doc))
+    }
+
+    /// The "write metadata" switch of the Copy menu.
+    pub fn toggle_export_meta(&mut self, ui: &AppWindow) {
+        let on = !crate::filemeta::enabled();
+        crate::filemeta::set_enabled(on);
+        ui.set_export_meta(on);
+    }
+
     /// Remembers Copy or Export for Enter and shows which one Enter repeats.
     pub fn set_last_share(&mut self, ui: &AppWindow, export: bool) {
         self.last_export = export;
@@ -3280,7 +3294,8 @@ impl App {
             .file_name()
             .map(|n| n.to_string_lossy().into_owned())
             .unwrap_or_default();
-        let msg = match io::write_image(path, w, h, rgba) {
+        let meta = self.file_meta();
+        let msg = match io::write_image(path, w, h, rgba, meta.as_ref()) {
             Ok(()) => self
                 .tr
                 .tr_args("export-done-toast", &args(&[("name", name)])),

@@ -212,7 +212,8 @@ fn wire(ui: &Pill) {
             .set_file_name(format!("{name}.png"))
             .save_file();
         if let Some(p) = file {
-            let r = io::write_image(&p, w, h, rgba);
+            let meta = crate::filemeta::FileMeta::new_shot(&name);
+            let r = io::write_image(&p, w, h, rgba, Some(&meta));
             crate::with_ctx(move |app, ui| {
                 let msg = match r {
                     Ok(()) => app.tr.tr_args(
@@ -248,7 +249,8 @@ fn wire(ui: &Pill) {
         let dir = std::env::temp_dir().join("Znimok").join("drag");
         let _ = std::fs::create_dir_all(&dir);
         let path = dir.join(format!("{}.png", crate::app::file_safe(&name)));
-        if io::write_image(&path, w, h, rgba).is_err() {
+        let meta = crate::filemeta::FileMeta::new_shot(&name);
+        if io::write_image(&path, w, h, rgba, Some(&meta)).is_err() {
             return;
         }
         PILL.with(|p| {

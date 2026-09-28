@@ -16,6 +16,7 @@ mod dialog;
 mod dnd_mac;
 #[cfg(windows)]
 mod dnd_win;
+mod filemeta;
 mod frame;
 #[cfg(target_os = "macos")]
 mod hotkey_mac;
@@ -784,6 +785,9 @@ fn wire(ui: &AppWindow, app: &Shared) {
             }
         });
     }
+    on!(ui, app, on_toggle_export_meta, |a, w| {
+        a.toggle_export_meta(&w);
+    });
     on!(ui, app, on_drag_out, |a, w| {
         a.drag_out(&w);
     });

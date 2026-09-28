@@ -975,6 +975,31 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
                 format!("{dims:?}"),
             );
         }
+        // ZK-61: the exported files carry the document's title and the shot's time.
+        let (title, created) = app
+            .borrow()
+            .s
+            .as_ref()
+            .map(|s| (s.ed.doc.name.clone(), s.ed.doc.meta.created_ms))
+            .unwrap_or_default();
+        let png = std::fs::read(dir.join("export.png")).unwrap_or_default();
+        let jpg = std::fs::read(dir.join("export.jpg")).unwrap_or_default();
+        let contains = |hay: &[u8], needle: &[u8]| hay.windows(needle.len()).any(|w| w == needle);
+        let title16: Vec<u8> = title.encode_utf16().flat_map(|u| u.to_le_bytes()).collect();
+        let mtime = std::fs::metadata(dir.join("export.png"))
+            .and_then(|m| m.modified())
+            .ok()
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_millis() as i64);
+        r.check(
+            "metadata in export: PNG iTXt title, JPEG EXIF title, file time = shot time",
+            contains(&png, b"iTXtTitle")
+                && contains(&png, title.as_bytes())
+                && contains(&jpg, b"Exif\0\0")
+                && contains(&jpg, &title16)
+                && mtime.is_some_and(|m| (m - created).abs() < 2000),
+            format!("title {title:?}, mtime {mtime:?} vs {created}"),
+        );
         // ZK-64: the file a drag out carries — a PNG named after the document, full frame.
         let file = app.borrow_mut().drag_file();
         let want = app.borrow().s.as_ref().map(|s| {

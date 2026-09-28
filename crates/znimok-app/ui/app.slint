@@ -1250,6 +1250,9 @@ export component AppWindow inherits Window {
     callback meta-edited(string, string);
     callback image-action(string);
     callback drag-out();
+    // ZK-61: write title, description, author, rights, tags and date into exported files.
+    in property <bool> export-meta: true;
+    callback toggle-export-meta();
     callback set-tone(string, float, bool);
     callback compare(bool);
     callback set-crop-size(string, string);
@@ -1555,6 +1558,8 @@ export component AppWindow inherits Window {
                                     MenuItemRow { text: @tr("share-copy-image" => "Copy image"); shortcut: Keys.k("Ctrl+C", "⌘C") + (Keys.last-share == 0 ? "  Enter" : ""); clicked => { root.copy(); } }
                                     MenuItemRow { text: @tr("share-export" => "Export file…"); shortcut: Keys.k("Ctrl+Shift+S", "⇧⌘S") + (Keys.last-share == 1 ? "  Enter" : ""); clicked => { root.export(); } }
                                     MenuItemRow { text: @tr("share-system" => "Share…"); enabled: false; }
+                                    Rectangle { height: 1px; background: Theme.line; }
+                                    MenuItemRow { text: @tr("export-metadata" => "Write metadata (title, description, author, date)"); shortcut: root.export-meta ? "✓" : ""; clicked => { root.toggle-export-meta(); } }
                                 }
                             }
                         }
