@@ -53,6 +53,7 @@ unsafe extern "system" fn enum_proc(h: HMONITOR, _: HDC, _: *mut RECT, lp: LPARA
 
 /// All monitors, primary first.
 pub fn list() -> Vec<Monitor> {
+    super::com_thread();
     let mut handles: Vec<HMONITOR> = Vec::new();
     // SAFETY: the callback only pushes into `handles`, which outlives the call.
     unsafe {

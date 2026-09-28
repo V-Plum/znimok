@@ -32,12 +32,14 @@ pub enum Item {
 }
 
 pub fn supported() -> bool {
+    super::com_thread();
     GraphicsCaptureSession::IsSupported().unwrap_or(false)
 }
 
 /// `RequestAccessAsync(Borderless)`, asked once per process: "Allowed" is what makes
 /// `IsBorderRequired = false` take effect (otherwise it is silently ignored).
 pub fn borderless() -> bool {
+    super::com_thread();
     static ALLOWED: OnceLock<bool> = OnceLock::new();
     *ALLOWED.get_or_init(|| {
         GraphicsCaptureAccess::RequestAccessAsync(GraphicsCaptureAccessKind::Borderless)
@@ -73,6 +75,7 @@ pub fn d3d11() -> znimok_platform::Result<(ID3D11Device, ID3D11DeviceContext)> {
 
 /// One frame. `fp16`: pool in R16G16B16A16Float (HDR display), else B8G8R8A8.
 pub fn capture(item: Item, fp16: bool) -> znimok_platform::Result<Raw> {
+    super::com_thread();
     let _ = borderless();
     let (dev, ctx) = d3d11()?;
     let dxgi: IDXGIDevice = dev.cast().map_err(e2p)?;
