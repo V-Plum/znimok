@@ -88,4 +88,4 @@ jobs:
       - name: build
         run: cargo auditable build --release -p znimok-cli
       - name: audit the binary
-        run: cargo audit bin target/release/znimok-cli.exe
+        run: cargo audit bin target/release/znimok.exe
