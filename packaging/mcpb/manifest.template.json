@@ -1,0 +1,42 @@
+{
+  "manifest_version": "0.3",
+  "name": "znimok",
+  "display_name": "Znimok",
+  "version": "@VERSION@",
+  "description": "Screenshots for AI agents: capture screens, windows and regions, annotate, hide secrets, read text and export — on your computer, with your approval.",
+  "long_description": "Znimok takes screenshots, lets an agent mark them up (arrows, frames, text, counters, hidden areas), finds and hides keys, passwords, e-mails, cards and faces, recognises text on the device and exports PNG, JPEG, WebP or a self-contained HTML page. Everything stays in your local Znimok library. The first time an agent wants to take a screenshot or read your library, Znimok asks you (this time / this session / always); every call is written to a local journal without its contents. The MCP server is off until you switch it on in Znimok → Settings → Agents.",
+  "author": {
+    "name": "Vadym Slyva",
+    "email": "v.v.plum@gmail.com",
+    "url": "https://github.com/V-Plum"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/V-Plum/znimok"
+  },
+  "homepage": "https://github.com/V-Plum/znimok",
+  "documentation": "https://github.com/V-Plum/znimok/blob/main/docs/AGENTS.md",
+  "support": "https://github.com/V-Plum/znimok/issues",
+  "license": "LicenseRef-Znimok",
+  "keywords": ["screenshot", "annotation", "ocr", "redaction", "screen capture"],
+  "privacy_policies": ["https://github.com/V-Plum/znimok/blob/main/docs/privacy.en.md"],
+  "server": {
+    "type": "binary",
+    "entry_point": "server/znimok",
+    "mcp_config": {
+      "command": "${__dirname}/server/znimok",
+      "args": ["mcp"],
+      "env": {},
+      "platform_overrides": {
+        "win32": {
+          "command": "${__dirname}/server/znimok.exe"
+        }
+      }
+    }
+  },
+  "tools": "@TOOLS@",
+  "tools_generated": false,
+  "compatibility": {
+    "platforms": ["darwin", "win32"]
+  }
+}

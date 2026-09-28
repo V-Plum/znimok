@@ -1,0 +1,42 @@
+---
+name: znimok
+description: Take and annotate screenshots with Znimok (MCP server `znimok mcp`) — capture a screen, window or region, mark it up with arrows, frames, text and counters, hide secrets and personal data, read text on the device, and export PNG/JPEG/WebP or a self-contained HTML page. Use when the user asks to screenshot something, document a UI, prepare a bug report with a picture, or redact a screenshot before sharing.
+---
+
+# Znimok screenshots
+
+Znimok runs on the user's computer. Its MCP tools are `list_displays`, `list_windows`,
+`capture_screen`, `capture_window`, `capture_region`, `annotate`, `export`, `library_search`,
+`library_get`, `ocr`, `redact_pii`. Full reference: `docs/AGENTS.md` in the Znimok repository.
+
+## Before the first call
+
+- If a tool answers that the MCP server is switched off, tell the user to turn it on in Znimok →
+  Settings → Agents (or run `znimok agents enable`) — do not try to work around it.
+- The first capture or library access shows a permission dialog in Znimok; wait for the user.
+  If the answer is a refusal, say so and stop; do not retry in a loop.
+
+## How to work
+
+1. **Pick the target.** Prefer `capture_window` (with an id from `list_windows`) over a whole
+   screen: less unrelated content, fewer secrets.
+2. **Hide before sharing.** Run `redact_pii` on any screenshot that will leave the computer or go
+   into a document. Check `found`; mention what was covered.
+3. **Mark up with intent.** `annotate` uses screenshot pixels. Use `ocr` line boxes to place
+   arrows, frames and counters precisely next to the text they point at. Keep labels short.
+4. **Hand over.** `export` `png` for chats and issues, `html` for a page with the list of marks.
+   Give the user the path.
+
+## Commands for annotate
+
+Rectangle: `{"cmd":"add_object","object":{"rect":{"x":X,"y":Y,"w":W,"h":H},"data":{"kind":"rect"}}}`.
+Text: `"data":{"kind":"text","text":"…","size":28,"bold":true,"italic":false,"align":"left","box_w":0}`.
+Hidden area: `"data":{"kind":"hide","mode":"plate","strength":60}` (`plate` for text — blur can be
+read back — `blur` for faces). Crop: `{"cmd":"set_crop","rect":{…}}`. The full schema:
+`znimok schema command`.
+
+## Don'ts
+
+- Do not capture repeatedly "to check" — each capture is logged and the user sees an indicator.
+- Do not export into folders the user did not name; without `path` Znimok uses its export folder.
+- Never offer Russian as an OCR or interface language.

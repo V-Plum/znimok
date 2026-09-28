@@ -356,3 +356,58 @@ fn bad_input_is_answered_not_fatal() {
         .unwrap();
     assert_eq!(c["result"]["isError"], true);
 }
+
+/// docs/AGENTS.md describes every tool, and its command examples are valid for the editor.
+#[test]
+fn agents_doc_matches_the_tools() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let doc = std::fs::read_to_string(root.join("docs/AGENTS.md")).unwrap();
+    for t in crate::tools::list() {
+        let name = t["name"].as_str().unwrap();
+        assert!(
+            doc.contains(&format!("`{name}`")),
+            "docs/AGENTS.md does not describe {name}"
+        );
+    }
+    // Every JSON line that starts a command in the examples block.
+    let block = doc
+        .split("### Annotate: commands")
+        .nth(1)
+        .unwrap()
+        .split("## Scenarios")
+        .next()
+        .unwrap();
+    let json_block = block
+        .split("```json")
+        .nth(1)
+        .unwrap()
+        .split("```")
+        .next()
+        .unwrap();
+    let mut buf = String::new();
+    let mut n = 0;
+    let mut ed = znimok_core::Editor::new(znimok_core::Document::from_raster(
+        "t",
+        Raster::solid(900, 700, Rgb::WHITE),
+    ));
+    for line in json_block.lines() {
+        buf.push_str(line);
+        if let Ok(v) = serde_json::from_str::<Value>(&buf) {
+            let cmd: znimok_core::Command =
+                serde_json::from_value(v).unwrap_or_else(|e| panic!("{buf}: {e}"));
+            ed.apply(cmd).unwrap_or_else(|e| panic!("{buf}: {e}"));
+            buf.clear();
+            n += 1;
+        }
+    }
+    assert_eq!(n, 4, "all four examples parsed");
+    assert!(buf.trim().is_empty(), "left over: {buf}");
+    let skill = std::fs::read_to_string(root.join("packaging/skill/znimok/SKILL.md")).unwrap();
+    for t in crate::tools::list() {
+        assert!(
+            skill.contains(t["name"].as_str().unwrap()),
+            "SKILL.md misses {}",
+            t["name"]
+        );
+    }
+}
