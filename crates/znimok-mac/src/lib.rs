@@ -19,6 +19,8 @@ mod clipboard;
 mod fileassoc;
 #[cfg(target_os = "macos")]
 mod mac;
+#[cfg(target_os = "macos")]
+mod share;
 
 #[cfg(target_os = "macos")]
 pub use autostart::MacAutostart;
@@ -26,6 +28,8 @@ pub use autostart::MacAutostart;
 pub use clipboard::MacClipboard;
 #[cfg(target_os = "macos")]
 pub use fileassoc::{BUNDLE_ID, DOCUMENT_UTI, MacFileAssoc};
+#[cfg(target_os = "macos")]
+pub use share::MacShare;
 
 #[cfg(target_os = "macos")]
 pub use mac::MacCapture;

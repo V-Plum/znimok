@@ -6642,6 +6642,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "znimok-mask"
+version = "0.0.0"
+dependencies = [
+ "image",
+ "regex",
+ "schemars",
+ "serde",
+ "serde_json",
+ "znimok-core",
+ "znimok-models",
+ "znimok-render",
+]
+
+[[package]]
 name = "znimok-models"
 version = "0.0.0"
 dependencies = [
@@ -6653,6 +6667,7 @@ dependencies = [
  "serde",
  "serde_json",
  "windows",
+ "windows-collections",
  "windows-core",
  "windows-future",
  "znimok-settings",
@@ -6760,6 +6775,7 @@ version = "0.0.0"
 dependencies = [
  "image",
  "windows",
+ "windows-collections",
  "windows-core",
  "windows-future",
  "znimok-platform",

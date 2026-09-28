@@ -10,9 +10,11 @@
 //!   `ANTHROPIC_API_KEY`.
 //! - [`http`] — HTTPS through the OS stack (Windows.Web.Http / NSURLSession): the system's
 //!   certificates and proxy settings, and no TLS stack of our own in the dependency tree.
+//! - [`faces`] — face boxes on the device (Apple Vision, Windows.Media.FaceAnalysis), for masking.
 //! - [`pricing`] and [`meter`] — prices per model and a local spending counter per month.
 
 pub mod anthropic;
+pub mod faces;
 pub mod http;
 pub mod image_prep;
 pub mod meter;

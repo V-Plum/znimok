@@ -1,0 +1,24 @@
+[package]
+name = "znimok-mask"
+description = "Znimok smart masking — finds secrets, personal data and faces on a screenshot (on-device OCR + patterns with checksums + face boxes) and suggests Hide marks; also masks secrets in text"
+version.workspace = true
+edition.workspace = true
+license-file.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+znimok-core = { path = "../znimok-core" }
+znimok-models = { path = "../znimok-models" }
+regex = "1"
+serde = { version = "1", features = ["derive"] }
+schemars = "1"
+
+[dev-dependencies]
+serde_json = "1"
+znimok-render = { path = "../znimok-render" }
+image = { version = "0.25", default-features = false, features = ["png"] }

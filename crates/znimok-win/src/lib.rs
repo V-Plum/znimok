@@ -1,4 +1,4 @@
-//! Windows implementations of `znimok-platform` (ZK-36: capture and window list; ZK-77: autostart; ZK-42/62: clipboard; ZK-75: file associations).
+//! Windows implementations of `znimok-platform` (ZK-36: capture and window list; ZK-77: autostart; ZK-42/62: clipboard; ZK-63: share; ZK-75: file associations).
 //!
 //! Carried over from P2 (ZK-15) and Little Helpers (inventory_screenshots.md §7):
 //! - the process is **Per-Monitor-v2** DPI aware ([`init_process`]), so desktop units are physical
@@ -24,5 +24,7 @@ pub use win::autostart::{BACKGROUND_ARG, RunKeyAutostart};
 pub use win::clipboard::WinClipboard;
 #[cfg(windows)]
 pub use win::fileassoc::{PROG_ID, WinFileAssoc};
+#[cfg(windows)]
+pub use win::share::WinShare;
 #[cfg(windows)]
 pub use win::{Api, WinCapture, init_process};

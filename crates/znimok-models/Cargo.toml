@@ -21,11 +21,13 @@ image = { version = "0.25", default-features = false, features = ["png", "jpeg"]
 [target.'cfg(windows)'.dependencies]
 windows-core = "0.62"
 windows-future = "0.3"
+windows-collections = "0.3"
 windows = { version = "0.62", features = [
     "Foundation",
     "Foundation_Collections",
     "Globalization",
     "Graphics_Imaging",
+    "Media_FaceAnalysis",
     "Media_Ocr",
     "Security_Cryptography",
     "Storage_Streams",
