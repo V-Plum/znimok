@@ -77,7 +77,7 @@ impl IRect {
 }
 
 /// sRGB colour with alpha 0–255 (alpha is the per-object opacity, kept separately in [`Style`]).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Rgb {
     pub r: u8,
     pub g: u8,
@@ -158,7 +158,7 @@ impl Kind {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default, Hash)]
 pub enum Dash {
     #[default]
     Solid,
@@ -166,7 +166,7 @@ pub enum Dash {
     DashDot,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default, Hash)]
 pub enum Corners {
     #[default]
     Sharp,
@@ -174,7 +174,7 @@ pub enum Corners {
     Round,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default, Hash)]
 pub enum Effect {
     #[default]
     None,
@@ -183,7 +183,7 @@ pub enum Effect {
 }
 
 /// Visual style shared by every kind. Fields that a kind does not use are ignored by the renderer.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Style {
     pub color: Rgb,
     /// Thickness in screenshot pixels (2/4/7); marker: band height; counter/stamp: diameter.
@@ -222,7 +222,7 @@ impl Default for Style {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default, Hash)]
 pub enum Align {
     #[default]
     Left,
@@ -238,7 +238,7 @@ pub enum HideMode {
     Plate,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default, Hash)]
 pub enum Head {
     #[default]
     None,
@@ -247,7 +247,7 @@ pub enum Head {
     Dot,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default, Hash)]
 pub enum CounterShape {
     #[default]
     Circle,
@@ -263,14 +263,14 @@ pub type GroupId = u32;
 pub type BankId = u32;
 
 /// Kind-specific data.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Hash)]
 pub enum Data {
     Rect,
     Ellipse,
     Line {
         head_front: Head,
         head_back: Head,
-        head_size: i32,
+        head_size: u8,
     },
     /// Trail in screenshot coordinates, absolute.
     Pen {
@@ -322,7 +322,7 @@ impl Data {
 }
 
 /// One annotation. `rect` is the box in screenshot pixels; see [`IRect`] for the line convention.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Hash)]
 pub struct Object {
     pub rect: IRect,
     pub style: Style,
@@ -531,7 +531,7 @@ mod tests {
             Data::Line {
                 head_front: Head::Triangle,
                 head_back: Head::None,
-                head_size: 12,
+                head_size: 1,
             },
         );
         assert_eq!(o.rect.w, -40);

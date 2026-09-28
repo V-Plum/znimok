@@ -2,18 +2,23 @@
 //! deterministic, runs in tests without a GPU and produces the golden images. A GPU path can
 //! be added behind the same [`Renderer::render`] call later.
 //!
+//! Geometry and effect formulas are ported from Little Helpers (`EdDrawObjectRaw`, `EdDrawHead`,
+//! `EdHideRadius`/`EdHideBlock`, `EdFxTile`, `EdCounterPath`, `EdStampShape`) so the marks look
+//! the same; where this file deviates on purpose it says so.
+//!
 //! Coordinates: the document lives in screenshot pixels; a [`View`] maps them to output pixels
 //! (zoom and pan). Thicknesses and font sizes scale with the view, handles do not — handles are
 //! not drawn here, the UI layer draws them on top.
 
 use std::collections::HashMap;
+use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
 use parley::{FontContext, LayoutContext};
-use vello_cpu::color::{AlphaColor, Srgb};
+use vello_cpu::color::{AlphaColor, PremulRgba8, Srgb};
 use vello_cpu::kurbo::{
-    Affine, BezPath, Cap, Circle, Ellipse, Join, Line, Point, Rect, RoundedRect, Shape, Stroke,
-    Vec2,
+    Affine, Arc as KArc, BezPath, Cap, Circle, Ellipse, Join, Line, Point, Rect, RoundedRect,
+    Shape, Stroke, Vec2,
 };
 use vello_cpu::peniko::{BlendMode, Compose, ImageQuality, ImageSampler, Mix};
 use vello_cpu::{Image, ImageSource, Pixmap, RenderContext, RenderSettings, Resources};
@@ -70,9 +75,70 @@ impl View {
     }
 }
 
-/// Holds the render context, fonts and cached source pixmaps between frames.
+/// Shadow/glow presets from Little Helpers: offset and blur radius in screenshot pixels,
+/// alpha 0..255, boost in % applied after the blur.
+#[derive(Clone, Copy)]
+struct FxPreset {
+    off: f64,
+    blur: f64,
+    alpha: u32,
+    boost: u32,
+}
+
+const SHADOW: [FxPreset; 3] = [
+    FxPreset {
+        off: 0.0,
+        blur: 0.0,
+        alpha: 0,
+        boost: 100,
+    },
+    FxPreset {
+        off: 2.0,
+        blur: 2.0,
+        alpha: 120,
+        boost: 100,
+    },
+    FxPreset {
+        off: 5.0,
+        blur: 5.0,
+        alpha: 170,
+        boost: 100,
+    },
+];
+const GLOW: [FxPreset; 3] = [
+    FxPreset {
+        off: 0.0,
+        blur: 0.0,
+        alpha: 0,
+        boost: 100,
+    },
+    FxPreset {
+        off: 0.0,
+        blur: 3.0,
+        alpha: 235,
+        boost: 260,
+    },
+    FxPreset {
+        off: 0.0,
+        blur: 6.0,
+        alpha: 255,
+        boost: 340,
+    },
+];
+
+fn preset(set: &[FxPreset; 3], e: Effect) -> FxPreset {
+    set[match e {
+        Effect::None => 0,
+        Effect::Light => 1,
+        Effect::Strong => 2,
+    }]
+}
+
+/// Holds the render context, fonts and cached tiles between frames.
 pub struct Renderer {
     ctx: RenderContext,
+    /// Second context for rendering a single mark into an effects tile.
+    fx_ctx: RenderContext,
     res: Resources,
     fonts: FontContext,
     layouts: LayoutContext<text::Brush>,
@@ -81,6 +147,9 @@ pub struct Renderer {
     /// Hide tiles are computed in screenshot resolution and reused while nothing under them
     /// changes: key = (region, mode, strength, source generation).
     hide_cache: HashMap<(IRect, HideMode, u8, usize), Arc<Pixmap>>,
+    /// Shadow/glow layers in output resolution: key = (mark hash, scale ×1000, sub-pixel
+    /// offset in quarters).
+    fx_cache: HashMap<(u64, i64, u8, u8), Arc<Pixmap>>,
     threads: u16,
 }
 
@@ -92,29 +161,29 @@ impl Default for Renderer {
 
 impl Renderer {
     pub fn new() -> Self {
-        let settings = RenderSettings::default();
+        Self::with_settings(RenderSettings::default())
+    }
+
+    /// Single-threaded renderer: byte-identical output between runs, used for golden images.
+    pub fn deterministic() -> Self {
+        Self::with_settings(RenderSettings {
+            num_threads: 0,
+            ..RenderSettings::default()
+        })
+    }
+
+    fn with_settings(settings: RenderSettings) -> Self {
         let threads = settings.num_threads;
         Self {
             ctx: RenderContext::new_with(1, 1, settings),
+            fx_ctx: RenderContext::new_with(1, 1, settings),
             res: Resources::default(),
             fonts: FontContext::new(),
             layouts: LayoutContext::new(),
             bank_cache: Vec::new(),
             hide_cache: HashMap::new(),
+            fx_cache: HashMap::new(),
             threads,
-        }
-    }
-
-    /// Single-threaded renderer: byte-identical output between runs, used for golden images.
-    pub fn deterministic() -> Self {
-        let settings = RenderSettings {
-            num_threads: 0,
-            ..RenderSettings::default()
-        };
-        Self {
-            ctx: RenderContext::new_with(1, 1, settings),
-            threads: 0,
-            ..Self::new()
         }
     }
 
@@ -167,11 +236,19 @@ impl Renderer {
             if obj.hidden {
                 continue;
             }
-            self.draw_object(doc, i, obj, base, view.scale);
+            if fx_on(obj) {
+                self.draw_fx(doc, i, obj, base, view.scale);
+            }
+            let t = base * rotation(obj);
+            self.ctx.set_transform(t);
+            self.draw_raw(doc, i, obj, t, view.scale);
         }
         self.ctx.pop_layer();
         self.ctx.flush();
         self.ctx.render(out.as_mut(), &mut self.res);
+        if self.fx_cache.len() > 256 {
+            self.fx_cache.clear();
+        }
     }
 
     fn bank_pixmap(&mut self, doc: &Document, bank: usize) -> Arc<Pixmap> {
@@ -192,7 +269,6 @@ impl Renderer {
 
     fn draw_pixmap(&mut self, pix: Arc<Pixmap>, dest: Rect, quality: ImageQuality, alpha: f32) {
         let (w, h) = (pix.width() as f64, pix.height() as f64);
-        let saved = *self.ctx.transform();
         let img = Image {
             image: ImageSource::Pixmap(pix),
             sampler: ImageSampler::default()
@@ -206,185 +282,244 @@ impl Renderer {
         self.ctx.set_paint(img);
         self.ctx.fill_rect(&dest);
         self.ctx.reset_paint_transform();
-        self.ctx.set_transform(saved);
     }
 
-    fn draw_object(
+    // ---- effects: the mark rendered alone into a tile, its alpha shifted, blurred, boosted
+    // and tinted (black shadow, white glow), laid under the mark (LH `EdFxTile`).
+
+    fn draw_fx(&mut self, doc: &Document, index: usize, obj: &Object, base: Affine, scale: f64) {
+        let sh = preset(&SHADOW, obj.style.shadow);
+        let gl = preset(&GLOW, obj.style.glow);
+        let extent = (sh.off + sh.blur * 3.0).max(gl.blur * 3.0) + 2.0;
+        let rot = rotation(obj);
+        // Output-space bounds of the rotated mark, padded like LH `EdFxBounds`.
+        let b = obj.bounds();
+        let mut pad = obj.style.thick as f64 + extent;
+        if obj.kind().is_segment() {
+            pad += head_len(obj) * 1.2;
+        }
+        if obj.kind() == Kind::Text {
+            pad += 10.0;
+        }
+        if obj.kind() == Kind::Counter {
+            pad += b.w as f64 * 0.1;
+        }
+        let r = irect(b).inflate(pad, pad);
+        let t = base * rot;
+        let corners = [
+            t * Point::new(r.x0, r.y0),
+            t * Point::new(r.x1, r.y0),
+            t * Point::new(r.x0, r.y1),
+            t * Point::new(r.x1, r.y1),
+        ];
+        let (x0, y0) = corners
+            .iter()
+            .fold((f64::MAX, f64::MAX), |a, p| (a.0.min(p.x), a.1.min(p.y)));
+        let (x1, y1) = corners
+            .iter()
+            .fold((f64::MIN, f64::MIN), |a, p| (a.0.max(p.x), a.1.max(p.y)));
+        let (ox, oy) = (x0.floor(), y0.floor());
+        let (bw, bh) = ((x1 - ox).ceil() as usize + 1, (y1 - oy).ceil() as usize + 1);
+        if bw == 0 || bh == 0 || bw * bh > 48 * 1024 * 1024 || bw > 65535 || bh > 65535 {
+            return;
+        }
+        let fx = ((x0 - ox) * 4.0).round() as u8;
+        let fy = ((y0 - oy) * 4.0).round() as u8;
+        let mut hasher = std::hash::DefaultHasher::new();
+        obj.hash(&mut hasher);
+        doc.counter_number(index).hash(&mut hasher);
+        (bw, bh).hash(&mut hasher);
+        let key = (hasher.finish(), (scale * 1000.0).round() as i64, fx, fy);
+        let tile = match self.fx_cache.get(&key) {
+            Some(p) => p.clone(),
+            None => {
+                let local = Affine::translate((-ox, -oy)) * t;
+                let alpha =
+                    self.render_alpha_tile(doc, index, obj, local, scale, bw as u16, bh as u16);
+                let mut out = vec![
+                    PremulRgba8 {
+                        r: 0,
+                        g: 0,
+                        b: 0,
+                        a: 0
+                    };
+                    bw * bh
+                ];
+                for (p, shadow) in [(sh, true), (gl, false)] {
+                    if p.alpha == 0 {
+                        continue;
+                    }
+                    let off = (p.off * scale + 0.5).floor() as usize;
+                    let rad = (p.blur * scale + 0.5).floor() as usize;
+                    let mut m = vec![0u8; bw * bh];
+                    for y in off..bh {
+                        for x in off..bw {
+                            m[y * bw + x] = alpha[(y - off) * bw + (x - off)];
+                        }
+                    }
+                    if rad > 0 {
+                        hide::box_blur_alpha(&mut m, bw, bh, rad);
+                    }
+                    for (dst, &a) in out.iter_mut().zip(&m) {
+                        if a == 0 {
+                            continue;
+                        }
+                        let a = ((a as u32 * p.boost / 100).min(255) * p.alpha / 255) as u8;
+                        let ia = 255 - a as u32;
+                        let over = |d: u8, s: u8| (s as u32 + (d as u32 * ia + 127) / 255) as u8;
+                        let s = if shadow { 0 } else { a };
+                        *dst = PremulRgba8 {
+                            r: over(dst.r, s),
+                            g: over(dst.g, s),
+                            b: over(dst.b, s),
+                            a: over(dst.a, a),
+                        };
+                    }
+                }
+                let p = Arc::new(Pixmap::from_parts_with_opacity(
+                    out, bw as u16, bh as u16, true,
+                ));
+                self.fx_cache.insert(key, p.clone());
+                p
+            }
+        };
+        self.ctx.set_transform(Affine::IDENTITY);
+        self.draw_pixmap(
+            tile,
+            Rect::new(ox, oy, ox + bw as f64, oy + bh as f64),
+            ImageQuality::Low,
+            1.0,
+        );
+    }
+
+    /// Alpha channel of the mark drawn alone with `local` as its transform.
+    #[allow(clippy::too_many_arguments)]
+    fn render_alpha_tile(
         &mut self,
         doc: &Document,
         index: usize,
         obj: &Object,
-        base: Affine,
+        local: Affine,
         scale: f64,
-    ) {
-        let kind = obj.kind();
+        w: u16,
+        h: u16,
+    ) -> Vec<u8> {
+        self.fx_ctx.reset_and_resize(w, h);
+        std::mem::swap(&mut self.ctx, &mut self.fx_ctx);
+        self.ctx.set_transform(local);
+        self.draw_raw(doc, index, obj, local, scale);
+        self.ctx.flush();
+        let mut pix = Pixmap::new(w, h);
+        self.ctx.render(pix.as_mut(), &mut self.res);
+        std::mem::swap(&mut self.ctx, &mut self.fx_ctx);
+        pix.data().iter().map(|p| p.a).collect()
+    }
+
+    // ---- the mark itself (LH `EdDrawObjectRaw`), drawn with `self.ctx`'s current transform.
+
+    fn draw_raw(&mut self, doc: &Document, index: usize, obj: &Object, t: Affine, scale: f64) {
         let b = obj.bounds();
         let rect = irect(b);
-        let rot = if kind.can_rotate() && obj.rot != 0 {
-            Affine::rotate_about((obj.rot as f64).to_radians(), rect.center())
-        } else {
-            Affine::IDENTITY
-        };
-        let t = base * rot;
-        self.ctx.set_transform(t);
         let st = &obj.style;
         let alpha = st.alpha as f32 / 100.0;
-
-        // Effects go under the object. Filled boxes get a real blurred shadow; outlines, lines
-        // and text get a halo of widening translucent strokes (vello_cpu's filter layers are
-        // not available with multithreading, and this also keeps the shape of the mark).
-        if kind.fx_allowed() && (st.shadow != Effect::None || st.glow != Effect::None) {
-            let radius = corner_radius(st, rect);
-            // A blurred plate only under something opaque; otherwise the shadow would show
-            // through a translucent fill and darken the whole mark.
-            let opaque_fill = matches!(kind, Kind::Rect | Kind::Ellipse)
-                && ((st.no_main && st.alpha == 100) || (st.color2.is_some() && st.alpha2 == 100));
-            let filled = opaque_fill || matches!(kind, Kind::Image | Kind::Counter | Kind::Stamp);
-            let outline: Option<BezPath> = match &obj.data {
-                Data::Rect => Some(RoundedRect::from_rect(rect, radius).to_path(0.1)),
-                Data::Ellipse => Some(Ellipse::from_rect(rect).to_path(0.1)),
-                Data::Line { .. } => {
-                    let r = obj.rect;
-                    Some(
-                        Line::new(
-                            Point::new(r.x as f64, r.y as f64),
-                            Point::new((r.x + r.w) as f64, (r.y + r.h) as f64),
-                        )
-                        .to_path(0.1),
-                    )
-                }
-                Data::Text { .. } => Some(rect.to_path(0.1)),
-                _ => None,
-            };
-            let width = if kind == Kind::Text {
-                2.0
-            } else {
-                st.thick as f64
-            };
-            if st.shadow != Effect::None {
-                let (d, blur) = if st.shadow == Effect::Light {
-                    (2.0, 3.0)
-                } else {
-                    (5.0, 8.0)
-                };
-                if filled {
-                    self.ctx.set_paint(rgba(Rgb::BLACK, 0.35 * alpha));
-                    self.ctx.fill_blurred_rounded_rect(
-                        &rect.with_origin(rect.origin() + Vec2::new(d, d)),
-                        radius as f32,
-                        blur,
-                        false,
-                    );
-                } else if let Some(path) = &outline {
-                    self.halo(
-                        path,
-                        Affine::translate((d, d)),
-                        width,
-                        blur as f64,
-                        Rgb::BLACK,
-                        0.35 * alpha,
-                    );
-                }
-            }
-            if st.glow != Effect::None {
-                let (grow, blur) = if st.glow == Effect::Light {
-                    (2.0, 4.0)
-                } else {
-                    (5.0, 10.0)
-                };
-                if filled {
-                    self.ctx.set_paint(rgba(st.color, 0.8 * alpha));
-                    self.ctx.fill_blurred_rounded_rect(
-                        &rect.inflate(grow, grow),
-                        (radius + grow) as f32,
-                        blur,
-                        false,
-                    );
-                } else if let Some(path) = &outline {
-                    self.halo(
-                        path,
-                        Affine::IDENTITY,
-                        width + grow,
-                        blur as f64,
-                        st.color,
-                        0.8 * alpha,
-                    );
-                }
-            }
-            self.ctx.set_transform(t);
-        }
+        let pw = (st.thick as f64).max(1.0 / scale);
+        let half = pw / 2.0;
 
         match &obj.data {
             Data::Rect => {
+                let stroke = !st.no_main;
+                let inset = if stroke { half } else { 0.0 };
                 let radius = corner_radius(st, rect);
-                let shape = RoundedRect::from_rect(rect, radius);
                 if let Some(c2) = st.color2 {
                     self.ctx.set_paint(rgba(c2, st.alpha2 as f32 / 100.0));
-                    self.ctx.fill_path(&shape.to_path(0.1));
+                    self.ctx
+                        .fill_path(&round_rect(rect.inset(inset), radius - inset).to_path(0.1));
                 }
-                if st.no_main {
+                if stroke {
+                    self.ctx.set_stroke(stroke_for(st, pw));
                     self.ctx.set_paint(rgba(st.color, alpha));
-                    self.ctx.fill_path(&shape.to_path(0.1));
+                    self.ctx
+                        .stroke_path(&round_rect(rect.inset(half), radius - half).to_path(0.1));
                 } else {
-                    self.ctx.set_stroke(stroke_for(st));
                     self.ctx.set_paint(rgba(st.color, alpha));
-                    self.ctx.stroke_path(&shape.to_path(0.1));
+                    self.ctx.fill_path(&round_rect(rect, radius).to_path(0.1));
                 }
             }
             Data::Ellipse => {
-                let shape = Ellipse::from_rect(rect);
+                let stroke = !st.no_main;
+                let inset = if stroke { half } else { 0.0 };
                 if let Some(c2) = st.color2 {
                     self.ctx.set_paint(rgba(c2, st.alpha2 as f32 / 100.0));
-                    self.ctx.fill_path(&shape.to_path(0.1));
+                    self.ctx
+                        .fill_path(&Ellipse::from_rect(rect.inset(inset)).to_path(0.1));
                 }
-                if st.no_main {
+                if stroke {
+                    self.ctx.set_stroke(stroke_for(st, pw));
                     self.ctx.set_paint(rgba(st.color, alpha));
-                    self.ctx.fill_path(&shape.to_path(0.1));
+                    self.ctx
+                        .stroke_path(&Ellipse::from_rect(rect.inset(half)).to_path(0.1));
                 } else {
-                    self.ctx.set_stroke(stroke_for(st));
                     self.ctx.set_paint(rgba(st.color, alpha));
-                    self.ctx.stroke_path(&shape.to_path(0.1));
+                    self.ctx.fill_path(&Ellipse::from_rect(rect).to_path(0.1));
                 }
             }
             Data::Line {
                 head_front,
                 head_back,
-                head_size,
+                ..
             } => {
                 let r = obj.rect;
                 let p0 = Point::new(r.x as f64, r.y as f64);
                 let p1 = Point::new((r.x + r.w) as f64, (r.y + r.h) as f64);
-                self.draw_line(
-                    p0,
-                    p1,
-                    st,
-                    alpha,
-                    *head_back,
-                    *head_front,
-                    *head_size as f64,
-                );
+                let v = p1 - p0;
+                let len = v.hypot();
+                if len < 0.5 {
+                    return;
+                }
+                let dir = v / len;
+                let hl = head_len(obj);
+                // The line is shortened by the part the head covers (LH: `hl * 0.85`).
+                let back_e = if *head_front != Head::None {
+                    (hl * 0.85).min(len * 0.5)
+                } else {
+                    0.0
+                };
+                let back_s = if *head_back != Head::None {
+                    (hl * 0.85).min(len * 0.5)
+                } else {
+                    0.0
+                };
+                let mut stroke = stroke_for(st, pw);
+                if st.dash == Dash::Solid {
+                    stroke = stroke.with_caps(Cap::Round);
+                }
+                self.ctx.set_stroke(stroke);
+                self.ctx.set_paint(rgba(st.color, alpha));
+                self.ctx
+                    .stroke_path(&Line::new(p0 + dir * back_s, p1 - dir * back_e).to_path(0.1));
+                if *head_front != Head::None {
+                    self.draw_head(p1, dir, hl, pw, *head_front);
+                }
+                if *head_back != Head::None {
+                    self.draw_head(p0, -dir, hl, pw, *head_back);
+                }
             }
             Data::Pen { points } => {
-                if points.len() >= 2 {
-                    let mut path = BezPath::new();
-                    path.move_to(Point::new(points[0].0 as f64, points[0].1 as f64));
-                    for &(x, y) in &points[1..] {
-                        path.line_to(Point::new(x as f64, y as f64));
-                    }
-                    let mut stroke = stroke_for(st);
-                    stroke = stroke.with_join(Join::Round);
-                    if st.dash == Dash::Solid {
-                        stroke = stroke.with_caps(Cap::Round);
-                    }
-                    self.ctx.set_stroke(stroke);
-                    self.ctx.set_paint(rgba(st.color, alpha));
-                    self.ctx.stroke_path(&path);
-                } else if let Some(&(x, y)) = points.first() {
-                    self.ctx.set_paint(rgba(st.color, alpha));
-                    self.ctx.fill_path(
-                        &Circle::new(Point::new(x as f64, y as f64), st.thick as f64 / 2.0)
-                            .to_path(0.1),
-                    );
+                self.ctx.set_paint(rgba(st.color, alpha));
+                if points.len() == 1 {
+                    let (x, y) = (points[0].0 as f64, points[0].1 as f64);
+                    self.ctx
+                        .fill_path(&Circle::new(Point::new(x, y), half).to_path(0.1));
+                } else if points.len() >= 2 {
+                    // A curve through the trail, not a polyline: the raw mouse trail is angular
+                    // (LH `DrawCurve` with tension 0.3).
+                    let pts: Vec<Point> = points
+                        .iter()
+                        .map(|&(x, y)| Point::new(x as f64, y as f64))
+                        .collect();
+                    self.ctx
+                        .set_stroke(Stroke::new(pw).with_caps(Cap::Round).with_join(Join::Round));
+                    self.ctx.stroke_path(&cardinal_spline(&pts, 0.3));
                 }
             }
             Data::Text {
@@ -428,8 +563,6 @@ impl Renderer {
                         self.ctx.fill_rect(&rect);
                     }
                     HideMode::Blur | HideMode::Pixelate => {
-                        // Pixels below this object: for now the source only (Little Helpers takes
-                        // everything below, see inventory §7 п.26) — tracked in the P1 report.
                         let src = doc.source();
                         let key = (
                             region,
@@ -454,6 +587,7 @@ impl Renderer {
                             }),
                         };
                         if let Some(tile) = tile {
+                            // Pixels stay pixels when scaled (LH: no smoothing for pixelate).
                             let quality = if *mode == HideMode::Blur {
                                 ImageQuality::Medium
                             } else {
@@ -475,37 +609,36 @@ impl Renderer {
             }
             Data::Counter { shape, .. } => {
                 let n = doc.counter_number(index).unwrap_or(0);
-                let d = st.thick.max(8) as f64;
-                let (cx, cy) = b.center();
-                let c = Point::new(cx, cy);
-                let path = match shape {
-                    CounterShape::Circle => Circle::new(c, d / 2.0).to_path(0.1),
-                    CounterShape::RoundedBox => RoundedRect::new(
-                        cx - d / 2.0,
-                        cy - d / 2.0,
-                        cx + d / 2.0,
-                        cy + d / 2.0,
-                        d * 0.22,
-                    )
-                    .to_path(0.1),
-                    CounterShape::Pin => pin_path(c, d),
-                };
+                let w = rect.width();
+                // Thin light rim slightly inside: without it the mark is lost on a mark of the
+                // same colour (LH CAPS-68).
+                let bw = w / 16.0;
+                let inset = bw / 2.0;
                 self.ctx.set_paint(rgba(st.color, alpha));
-                self.ctx.fill_path(&path);
-                let digit = st.color2.unwrap_or_else(|| auto_contrast(st.color));
+                self.ctx.fill_path(&counter_path(rect, *shape));
+                self.ctx.set_stroke(Stroke::new(bw).with_join(Join::Round));
+                self.ctx.set_paint(rgba(Rgb::WHITE, alpha));
+                self.ctx
+                    .stroke_path(&counter_path(rect.inset(inset), *shape));
+                let digit = st.color2.unwrap_or_else(|| on_color(st.color));
                 let label = n.to_string();
+                let fs = if *shape == CounterShape::Pin {
+                    st.thick * 42 / 100
+                } else {
+                    st.thick * 52 / 100
+                };
                 let spec = text::TextSpec {
                     text: &label,
-                    size_px: (d * if label.len() > 2 { 0.42 } else { 0.55 }) as f32,
+                    size_px: fs.max(4) as f32,
                     bold: true,
                     italic: false,
                     align: Align::Center,
-                    box_w: Some(d as f32),
+                    box_w: Some(w as f32),
                 };
-                let baseline_shift = if *shape == CounterShape::Pin {
-                    -d * 0.18
+                let head = if *shape == CounterShape::Pin {
+                    Point::new(rect.x0 + w / 2.0, rect.y0 + w * 0.37)
                 } else {
-                    0.0
+                    rect.center()
                 };
                 text::draw_text_centered(
                     &mut self.ctx,
@@ -513,24 +646,21 @@ impl Renderer {
                     &mut self.fonts,
                     &mut self.layouts,
                     &spec,
-                    Point::new(cx, cy + baseline_shift),
+                    head,
                     rgba(digit, 1.0),
                     alpha,
                 );
             }
             Data::Stamp { id } => {
-                let d = st.thick.max(8) as f64;
-                let (cx, cy) = b.center();
-                self.ctx.set_paint(rgba(st.color, alpha));
                 if *id >= 100 {
                     let s = reference::emoji_for(*id);
                     let spec = text::TextSpec {
                         text: s,
-                        size_px: (d * 0.8) as f32,
+                        size_px: st.thick as f32,
                         bold: false,
                         italic: false,
                         align: Align::Center,
-                        box_w: Some(d as f32 * 1.5),
+                        box_w: Some(rect.width() as f32 * 1.5),
                     };
                     text::draw_text_centered(
                         &mut self.ctx,
@@ -538,33 +668,21 @@ impl Renderer {
                         &mut self.fonts,
                         &mut self.layouts,
                         &spec,
-                        Point::new(cx, cy),
+                        rect.center(),
                         rgba(st.color, 1.0),
                         alpha,
                     );
                 } else {
-                    let path = stamp_path(*id, Point::new(cx, cy), d);
-                    self.ctx.set_stroke(
-                        Stroke::new(d * 0.14)
-                            .with_caps(Cap::Round)
-                            .with_join(Join::Round),
-                    );
-                    if matches!(*id, 0 | 1 | 4) {
-                        self.ctx.stroke_path(&path);
-                    } else {
-                        self.ctx.fill_path(&path);
-                    }
+                    self.draw_stamp(*id, rect.origin(), rect.width(), rgba(st.color, alpha));
                 }
             }
             Data::Image { bank } => {
-                if let Some(raster) = doc.banks.get(*bank as usize) {
-                    let _ = raster;
+                if doc.banks.get(*bank as usize).is_some() {
                     let pix = self.bank_pixmap(doc, *bank as usize);
                     let radius = corner_radius(st, rect);
-                    self.ctx.set_transform(t);
                     if radius > 0.0 {
                         self.ctx
-                            .push_clip_layer(&RoundedRect::from_rect(rect, radius).to_path(0.1));
+                            .push_clip_layer(&round_rect(rect, radius).to_path(0.1));
                     }
                     self.draw_pixmap(
                         pix,
@@ -584,101 +702,116 @@ impl Renderer {
         }
     }
 
-    /// Fake blur: `n` strokes of growing width and falling opacity around `path`.
-    fn halo(
-        &mut self,
-        path: &BezPath,
-        offset: Affine,
-        width: f64,
-        blur: f64,
-        color: Rgb,
-        alpha: f32,
-    ) {
-        let saved = *self.ctx.transform();
-        self.ctx.set_transform(saved * offset);
-        let n = 6;
-        for i in 0..n {
-            let k = i as f64 / n as f64;
-            let w = width + blur * 2.0 * k;
-            let a = alpha * (1.0 - k as f32).powi(2) / (n as f32 * 0.55);
-            self.ctx
-                .set_stroke(Stroke::new(w).with_caps(Cap::Round).with_join(Join::Round));
-            self.ctx.set_paint(rgba(color, a));
-            self.ctx.stroke_path(path);
-        }
-        self.ctx.set_transform(saved);
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    fn draw_line(
-        &mut self,
-        p0: Point,
-        p1: Point,
-        st: &Style,
-        alpha: f32,
-        back: Head,
-        front: Head,
-        head_size: f64,
-    ) {
-        let v = p1 - p0;
-        let len = v.hypot();
-        if len < 0.5 {
-            return;
-        }
-        let dir = v / len;
-        let hs = if head_size > 0.0 {
-            head_size
-        } else {
-            (st.thick as f64 * 3.0).max(10.0)
-        };
-        // The line is shortened under a closed head so its butt does not poke out (§7 п.31).
-        let (mut a, mut b) = (p0, p1);
-        if matches!(back, Head::Triangle | Head::Dot) {
-            a += dir * (hs * 0.6);
-        }
-        if matches!(front, Head::Triangle | Head::Dot) {
-            b -= dir * (hs * 0.6);
-        }
-        let mut stroke = stroke_for(st);
-        if st.dash == Dash::Solid && back == Head::None && front == Head::None {
-            stroke = stroke.with_caps(Cap::Round);
-        }
-        self.ctx.set_stroke(stroke);
-        self.ctx.set_paint(rgba(st.color, alpha));
-        self.ctx.stroke_path(&Line::new(a, b).to_path(0.1));
-        for (head, tip, d) in [(back, p0, -dir), (front, p1, dir)] {
-            match head {
-                Head::None => {}
-                Head::Triangle => {
-                    let n = Vec2::new(-d.y, d.x);
-                    let base = tip - d * hs;
-                    let mut p = BezPath::new();
-                    p.move_to(tip);
-                    p.line_to(base + n * (hs * 0.45));
-                    p.line_to(base - n * (hs * 0.45));
-                    p.close_path();
-                    self.ctx.fill_path(&p);
-                }
-                Head::Chevron => {
-                    let n = Vec2::new(-d.y, d.x);
-                    let base = tip - d * hs;
-                    let mut p = BezPath::new();
-                    p.move_to(base + n * (hs * 0.5));
-                    p.line_to(tip);
-                    p.line_to(base - n * (hs * 0.5));
-                    self.ctx.set_stroke(
-                        Stroke::new(st.thick as f64)
-                            .with_caps(Cap::Round)
-                            .with_join(Join::Round),
-                    );
-                    self.ctx.stroke_path(&p);
-                }
-                Head::Dot => {
-                    self.ctx
-                        .fill_path(&Circle::new(tip - d * (hs * 0.3), hs * 0.3).to_path(0.1));
-                }
+    /// Arrow head at `tip` pointing along `dir` (LH `EdDrawHead`): filled triangle, open
+    /// chevron of two strokes, or a dot centred on the tip.
+    fn draw_head(&mut self, tip: Point, dir: Vec2, len: f64, pw: f64, head: Head) {
+        let n = Vec2::new(-dir.y, dir.x);
+        let half_w = len * 0.42;
+        match head {
+            Head::None => {}
+            Head::Dot => {
+                self.ctx
+                    .fill_path(&Circle::new(tip, len * 0.36).to_path(0.1));
+            }
+            Head::Chevron => {
+                let base = tip - dir * len;
+                let mut p = BezPath::new();
+                p.move_to(base + n * half_w);
+                p.line_to(tip);
+                p.line_to(base - n * half_w);
+                self.ctx
+                    .set_stroke(Stroke::new(pw).with_caps(Cap::Butt).with_join(Join::Miter));
+                self.ctx.stroke_path(&p);
+            }
+            Head::Triangle => {
+                let base = tip - dir * len;
+                let mut p = BezPath::new();
+                p.move_to(tip);
+                p.line_to(base + n * half_w);
+                p.line_to(base - n * half_w);
+                p.close_path();
+                self.ctx.fill_path(&p);
             }
         }
+    }
+
+    /// Vector stamps in a 20×20 grid scaled to `side` (LH `EdStampShape`).
+    fn draw_stamp(&mut self, id: u32, origin: Point, side: f64, paint: AlphaColor<Srgb>) {
+        let saved = *self.ctx.transform();
+        let k = side / 20.0;
+        self.ctx
+            .set_transform(saved * Affine::translate(origin.to_vec2()) * Affine::scale(k));
+        self.ctx.set_paint(paint);
+        self.ctx.set_stroke(
+            Stroke::new(2.6)
+                .with_caps(Cap::Round)
+                .with_join(Join::Round),
+        );
+        let pt = |x: f64, y: f64| Point::new(x, y);
+        let dot = |cx: f64, cy: f64, d: f64| {
+            Circle::new(pt(cx + d / 2.0, cy + d / 2.0), d / 2.0).to_path(0.05)
+        };
+        match id {
+            0 => {
+                let mut p = BezPath::new();
+                p.move_to(pt(3.4, 10.8));
+                p.line_to(pt(8.0, 15.6));
+                p.line_to(pt(16.6, 4.8));
+                self.ctx.stroke_path(&p);
+            }
+            1 => {
+                let mut p = BezPath::new();
+                p.move_to(pt(4.2, 4.2));
+                p.line_to(pt(15.8, 15.8));
+                p.move_to(pt(15.8, 4.2));
+                p.line_to(pt(4.2, 15.8));
+                self.ctx.stroke_path(&p);
+            }
+            2 => {
+                // Question mark: hook arc, smooth stem, separate dot.
+                let mut p = KArc::new(
+                    pt(10.0, 6.8),
+                    Vec2::new(4.4, 4.4),
+                    180f64.to_radians(),
+                    200f64.to_radians(),
+                    0.0,
+                )
+                .to_path(0.05);
+                p.move_to(pt(14.14, 8.3));
+                p.curve_to(pt(13.2, 11.2), pt(10.0, 11.0), pt(10.0, 13.6));
+                self.ctx.stroke_path(&p);
+                self.ctx.fill_path(&dot(8.7, 15.4, 2.6));
+            }
+            3 => {
+                self.ctx
+                    .stroke_path(&Line::new(pt(10.0, 3.0), pt(10.0, 12.6)).to_path(0.05));
+                self.ctx.fill_path(&dot(8.7, 15.0, 2.6));
+            }
+            4 => {
+                let mut p = BezPath::new();
+                for i in 0..10 {
+                    let a = -std::f64::consts::FRAC_PI_2 + i as f64 * std::f64::consts::PI / 5.0;
+                    let r = if i % 2 == 0 { 8.6 } else { 3.6 };
+                    let q = pt(10.0 + a.cos() * r, 10.0 + a.sin() * r);
+                    if i == 0 { p.move_to(q) } else { p.line_to(q) }
+                }
+                p.close_path();
+                self.ctx.fill_path(&p);
+            }
+            _ => {
+                // Warning triangle.
+                let mut p = BezPath::new();
+                p.move_to(pt(10.0, 2.6));
+                p.line_to(pt(18.4, 16.8));
+                p.line_to(pt(1.6, 16.8));
+                p.close_path();
+                p.move_to(pt(10.0, 7.6));
+                p.line_to(pt(10.0, 12.0));
+                self.ctx.stroke_path(&p);
+                self.ctx.fill_path(&dot(8.9, 13.6, 2.2));
+            }
+        }
+        self.ctx.set_transform(saved);
     }
 
     /// Pixels of everything below object `index` inside `region`, as a straight-alpha raster.
@@ -699,10 +832,30 @@ impl Renderer {
             let start = ((y * iw + x0) * 4) as usize;
             rgba.extend_from_slice(&src.rgba[start..start + (w * 4) as usize]);
         }
-        // Keep the tile aligned with the object even when it is partly outside the image.
-        let _ = (region.x - x0, region.y - y0);
         Some(Raster::new(w, h, rgba))
     }
+}
+
+fn fx_on(o: &Object) -> bool {
+    (o.style.shadow != Effect::None || o.style.glow != Effect::None) && o.kind().fx_allowed()
+}
+
+fn rotation(o: &Object) -> Affine {
+    if o.kind().can_rotate() && o.rot != 0 {
+        Affine::rotate_about((o.rot as f64).to_radians(), irect(o.bounds()).center())
+    } else {
+        Affine::IDENTITY
+    }
+}
+
+/// Head length in screenshot pixels (LH `EdHeadLen`): size step 0..2, thickness adds a little.
+pub fn head_len(o: &Object) -> f64 {
+    let Data::Line { head_size, .. } = &o.data else {
+        return 0.0;
+    };
+    const MUL: [f64; 3] = [3.0, 4.5, 6.5];
+    let m = MUL[(*head_size).min(2) as usize];
+    (o.style.thick as f64 * m + 4.0).max(6.0)
 }
 
 fn irect(r: IRect) -> Rect {
@@ -736,103 +889,82 @@ fn corner_radius(st: &Style, rect: Rect) -> f64 {
     r.min(max)
 }
 
-/// Stroke for the main outline: flat caps so dashes stay dashes (§7 п.30).
-fn stroke_for(st: &Style) -> Stroke {
-    let t = st.thick.max(1) as f64;
-    let s = Stroke::new(t).with_caps(Cap::Butt).with_join(Join::Miter);
+fn round_rect(rect: Rect, radius: f64) -> RoundedRect {
+    let lim = rect.width().min(rect.height()) / 2.0;
+    RoundedRect::from_rect(rect, radius.clamp(0.0, lim.max(0.0)))
+}
+
+/// Outline pen (LH `EdApplyDash`): GDI+ dash = 3:1 and dash-dot = 3:1:1:1 in pen widths, flat
+/// caps so dashes stay dashes; solid outlines use round joins.
+fn stroke_for(st: &Style, pw: f64) -> Stroke {
+    let s = Stroke::new(pw).with_join(Join::Round).with_caps(Cap::Butt);
     match st.dash {
         Dash::Solid => s,
-        Dash::Dashed => s.with_dashes(0.0, [t * 3.0, t * 2.0]),
-        Dash::DashDot => s.with_dashes(0.0, [t * 3.0, t * 1.5, t * 0.6, t * 1.5]),
+        Dash::Dashed => s.with_dashes(0.0, [pw * 3.0, pw]),
+        Dash::DashDot => s.with_dashes(0.0, [pw * 3.0, pw, pw, pw]),
     }
 }
 
-/// Digit colour for a counter without an explicit second colour.
-fn auto_contrast(c: Rgb) -> Rgb {
-    let lum = 0.299 * c.r as f64 + 0.587 * c.g as f64 + 0.114 * c.b as f64;
-    if lum > 150.0 { Rgb::BLACK } else { Rgb::WHITE }
+/// Digit colour for a counter without an explicit second colour (LH `EdOnColor`).
+fn on_color(c: Rgb) -> Rgb {
+    let lum = (c.r as u32 * 299 + c.g as u32 * 587 + c.b as u32 * 114) / 1000;
+    if lum > 140 {
+        Rgb::new(24, 24, 28)
+    } else {
+        Rgb::WHITE
+    }
 }
 
-fn pin_path(c: Point, d: f64) -> BezPath {
-    // A round head with a pointed tail; the tip is at the bottom centre of the box.
-    let r = d * 0.36;
-    let head = Point::new(c.x, c.y - d * 0.12);
-    let mut p = Circle::new(head, r).to_path(0.1);
-    let tip = Point::new(c.x, c.y + d / 2.0);
-    let ang = 0.62f64;
-    p.move_to(Point::new(head.x - r * ang.cos(), head.y + r * ang.sin()));
-    p.line_to(tip);
-    p.line_to(Point::new(head.x + r * ang.cos(), head.y + r * ang.sin()));
-    p.close_path();
-    p
-}
-
-/// Vector stamps 0..=5: check, cross, star, heart, question, exclamation.
-fn stamp_path(id: u32, c: Point, d: f64) -> BezPath {
-    let r = d / 2.0;
-    let mut p = BezPath::new();
-    match id {
-        0 => {
-            p.move_to(Point::new(c.x - r * 0.7, c.y + r * 0.05));
-            p.line_to(Point::new(c.x - r * 0.2, c.y + r * 0.55));
-            p.line_to(Point::new(c.x + r * 0.75, c.y - r * 0.55));
-        }
-        1 => {
-            p.move_to(Point::new(c.x - r * 0.6, c.y - r * 0.6));
-            p.line_to(Point::new(c.x + r * 0.6, c.y + r * 0.6));
-            p.move_to(Point::new(c.x + r * 0.6, c.y - r * 0.6));
-            p.line_to(Point::new(c.x - r * 0.6, c.y + r * 0.6));
-        }
-        2 => {
-            for i in 0..10 {
-                let a = -std::f64::consts::FRAC_PI_2 + i as f64 * std::f64::consts::PI / 5.0;
-                let rr = if i % 2 == 0 { r } else { r * 0.42 };
-                let pt = Point::new(c.x + rr * a.cos(), c.y + rr * a.sin());
-                if i == 0 { p.move_to(pt) } else { p.line_to(pt) }
+/// Counter body (LH `EdCounterPath`): circle, rounded box (r = 0.28 w) or a pin whose head is
+/// a circle of radius 0.37 w and whose tip is the bottom centre of the box.
+fn counter_path(r: Rect, shape: CounterShape) -> BezPath {
+    let (x, y, w, h) = (r.x0, r.y0, r.width(), r.height());
+    match shape {
+        CounterShape::Circle => Ellipse::from_rect(r).to_path(0.1),
+        CounterShape::RoundedBox => round_rect(r, w * 0.28).to_path(0.1),
+        CounterShape::Pin => {
+            let rr = w * 0.37;
+            let (hx, hy) = (x + w / 2.0, y + rr);
+            let tip_y = y + h;
+            let dist = (tip_y - hy).max(rr);
+            let th = (rr / dist).clamp(-1.0, 1.0).acos();
+            let a0 = std::f64::consts::FRAC_PI_2 + th;
+            let mut p = BezPath::new();
+            p.move_to(Point::new(hx, tip_y));
+            p.line_to(Point::new(hx + rr * a0.cos(), hy + rr * a0.sin()));
+            let arc = KArc::new(
+                Point::new(hx, hy),
+                Vec2::new(rr, rr),
+                a0,
+                std::f64::consts::TAU - 2.0 * th,
+                0.0,
+            );
+            for el in arc.append_iter(0.1) {
+                p.push(el);
             }
             p.close_path();
+            p
         }
-        3 => {
-            let top = Point::new(c.x, c.y - r * 0.35);
-            p.move_to(Point::new(c.x, c.y + r * 0.85));
-            p.curve_to(
-                Point::new(c.x - r * 1.3, c.y - r * 0.1),
-                Point::new(c.x - r * 0.6, c.y - r * 1.15),
-                top,
-            );
-            p.curve_to(
-                Point::new(c.x + r * 0.6, c.y - r * 1.15),
-                Point::new(c.x + r * 1.3, c.y - r * 0.1),
-                Point::new(c.x, c.y + r * 0.85),
-            );
-            p.close_path();
-        }
-        4 => {
-            p.move_to(Point::new(c.x - r * 0.45, c.y - r * 0.4));
-            p.curve_to(
-                Point::new(c.x - r * 0.45, c.y - r * 1.1),
-                Point::new(c.x + r * 0.55, c.y - r * 1.1),
-                Point::new(c.x + r * 0.45, c.y - r * 0.35),
-            );
-            p.curve_to(
-                Point::new(c.x + r * 0.4, c.y + r * 0.05),
-                Point::new(c.x, c.y),
-                Point::new(c.x, c.y + r * 0.35),
-            );
-            p.move_to(Point::new(c.x, c.y + r * 0.75));
-            p.line_to(Point::new(c.x, c.y + r * 0.76));
-        }
-        _ => {
-            p = RoundedRect::new(
-                c.x - r * 0.14,
-                c.y - r * 0.85,
-                c.x + r * 0.14,
-                c.y + r * 0.3,
-                r * 0.14,
-            )
-            .to_path(0.1);
-            p.extend(Circle::new(Point::new(c.x, c.y + r * 0.65), r * 0.17).to_path(0.1));
-        }
+    }
+}
+
+/// Cardinal spline through `pts` (GDI+ `DrawCurve` semantics): control points are
+/// `p ± (next - prev) * tension / 3`.
+fn cardinal_spline(pts: &[Point], tension: f64) -> BezPath {
+    let mut p = BezPath::new();
+    p.move_to(pts[0]);
+    if pts.len() == 2 {
+        p.line_to(pts[1]);
+        return p;
+    }
+    let k = tension / 3.0;
+    let n = pts.len();
+    for i in 0..n - 1 {
+        let prev = if i == 0 { pts[0] } else { pts[i - 1] };
+        let next = if i + 2 < n { pts[i + 2] } else { pts[n - 1] };
+        let c1 = pts[i] + (pts[i + 1] - prev) * k;
+        let c2 = pts[i + 1] - (next - pts[i]) * k;
+        p.curve_to(c1, c2, pts[i + 1]);
     }
     p
 }
@@ -845,7 +977,7 @@ pub fn raster_to_pixmap(r: &Raster) -> Pixmap {
         let a = src[3] as u16;
         transparent |= a != 255;
         let m = |c: u8| ((c as u16 * a) / 255) as u8;
-        *dst = vello_cpu::color::PremulRgba8 {
+        *dst = PremulRgba8 {
             r: m(src[0]),
             g: m(src[1]),
             b: m(src[2]),
@@ -863,11 +995,6 @@ pub fn pixmap_to_rgba(p: &Pixmap) -> Vec<u8> {
         .into_iter()
         .flat_map(|c| [c.r, c.g, c.b, c.a])
         .collect()
-}
-
-/// Premultiplied bytes as they are — what a `Rgba8Unorm` texture with premultiplied blending wants.
-pub fn pixmap_premul_bytes(p: &Pixmap) -> &[u8] {
-    p.data_as_u8_slice()
 }
 
 #[cfg(test)]
@@ -901,5 +1028,16 @@ mod tests {
             out.display(),
             first
         );
+    }
+
+    #[test]
+    fn spline_passes_through_points() {
+        let pts = [
+            Point::new(0.0, 0.0),
+            Point::new(10.0, 5.0),
+            Point::new(20.0, 0.0),
+        ];
+        let p = cardinal_spline(&pts, 0.3);
+        assert_eq!(p.elements().len(), 3);
     }
 }

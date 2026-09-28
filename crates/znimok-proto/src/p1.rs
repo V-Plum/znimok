@@ -681,7 +681,7 @@ pub fn run(opts: Options) -> Result<(), Box<dyn std::error::Error>> {
                             Data::Line {
                                 head_front: Head::Triangle,
                                 head_back: Head::None,
-                                head_size: 0,
+                                head_size: 1,
                             },
                             IRect::new(pi.x as i32, pi.y as i32, 0, 0),
                             false,

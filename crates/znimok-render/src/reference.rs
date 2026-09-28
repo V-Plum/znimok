@@ -150,7 +150,7 @@ pub fn reference_document(w: u32, h: u32) -> Document {
             Data::Line {
                 head_front: Head::Triangle,
                 head_back: Head::None,
-                head_size: 22,
+                head_size: 2,
             },
         )
         .with_style(s(Rgb::RED, 4)),
@@ -161,7 +161,7 @@ pub fn reference_document(w: u32, h: u32) -> Document {
             Data::Line {
                 head_front: Head::Chevron,
                 head_back: Head::Dot,
-                head_size: 18,
+                head_size: 1,
             },
         )
         .with_style(Style {
@@ -293,7 +293,7 @@ pub fn reference_document(w: u32, h: u32) -> Document {
         )
         .with_style(s(Rgb::GREEN, 40)),
     );
-    // Stamps: check, cross, star, heart, question, exclamation, then two emoji.
+    // Stamps: check, cross, question, exclamation, star, warning, then two emoji.
     for (i, id) in (0..6).enumerate() {
         doc.push(
             Object::new(
