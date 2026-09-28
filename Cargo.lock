@@ -6641,6 +6641,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "znimok-models"
+version = "0.0.0"
+dependencies = [
+ "base64",
+ "block2 0.6.2",
+ "image",
+ "objc2 0.6.4",
+ "objc2-foundation 0.3.2",
+ "serde",
+ "serde_json",
+ "windows",
+ "windows-core",
+ "windows-future",
+ "znimok-settings",
+]
+
+[[package]]
 name = "znimok-p2"
 version = "0.0.0"
 dependencies = [
