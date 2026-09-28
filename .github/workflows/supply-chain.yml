@@ -1,0 +1,39 @@
+name: supply-chain
+
+# ZK-21 / PLAN §5.10: licences, advisories, bans and sources of every dependency (cargo-deny, policy
+# in deny.toml) and the RustSec database (cargo-audit). Weekly as well: new advisories appear
+# without any change on our side.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths: ["**/Cargo.toml", "Cargo.lock", "deny.toml", ".github/workflows/supply-chain.yml"]
+  schedule:
+    - cron: "17 5 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deny:
+    name: cargo-deny
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check --hide-inclusion-graph
+          arguments: --all-features
+
+  audit:
+    name: cargo-audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit
+      - name: cargo audit
+        run: cargo audit
