@@ -11,6 +11,8 @@
 
 mod gpu;
 mod pattern;
+#[cfg(target_os = "macos")]
+mod mac;
 #[cfg(windows)]
 mod win;
 
@@ -22,10 +24,10 @@ fn main() -> ExitCode {
         Some("selftest") => selftest(),
         #[cfg(windows)]
         Some(cmd) => win::run(cmd, &args[1..]),
-        #[cfg(not(windows))]
-        Some(_) => {
-            Err("відтворення в P4 поки лише Windows (Mac — після P3); тут є selftest".into())
-        }
+        #[cfg(target_os = "macos")]
+        Some(cmd) => mac::run(cmd, &args[1..]),
+        #[cfg(not(any(windows, target_os = "macos")))]
+        Some(_) => Err("відтворення в P4 — лише Windows і macOS; тут є selftest".into()),
         None => Err("команда: selftest | info | gen | bench | seek (див. main.rs)".into()),
     };
     match res {
