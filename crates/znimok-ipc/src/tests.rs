@@ -148,8 +148,14 @@ fn pipe_admits_only_the_current_user() {
     let _s = Server::start(c.clone(), echo()).unwrap();
     let sddl = win::endpoint_dacl(&c).unwrap();
     let sid = win::user_sid().unwrap();
-    // Protected DACL with exactly one allow entry: this user, full access.
-    assert_eq!(sddl, format!("D:P(A;;FA;;;{sid})"), "{sddl}");
+    // Protected DACL with exactly one allow entry: this user, full access. Windows writes some
+    // well-known accounts by alias (the built-in Administrator, RID 500, is "LA" — as on CI).
+    let trustee = sddl
+        .strip_prefix("D:P(A;;FA;;;")
+        .and_then(|t| t.strip_suffix(')'))
+        .unwrap_or_else(|| panic!("not a single allow entry: {sddl}"));
+    let alias_ok = trustee == "LA" && sid.ends_with("-500");
+    assert!(trustee == sid || alias_ok, "{sddl} vs {sid}");
 }
 
 #[cfg(unix)]
