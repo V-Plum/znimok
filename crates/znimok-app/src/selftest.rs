@@ -356,23 +356,28 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
             format!("label {}", ov.get_sel_label()),
         );
         r.check(
-            "magnifier follows the pointer",
-            ov.get_lens_visible()
-                && ov.get_clip_size() == 17
-                && ov.get_lens_label().starts_with("300, 250"),
-            format!(
-                "clip {} at {},{} · {}",
-                ov.get_clip_size(),
-                ov.get_clip_x(),
-                ov.get_clip_y(),
-                ov.get_lens_label()
-            ),
+            "magnifier off by default",
+            !ov.get_lens_visible(),
+            String::new(),
         );
         ov.invoke_wheel(1.0);
+        let on4 = ov.get_lens_visible();
+        ov.invoke_wheel(1.0);
         r.check(
-            "magnifier zoom ×16",
-            ov.get_clip_size() == 9,
-            format!("clip {}", ov.get_clip_size()),
+            "wheel turns the magnifier on (×4, ×8)",
+            on4 && ov.get_lens_visible() && ov.get_lens_coords().starts_with("300, 250   ×8"),
+            format!(
+                "{} · {} · {:.0} px",
+                ov.get_lens_coords(),
+                ov.get_lens_hex(),
+                ov.get_lens_size()
+            ),
+        );
+        let (lw, lh) = (ov.get_lens().size().width, ov.get_lens().size().height);
+        r.check(
+            "magnifier picture: odd pixel count × zoom",
+            lw == lh && lw % 8 == 0 && (lw / 8) % 2 == 1,
+            format!("{lw}×{lh}"),
         );
         r.snapshot_window(ov.window(), "07-overlay-hover");
         // Drag frame pixels (600, 500) → (900, 700): a 300 × 200 region.
