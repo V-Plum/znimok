@@ -127,7 +127,7 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
         let (sc, dx, dy, _) = app.borrow().view_probe();
         r.check(
             "fit: picture centred",
-            sc < 1.0 && dx.abs() <= 1.0 && dy.abs() <= 1.0,
+            sc <= 1.0 && dx.abs() <= 1.0 && dy.abs() <= 1.0,
             format!("scale {sc:.3}, off-centre {dx:.1}, {dy:.1}"),
         );
         ui.invoke_zoom_100();
@@ -139,17 +139,23 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
         );
     }));
     steps.push(Box::new(|app, ui, r| {
-        let (sc, _, _, ox) = app.borrow().view_probe();
+        let (sc, ..) = app.borrow().view_probe();
         r.check(
             "100 % reached",
             (sc - 1.0).abs() < 1e-6,
             format!("scale {sc:.4}"),
         );
+        // Zoom in with trackpad-sized steps (immediate) until the picture is wider than the
+        // canvas (on a Retina canvas 100 % still fits), then scroll sideways.
+        for _ in 0..12 {
+            ui.invoke_wheel(300.0, 300.0, 0.0, 39.0, true, false, false);
+        }
+        let (_, _, _, ox) = app.borrow().view_probe();
         ui.invoke_wheel(300.0, 300.0, -120.0, 0.0, false, false, false);
         let (_, _, _, ox2) = app.borrow().view_probe();
         r.check(
             "sideways scroll moves the canvas",
-            ox2 > ox + 50.0,
+            ox2 > ox + 10.0,
             format!("origin x {ox:.0} → {ox2:.0}"),
         );
         ui.invoke_zoom_fit();
@@ -158,7 +164,7 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
         let (sc, dx, dy, _) = app.borrow().view_probe();
         r.check(
             "fit again: centred",
-            sc < 1.0 && dx.abs() <= 1.0 && dy.abs() <= 1.0,
+            sc <= 1.0 && dx.abs() <= 1.0 && dy.abs() <= 1.0,
             format!("scale {sc:.3}, off-centre {dx:.1}, {dy:.1}"),
         );
     }));

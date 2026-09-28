@@ -242,7 +242,10 @@ component HintChip inherits HorizontalLayout {
 // when the pointer comes near it. Coordinates are logical pixels of this window.
 export component Overlay inherits Window {
     no-frame: true;
-    always-on-top: true;
+    // Windows: top-most. macOS: Rust sets a window level above the menu bar instead (Slint's
+    // top-most = NSFloatingWindowLevel 3, below the menu bar; it would also override ours).
+    in property <bool> on-top: true;
+    always-on-top: root.on-top;
     background: black;
     title: "Znimok";
 
@@ -345,10 +348,15 @@ export component Overlay inherits Window {
         animate transform-scale { duration: 160ms; easing: ease-in-out; }
         property <length> info-h: 44px;
         property <length> gap: 24px;
-        property <length> fx: root.pointer-x + self.gap + root.lens-size > parent.width ? root.pointer-x - self.gap - root.lens-size : root.pointer-x + self.gap;
-        property <length> fy: root.pointer-y - 44px - root.lens-size - self.info-h;
-        x: max(0, self.fx);
-        y: self.fy < 0 ? min(root.pointer-y + self.gap, parent.height - root.lens-size - self.info-h) : self.fy;
+        // Which side of the pointer: flips near the edges. Only the offset is animated, so the
+        // lens still follows the pointer exactly and glides over when it changes sides.
+        property <bool> left: root.pointer-x + self.gap + root.lens-size > parent.width;
+        property <bool> below: root.pointer-y - 44px - root.lens-size - self.info-h < 0;
+        property <length> off-x: self.left ? -self.gap - root.lens-size : self.gap;
+        property <length> off-y: self.below ? self.gap : -44px - root.lens-size - self.info-h;
+        animate off-x, off-y { duration: 240ms; easing: cubic-bezier(0.2, 0.8, 0.2, 1); }
+        x: max(0, root.pointer-x + self.off-x);
+        y: min(max(0, root.pointer-y + self.off-y), parent.height - root.lens-size - self.info-h);
         width: root.lens-size;
         height: root.lens-size + self.info-h;
         drop-shadow-blur: 14px;

@@ -196,8 +196,22 @@ pub fn open(frozen: Frozen, editor_was_visible: bool) -> Result<(), slint::Platf
             None
         })
     });
+    if cfg!(target_os = "macos") {
+        ui.set_on_top(false);
+    }
     ui.show()?;
     cover_display(&ui);
+    // Slint and winit apply window properties (size, level) after `show` returns, which undid
+    // the level and frame set above (Mac self-test 28.09: level 3, frame below the menu bar).
+    // Set them again once the window has settled.
+    for ms in [30u64, 150, 400] {
+        let weak = ui.as_weak();
+        slint::Timer::single_shot(std::time::Duration::from_millis(ms), move || {
+            if let Some(ui) = weak.upgrade() {
+                cover_display(&ui);
+            }
+        });
+    }
     {
         use slint::winit_030::WinitWindowAccessor;
         ui.window().with_winit_window(|w| w.focus_window());
