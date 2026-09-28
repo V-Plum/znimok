@@ -1,0 +1,55 @@
+# Supply-chain policy for `cargo deny check` (ZK-21, PLAN §5.10). Runs in .github/workflows/supply-chain.yml.
+#
+# Licences: permissive only. GPL/AGPL/LGPL are not allowed — a dependency that offers them is fine
+# only when it also offers an allowed licence (e.g. Slint's royalty-free licence, which Znimok uses
+# and credits in About). Our own crates carry the Znimok licence file and are private (publish = false).
+
+[graph]
+# The platforms Znimok ships on; platform-specific dependencies of other OSes are not checked.
+targets = [
+    "x86_64-pc-windows-msvc",
+    "aarch64-pc-windows-msvc",
+    "aarch64-apple-darwin",
+    "x86_64-apple-darwin",
+]
+
+[advisories]
+version = 2
+yanked = "deny"
+# Each ignore needs a reason and a ticket; none yet.
+ignore = []
+
+[licenses]
+version = 2
+confidence-threshold = 0.9
+# Only licences actually present; add a new one deliberately (review it first).
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "BSL-1.0",
+    "CC0-1.0",
+    "Unicode-3.0",
+    "Unlicense",
+    # Slint: GPL-3.0-only OR royalty-free OR commercial; Znimok uses the royalty-free licence
+    # (AboutSlint widget in About, decision 28.09.2026).
+    "LicenseRef-Slint-Royalty-free-2.0",
+]
+
+[licenses.private]
+# Workspace crates (publish = false) are ours: Znimok licence (LICENSE), not an SPDX expression.
+ignore = true
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+allow-wildcard-paths = true
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []
