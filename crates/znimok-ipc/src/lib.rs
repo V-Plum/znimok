@@ -48,6 +48,15 @@ pub struct Config {
     pub hello_timeout: Duration,
     pub idle_timeout: Duration,
     pub max_clients: usize,
+    /// Requests per second one connection may send on average (ZK-112)…
+    pub rate: u32,
+    /// …and in a burst. Over it the request is answered with [`RpcError::RATE_LIMITED`] and a
+    /// `retry_after_ms`; a client that keeps pushing is disconnected.
+    pub burst: u32,
+    /// Wrong tokens within a minute (all connections together) before every further wrong hello
+    /// waits [`auth_delay`](Self::auth_delay) for its answer.
+    pub auth_failures_before_delay: u32,
+    pub auth_delay: Duration,
 }
 
 impl Default for Config {
@@ -59,6 +68,10 @@ impl Default for Config {
             hello_timeout: Duration::from_secs(5),
             idle_timeout: Duration::from_secs(600),
             max_clients: 8,
+            rate: 50,
+            burst: 100,
+            auth_failures_before_delay: 5,
+            auth_delay: Duration::from_secs(1),
         }
     }
 }
@@ -111,6 +124,7 @@ impl RpcError {
     pub const INTERNAL: i64 = -32603;
     pub const UNAUTHORIZED: i64 = -32001;
     pub const TOO_LARGE: i64 = -32002;
+    pub const RATE_LIMITED: i64 = -32003;
 
     pub fn new(code: i64, message: impl Into<String>) -> Self {
         Self {
@@ -161,6 +175,84 @@ fn new_token() -> std::io::Result<String> {
     getrandom::fill(&mut b).map_err(|e| std::io::Error::other(e.to_string()))?;
     Ok(b.iter().map(|x| format!("{x:02x}")).collect())
 }
+
+/// The session token and the count of wrong ones, shared by all connections of a server.
+pub(crate) struct Auth {
+    token: String,
+    failures: std::sync::Mutex<std::collections::VecDeque<std::time::Instant>>,
+    total_failures: AtomicUsize,
+}
+
+impl Auth {
+    pub(crate) fn new(token: String) -> Self {
+        Self {
+            token,
+            failures: Default::default(),
+            total_failures: AtomicUsize::new(0),
+        }
+    }
+
+    /// Records a wrong token; returns how long to hold the answer back.
+    fn failed(&self, cfg: &Config) -> Duration {
+        self.total_failures.fetch_add(1, Ordering::SeqCst);
+        let now = std::time::Instant::now();
+        let mut f = self.failures.lock().unwrap_or_else(|p| p.into_inner());
+        while f
+            .front()
+            .is_some_and(|t| now.duration_since(*t) > Duration::from_secs(60))
+        {
+            f.pop_front();
+        }
+        f.push_back(now);
+        if f.len() > cfg.auth_failures_before_delay as usize {
+            cfg.auth_delay
+        } else {
+            Duration::ZERO
+        }
+    }
+}
+
+/// Token bucket of one connection.
+struct Bucket {
+    tokens: f64,
+    last: std::time::Instant,
+    rate: f64,
+    cap: f64,
+    /// Refusals in a row.
+    refused: u32,
+}
+
+impl Bucket {
+    fn new(cfg: &Config) -> Self {
+        let cap = cfg.burst.max(1) as f64;
+        Self {
+            tokens: cap,
+            last: std::time::Instant::now(),
+            rate: cfg.rate.max(1) as f64,
+            cap,
+            refused: 0,
+        }
+    }
+
+    /// `Ok` = go ahead; `Err(wait)` = over the limit, try again after `wait`.
+    fn take(&mut self) -> Result<(), Duration> {
+        let now = std::time::Instant::now();
+        self.tokens =
+            (self.tokens + now.duration_since(self.last).as_secs_f64() * self.rate).min(self.cap);
+        self.last = now;
+        if self.tokens >= 1.0 {
+            self.tokens -= 1.0;
+            self.refused = 0;
+            Ok(())
+        } else {
+            self.refused += 1;
+            Err(Duration::from_secs_f64((1.0 - self.tokens) / self.rate))
+        }
+    }
+}
+
+/// Refusals in a row after which a flooding client is cut off.
+const MAX_REFUSED: u32 = 1000;
 
 /// Constant-time comparison, so the token cannot be guessed byte by byte from timing.
 fn same(a: &str, b: &str) -> bool {
@@ -213,7 +305,7 @@ fn reply(w: &mut impl Write, id: &Value, result: Result<Value, RpcError>) -> std
 }
 
 /// One connection: hello with the token first, then requests until the peer closes or idles out.
-pub(crate) fn serve(conn: Split, token: &str, cfg: &Config, handler: &dyn Handler) {
+pub(crate) fn serve(conn: Split, auth: &Auth, cfg: &Config, handler: &dyn Handler) {
     let Split {
         read,
         mut write,
@@ -222,6 +314,7 @@ pub(crate) fn serve(conn: Split, token: &str, cfg: &Config, handler: &dyn Handle
     let mut reader = BufReader::new(read);
     timeout(Some(cfg.hello_timeout));
     let mut authed = false;
+    let mut bucket = Bucket::new(cfg);
     loop {
         if authed {
             timeout(Some(cfg.idle_timeout));
@@ -272,8 +365,9 @@ pub(crate) fn serve(conn: Split, token: &str, cfg: &Config, handler: &dyn Handle
                 && params
                     .get("token")
                     .and_then(Value::as_str)
-                    .is_some_and(|t| same(t, token));
+                    .is_some_and(|t| same(t, &auth.token));
             if !ok {
+                std::thread::sleep(auth.failed(cfg));
                 let _ = reply(
                     &mut write,
                     &id,
@@ -291,6 +385,19 @@ pub(crate) fn serve(conn: Split, token: &str, cfg: &Config, handler: &dyn Handle
             }
             continue;
         }
+        if let Err(wait) = bucket.take() {
+            if bucket.refused > MAX_REFUSED {
+                return;
+            }
+            if !id.is_null() {
+                let mut e = RpcError::new(RpcError::RATE_LIMITED, "too many requests");
+                e.data = Some(json!({"retry_after_ms": wait.as_millis().max(1) as u64}));
+                if reply(&mut write, &id, Err(e)).is_err() {
+                    return;
+                }
+            }
+            continue;
+        }
         let result = handler.call(&method, params);
         if id.is_null() {
             continue; // a notification: no reply
@@ -304,6 +411,7 @@ pub(crate) fn serve(conn: Split, token: &str, cfg: &Config, handler: &dyn Handle
 /// A running server; dropping it stops accepting and removes the token file.
 pub struct Server {
     stop: Arc<AtomicBool>,
+    auth: Arc<Auth>,
     endpoint: String,
     token_path: PathBuf,
     #[cfg(windows)]
@@ -325,14 +433,17 @@ impl Server {
         let token = new_token()?;
         let token_path = cfg.token_path();
         write_private(&token_path, token.as_bytes())?;
+        let auth = Arc::new(Auth::new(token));
         let stop = Arc::new(AtomicBool::new(false));
         let active = Arc::new(AtomicUsize::new(0));
         #[cfg(windows)]
-        let inner = win::Listener::start(cfg.clone(), token, handler, stop.clone(), active)?;
+        let inner = win::Listener::start(cfg.clone(), auth.clone(), handler, stop.clone(), active)?;
         #[cfg(unix)]
-        let inner = unix::Listener::start(cfg.clone(), token, handler, stop.clone(), active)?;
+        let inner =
+            unix::Listener::start(cfg.clone(), auth.clone(), handler, stop.clone(), active)?;
         Ok(Self {
             stop,
+            auth,
             endpoint: inner.endpoint(),
             token_path,
             _inner: inner,
@@ -342,6 +453,12 @@ impl Server {
     /// Pipe name or socket path.
     pub fn endpoint(&self) -> &str {
         &self.endpoint
+    }
+
+    /// Wrong tokens since the start — more than a stray one means someone is guessing (worth a
+    /// line in the log).
+    pub fn auth_failures(&self) -> usize {
+        self.auth.total_failures.load(Ordering::SeqCst)
     }
 }
 
@@ -396,6 +513,19 @@ impl From<std::io::Error> for CallError {
     fn from(e: std::io::Error) -> Self {
         Self::Io(e)
     }
+}
+
+/// Opens a connection to a server endpoint by its name (pipe name / socket path) and closes it
+/// again, without a hello. For security checks from another account (`examples/probe.rs`):
+/// the OS must refuse it with «access denied».
+#[doc(hidden)]
+pub fn open_endpoint(endpoint: &str) -> std::io::Result<()> {
+    #[cfg(windows)]
+    let c = win::connect_endpoint(endpoint)?;
+    #[cfg(unix)]
+    let c = unix::connect_endpoint(endpoint)?;
+    drop(c);
+    Ok(())
 }
 
 pub struct Client {

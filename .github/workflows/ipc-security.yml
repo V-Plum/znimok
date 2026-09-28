@@ -1,0 +1,91 @@
+name: ipc-security
+
+# ZK-112: another (ordinary) account on the same machine must not reach the IPC server — neither
+# the pipe / socket nor the token file. Needs a second account, so it runs only on throw-away CI
+# runners. The same-user control run proves the probe itself works.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "crates/znimok-ipc/**"
+      - ".github/workflows/ipc-security.yml"
+  pull_request:
+    paths:
+      - "crates/znimok-ipc/**"
+      - ".github/workflows/ipc-security.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ipc-security-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  windows:
+    name: other user (Windows)
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build -p znimok-ipc --examples --release
+      - name: probe as the same user and as another one
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $pub = 'C:\Users\Public\znimok-probe'
+          New-Item -ItemType Directory -Force $pub | Out-Null
+          Copy-Item target\release\examples\probe.exe $pub
+          $info = "$env:RUNNER_TEMP\serve.json"
+          $srv = Start-Process target\release\examples\serve.exe -ArgumentList '--seconds','600' `
+            -RedirectStandardOutput $info -NoNewWindow -PassThru
+          for ($i = 0; $i -lt 50 -and -not (Get-Content $info -ErrorAction SilentlyContinue); $i++) { Start-Sleep -Milliseconds 200 }
+          $s = Get-Content $info | ConvertFrom-Json
+          "server: $($s.endpoint)"
+
+          & "$pub\probe.exe" $s.endpoint $s.token_path --expect ok
+          if ($LASTEXITCODE -ne 0) { throw 'same-user control failed' }
+
+          $pw = 'Zk-' + [guid]::NewGuid().ToString('N') + '!a1'
+          net user zkother $pw /add | Out-Null
+          $cred = New-Object System.Management.Automation.PSCredential('zkother', (ConvertTo-SecureString $pw -AsPlainText -Force))
+          $p = Start-Process "$pub\probe.exe" -ArgumentList $s.endpoint, $s.token_path, '--expect', 'denied' `
+            -Credential $cred -WorkingDirectory $pub -LoadUserProfile `
+            -RedirectStandardOutput "$pub\out.json" -RedirectStandardError "$pub\err.txt" -Wait -PassThru
+          Get-Content "$pub\out.json", "$pub\err.txt"
+          $r = Get-Content "$pub\out.json" | ConvertFrom-Json
+          if ($r.user -ne 'zkother') { throw "probe ran as '$($r.user)', not as zkother" }
+          if ($p.ExitCode -ne 0) { throw 'another user reached the server or its token' }
+          Stop-Process $srv -ErrorAction SilentlyContinue
+
+  macos:
+    name: other user (macOS)
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build -p znimok-ipc --examples --release
+      - name: probe as the same user and as another one
+        run: |
+          set -euo pipefail
+          info="$RUNNER_TEMP/serve.json"
+          ./target/release/examples/serve --seconds 600 > "$info" &
+          for i in $(seq 50); do [ -s "$info" ] && break; sleep 0.2; done
+          ep=$(jq -r .endpoint "$info"); tok=$(jq -r .token_path "$info")
+          echo "server: $ep"
+
+          ./target/release/examples/probe "$ep" "$tok" --expect ok
+
+          sudo sysadminctl -addUser zkother -password "$(uuidgen)" 2>&1 | tail -1
+          install -m 755 ./target/release/examples/probe /tmp/zk-probe
+          out=$(sudo -u zkother /tmp/zk-probe "$ep" "$tok" --expect denied) && rc=0 || rc=$?
+          echo "$out"
+          [ "$(echo "$out" | jq -r .user)" = zkother ] || { echo "probe did not run as zkother"; exit 1; }
+          [ "$rc" = 0 ] || { echo "another user reached the server or its token"; exit 1; }

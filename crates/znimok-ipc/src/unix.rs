@@ -23,7 +23,7 @@ pub(crate) struct Listener {
 impl Listener {
     pub fn start(
         cfg: Config,
-        token: String,
+        token: Arc<crate::Auth>,
         handler: Arc<dyn Handler>,
         stop: Arc<AtomicBool>,
         active: Arc<AtomicUsize>,
@@ -44,7 +44,6 @@ impl Listener {
         std::thread::Builder::new()
             .name("znimok-ipc".into())
             .spawn(move || {
-                let token = Arc::new(token);
                 let cfg = Arc::new(cfg);
                 for stream in listener.incoming() {
                     if s.load(Ordering::SeqCst) {
@@ -99,7 +98,14 @@ impl Drop for Listener {
 pub(crate) fn connect(
     cfg: &Config,
 ) -> std::io::Result<(Box<dyn Read + Send>, Box<dyn Write + Send>)> {
-    let s = UnixStream::connect(socket_path(cfg))?;
+    connect_endpoint(&socket_path(cfg).to_string_lossy())
+}
+
+/// Connects to a socket by its path (the probe of another user's socket uses it).
+pub(crate) fn connect_endpoint(
+    path: &str,
+) -> std::io::Result<(Box<dyn Read + Send>, Box<dyn Write + Send>)> {
+    let s = UnixStream::connect(path)?;
     let r = s.try_clone()?;
     Ok((Box::new(r), Box::new(s)))
 }
