@@ -121,4 +121,155 @@ impl Frame {
         }
         Some(out)
     }
+
+    /// 8-bit sRGB RGBA of any frame — SDR as is, HDR tone mapped on the CPU with the formulas of
+    /// Little Helpers (ported from P2 `tone.rs`, verified there against the WGSL version to ±1):
+    /// everything up to SDR white stays, above is clipped ("white stays white", right for
+    /// interfaces), then the sRGB curve. The GPU path is ZK-38; this is the fallback and the
+    /// reference. Alpha is 255 for HDR formats.
+    pub fn to_srgb8(&self) -> Vec<u8> {
+        if let Some(v) = self.to_rgba8() {
+            return v;
+        }
+        let white = if self.color.sdr_white_nits > 0.0 {
+            self.color.sdr_white_nits
+        } else {
+            80.0
+        };
+        let mut out = Vec::with_capacity((self.width * self.height * 4) as usize);
+        for y in 0..self.height {
+            let r = self.row(y);
+            match self.format {
+                PixelFormat::Rgba16Float => {
+                    for p in r.as_chunks::<8>().0 {
+                        let h = |i: usize| half_to_f32(u16::from_le_bytes([p[i], p[i + 1]]));
+                        let [a, b, c] = tone::map(self.color.transfer, [h(0), h(2), h(4)], white);
+                        out.extend_from_slice(&[a, b, c, 255]);
+                    }
+                }
+                PixelFormat::Rgb10A2 => {
+                    for p in r.as_chunks::<4>().0 {
+                        let w = u32::from_le_bytes(*p);
+                        let n = |s: u32| ((w >> s) & 1023) as f32 / 1023.0;
+                        let [a, b, c] = tone::map(self.color.transfer, [n(0), n(10), n(20)], white);
+                        out.extend_from_slice(&[a, b, c, 255]);
+                    }
+                }
+                PixelFormat::Bgra8 | PixelFormat::Rgba8 => unreachable!("handled by to_rgba8"),
+            }
+        }
+        out
+    }
+}
+
+/// IEEE 754 binary16 → f32 (no dependency needed for this one conversion).
+fn half_to_f32(h: u16) -> f32 {
+    let sign = if h & 0x8000 != 0 { -1.0 } else { 1.0 };
+    let exp = ((h >> 10) & 0x1F) as i32;
+    let man = (h & 0x3FF) as f32;
+    match exp {
+        0 => sign * man * 2f32.powi(-24),
+        31 => {
+            if man == 0.0 {
+                sign * f32::INFINITY
+            } else {
+                f32::NAN
+            }
+        }
+        _ => sign * (1.0 + man / 1024.0) * 2f32.powi(exp - 15),
+    }
+}
+
+/// HDR → SDR maths of Little Helpers (`CapConvert`).
+pub mod tone {
+    use super::Transfer;
+
+    pub fn srgb_encode(linear: f32) -> f32 {
+        let c = if linear.is_nan() {
+            0.0
+        } else {
+            linear.clamp(0.0, 1.0)
+        };
+        if c <= 0.003_130_8 {
+            12.92 * c
+        } else {
+            1.055 * c.powf(1.0 / 2.4) - 0.055
+        }
+    }
+
+    /// ST 2084 EOTF: encoded 0..1 → nits.
+    pub fn pq_to_nits(e: f32) -> f32 {
+        const M1: f32 = 0.159_301_76;
+        const M2: f32 = 78.843_75;
+        const C1: f32 = 0.835_937_5;
+        const C2: f32 = 18.851_563;
+        const C3: f32 = 18.687_5;
+        let p = e.max(0.0).powf(1.0 / M2);
+        10_000.0 * ((p - C1).max(0.0) / (C2 - C3 * p)).powf(1.0 / M1)
+    }
+
+    /// BT.2020 → BT.709, linear light.
+    pub fn bt2020_to_709(n: [f32; 3]) -> [f32; 3] {
+        [
+            1.6605 * n[0] - 0.5876 * n[1] - 0.0728 * n[2],
+            -0.1246 * n[0] + 1.1329 * n[1] - 0.0083 * n[2],
+            -0.0182 * n[0] - 0.1006 * n[1] + 1.1187 * n[2],
+        ]
+    }
+
+    fn quant(v: f32) -> u8 {
+        (v * 255.0 + 0.5).floor().clamp(0.0, 255.0) as u8
+    }
+
+    /// One pixel, normalised channel values → sRGB 8-bit.
+    pub fn map(transfer: Transfer, rgb: [f32; 3], white_nits: f32) -> [u8; 3] {
+        let enc = match transfer {
+            Transfer::ScRgb => {
+                let k = white_nits / 80.0;
+                rgb.map(|v| srgb_encode(v / k))
+            }
+            Transfer::ExtendedLinear => rgb.map(srgb_encode),
+            Transfer::Pq => {
+                let n = rgb.map(|v| pq_to_nits(v) / white_nits);
+                bt2020_to_709(n).map(srgb_encode)
+            }
+            Transfer::Srgb => rgb.map(|v| v.clamp(0.0, 1.0)),
+        };
+        enc.map(quant)
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn sdr_white_maps_to_white_and_above_clips() {
+            // scRGB: SDR white of 240 nits = 3.0.
+            assert_eq!(
+                map(Transfer::ScRgb, [3.0, 3.0, 3.0], 240.0),
+                [255, 255, 255]
+            );
+            assert_eq!(
+                map(Transfer::ScRgb, [6.0, 6.0, 6.0], 240.0),
+                [255, 255, 255]
+            );
+            assert_eq!(map(Transfer::ScRgb, [0.0, 0.0, 0.0], 240.0), [0, 0, 0]);
+            // Mid grey: 18 % of white → sRGB ≈ 118.
+            let g = map(Transfer::ScRgb, [0.54, 0.54, 0.54], 240.0)[0];
+            assert!((116..=120).contains(&g), "{g}");
+            // PQ with 203-nit white: just above white clips to white.
+            assert_eq!(
+                map(Transfer::Pq, [0.6, 0.6, 0.6], 203.0),
+                [255, 255, 255]
+            );
+        }
+
+        #[test]
+        fn half_floats_decode() {
+            assert_eq!(super::super::half_to_f32(0x3C00), 1.0);
+            assert_eq!(super::super::half_to_f32(0xC000), -2.0);
+            assert_eq!(super::super::half_to_f32(0x0000), 0.0);
+            assert!((super::super::half_to_f32(0x3555) - 0.3333).abs() < 1e-3);
+        }
+    }
 }
