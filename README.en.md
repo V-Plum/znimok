@@ -63,6 +63,13 @@ the thumbnail into a chat or a folder, save as a file, library. Exported PNG, JP
 the title, description, author, rights, tags and the time of the shot (no window names or paths;
 switch it off in the More menu), and the file's time is the time of the shot.
 
+Settings (the gear in the title bar) live inside the window, and every change applies and saves
+at once: the library folder, how many screenshots to keep, autosave, metadata, language, the
+hotkey switch. Hovering a library card shows rename, show in folder and move to trash (with Undo;
+the trash inside the library folder empties after 30 days). Save as… puts a copy of the document
+anywhere; HEIC, AVIF and TIFF open too (through the system's codecs; on Windows HEIC/AVIF need
+Microsoft's free extensions).
+
 ```sh
 cargo run --release -p znimok-app              # the library
 cargo run --release -p znimok-app -- shot.png  # open an image right away
