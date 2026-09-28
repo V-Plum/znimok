@@ -320,7 +320,12 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
                     );
                     app.borrow_mut().new_document(ui, raster, "screen", None);
                 }
-                Ok(Err(e)) => r.check("capture display", false, e),
+                Ok(Err(crate::capture::Fail::Other(e))) => r.check("capture display", false, e),
+                Ok(Err(crate::capture::Fail::Permission)) => r.check(
+                    "capture display",
+                    false,
+                    "Screen Recording permission".into(),
+                ),
                 Err(_) => r.check("capture display", false, "panicked".into()),
             }
         }));

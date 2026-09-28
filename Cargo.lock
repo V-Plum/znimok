@@ -6360,6 +6360,7 @@ version = "0.0.0"
 dependencies = [
  "arboard",
  "chrono",
+ "global-hotkey",
  "image",
  "rfd",
  "slint",
@@ -6368,6 +6369,7 @@ dependencies = [
  "znimok-core",
  "znimok-format",
  "znimok-i18n",
+ "znimok-mac",
  "znimok-platform",
  "znimok-render",
  "znimok-win",
@@ -6414,6 +6416,14 @@ dependencies = [
  "intl_pluralrules",
  "sys-locale",
  "unic-langid",
+]
+
+[[package]]
+name = "znimok-mac"
+version = "0.0.0"
+dependencies = [
+ "screencapturekit",
+ "znimok-platform",
 ]
 
 [[package]]

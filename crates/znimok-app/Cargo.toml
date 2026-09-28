@@ -31,6 +31,10 @@ chrono = { version = "0.4", default-features = false, features = ["clock", "std"
 znimok-win = { path = "../znimok-win" }
 windows = { version = "0.62", features = ["Win32_Foundation", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_WindowsAndMessaging", "Win32_System_Threading"] }
 
+[target.'cfg(target_os = "macos")'.dependencies]
+znimok-mac = { path = "../znimok-mac" }
+global-hotkey = "0.8"
+
 [build-dependencies]
 slint-build = "~1.18"
 znimok-i18n = { path = "../znimok-i18n" }

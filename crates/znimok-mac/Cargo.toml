@@ -1,0 +1,18 @@
+[package]
+name = "znimok-mac"
+description = "macOS implementations of the Znimok platform traits — ScreenCaptureKit display/region capture, cursor, Screen Recording permission"
+version.workspace = true
+edition.workspace = true
+license-file.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+znimok-platform = { path = "../znimok-platform" }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+screencapturekit = { version = "11", features = ["macos_15_0"] }

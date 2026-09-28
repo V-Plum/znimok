@@ -25,6 +25,12 @@ fn main() {
         std::fs::write(dir.join(format!("{domain}.po")), po).unwrap();
     }
 
+    // macOS: screencapturekit's Swift bridge links `@rpath/libswift_Concurrency.dylib`; a
+    // dependency's link args never reach the final binary (P3, ZK-16).
+    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("macos") {
+        println!("cargo:rustc-link-arg-bins=-Wl,-rpath,/usr/lib/swift");
+    }
+
     let config = slint_build::CompilerConfiguration::new().with_bundled_translations(&out);
     slint_build::compile_with_config("ui/app.slint", config).expect("slint compile");
 }

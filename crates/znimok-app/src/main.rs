@@ -10,6 +10,8 @@
 
 mod app;
 mod capture;
+#[cfg(target_os = "macos")]
+mod hotkey_mac;
 #[cfg(windows)]
 mod hotkey_win;
 mod io;
@@ -105,21 +107,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(windows)]
     if std::env::var_os("ZNIMOK_SELFTEST").is_none() {
         let ok = hotkey_win::register(|| {
-            let _ = slint::invoke_from_event_loop(|| {
-                CTX.with(|c| {
-                    let ctx = c.borrow().clone();
-                    if let Some((app, weak)) = ctx
-                        && let Some(ui) = weak.upgrade()
-                    {
-                        new_shot(&app, &ui);
-                    }
-                });
-            });
+            let _ = slint::invoke_from_event_loop(shot_from_hotkey);
         });
         if !ok {
             eprintln!("Ctrl+Shift+4 is taken by another program");
         }
     }
+
+    // macOS: ⌃⇧4 (⌘⇧4 belongs to the system screenshot tool unless the user frees it — ZK-44).
+    #[cfg(target_os = "macos")]
+    let _hotkeys = if std::env::var_os("ZNIMOK_SELFTEST").is_none() {
+        hotkey_mac::register()
+    } else {
+        None
+    };
 
     if let Some(dir) = std::env::var_os("ZNIMOK_SELFTEST") {
         selftest::start(app.clone(), &ui, PathBuf::from(dir), files.first().cloned());
@@ -161,6 +162,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     slint::run_event_loop_until_quit()?;
     drop(timer);
     Ok(())
+}
+
+/// The global screenshot key (Windows and macOS), called on the UI thread.
+fn shot_from_hotkey() {
+    let ctx = CTX.with(|c| c.borrow().clone());
+    if let Some((app, weak)) = ctx
+        && let Some(ui) = weak.upgrade()
+    {
+        new_shot(&app, &ui);
+    }
 }
 
 /// Asks what to do with unsaved changes when autosave is off. `false` = stay.
@@ -247,8 +258,14 @@ fn new_shot(app: &Shared, ui: &AppWindow) {
     if !capture::available() || !confirm_leave(app, ui) {
         return;
     }
-    let _ = ui.hide();
-    slint::Timer::single_shot(Duration::from_millis(250), move || {
+    // Windows: the window steps aside (WGC sees it). macOS: the capture filter excludes our own
+    // windows, so it stays.
+    let hide = cfg!(windows);
+    if hide {
+        let _ = ui.hide();
+    }
+    let delay = Duration::from_millis(if hide { 250 } else { 0 });
+    slint::Timer::single_shot(delay, move || {
         std::thread::spawn(move || {
             let r = capture::display_under_cursor();
             let _ = slint::invoke_from_event_loop(move || {
@@ -256,7 +273,11 @@ fn new_shot(app: &Shared, ui: &AppWindow) {
                     let _ = ui.show();
                     match r {
                         Ok(raster) => a.new_document(ui, raster, "screen", None),
-                        Err(e) => {
+                        Err(capture::Fail::Permission) => {
+                            let msg = a.tr.tr("err-capture-mac-perm");
+                            a.toast(ui, msg);
+                        }
+                        Err(capture::Fail::Other(e)) => {
                             let mut args = znimok_i18n::FluentArgs::new();
                             args.set("reason", e);
                             let msg = a.tr.tr_args("err-capture-generic", &args);
