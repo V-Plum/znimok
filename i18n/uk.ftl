@@ -24,7 +24,7 @@
 ###   annotation — позначка — anything drawn on a screenshot: rectangle, arrow, text, counter…
 ###   library — бібліотека — the folder with all screenshots and videos, and the home screen
 ###   editor — редактор — the window where a screenshot is annotated
-###   over the screen — поверх екрана — editing right on the frozen screen (overlay mode)
+###   over the screen — поверх екрану — editing right on the frozen screen (overlay mode)
 ###   overlay — накладка — the frozen-screen layer where the user chooses what to capture
 ###   card after a capture — плашка — the small card in the corner after a capture (6 s)
 ###   crop / to crop — кадр / кадрувати — a document property, not a pixel cut: annotations outside stay
@@ -697,7 +697,7 @@ colour-hex = HEX
 # @where: Opacity field (0–100 %)
 # @kind: a11y
 # @max: 16
-colour-opacity = Непрозорість
+colour-opacity = Прозорість
 
 # @where: Row of recently used colours
 # @kind: heading
@@ -846,7 +846,7 @@ insp-corners-round = Круглі
 # @where: Section: opacity slider
 # @kind: label
 # @max: 16
-insp-opacity = Непрозорість
+insp-opacity = Прозорість
 
 # @where: Section: list of effects
 # @kind: label
@@ -912,7 +912,7 @@ insp-shadow-blur-long = Розмиття
 # @where: Accessible name of the shadow opacity field
 # @kind: a11y
 # @max: 24
-insp-shadow-opacity = Непрозорість тіні
+insp-shadow-opacity = Прозорість тіні
 
 # @where: Design note for developers is not shown; this is the hint under the list
 # @kind: hint
@@ -1812,7 +1812,7 @@ capture-to-clipboard = у буфер
 # @where: Hint after "Alt"
 # @kind: hint
 # @max: 20
-capture-over-screen = поверх екрана
+capture-over-screen = поверх екрану
 
 # @where: Hint after "Space"
 # @kind: hint
@@ -1856,7 +1856,7 @@ capture-countdown-cancel = Esc — скасувати
 # @where: Chip at the left of the overlay bar
 # @kind: badge
 # @max: 20
-overlay-chip = Поверх екрана
+overlay-chip = Поверх екрану
 
 # @where: Button: move to the editor window
 # @kind: a11y
@@ -2481,7 +2481,7 @@ shots-act-clipboard = У буфер обміну
 # @where: Action
 # @kind: option
 # @max: 28
-shots-act-overlay = Редагувати поверх екрана
+shots-act-overlay = Редагувати поверх екрану
 
 # @where: Row: the pill after a capture
 # @kind: label
@@ -2501,7 +2501,7 @@ shots-quick-library = Знімки повз редактор теж у бібл�
 # @where: Switch
 # @kind: label
 # @max: 60
-shots-esc-saves = Esc поверх екрана зберігає, якщо є позначки
+shots-esc-saves = Esc поверх екрану зберігає, якщо є позначки
 
 # @where: Switch
 # @kind: label

@@ -24,7 +24,7 @@
 ###   annotation — позначка — anything drawn on a screenshot: rectangle, arrow, text, counter…
 ###   library — бібліотека — the folder with all screenshots and videos, and the home screen
 ###   editor — редактор — the window where a screenshot is annotated
-###   over the screen — поверх екрана — editing right on the frozen screen (overlay mode)
+###   over the screen — поверх екрану — editing right on the frozen screen (overlay mode)
 ###   overlay — накладка — the frozen-screen layer where the user chooses what to capture
 ###   card after a capture — плашка — the small card in the corner after a capture (6 s)
 ###   crop / to crop — кадр / кадрувати — a document property, not a pixel cut: annotations outside stay
