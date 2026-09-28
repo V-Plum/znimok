@@ -1,7 +1,7 @@
 //! Windows.Media.Ocr. One engine per language; with several languages asked for, the first
 //! available one is used (Windows OCR does not mix scripts in one pass).
 
-use super::{Line, Ocr, OcrError, OcrResult, Rect, match_languages, winrt_thread};
+use super::{Line, Ocr, OcrError, OcrResult, Rect, Word, match_languages, winrt_thread};
 use crate::Rgba;
 use windows::Globalization::Language;
 use windows::Graphics::Imaging::{BitmapAlphaMode, BitmapPixelFormat, SoftwareBitmap};
@@ -90,19 +90,26 @@ impl Ocr for WinOcr {
         let mut lines = Vec::new();
         for line in result.Lines().map_err(os)? {
             let mut rect = Rect::default();
+            let mut words = Vec::new();
             for word in line.Words().map_err(os)? {
                 let r = word.BoundingRect().map_err(os)?;
-                rect = rect.union(Rect {
+                let wr = Rect {
                     x: r.X * back,
                     y: r.Y * back,
                     w: r.Width * back,
                     h: r.Height * back,
+                };
+                rect = rect.union(wr);
+                words.push(Word {
+                    text: word.Text().map_err(os)?.to_string(),
+                    rect: wr,
                 });
             }
             lines.push(Line {
                 text: line.Text().map_err(os)?.to_string(),
                 rect,
                 confidence: None,
+                words,
             });
         }
         Ok(OcrResult {
