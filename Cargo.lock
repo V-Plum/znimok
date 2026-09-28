@@ -3256,6 +3256,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "pollster"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2f3a9f18d041e6d0e102a0a46750538147e5e8992d3b4873aaafee2520b00ce3"
+
+[[package]]
 name = "polycool"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5781,6 +5787,21 @@ checksum = "29666d0abbfad1e3dc4dcf6144730dd3a3ab225bbbdac83319345b1b44ccfc1b"
 [[package]]
 name = "znimok-core"
 version = "0.0.0"
+
+[[package]]
+name = "znimok-p2"
+version = "0.0.0"
+dependencies = [
+ "half",
+ "image",
+ "pollster",
+ "serde",
+ "serde_json",
+ "wgpu",
+ "windows",
+ "windows-core",
+ "windows-future",
+]
 
 [[package]]
 name = "znimok-proto"
