@@ -1,0 +1,25 @@
+[package]
+name = "znimok-format-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+# Own workspace: fuzzing needs nightly and is not part of the normal build.
+[workspace]
+
+[dependencies]
+libfuzzer-sys = "0.4"
+znimok-format = { path = ".." }
+
+[[bin]]
+name = "read"
+path = "fuzz_targets/read.rs"
+test = false
+doc = false
+bench = false
+
+[profile.release]
+debug = 1

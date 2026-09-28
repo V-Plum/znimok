@@ -1,0 +1,20 @@
+[package]
+name = "znimok-format"
+description = "Reader and writer of the .znimok document format (docs/FORMAT.md)"
+version.workspace = true
+edition.workspace = true
+license-file.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+znimok-core = { path = "../znimok-core" }
+png = "0.18"
+uuid = "1"
+
+[dev-dependencies]
+znimok-render = { path = "../znimok-render" }

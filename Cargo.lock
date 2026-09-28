@@ -6107,6 +6107,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "znimok-format"
+version = "0.0.0"
+dependencies = [
+ "png",
+ "uuid",
+ "znimok-core",
+ "znimok-render",
+]
+
+[[package]]
 name = "znimok-p2"
 version = "0.0.0"
 dependencies = [
