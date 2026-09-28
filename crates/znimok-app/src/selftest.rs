@@ -571,6 +571,90 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
         );
         ui.set_insp_tab(1);
     }));
+    // Cursors (ZK-47) and dragging rows of the layers list (ZK-54).
+    steps.push(Box::new(|app, ui, r| {
+        let order = |app: &Shared| -> Vec<(u32, u32)> {
+            app.borrow()
+                .s
+                .as_ref()
+                .map(|s| s.ed.doc.objects.iter().map(|o| (o.id, o.group)).collect())
+                .unwrap_or_default()
+        };
+        // Cursor: over the first rectangle with Select → move; far outside → the arrow;
+        // Rectangle tool → crosshair; Text tool → I-beam; a selected box's corner → resize.
+        let rect = app.borrow().s.as_ref().and_then(|s| {
+            s.ed.doc
+                .objects
+                .iter()
+                .find(|o| o.kind() == znimok_core::Kind::Rect)
+                .map(|o| (o.id, o.rect))
+        });
+        if let Some((id, rc)) = rect {
+            let (cx, cy) = rc.center();
+            ui.invoke_tool_chosen(0);
+            app.borrow_mut().layer_click(ui, id as i32, false);
+            let a = app.borrow();
+            let over = a.cursor_probe(cx, cy, false);
+            let empty = a.cursor_probe(-500.0, -500.0, false);
+            let corner = a.cursor_probe(rc.x as f64, rc.y as f64, false);
+            drop(a);
+            ui.invoke_tool_chosen(1);
+            let draw = app.borrow().cursor_probe(-500.0, -500.0, false);
+            let draw_ctrl = app.borrow().cursor_probe(cx, cy, true);
+            ui.invoke_tool_chosen(5);
+            let text = app.borrow().cursor_probe(-500.0, -500.0, false);
+            ui.invoke_tool_chosen(0);
+            r.check(
+                "cursors: move over a mark, arrow on empty, resize on a corner, cross / I-beam",
+                (over, empty, corner, draw, draw_ctrl, text) == (3, 0, 4, 1, 3, 2),
+                format!("{over} {empty} {corner} {draw} {draw_ctrl} {text}"),
+            );
+        }
+        ui.set_insp_tab(1);
+        // Drag the front row below the last one: it goes to the very back, one undo step.
+        let before = order(app);
+        let front = before.last().map(|e| e.0);
+        let n_rows = slint::Model::row_count(&ui.get_layers()) as f32;
+        ui.invoke_layer_drag(0, n_rows * 34.0 + 10.0, 1);
+        let after = order(app);
+        r.check(
+            "layers: drag the front row to the bottom",
+            after.first().map(|e| e.0) == front && after.len() == before.len(),
+            format!(
+                "{:?} → {:?}",
+                before.iter().map(|e| e.0).collect::<Vec<_>>(),
+                after.iter().map(|e| e.0).collect::<Vec<_>>()
+            ),
+        );
+        ui.invoke_undo();
+        r.check(
+            "layers: undo restores the order",
+            order(app) == before,
+            String::new(),
+        );
+        // Drop row 1 onto row 0: the two form a group, shown as a header with 2 members.
+        ui.invoke_layer_drag(1, 16.0, 1);
+        let now = order(app);
+        let top: Vec<(u32, u32)> = now.iter().rev().take(2).copied().collect();
+        let grouped = top.len() == 2 && top[0].1 != 0 && top[0].1 == top[1].1;
+        let header = slint::Model::row_data(&ui.get_layers(), 0)
+            .is_some_and(|row| row.is_group && row.count == 2);
+        r.check(
+            "layers: drop onto a row groups the two",
+            grouped && header,
+            format!("{top:?} header {header}"),
+        );
+        // A drag in progress, for the snapshot: row 4 over the middle of row 3.
+        ui.set_layer_drag_from(4);
+        ui.set_layer_drag_y(3.0 * 34.0 + 16.0);
+        ui.invoke_layer_drag(4, 3.0 * 34.0 + 16.0, 0);
+    }));
+    steps.push(Box::new(|app, ui, r| {
+        r.snapshot(ui, "21-layers-drag");
+        ui.invoke_layer_drag(4, 0.0, 2);
+        ui.set_layer_drag_from(-1);
+        let _ = app;
+    }));
     steps.push(Box::new(|app, ui, r| {
         r.snapshot(ui, "10-layers");
         ui.invoke_meta_edited("title".into(), "Тестова назва".into());
@@ -717,6 +801,58 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
         );
         ui.invoke_meta_edited("title".into(), "Тестова назва".into());
         ui.invoke_autosave_toggled(true);
+    }));
+    // ZK-60: Esc takes off one layer at a time, Enter repeats the last share, [ ] thickness,
+    // Ctrl+= zooms in.
+    steps.push(Box::new(|app, ui, r| {
+        use crate::app::KeyAction;
+        let k = |t: &str, ctrl: bool| app.borrow_mut().key(ui, t, ctrl, false);
+        k("a", true); // select all
+        app.borrow_mut().set_tool(ui, crate::app::tool::RECT);
+        let e1 = k("\u{1b}", false);
+        let sel_after = ui.get_selection_count();
+        let e2 = k("\u{1b}", false);
+        let tool_after = ui.get_tool();
+        let e3 = k("\u{1b}", false);
+        r.check(
+            "Esc chain: selection, then tool, then back to the library",
+            e1 == KeyAction::None
+                && sel_after == 0
+                && e2 == KeyAction::None
+                && tool_after == 0
+                && e3 == KeyAction::Back,
+            format!("{e1:?} sel {sel_after} · {e2:?} tool {tool_after} · {e3:?}"),
+        );
+        let enter = k("\n", false);
+        app.borrow_mut().set_last_share(ui, true);
+        let enter2 = k("\n", false);
+        app.borrow_mut().set_last_share(ui, false);
+        r.check(
+            "Enter repeats the last share (copy, then export)",
+            enter == KeyAction::Copy && enter2 == KeyAction::Export,
+            format!("{enter:?} / {enter2:?}"),
+        );
+        let t0 = ui.get_thick_index();
+        k("]", false);
+        let t1 = ui.get_thick_index();
+        k("х", false); // [ on the Ukrainian layout
+        let t2 = ui.get_thick_index();
+        r.check(
+            "] thicker, [ thinner (either layout)",
+            t1 == t0 + 1 && t2 == t0,
+            format!("{t0} → {t1} → {t2}"),
+        );
+        app.borrow_mut().stop_anim_for_test();
+        let (s0, ..) = app.borrow().view_probe();
+        k("=", true);
+        app.borrow_mut().stop_anim_for_test();
+        let (s1, ..) = app.borrow().view_probe();
+        r.check(
+            "Ctrl+= zooms in half a stop",
+            (s1 / s0 - 2f64.sqrt()).abs() < 1e-3,
+            format!("{s0:.3} → {s1:.3}"),
+        );
+        ui.invoke_zoom_fit();
     }));
     // Tooltip bubble: arm it as a hover over the Undo button would, wait past the delay.
     steps.push(Box::new(|_, ui, _| {

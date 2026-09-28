@@ -116,6 +116,24 @@ enum Drag {
     },
 }
 
+/// A row of the layers list as shown (front first), for dragging (ZK-54).
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum LayerRef {
+    Mark { id: ObjectId, group: GroupId },
+    Group(GroupId),
+}
+
+/// Where a dragged row would go.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum LayerDrop {
+    /// In front of this row (above it in the list).
+    Before(usize),
+    /// Behind this row.
+    After(usize),
+    /// Onto this row: group with it.
+    Into(usize),
+}
+
 enum Editing {
     New { at: (i32, i32) },
     Existing { id: ObjectId },
@@ -196,6 +214,12 @@ pub struct App {
     marquee: Option<IRect>,
     /// Last pointer position on the canvas, output pixels (anchor for pinch and double tap).
     last_out: Point,
+    /// Layers list as shown, and groups folded in it (view state, not the document).
+    layer_rows: Vec<LayerRef>,
+    collapsed: std::collections::HashSet<GroupId>,
+    /// How the picture last left the editor — Enter repeats it (ZK-60, LH): false copy,
+    /// true export.
+    last_export: bool,
 }
 
 fn args(pairs: &[(&'static str, String)]) -> FluentArgs<'static> {
@@ -264,6 +288,9 @@ impl App {
             anim_timer: slint::Timer::default(),
             marquee: None,
             last_out: Point::ZERO,
+            layer_rows: Vec::new(),
+            collapsed: std::collections::HashSet::new(),
+            last_export: false,
         }
     }
 
@@ -796,6 +823,7 @@ impl App {
             1 => self.pointer_move(ui, out, p, shift),
             _ => self.pointer_up(ui),
         }
+        self.update_cursor(ui, out, p, ctrl);
         self.sync(ui);
         ui.window().request_redraw();
     }
@@ -1149,6 +1177,94 @@ impl App {
         self.dirty = true;
     }
 
+    // ------------------------------------------------------------------ cursor (ZK-47)
+
+    /// The canvas cursor for what is under the pointer and what a press would do there
+    /// (owner, 29.09): the tailless arrow of the Select icon, a four-way arrow over a mark that
+    /// can be moved, the resize arrow of each handle, a crosshair for drawing and cropping, the
+    /// I-beam for text, a closed hand while panning. Codes are `canvas-cursor` in app.slint.
+    fn update_cursor(&mut self, ui: &AppWindow, out: Point, p: (i32, i32), ctrl: bool) {
+        let c = self.cursor_at(out, p, ctrl);
+        if ui.get_canvas_cursor() != c {
+            ui.set_canvas_cursor(c);
+        }
+    }
+
+    /// For the self-test: the cursor over a document point.
+    pub fn cursor_probe(&self, x: f64, y: f64, ctrl: bool) -> i32 {
+        let out = self.view.to_out(Point::new(x, y));
+        self.cursor_at(out, (x.round() as i32, y.round() as i32), ctrl)
+    }
+
+    fn cursor_at(&self, out: Point, p: (i32, i32), ctrl: bool) -> i32 {
+        const ARROW: i32 = 0;
+        const CROSS: i32 = 1;
+        const TEXT: i32 = 2;
+        const MOVE: i32 = 3;
+        const GRABBING: i32 = 9;
+        // Resize arrows per handle of a box, clockwise from the top-left corner.
+        const BOX: [i32; 8] = [4, 6, 5, 7, 4, 6, 5, 7];
+        let Some(s) = self.s.as_ref() else {
+            return ARROW;
+        };
+        let doc = &s.ed.doc;
+        match &self.drag {
+            Some(Drag::Pan { .. }) => return GRABBING,
+            Some(Drag::Move { .. }) => return MOVE,
+            Some(Drag::Resize { id, handle, .. }) => {
+                return match doc.get(*id).map(|o| o.kind()) {
+                    Some(Kind::Line) => CROSS,
+                    Some(Kind::Text | Kind::Mark) => 7,
+                    _ => BOX[*handle % 8],
+                };
+            }
+            Some(Drag::CropEdit { handle, .. }) => {
+                return if *handle < 8 { BOX[*handle] } else { MOVE };
+            }
+            Some(Drag::Marquee { .. }) => return ARROW,
+            Some(_) => return CROSS,
+            None => {}
+        }
+        if self.tool == tool::CROP {
+            let c = self.crop.unwrap_or_else(|| doc.frame());
+            let reach = 12.0 * self.dpr;
+            if let Some(h) = self
+                .crop_handles(c)
+                .iter()
+                .position(|h| (*h - out).hypot() <= reach)
+            {
+                return BOX[h];
+            }
+            let inside = p.0 > c.x && p.0 < c.right() && p.1 > c.y && p.1 < c.bottom();
+            return if inside { MOVE } else { CROSS };
+        }
+        let px = self.view.scale / self.dpr;
+        let pd = self.view.to_doc(out.x, out.y);
+        let sel = s.ed.selection();
+        if sel.len() == 1
+            && let Some(o) = doc.get(sel[0])
+            && let Some(h) = hit::hit_handle(o, (pd.x, pd.y), px)
+        {
+            return match o.kind() {
+                Kind::Line => CROSS,
+                Kind::Text | Kind::Mark => 7,
+                _ => BOX[h % 8],
+            };
+        }
+        let tool = if ctrl { tool::SELECT } else { self.tool };
+        match tool {
+            tool::SELECT => {
+                if hit::pick(doc, (p.0 as f64, p.1 as f64), px).is_some() {
+                    MOVE
+                } else {
+                    ARROW
+                }
+            }
+            tool::TEXT => TEXT,
+            _ => CROSS,
+        }
+    }
+
     // ------------------------------------------------------------------ arrange (ZK-52)
 
     /// Copies of the selected marks, offset a little, become the new selection — one undo step.
@@ -1487,6 +1603,11 @@ impl App {
         }
         self.tool = t;
         ui.set_tool(self.tool as i32);
+        let (out, p) = (self.last_out, {
+            let d = self.view.to_doc(self.last_out.x, self.last_out.y);
+            (d.x.round() as i32, d.y.round() as i32)
+        });
+        self.update_cursor(ui, out, p, false);
         if t == tool::CROP && !was_crop && self.s.is_some() {
             // The whole picture comes into view, the frame on it can be pulled anywhere.
             self.crop = self.s.as_ref().map(|s| s.ed.doc.frame());
@@ -1566,6 +1687,9 @@ impl App {
                 Some('[') => self.arrange(ui, 3),
                 Some('0') => self.zoom_fit(ui),
                 Some('1') => self.zoom_100(ui),
+                // Zoom in / out by half a stop about the canvas centre ("=" is "+" unshifted).
+                Some('=' | '+') => self.zoom_step(ui, 1),
+                Some('-' | '_') => self.zoom_step(ui, -1),
                 _ => return KeyAction::None,
             }
             self.sync(ui);
@@ -1575,6 +1699,14 @@ impl App {
         let tools = ['v', 'r', 'e', 'l', 'p', 't', 'b', 'h', 'n', 's', 'c'];
         if let Some(i) = latin.and_then(|c| tools.iter().position(|t| *t == c)) {
             self.set_tool(ui, i);
+            return KeyAction::None;
+        }
+        // [ and ] — thinner / thicker, as in LH (with Ctrl they change the order).
+        if matches!(latin, Some('[' | ']')) {
+            let t = self.thick as i32 + if latin == Some(']') { 1 } else { -1 };
+            if (0..THICK.len() as i32).contains(&t) {
+                self.set_prop(ui, "thick", t);
+            }
             return KeyAction::None;
         }
         let step = if shift { 10 } else { 1 };
@@ -1609,19 +1741,32 @@ impl App {
                 "\n" | "\r" if self.tool == tool::CROP => {
                     self.set_tool(ui, tool::SELECT);
                 }
+                // Enter repeats how the picture last left the editor (LH): copy by default.
+                "\n" | "\r" => {
+                    return if self.last_export {
+                        KeyAction::Export
+                    } else {
+                        KeyAction::Copy
+                    };
+                }
                 "\u{1b}" if self.tool == tool::CROP => {
                     self.drag = None;
                     self.crop = None;
                     self.set_tool(ui, tool::SELECT);
                 }
+                // Esc takes off one layer at a time (LH): a drag, the selection, the tool —
+                // and only then leaves the document for the library.
                 "\u{1b}" => {
                     if self.drag.take().is_none() {
                         if !self.selection().is_empty() {
                             self.apply(ui, Command::ClearSelection);
                         } else if self.tool != tool::SELECT {
                             self.set_tool(ui, tool::SELECT);
+                        } else {
+                            return KeyAction::Back;
                         }
                     }
+                    self.marquee = None;
                 }
                 _ => return KeyAction::None,
             }
@@ -2175,6 +2320,248 @@ impl App {
         ui.window().request_redraw();
     }
 
+    /// Group header: selects every member (Shift / Ctrl adds them).
+    pub fn layer_group_click(&mut self, ui: &AppWindow, g: i32, add: bool) {
+        let ids = self.group_members(g as GroupId);
+        if ids.is_empty() {
+            return;
+        }
+        self.apply(ui, Command::Select { ids, add });
+        self.sync(ui);
+        ui.window().request_redraw();
+    }
+
+    /// Group header's eye: all members hidden → show them all, otherwise hide them all.
+    pub fn layer_group_eye(&mut self, ui: &AppWindow, g: i32) {
+        let ids = self.group_members(g as GroupId);
+        let Some(s) = self.s.as_ref() else { return };
+        let all_hidden = ids
+            .iter()
+            .filter_map(|id| s.ed.doc.get(*id))
+            .all(|o| o.hidden);
+        if ids.is_empty() {
+            return;
+        }
+        self.apply(
+            ui,
+            Command::UpdateObjects {
+                ids,
+                patch: ObjectPatch {
+                    hidden: Some(!all_hidden),
+                    ..Default::default()
+                },
+                merge: None,
+            },
+        );
+        self.sync(ui);
+        ui.window().request_redraw();
+    }
+
+    pub fn layer_collapse(&mut self, ui: &AppWindow, g: i32) {
+        let g = g as GroupId;
+        if !self.collapsed.remove(&g) {
+            self.collapsed.insert(g);
+        }
+        self.sync(ui);
+    }
+
+    fn group_members(&self, g: GroupId) -> Vec<ObjectId> {
+        self.s
+            .as_ref()
+            .map(|s| {
+                s.ed.doc
+                    .objects
+                    .iter()
+                    .filter(|o| g != 0 && o.group == g)
+                    .map(|o| o.id)
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    /// Dragging a row of the layers list: `y` from the list's top, rows 32 px + 2 px apart.
+    /// Moving shows where it would land; dropping restacks in one undo step.
+    pub fn layer_drag(&mut self, ui: &AppWindow, from: i32, y: f32, phase: i32) {
+        let target = self.layer_drop_at(from as usize, y as f64);
+        match phase {
+            0 => {
+                let (row, mode) = match target {
+                    Some(LayerDrop::Before(r)) => (r as i32, 0),
+                    Some(LayerDrop::Into(r)) => (r as i32, 1),
+                    Some(LayerDrop::After(r)) => (r as i32, 2),
+                    None => (-1, 0),
+                };
+                ui.set_layer_drop_row(row);
+                ui.set_layer_drop_mode(mode);
+            }
+            1 => {
+                ui.set_layer_drop_row(-1);
+                if let Some(t) = target {
+                    self.layer_drop(ui, from as usize, t);
+                }
+            }
+            _ => ui.set_layer_drop_row(-1),
+        }
+    }
+
+    /// Where a row dragged from `from` lands at `y`: top third of a row — in front of it,
+    /// bottom third — behind it, the middle — onto it (group). A group moves as a block and
+    /// is never put inside another group.
+    fn layer_drop_at(&self, from: usize, y: f64) -> Option<LayerDrop> {
+        const STRIDE: f64 = 34.0;
+        let rows = &self.layer_rows;
+        let dragged = *rows.get(from)?;
+        if rows.is_empty() {
+            return None;
+        }
+        if y < 0.0 {
+            return Some(LayerDrop::Before(0));
+        }
+        let idx = (y / STRIDE).floor() as usize;
+        if idx >= rows.len() {
+            return Some(LayerDrop::After(rows.len() - 1));
+        }
+        let frac = (y - idx as f64 * STRIDE) / 32.0;
+        // Rows that belong to the dragged thing are not targets.
+        let inside = |r: LayerRef| match (dragged, r) {
+            (a, b) if a == b => true,
+            (LayerRef::Group(g), LayerRef::Mark { group, .. }) => group == g,
+            _ => false,
+        };
+        if inside(rows[idx]) {
+            return None;
+        }
+        let drop = if frac < 0.3 {
+            LayerDrop::Before(idx)
+        } else if frac > 0.7 {
+            LayerDrop::After(idx)
+        } else {
+            LayerDrop::Into(idx)
+        };
+        // A group cannot go into a group: onto a row means next to it, at the top level.
+        if let LayerRef::Group(_) = dragged {
+            let unit_first = |i: usize| -> usize {
+                match rows[i] {
+                    LayerRef::Mark { group, .. } if group != 0 => rows
+                        .iter()
+                        .position(|r| *r == LayerRef::Group(group))
+                        .unwrap_or(i),
+                    _ => i,
+                }
+            };
+            let unit_last = |i: usize| -> usize {
+                let g = match rows[i] {
+                    LayerRef::Group(g) => g,
+                    LayerRef::Mark { group, .. } => group,
+                };
+                if g == 0 {
+                    return i;
+                }
+                rows.iter()
+                    .rposition(|r| {
+                        matches!(r, LayerRef::Mark { group, .. } if *group == g)
+                            || *r == LayerRef::Group(g)
+                    })
+                    .unwrap_or(i)
+            };
+            return Some(match drop {
+                LayerDrop::After(i) => LayerDrop::After(unit_last(i)),
+                LayerDrop::Before(i) | LayerDrop::Into(i) => LayerDrop::Before(unit_first(i)),
+            });
+        }
+        Some(drop)
+    }
+
+    fn layer_drop(&mut self, ui: &AppWindow, from: usize, target: LayerDrop) {
+        let Some(s) = self.s.as_ref() else { return };
+        let doc = &s.ed.doc;
+        let rows = self.layer_rows.clone();
+        let Some(dragged) = rows.get(from).copied() else {
+            return;
+        };
+        // Front-first stack of (mark, group).
+        let mut stack: Vec<(ObjectId, GroupId)> =
+            doc.objects.iter().rev().map(|o| (o.id, o.group)).collect();
+        let moving: Vec<(ObjectId, GroupId)> = match dragged {
+            LayerRef::Mark { id, group } => vec![(id, group)],
+            LayerRef::Group(g) => stack.iter().copied().filter(|(_, gg)| *gg == g).collect(),
+        };
+        stack.retain(|e| !moving.iter().any(|m| m.0 == e.0));
+        let next_group = doc.next_group_id();
+        let group_of_row = |r: LayerRef| match r {
+            LayerRef::Group(g) => g,
+            LayerRef::Mark { group, .. } => group,
+        };
+        let pos_of =
+            |stack: &Vec<(ObjectId, GroupId)>, id: ObjectId| stack.iter().position(|e| e.0 == id);
+        let first_of =
+            |stack: &Vec<(ObjectId, GroupId)>, g: GroupId| stack.iter().position(|e| e.1 == g);
+        let last_of = |stack: &Vec<(ObjectId, GroupId)>, g: GroupId| {
+            stack.iter().rposition(|e| e.1 == g).map(|i| i + 1)
+        };
+        // Index in `stack` to insert at, and the group the moved marks get (a group keeps its own).
+        let (at, group): (Option<usize>, Option<GroupId>) = match (
+            target,
+            rows[match target {
+                LayerDrop::Before(i) | LayerDrop::After(i) | LayerDrop::Into(i) => i,
+            }],
+        ) {
+            (LayerDrop::Before(_), LayerRef::Group(g)) => (first_of(&stack, g), Some(0)),
+            (LayerDrop::Before(_), LayerRef::Mark { id, group }) => {
+                (pos_of(&stack, id), Some(group))
+            }
+            (LayerDrop::After(_), LayerRef::Group(g)) => {
+                if self.collapsed.contains(&g) {
+                    (last_of(&stack, g), Some(0))
+                } else {
+                    (first_of(&stack, g), Some(g))
+                }
+            }
+            (LayerDrop::After(_), LayerRef::Mark { id, group }) => {
+                (pos_of(&stack, id).map(|i| i + 1), Some(group))
+            }
+            (LayerDrop::Into(_), LayerRef::Group(g)) => (first_of(&stack, g), Some(g)),
+            (LayerDrop::Into(_), LayerRef::Mark { id, group }) => {
+                if group == 0 {
+                    // A new group of the two: the target joins it too.
+                    if let Some(i) = pos_of(&stack, id) {
+                        stack[i].1 = next_group;
+                    }
+                    (pos_of(&stack, id), Some(next_group))
+                } else {
+                    (pos_of(&stack, id), Some(group))
+                }
+            }
+        };
+        let _ = group_of_row;
+        let Some(at) = at else { return };
+        let at = at.min(stack.len());
+        let moved: Vec<(ObjectId, GroupId)> = moving
+            .iter()
+            .map(|(id, g)| match dragged {
+                LayerRef::Group(_) => (*id, *g),
+                LayerRef::Mark { .. } => (*id, group.unwrap_or(0)),
+            })
+            .collect();
+        for (k, e) in moved.iter().enumerate() {
+            stack.insert(at + k, *e);
+        }
+        let ids: Vec<ObjectId> = moved.iter().map(|e| e.0).collect();
+        let order: Vec<ObjectId> = stack.iter().rev().map(|e| e.0).collect();
+        let groups: Vec<GroupId> = stack.iter().rev().map(|e| e.1).collect();
+        let same = doc
+            .objects
+            .iter()
+            .map(|o| (o.id, o.group))
+            .eq(order.iter().copied().zip(groups.iter().copied()));
+        if !same {
+            self.apply(ui, Command::Restack { order, groups });
+            self.apply(ui, Command::Select { ids, add: false });
+        }
+        self.sync(ui);
+        ui.window().request_redraw();
+    }
+
     pub fn layer_eye(&mut self, ui: &AppWindow, id: i32) {
         let id = id as ObjectId;
         let Some(hidden) = self
@@ -2712,6 +3099,14 @@ impl App {
         self.sync(ui);
     }
 
+    /// Ctrl+= / Ctrl+-: half a stop in or out, about the canvas centre.
+    pub fn zoom_step(&mut self, ui: &AppWindow, dir: i32) {
+        let k = self.view.scale * 2f64.powf(0.5 * dir as f64);
+        let c = Point::new(self.view.width as f64 / 2.0, self.view.height as f64 / 2.0);
+        self.animate_zoom(k, Some(c));
+        self.sync(ui);
+    }
+
     pub fn zoom_100(&mut self, ui: &AppWindow) {
         // 100 % = one screenshot pixel per physical screen pixel.
         self.animate_zoom(1.0, None);
@@ -2744,6 +3139,11 @@ impl App {
                 || crate::with_ctx(|a, ui| a.tick_anim(ui)),
             );
         }
+    }
+
+    /// For the self-test: settle a zoom animation at once.
+    pub fn stop_anim_for_test(&mut self) {
+        self.stop_anim();
     }
 
     fn stop_anim(&mut self) {
@@ -2868,6 +3268,7 @@ impl App {
 
     pub fn copy(&mut self, ui: &AppWindow) {
         self.finish_text(ui);
+        self.set_last_share(ui, false);
         let Some((w, h, rgba)) = self.flatten() else {
             return;
         };
@@ -2876,6 +3277,12 @@ impl App {
             Err(e) => format!("{} ({e})", self.tr.tr("clipboard-error")),
         };
         self.toast(ui, msg);
+    }
+
+    /// Remembers Copy or Export for Enter and shows which one Enter repeats.
+    pub fn set_last_share(&mut self, ui: &AppWindow, export: bool) {
+        self.last_export = export;
+        ui.global::<crate::Keys>().set_last_share(export as i32);
     }
 
     pub fn export_to(&mut self, ui: &AppWindow, path: &Path) {
@@ -3048,28 +3455,63 @@ impl App {
                 ui.set_text_italic(self.italic);
             }
         }
-        // Layers: front first; unnamed marks are "<kind> <n>", numbered per kind bottom-up.
+        // Layers: front first; unnamed marks are "<kind> <n>", numbered per kind bottom-up. A
+        // group is a header row with its members indented under it (members are adjacent).
         let mut counts = [0usize; 10];
-        let mut rows: Vec<LayerRow> = doc
+        let names: Vec<String> = doc
             .objects
             .iter()
             .map(|o| {
                 let k = kind_index(o.kind());
                 counts[k as usize] += 1;
-                LayerRow {
-                    id: o.id as i32,
-                    name: o
-                        .name
-                        .clone()
-                        .unwrap_or_else(|| format!("{} {}", tool_name(k), counts[k as usize]))
-                        .into(),
-                    kind: k,
-                    hidden: o.hidden,
-                    selected: sel.contains(&o.id),
-                }
+                o.name
+                    .clone()
+                    .unwrap_or_else(|| format!("{} {}", tool_name(k), counts[k as usize]))
             })
             .collect();
-        rows.reverse();
+        let mut rows: Vec<LayerRow> = Vec::new();
+        let mut refs: Vec<LayerRef> = Vec::new();
+        let mut shown_groups: Vec<GroupId> = Vec::new();
+        for (i, o) in doc.objects.iter().enumerate().rev() {
+            let g = o.group;
+            if g != 0 && !shown_groups.contains(&g) {
+                shown_groups.push(g);
+                let members: Vec<&Object> = doc.objects.iter().filter(|m| m.group == g).collect();
+                let name = doc.group_names.get(&g).cloned().unwrap_or_else(|| {
+                    let mut a = FluentArgs::new();
+                    a.set("n", shown_groups.len() as i64);
+                    self.tr.tr_args("layers-group-default", &a)
+                });
+                rows.push(LayerRow {
+                    id: g as i32,
+                    name: name.into(),
+                    kind: 10,
+                    hidden: members.iter().all(|m| m.hidden),
+                    selected: members.iter().all(|m| sel.contains(&m.id)),
+                    is_group: true,
+                    depth: 0,
+                    collapsed: self.collapsed.contains(&g),
+                    count: members.len() as i32,
+                });
+                refs.push(LayerRef::Group(g));
+            }
+            if g != 0 && self.collapsed.contains(&g) {
+                continue;
+            }
+            rows.push(LayerRow {
+                id: o.id as i32,
+                name: names[i].as_str().into(),
+                kind: kind_index(o.kind()),
+                hidden: o.hidden,
+                selected: sel.contains(&o.id),
+                is_group: false,
+                depth: (g != 0) as i32,
+                collapsed: false,
+                count: 0,
+            });
+            refs.push(LayerRef::Mark { id: o.id, group: g });
+        }
+        self.layer_rows = refs;
         ui.set_layers(std::rc::Rc::new(VecModel::from(rows)).into());
         // Image tab
         ui.set_info_size(format!("{iw} × {ih}").into());
@@ -3266,11 +3708,14 @@ impl ViewAnim {
     }
 }
 
+#[derive(Debug, PartialEq)]
 pub enum KeyAction {
     None,
     Copy,
     Export,
     Open,
+    /// The last Esc: back to the library (after the unsaved-changes question, if any).
+    Back,
 }
 
 /// The rubber band: a dashed white rectangle in screen pixels.

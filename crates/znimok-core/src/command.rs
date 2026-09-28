@@ -211,6 +211,14 @@ pub enum Command {
         ids: Vec<ObjectId>,
         to: Arrange,
     },
+    /// The whole stack at once, back to front, with each mark's group (0 = none): what the
+    /// layers list does when a row is dragged to a new place or onto another row (ZK-54).
+    /// `order` lists every mark exactly once; a group left with one member dissolves, and
+    /// members of a group are gathered under its highest one.
+    Restack {
+        order: Vec<ObjectId>,
+        groups: Vec<GroupId>,
+    },
     /// Aligns to the common bounds of the marks, or to the frame when there is only one.
     Align {
         ids: Vec<ObjectId>,
@@ -616,6 +624,10 @@ pub fn examples() -> (Vec<Command>, Vec<Query>) {
         Command::SelectAll,
         Command::ClearSelection,
         Command::Group { ids: vec![1, 2] },
+        Command::Restack {
+            order: vec![2, 1],
+            groups: vec![0, 0],
+        },
         Command::Ungroup { ids: vec![1] },
         Command::RenameGroup {
             group: 1,

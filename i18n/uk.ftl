@@ -1382,6 +1382,11 @@ layers-hint = Тягніть, щоб змінити порядок; клік в�
 # @max: 60
 layers-empty = Позначок ще немає — намалюйте щось на полотні.
 
+# @where: Layers panel, under the list: how to reorder and group by dragging
+# @kind: hint
+# @max: 90
+layers-drag-hint = Тягніть рядок, щоб змінити порядок; покладіть на інший рядок — щоб згрупувати.
+
 ## Arrange
 ## Align, distribute and z-order actions (context bar with several marks, menus).
 

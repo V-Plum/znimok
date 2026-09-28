@@ -31,6 +31,11 @@ fn main() {
         println!("cargo:rustc-link-arg-bins=-Wl,-rpath,/usr/lib/swift");
     }
 
+    // `MouseCursor.custom(...)` (the tailless arrow of the Select tool, ZK-47) is behind the
+    // compiler's experimental switch in Slint 1.18; nothing else here relies on it.
+    // SAFETY: the build script is single-threaded at this point.
+    unsafe { std::env::set_var("SLINT_ENABLE_EXPERIMENTAL_FEATURES", "1") };
+    println!("cargo:rerun-if-changed=ui/cursors");
     let config = slint_build::CompilerConfiguration::new().with_bundled_translations(&out);
     slint_build::compile_with_config("ui/app.slint", config).expect("slint compile");
 }

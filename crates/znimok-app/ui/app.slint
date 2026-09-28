@@ -56,10 +56,23 @@ export global Tip {
     in-out property <int> serial;
 }
 
+// Shortcuts as each system writes them (ZK-60): "Ctrl+Shift+Z" on Windows, "⇧⌘Z" on macOS.
+export global Keys {
+    in property <bool> mac;
+    // Last way the picture left the editor, repeated by Enter: 0 copy, 1 export.
+    in property <int> last-share;
+    public pure function k(win: string, mac: string) -> string {
+        return self.mac ? mac : win;
+    }
+}
+
 // A TouchArea that arms the shared tooltip while hovered.
 component TipTouch inherits TouchArea {
     in property <string> tip;
     in property <int> tip-side: 0;
+    // What can be clicked shows the pointing hand (owner, 29.09); users of TipTouch that are
+    // not buttons (sliders, the drag handle of Copy) set their own.
+    mouse-cursor: self.enabled ? MouseCursor.pointer : MouseCursor.default;
     property <int> mine: -1;
     changed has-hover => {
         if (self.has-hover && root.tip != "") {
@@ -272,6 +285,7 @@ component MiniSlider inherits Rectangle {
     ta := TipTouch {
         tip: root.tip;
         tip-side: 2;
+        mouse-cursor: self.pressed ? MouseCursor.grabbing : MouseCursor.grab;
         pointer-event(e) => {
             if (e.kind == PointerEventKind.down) { root.set-from(self.mouse-x); }
             if (e.kind == PointerEventKind.up) { root.released(); }
@@ -318,11 +332,17 @@ global Palette {
 }
 
 export struct LayerRow {
+    // Mark id, or the group id on a group's header row.
     id: int,
     name: string,
     kind: int,
     hidden: bool,
     selected: bool,
+    // Group header (kind 10) and its members (depth 1) — ZK-54.
+    is-group: bool,
+    depth: int,
+    collapsed: bool,
+    count: int,
 }
 
 // Icons of the mark kinds (layers list), in the order of `prop-kind` / LayerRow.kind:
@@ -339,6 +359,8 @@ global KindIcons {
         "M3 12 a9 9 0 1 0 18 0 a9 9 0 1 0 -18 0 z M10.5 9 l2 -1.2 V16",
         "M8 12 V7 a4 4 0 0 1 8 0 v5 M5 12 h14 v4 H5 z M7 16 v4 h10 v-4",
         "M5 5 h14 a2 2 0 0 1 2 2 v10 a2 2 0 0 1 -2 2 H5 a2 2 0 0 1 -2 -2 V7 a2 2 0 0 1 2 -2 z M7 10 a1.5 1.5 0 1 0 3 0 a1.5 1.5 0 1 0 -3 0 M4 17 l5 -5 4 4 3 -3 4 4",
+        // 10: a group (folder)
+        "M3 7 a2 2 0 0 1 2 -2 h4 l2 2 h8 a2 2 0 0 1 2 2 v8 a2 2 0 0 1 -2 2 H5 a2 2 0 0 1 -2 -2 z",
     ];
 }
 
@@ -472,6 +494,7 @@ component TextButton inherits Rectangle {
     }
     ta := TouchArea {
         enabled: root.enabled;
+        mouse-cursor: self.enabled ? MouseCursor.pointer : MouseCursor.default;
         clicked => { root.clicked(); }
     }
 }
@@ -494,6 +517,7 @@ component MenuItemRow inherits Rectangle {
     }
     ta := TouchArea {
         enabled: root.enabled;
+        mouse-cursor: self.enabled ? MouseCursor.pointer : MouseCursor.default;
         clicked => { root.clicked(); }
     }
 }
@@ -517,6 +541,7 @@ component Switch inherits Rectangle {
         animate x { duration: 160ms; easing: cubic-bezier(0.2, 0, 0, 1); }
     }
     TouchArea {
+        mouse-cursor: MouseCursor.pointer;
         clicked => {
             root.checked = !root.checked;
             root.toggled();
@@ -685,6 +710,7 @@ component CardView inherits Rectangle {
         overflow: elide;
     }
     ta := TouchArea {
+        mouse-cursor: MouseCursor.pointer;
         clicked => { root.open(); }
     }
 }
@@ -974,6 +1000,12 @@ export component AppWindow inherits Window {
     in property <int> selection-count;
     // inspector (ZK-54)
     in-out property <int> insp-tab: 0;
+    // macOS: shortcuts shown with ⌘ ⇧ ⌥, and the cursor image sized for points (winit maps an
+    // image's pixels to points there).
+    in property <bool> mac;
+    // Canvas cursor from the app (ZK-47): 0 arrow of the Select tool, 1 crosshair, 2 I-beam,
+    // 3 move, 4 nwse, 5 nesw, 6 ns, 7 ew, 8 grab, 9 grabbing.
+    in property <int> canvas-cursor;
     in property <int> shadow-index;
     in property <int> glow-index;
     in property <string> geom-x2;
@@ -1076,6 +1108,18 @@ export component AppWindow inherits Window {
     callback set-text-size(string);
     callback layer-click(int, bool);
     callback layer-eye(int);
+    // Group header row: click selects every member, the eye hides them all, the chevron folds.
+    callback layer-group-click(int, bool);
+    callback layer-group-eye(int);
+    callback layer-collapse(int);
+    // Dragging a row (ZK-54): row index, y in the list (px from its top), phase 0 move,
+    // 1 drop, 2 cancel. The app answers with where it would land: `layer-drop-row` and
+    // `layer-drop-mode` (0 line above the row, 1 onto the row = group, 2 line below it).
+    callback layer-drag(int, length, int);
+    in-out property <int> layer-drag-from: -1;
+    in-out property <length> layer-drag-y;
+    in property <int> layer-drop-row: -1;
+    in property <int> layer-drop-mode;
     callback meta-edited(string, string);
     callback image-action(string);
     callback drag-out();
@@ -1259,8 +1303,8 @@ export component AppWindow inherits Window {
                                 drop-shadow-color: #00000080;
                                 VerticalLayout {
                                     padding: 6px;
-                                    MenuItemRow { text: @tr("open-file" => "File…"); shortcut: "Ctrl+O"; clicked => { root.open-file(); } }
-                                    MenuItemRow { text: @tr("open-clipboard" => "From clipboard"); shortcut: "Ctrl+V"; clicked => { root.open-clipboard(); } }
+                                    MenuItemRow { text: @tr("open-file" => "File…"); shortcut: Keys.k("Ctrl+O", "⌘O"); clicked => { root.open-file(); } }
+                                    MenuItemRow { text: @tr("open-clipboard" => "From clipboard"); shortcut: Keys.k("Ctrl+V", "⌘V"); clicked => { root.open-clipboard(); } }
                                     MenuItemRow { text: @tr("open-new-shot" => "New screenshot"); shortcut: root.capture-key; enabled: root.capture-available; clicked => { root.new-shot(); } }
                                 }
                             }
@@ -1312,8 +1356,8 @@ export component AppWindow inherits Window {
                         HorizontalLayout {
                             padding: 2px;
                             spacing: 0px;
-                            IconButton { width: 36px; height: 28px; label: @tr("doc-undo" => "Undo"); tip: self.label + "  Ctrl+Z"; icon: "M9 14 L4 9 l5 -5 M4 9 h11 a5 5 0 0 1 0 10 h-3"; enabled: root.can-undo; clicked => { root.undo(); } }
-                            IconButton { width: 36px; height: 28px; label: @tr("doc-redo" => "Redo"); tip: self.label + "  Ctrl+Shift+Z"; icon: "M15 14 l5 -5 -5 -5 M20 9 H9 a5 5 0 0 0 0 10 h3"; enabled: root.can-redo; clicked => { root.redo(); } }
+                            IconButton { width: 36px; height: 28px; label: @tr("doc-undo" => "Undo"); tip: self.label + "  " + Keys.k("Ctrl+Z", "⌘Z"); icon: "M9 14 L4 9 l5 -5 M4 9 h11 a5 5 0 0 1 0 10 h-3"; enabled: root.can-undo; clicked => { root.undo(); } }
+                            IconButton { width: 36px; height: 28px; label: @tr("doc-redo" => "Redo"); tip: self.label + "  " + Keys.k("Ctrl+Shift+Z", "⇧⌘Z"); icon: "M15 14 l5 -5 -5 -5 M20 9 H9 a5 5 0 0 0 0 10 h3"; enabled: root.can-redo; clicked => { root.redo(); } }
                         }
                     }
                     Rectangle { width: 4px; }
@@ -1341,8 +1385,8 @@ export component AppWindow inherits Window {
                                 // PNG file into a messenger or a folder (ZK-64).
                                 copy-ta := TipTouch {
                                     property <bool> dragged;
-                                    tip: @tr("share-copy-image" => "Copy image") + "  Ctrl+C · " + @tr("share-drag-tip" => "drag to a chat or a folder");
-                                    mouse-cursor: self.dragged ? MouseCursor.grabbing : MouseCursor.default;
+                                    tip: @tr("share-copy-image" => "Copy image") + "  " + Keys.k("Ctrl+C", "⌘C") + (Keys.last-share == 0 ? " / Enter" : "") + " · " + @tr("share-drag-tip" => "drag to a chat or a folder");
+                                    mouse-cursor: self.dragged ? MouseCursor.grabbing : MouseCursor.pointer;
                                     pointer-event(e) => {
                                         if (e.kind == PointerEventKind.down) { self.dragged = false; }
                                     }
@@ -1381,8 +1425,8 @@ export component AppWindow inherits Window {
                                 drop-shadow-color: #00000080;
                                 VerticalLayout {
                                     padding: 6px;
-                                    MenuItemRow { text: @tr("share-copy-image" => "Copy image"); shortcut: "Ctrl+C"; clicked => { root.copy(); } }
-                                    MenuItemRow { text: @tr("share-export" => "Export file…"); shortcut: "Ctrl+Shift+S"; clicked => { root.export(); } }
+                                    MenuItemRow { text: @tr("share-copy-image" => "Copy image"); shortcut: Keys.k("Ctrl+C", "⌘C") + (Keys.last-share == 0 ? "  Enter" : ""); clicked => { root.copy(); } }
+                                    MenuItemRow { text: @tr("share-export" => "Export file…"); shortcut: Keys.k("Ctrl+Shift+S", "⇧⌘S") + (Keys.last-share == 1 ? "  Enter" : ""); clicked => { root.export(); } }
                                     MenuItemRow { text: @tr("share-system" => "Share…"); enabled: false; }
                                 }
                             }
@@ -1446,7 +1490,19 @@ export component AppWindow inherits Window {
                         }
                         changed has-focus => { if (!self.has-focus) { root.ctrl-held = false; } }
                         TouchArea {
-                            mouse-cursor: (root.tool == 0 || root.ctrl-held) ? default : crosshair;
+                            // Ctrl (⌘) turns a drawing tool into Select at once, before the pointer moves.
+                            property <int> c: root.ctrl-held && root.tool != 10 && (root.canvas-cursor == 1 || root.canvas-cursor == 2) ? 0 : root.canvas-cursor;
+                            mouse-cursor: self.c == 0 ? (root.mac ? MouseCursor.custom(@image-url("cursors/select-mac.svg"), 2, 1) : MouseCursor.custom(@image-url("cursors/select.svg"), 4, 2))
+                                : self.c == 1 ? MouseCursor.crosshair
+                                : self.c == 2 ? MouseCursor.text
+                                : self.c == 3 ? MouseCursor.move
+                                : self.c == 4 ? MouseCursor.nwse-resize
+                                : self.c == 5 ? MouseCursor.nesw-resize
+                                : self.c == 6 ? MouseCursor.ns-resize
+                                : self.c == 7 ? MouseCursor.ew-resize
+                                : self.c == 8 ? MouseCursor.grab
+                                : self.c == 9 ? MouseCursor.grabbing
+                                : MouseCursor.default;
                             pointer-event(e) => {
                                 if (!root.editing) { keys.focus(); }
                                 if (e.kind == PointerEventKind.down) {
@@ -1737,12 +1793,12 @@ export component AppWindow inherits Window {
                                         label: @tr("arrange-order" => "Order");
                                         HorizontalLayout {
                                             spacing: 2px;
-                                            SegOption { icon: "M4 4 h16 M12 20 V8 M7 13 l5 -5 5 5"; tip: @tr("arrange-front" => "Bring to front") + "  Ctrl+Shift+]"; clicked => { root.arrange(0); } }
-                                            SegOption { icon: "M12 19 V5 M6 11 l6 -6 6 6"; tip: @tr("layers-up" => "Bring forward") + "  Ctrl+]"; clicked => { root.arrange(2); } }
-                                            SegOption { icon: "M12 5 v14 M6 13 l6 6 6 -6"; tip: @tr("layers-down" => "Send backward") + "  Ctrl+["; clicked => { root.arrange(3); } }
-                                            SegOption { icon: "M4 20 h16 M12 4 v12 M7 11 l5 5 5 -5"; tip: @tr("arrange-back" => "Send to back") + "  Ctrl+Shift+["; clicked => { root.arrange(1); } }
+                                            SegOption { icon: "M4 4 h16 M12 20 V8 M7 13 l5 -5 5 5"; tip: @tr("arrange-front" => "Bring to front") + "  " + Keys.k("Ctrl+Shift+]", "⇧⌘]"); clicked => { root.arrange(0); } }
+                                            SegOption { icon: "M12 19 V5 M6 11 l6 -6 6 6"; tip: @tr("layers-up" => "Bring forward") + "  " + Keys.k("Ctrl+]", "⌘]"); clicked => { root.arrange(2); } }
+                                            SegOption { icon: "M12 5 v14 M6 13 l6 6 6 -6"; tip: @tr("layers-down" => "Send backward") + "  " + Keys.k("Ctrl+[", "⌘["); clicked => { root.arrange(3); } }
+                                            SegOption { icon: "M4 20 h16 M12 4 v12 M7 11 l5 5 5 -5"; tip: @tr("arrange-back" => "Send to back") + "  " + Keys.k("Ctrl+Shift+[", "⇧⌘["); clicked => { root.arrange(1); } }
                                             Rectangle { width: 6px; }
-                                            SegOption { icon: "M9 9 h11 v11 H9 z M15 9 V4 H4 v11 h5"; tip: @tr("common-duplicate" => "Duplicate") + "  Ctrl+D"; clicked => { root.duplicate(); } }
+                                            SegOption { icon: "M9 9 h11 v11 H9 z M15 9 V4 H4 v11 h5"; tip: @tr("common-duplicate" => "Duplicate") + "  " + Keys.k("Ctrl+D", "⌘D"); clicked => { root.duplicate(); } }
                                         }
                                     }
                                     if root.selection-count >= 2: PropRow {
@@ -1764,8 +1820,8 @@ export component AppWindow inherits Window {
                                             SegOption { icon: "M3 3 v18 M21 3 v18 M9 8 h6 v8 H9 z"; enabled: root.selection-count >= 3; tip: @tr("arrange-distribute-x" => "Even gaps across"); clicked => { root.distribute(0); } }
                                             SegOption { icon: "M3 3 h18 M3 21 h18 M8 9 h8 v6 H8 z"; enabled: root.selection-count >= 3; tip: @tr("arrange-distribute-y" => "Even gaps down"); clicked => { root.distribute(1); } }
                                             Rectangle { width: 6px; }
-                                            SegOption { icon: "M4 4 h7 v7 H4 z M13 13 h7 v7 h-7 z M2 2 h20 v20 H2 z"; tip: @tr("arrange-group" => "Group") + "  Ctrl+G"; clicked => { root.group(true); } }
-                                            SegOption { icon: "M4 4 h7 v7 H4 z M13 13 h7 v7 h-7 z"; tip: @tr("arrange-ungroup" => "Ungroup") + "  Ctrl+Shift+G"; clicked => { root.group(false); } }
+                                            SegOption { icon: "M4 4 h7 v7 H4 z M13 13 h7 v7 h-7 z M2 2 h20 v20 H2 z"; tip: @tr("arrange-group" => "Group") + "  " + Keys.k("Ctrl+G", "⌘G"); clicked => { root.group(true); } }
+                                            SegOption { icon: "M4 4 h7 v7 H4 z M13 13 h7 v7 h-7 z"; tip: @tr("arrange-ungroup" => "Ungroup") + "  " + Keys.k("Ctrl+Shift+G", "⇧⌘G"); clicked => { root.group(false); } }
                                         }
                                     }
                                 }
@@ -1776,48 +1832,134 @@ export component AppWindow inherits Window {
                             vertical-stretch: 1;
                             spacing: 6px;
                             if root.layers.length == 0: Text { text: @tr("layers-empty" => "No annotations yet — draw something on the canvas."); color: Theme.text3; font-size: 12px; wrap: word-wrap; }
-                            InspScroll {
-                                VerticalLayout {
-                                    spacing: 2px;
-                                    alignment: start;
-                                    for l in root.layers: Rectangle {
-                                        height: 32px;
-                                        border-radius: 7px;
-                                        background: l.selected ? #3D7BF533 : (row-ta.has-hover ? Theme.elevated : transparent);
-                                        animate background { duration: 120ms; }
-                                        row-ta := TouchArea {
-                                            pointer-event(e) => {
-                                                if (e.kind == PointerEventKind.down && e.button == PointerEventButton.left) {
-                                                    root.layer-click(l.id, e.modifiers.shift || e.modifiers.control);
+                            // The list, with the lifted copy of a dragged row floating above it.
+                            Rectangle {
+                                vertical-stretch: 1;
+                                lsv := InspScroll {
+                                    x: 0;
+                                    y: 0;
+                                    width: parent.width;
+                                    height: parent.height;
+                                    VerticalLayout {
+                                        spacing: 2px;
+                                        alignment: start;
+                                        for l[i] in root.layers: Rectangle {
+                                            height: 32px;
+                                            border-radius: 7px;
+                                            property <bool> lifted: root.layer-drag-from == i;
+                                            property <bool> target: root.layer-drag-from >= 0 && root.layer-drop-row == i;
+                                            background: self.target && root.layer-drop-mode == 1 ? #3D7BF540 : (l.selected ? #3D7BF533 : (row-ta.has-hover && root.layer-drag-from < 0 ? Theme.elevated : transparent));
+                                            border-width: self.target && root.layer-drop-mode == 1 ? 1.5px : 0;
+                                            border-color: Theme.accent;
+                                            opacity: self.lifted ? 0.35 : 1;
+                                            animate background, opacity { duration: 120ms; }
+                                            row-ta := TouchArea {
+                                                property <bool> dragging;
+                                                mouse-cursor: root.layer-drag-from >= 0 ? MouseCursor.grabbing : MouseCursor.pointer;
+                                                pointer-event(e) => {
+                                                    if (e.kind == PointerEventKind.down && e.button == PointerEventButton.left) {
+                                                        self.dragging = false;
+                                                        if (l.is-group) {
+                                                            root.layer-group-click(l.id, e.modifiers.shift || e.modifiers.control);
+                                                        } else {
+                                                            root.layer-click(l.id, e.modifiers.shift || e.modifiers.control);
+                                                        }
+                                                    }
+                                                    if (e.kind == PointerEventKind.up && self.dragging) {
+                                                        self.dragging = false;
+                                                        root.layer-drag(i, i * 34px + self.mouse-y, 1);
+                                                        root.layer-drag-from = -1;
+                                                    }
+                                                    if (e.kind == PointerEventKind.cancel && self.dragging) {
+                                                        self.dragging = false;
+                                                        root.layer-drag(i, i * 34px + self.mouse-y, 2);
+                                                        root.layer-drag-from = -1;
+                                                    }
+                                                }
+                                                moved => {
+                                                    if (self.pressed && !self.dragging && abs(self.mouse-y - self.pressed-y) > 4px) {
+                                                        self.dragging = true;
+                                                        root.layer-drag-from = i;
+                                                    }
+                                                    if (self.dragging) {
+                                                        root.layer-drag-y = i * 34px + self.mouse-y;
+                                                        root.layer-drag(i, root.layer-drag-y, 0);
+                                                    }
+                                                }
+                                            }
+                                            // Insertion line above / below the row.
+                                            if self.target && root.layer-drop-mode != 1: Rectangle {
+                                                x: 4px + l.depth * 18px;
+                                                y: root.layer-drop-mode == 0 ? -2px : parent.height;
+                                                width: parent.width - self.x - 4px;
+                                                height: 2px;
+                                                border-radius: 1px;
+                                                background: Theme.accent;
+                                            }
+                                            // Group members hang from a thin guide.
+                                            if l.depth > 0: Rectangle { x: 14px; y: -2px; width: 1px; height: parent.height + 4px; background: Theme.line; }
+                                            HorizontalLayout {
+                                                padding-left: 6px + l.depth * 18px;
+                                                padding-right: 2px;
+                                                spacing: 6px;
+                                                if l.is-group: IconButton {
+                                                    width: 20px;
+                                                    height: 28px;
+                                                    icon: l.collapsed ? "M9 6 l6 6 -6 6" : "M6 9 l6 6 6 -6";
+                                                    label: l.collapsed ? @tr("layers-expand-group" => "Expand group") : @tr("layers-collapse-group" => "Collapse group");
+                                                    clicked => { root.layer-collapse(l.id); }
+                                                }
+                                                VerticalLayout {
+                                                    alignment: center;
+                                                    Icon { width: 18px; height: 18px; d: KindIcons.paths[l.kind]; tint: l.hidden ? Theme.disabled : (l.is-group ? Theme.accent-text : Theme.text2); }
+                                                }
+                                                Text { text: l.name; color: l.hidden ? Theme.text3 : Theme.text; font-size: 12px; font-weight: l.is-group ? 600 : 400; vertical-alignment: center; overflow: elide; horizontal-stretch: 1; }
+                                                if l.is-group: Text { text: l.count; color: Theme.text3; font-size: 11px; vertical-alignment: center; }
+                                                IconButton {
+                                                    width: 28px;
+                                                    height: 28px;
+                                                    label: l.hidden ? @tr("layers-show" => "Show") : @tr("layers-hide" => "Hide");
+                                                    icon: l.hidden ? "M3 3 l18 18 M10.6 10.6 a2 2 0 0 0 2.8 2.8 M9.9 5.1 A10 10 0 0 1 21 12 a17 17 0 0 1 -2.8 3.6 M6.6 6.6 A17 17 0 0 0 3 12 s3.5 6 9 6 a9 9 0 0 0 3.6 -0.7" : "M2 12 s3.5 -7 10 -7 10 7 10 7 -3.5 7 -10 7 -10 -7 -10 -7 z M9 12 a3 3 0 1 0 6 0 a3 3 0 1 0 -6 0";
+                                                    clicked => {
+                                                        if (l.is-group) { root.layer-group-eye(l.id); } else { root.layer-eye(l.id); }
+                                                    }
                                                 }
                                             }
                                         }
-                                        HorizontalLayout {
-                                            padding-left: 6px;
-                                            padding-right: 2px;
-                                            spacing: 6px;
-                                            VerticalLayout {
-                                                alignment: center;
-                                                Icon { width: 18px; height: 18px; d: KindIcons.paths[l.kind]; tint: l.hidden ? Theme.disabled : Theme.text2; }
-                                            }
-                                            Text { text: l.name; color: l.hidden ? Theme.text3 : Theme.text; font-size: 12px; vertical-alignment: center; overflow: elide; horizontal-stretch: 1; }
-                                            IconButton {
-                                                width: 28px;
-                                                height: 28px;
-                                                label: l.hidden ? @tr("layers-show" => "Show") : @tr("layers-hide" => "Hide");
-                                                icon: l.hidden ? "M3 3 l18 18 M10.6 10.6 a2 2 0 0 0 2.8 2.8 M9.9 5.1 A10 10 0 0 1 21 12 a17 17 0 0 1 -2.8 3.6 M6.6 6.6 A17 17 0 0 0 3 12 s3.5 6 9 6 a9 9 0 0 0 3.6 -0.7" : "M2 12 s3.5 -7 10 -7 10 7 10 7 -3.5 7 -10 7 -10 -7 -10 -7 z M9 12 a3 3 0 1 0 6 0 a3 3 0 1 0 -6 0";
-                                                clicked => { root.layer-eye(l.id); }
+                                        Rectangle {
+                                            height: 30px;
+                                            HorizontalLayout {
+                                                padding-left: 6px;
+                                                spacing: 6px;
+                                                VerticalLayout { alignment: center; Icon { width: 18px; height: 18px; d: KindIcons.paths[9]; tint: Theme.text3; } }
+                                                Text { text: @tr("layers-background" => "Screenshot (background) — always at the bottom"); color: Theme.text3; font-size: 11px; vertical-alignment: center; overflow: elide; }
                                             }
                                         }
+                                        if root.layers.length > 1: Text { text: @tr("layers-drag-hint" => "Drag a row to change the order; drop it onto another row to group them."); color: Theme.text3; font-size: 11px; wrap: word-wrap; }
                                     }
-                                    Rectangle {
-                                        height: 30px;
-                                        HorizontalLayout {
-                                            padding-left: 6px;
-                                            spacing: 6px;
-                                            VerticalLayout { alignment: center; Icon { width: 18px; height: 18px; d: "M5 5 h14 a2 2 0 0 1 2 2 v10 a2 2 0 0 1 -2 2 H5 a2 2 0 0 1 -2 -2 V7 a2 2 0 0 1 2 -2 z M7 10 a1.5 1.5 0 1 0 3 0 a1.5 1.5 0 1 0 -3 0 M4 17 l5 -5 4 4 3 -3 4 4"; tint: Theme.text3; } }
-                                            Text { text: @tr("layers-background" => "Screenshot (background) — always at the bottom"); color: Theme.text3; font-size: 11px; vertical-alignment: center; overflow: elide; }
-                                        }
+                                }
+                                // The row being dragged, lifted: follows the pointer with a shadow.
+                                if root.layer-drag-from >= 0 && root.layer-drag-from < root.layers.length: ghost := Rectangle {
+                                    property <LayerRow> r: root.layers[root.layer-drag-from];
+                                    x: 4px;
+                                    y: clamp(lsv.content-y + root.layer-drag-y - 16px, -8px, parent.height - 24px);
+                                    width: parent.width - 20px;
+                                    height: 32px;
+                                    border-radius: 8px;
+                                    background: Theme.elevated;
+                                    border-width: 1px;
+                                    border-color: Theme.control-on;
+                                    drop-shadow-blur: 16px;
+                                    drop-shadow-color: #00000090;
+                                    // see-through a little: the target's highlight shows under it
+                                    opacity: 0.9;
+                                    transform-origin: { x: self.width / 2, y: self.height / 2 };
+                                    transform-scale: 1.03;
+                                    HorizontalLayout {
+                                        padding-left: 8px;
+                                        spacing: 6px;
+                                        VerticalLayout { alignment: center; Icon { width: 18px; height: 18px; d: KindIcons.paths[ghost.r.kind]; tint: Theme.text; } }
+                                        Text { text: ghost.r.name; color: Theme.text; font-size: 12px; vertical-alignment: center; overflow: elide; horizontal-stretch: 1; }
                                     }
                                 }
                             }
@@ -1980,7 +2122,7 @@ export component AppWindow inherits Window {
                     HorizontalLayout {
                         spacing: 8px;
                         horizontal-stretch: 0;
-                        SmallButton { icon: "M4 9 V4 h5 M15 4 h5 v5 M20 15 v5 h-5 M9 20 H4 v-5"; tip: @tr("status-fit" => "Fit to window") + "  Ctrl+0"; clicked => { root.zoom-fit(); } }
+                        SmallButton { icon: "M4 9 V4 h5 M15 4 h5 v5 M20 15 v5 h-5 M9 20 H4 v-5"; tip: @tr("status-fit" => "Fit to window") + "  " + Keys.k("Ctrl+0", "⌘0"); clicked => { root.zoom-fit(); } }
                         MiniSlider {
                             width: 120px;
                             value <=> root.zoom-pos;
@@ -1988,7 +2130,7 @@ export component AppWindow inherits Window {
                             moved(v) => { root.zoom-to(v); }
                         }
                         Text { text: root.zoom-text; color: Theme.text; font-size: 12px; vertical-alignment: center; horizontal-alignment: right; width: 44px; }
-                        SmallButton { text: "100%"; tip: @tr("status-zoom-100" => "Zoom 100 %") + "  Ctrl+1"; clicked => { root.zoom-100(); } }
+                        SmallButton { text: "100%"; tip: @tr("status-zoom-100" => "Zoom 100 %") + "  " + Keys.k("Ctrl+1", "⌘1"); clicked => { root.zoom-100(); } }
                     }
                 }
             }

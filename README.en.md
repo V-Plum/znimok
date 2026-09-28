@@ -47,6 +47,14 @@ one undo step. The Copy button can be dragged into a chat or a folder — it car
 file. Questions such as "Save changes?" with autosave off come in Znimok's own dialog, not a
 system box.
 
+The cursor tells what a press will do: the tailless arrow of the Select tool, a four-way arrow over
+a mark, resize arrows on handles, a crosshair for drawing and cropping, a hand over buttons and
+sliders. Layers can be dragged: between rows to reorder, onto a row to group; groups fold, and the
+eye hides a whole group. Esc takes off one layer at a time (a drag, the crop, the selection, the
+tool, then back to the library), Enter repeats the last action (copy or export), `[`/`]` change the
+thickness, Ctrl+=/− zoom. The full key table is [docs/SHORTCUTS.en.md](docs/SHORTCUTS.en.md); on
+macOS tooltips show ⌘ and ⇧.
+
 ```sh
 cargo run --release -p znimok-app              # the library
 cargo run --release -p znimok-app -- shot.png  # open an image right away

@@ -1378,6 +1378,11 @@ layers-hint = Drag to reorder; click selects, F2 renames; a group is one row, it
 # @max: 60
 layers-empty = No annotations yet — draw something on the canvas.
 
+# @where: Layers panel, under the list: how to reorder and group by dragging
+# @kind: hint
+# @max: 90
+layers-drag-hint = Drag a row to change the order; drop it onto another row to group them.
+
 ## Arrange
 ## Align, distribute and z-order actions (context bar with several marks, menus).
 

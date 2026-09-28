@@ -408,6 +408,43 @@ impl Editor {
                     created: None,
                 })
             }
+            Command::Restack { order, groups } => {
+                let n = self.doc.objects.len();
+                let mut seen = std::collections::HashSet::new();
+                if order.len() != n || groups.len() != n || !order.iter().all(|id| seen.insert(*id))
+                {
+                    return Err(CoreError::Invalid(
+                        "restack needs every mark exactly once, with a group for each".into(),
+                    ));
+                }
+                self.check_ids(&order)?;
+                // A group of one is no group.
+                let mut count: std::collections::HashMap<GroupId, usize> =
+                    std::collections::HashMap::new();
+                for g in groups.iter().filter(|g| **g != 0) {
+                    *count.entry(*g).or_default() += 1;
+                }
+                let mut old = std::mem::take(&mut self.doc.objects);
+                let mut objects = Vec::with_capacity(n);
+                for (id, g) in order.iter().zip(&groups) {
+                    let i = old.iter().position(|o| o.id == *id).expect("checked");
+                    let mut o = old.swap_remove(i);
+                    o.group = if count.get(g).copied().unwrap_or(0) >= 2 {
+                        *g
+                    } else {
+                        0
+                    };
+                    objects.push(o);
+                }
+                self.doc.objects = objects;
+                self.doc.compact_groups();
+                let used: Vec<GroupId> = self.doc.objects.iter().map(|o| o.group).collect();
+                self.doc.group_names.retain(|k, _| used.contains(k));
+                Ok(Applied {
+                    changes: vec![Change::Objects { ids: order }, Change::Order],
+                    created: None,
+                })
+            }
             Command::Arrange { ids, to } => {
                 self.check_ids(&ids)?;
                 let sel = self.with_groups(&ids);
@@ -1037,6 +1074,32 @@ mod tests {
         assert_eq!(e.doc.objects[0].id, ids[4]);
         e.apply(Command::Ungroup { ids: vec![ids[2]] }).unwrap();
         assert!(e.doc.objects.iter().all(|o| o.group == 0));
+    }
+
+    #[test]
+    fn restack_moves_and_groups_in_one_step() {
+        let mut e = editor();
+        let ids: Vec<ObjectId> = (0..4)
+            .map(|i| add(&mut e, rect(10 * i, 10, 5, 5)))
+            .collect();
+        // New order (back to front) 3 0 1 2, with 0 and 2 in group 5, 1 alone in group 9.
+        e.apply(Command::Restack {
+            order: vec![ids[3], ids[0], ids[1], ids[2]],
+            groups: vec![0, 5, 9, 5],
+        })
+        .unwrap();
+        let got: Vec<(ObjectId, GroupId)> = e.doc.objects.iter().map(|o| (o.id, o.group)).collect();
+        // The group gathers under its highest member; the lone "group" dissolves.
+        assert_eq!(got, [(ids[3], 0), (ids[1], 0), (ids[0], 5), (ids[2], 5)]);
+        e.apply(Command::Undo).unwrap();
+        assert!(e.doc.objects.iter().all(|o| o.group == 0));
+        assert!(
+            e.apply(Command::Restack {
+                order: vec![ids[0], ids[0], ids[1], ids[2]],
+                groups: vec![0; 4],
+            })
+            .is_err()
+        );
     }
 
     #[test]

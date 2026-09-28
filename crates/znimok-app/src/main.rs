@@ -113,6 +113,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let ui = AppWindow::new()?;
     ui.set_app_icon(tray::icon(64));
     frame::before_show(&ui);
+    ui.set_mac(cfg!(target_os = "macos"));
+    ui.global::<Keys>().set_mac(cfg!(target_os = "macos"));
     ui.set_capture_available(capture::available());
     ui.set_capture_key(
         if cfg!(target_os = "macos") {
@@ -367,7 +369,9 @@ fn export_with_dialog(app: &Shared, ui: &AppWindow) {
         .set_file_name(format!("{name}.png"))
         .save_file();
     if let Some(p) = file {
-        app.borrow_mut().export_to(ui, &p);
+        let mut a = app.borrow_mut();
+        a.export_to(ui, &p);
+        a.set_last_share(ui, true);
     }
 }
 
@@ -673,6 +677,9 @@ fn wire(ui: &AppWindow, app: &Shared) {
                 KeyAction::Copy => app.borrow_mut().copy(&ui),
                 KeyAction::Export => export_with_dialog(&app, &ui),
                 KeyAction::Open => open_with_dialog(&app, &ui),
+                KeyAction::Back => {
+                    confirm_leave(&app, &ui, |app, ui| app.borrow_mut().close_document(ui))
+                }
                 KeyAction::None => {}
             }
         });
@@ -723,6 +730,19 @@ fn wire(ui: &AppWindow, app: &Shared) {
     });
     on!(ui, app, on_layer_eye, |a, w, id| {
         a.layer_eye(&w, id);
+    });
+    on!(ui, app, on_layer_group_click, |a, w, g, add| {
+        a.set_tool(&w, app::tool::SELECT);
+        a.layer_group_click(&w, g, add);
+    });
+    on!(ui, app, on_layer_group_eye, |a, w, g| {
+        a.layer_group_eye(&w, g);
+    });
+    on!(ui, app, on_layer_collapse, |a, w, g| {
+        a.layer_collapse(&w, g);
+    });
+    on!(ui, app, on_layer_drag, |a, w, from, y, phase| {
+        a.layer_drag(&w, from, y, phase);
     });
     on!(ui, app, on_meta_edited, |a, w, field, value| {
         a.meta_edited(&w, &field, &value);

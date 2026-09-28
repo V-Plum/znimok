@@ -1267,6 +1267,38 @@
     },
     {
       "additionalProperties": false,
+      "description": "The whole stack at once, back to front, with each mark's group (0 = none): what the\nlayers list does when a row is dragged to a new place or onto another row (ZK-54).\n`order` lists every mark exactly once; a group left with one member dissolves, and\nmembers of a group are gathered under its highest one.",
+      "properties": {
+        "cmd": {
+          "const": "restack",
+          "type": "string"
+        },
+        "groups": {
+          "items": {
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "type": "array"
+        },
+        "order": {
+          "items": {
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "cmd",
+        "order",
+        "groups"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
       "description": "Aligns to the common bounds of the marks, or to the frame when there is only one.",
       "properties": {
         "cmd": {
