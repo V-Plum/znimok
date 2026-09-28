@@ -78,15 +78,73 @@ fn ns_window(ui: &Overlay) -> Option<objc2::rc::Retained<objc2_app_kit::NSWindow
         .flatten()
 }
 
+/// AppKit's `-[NSWindow constrainFrameRect:toScreen:]` keeps a window's top edge below the menu
+/// bar on every `setFrame:` / `setFrameOrigin:` — whatever the level or style mask (Mac
+/// self-tests 28.09: level 1000, borderless, still 1800×1098 on a 1800×1169 screen). winit's
+/// `WinitWindow` does not override it, so the overlay's window is re-classed into a subclass
+/// that returns the requested rect unchanged — the standard way to put a window over the menu
+/// bar. The subclass adds no ivars, so swapping the class of a live window is safe.
+#[cfg(target_os = "macos")]
+fn unconstrain(win: &objc2_app_kit::NSWindow) {
+    use objc2::runtime::{AnyClass, AnyObject, ClassBuilder, Sel};
+    use objc2::sel;
+    use objc2_foundation::NSRect;
+
+    // Raw pointers keep the signature free of higher-ranked lifetimes, which objc2's
+    // `MethodImplementation` does not accept.
+    extern "C-unwind" fn pass_through(
+        _this: *const AnyObject,
+        _sel: Sel,
+        rect: NSRect,
+        _screen: *const AnyObject,
+    ) -> NSRect {
+        rect
+    }
+
+    let obj: &AnyObject = win;
+    let base = obj.class();
+    if base.name().to_bytes().starts_with(b"ZnimokOverlayWindow") {
+        return;
+    }
+    let cls = match AnyClass::get(c"ZnimokOverlayWindow") {
+        Some(c) => c,
+        None => {
+            let Some(mut b) = ClassBuilder::new(c"ZnimokOverlayWindow", base) else {
+                return;
+            };
+            // SAFETY: the signature matches `- (NSRect)constrainFrameRect:(NSRect)toScreen:(NSScreen *)`.
+            unsafe {
+                b.add_method(
+                    sel!(constrainFrameRect:toScreen:),
+                    pass_through
+                        as extern "C-unwind" fn(
+                            *const AnyObject,
+                            Sel,
+                            NSRect,
+                            *const AnyObject,
+                        ) -> NSRect,
+                );
+            }
+            b.register()
+        }
+    };
+    // SAFETY: `cls` is a subclass of the window's class with no extra ivars.
+    unsafe { AnyObject::set_class(obj, cls) };
+}
+
+#[cfg(target_os = "macos")]
+thread_local! {
+    /// What the last `cover_display` asked for and got right away — for the self-test report.
+    static COVER_LOG: std::cell::RefCell<String> = const { std::cell::RefCell::new(String::new()) };
+}
+
 fn cover_display(ui: &Overlay) {
     #[cfg(target_os = "macos")]
     if let Some(win) = ns_window(ui) {
         use objc2_app_kit::{
             NSScreenSaverWindowLevel, NSWindowCollectionBehavior, NSWindowStyleMask,
         };
-        // winit's frameless window keeps a titled/resizable style mask, and AppKit constrains
-        // such windows below the menu bar (Mac self-test: 1800×1098 on a 1800×1169 screen).
-        // A truly borderless window is not constrained.
+        unconstrain(&win);
         if win.styleMask() != NSWindowStyleMask::Borderless {
             win.setStyleMask(NSWindowStyleMask::Borderless);
         }
@@ -97,7 +155,22 @@ fn cover_display(ui: &Overlay) {
                 | NSWindowCollectionBehavior::Stationary,
         );
         if let Some(screen) = win.screen() {
-            win.setFrame_display(screen.frame(), true);
+            let want = screen.frame();
+            win.setFrame_display(want, true);
+            let got = win.frame();
+            let vis = screen.visibleFrame();
+            let safe = screen.safeAreaInsets();
+            let obj: &objc2::runtime::AnyObject = &win;
+            COVER_LOG.with(|l| {
+                *l.borrow_mut() = format!(
+                    "set {:.0},{:.0} {:.0}×{:.0} → got {:.0},{:.0} {:.0}×{:.0} · visible {:.0},{:.0} {:.0}×{:.0} · safe top {:.0} · class {}",
+                    want.origin.x, want.origin.y, want.size.width, want.size.height,
+                    got.origin.x, got.origin.y, got.size.width, got.size.height,
+                    vis.origin.x, vis.origin.y, vis.size.width, vis.size.height,
+                    safe.top,
+                    obj.class().name().to_string_lossy()
+                )
+            });
         }
     }
     #[cfg(not(target_os = "macos"))]
@@ -131,7 +204,8 @@ pub fn covers_screen() -> Option<(bool, String)> {
                 s.size.height,
                 win.level(),
                 win.styleMask()
-            ),
+            ) + " · "
+                + &COVER_LOG.with(|l| l.borrow().clone()),
         ))
     }
     #[cfg(not(target_os = "macos"))]
