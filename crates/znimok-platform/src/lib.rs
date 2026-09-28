@@ -6,6 +6,7 @@
 //! with knobs and inspection for tests; [`conformance`] holds checks every implementation must
 //! pass (the OS crates run them against the real thing).
 
+pub mod clipfile;
 pub mod conformance;
 pub mod frame;
 pub mod geom;

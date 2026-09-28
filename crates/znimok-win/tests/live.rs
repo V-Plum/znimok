@@ -142,3 +142,40 @@ fn window_frame_equals_dwm_bounds() {
         assert_eq!(&row[o..o + 3], &[0, 200, 0], "колір клієнтської області");
     }
 }
+
+/// The real clipboard. Only on CI (or with `ZNIMOK_LIVE_CLIPBOARD=1`): on a developer machine it
+/// would replace what the person has copied — and over RDP their own PC's clipboard too.
+#[test]
+fn conformance_clipboard() {
+    if std::env::var_os("CI").is_none() && std::env::var_os("ZNIMOK_LIVE_CLIPBOARD").is_none() {
+        eprintln!("skipped: set ZNIMOK_LIVE_CLIPBOARD=1 to use the real clipboard");
+        return;
+    }
+    let _d = desktop();
+    let c = znimok_win::WinClipboard::new();
+    conformance::clipboard(&c).unwrap();
+
+    // «Копіювати як файл»: picture and file together, both readable back; Win+V-friendly set.
+    let png_dir = std::env::temp_dir().join(format!("znimok-live-clip-{}", std::process::id()));
+    let rgba: Vec<u8> = (0..12 * 8).flat_map(|i| [i as u8, 90, 200, 255]).collect();
+    let img = znimok_platform::ClipImage {
+        width: 12,
+        height: 8,
+        rgba: rgba.clone(),
+        png: None,
+    };
+    let file = znimok_platform::clipfile::write_clip_file(&png_dir, "Знімок 1", b"png").unwrap();
+    use znimok_platform::{ClipItem, Clipboard};
+    c.write(&znimok_platform::clipfile::image_with_file(
+        img,
+        file.clone(),
+    ))
+    .unwrap();
+    let got = c.read().unwrap();
+    assert!(
+        matches!(&got[0], ClipItem::Image(i) if i.rgba == rgba && i.png.is_some()),
+        "{got:?}"
+    );
+    assert!(got.contains(&ClipItem::Files(vec![file])), "{got:?}");
+    let _ = std::fs::remove_dir_all(png_dir);
+}

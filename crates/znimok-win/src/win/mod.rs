@@ -1,4 +1,5 @@
 pub mod autostart;
+pub mod clipboard;
 mod display;
 mod dxgi;
 mod wgc;
