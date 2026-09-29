@@ -18,6 +18,8 @@ pub struct Snapshot {
     recipe: Recipe,
     source: BankId,
     group_names: std::collections::BTreeMap<GroupId, String>,
+    /// A video's cuts and in/out: undone together with the marks (ZK-144).
+    timeline: Option<Timeline>,
 }
 
 impl Weigh for Snapshot {
@@ -98,6 +100,7 @@ impl Editor {
             recipe: self.doc.recipe,
             source: self.doc.source,
             group_names: self.doc.group_names.clone(),
+            timeline: self.doc.timeline.clone(),
         }
     }
 
@@ -108,6 +111,7 @@ impl Editor {
         self.doc.recipe = s.recipe;
         self.doc.source = s.source;
         self.doc.group_names = s.group_names;
+        self.doc.timeline = s.timeline;
         let max_id = self.doc.objects.iter().map(|o| o.id).max().unwrap_or(0);
         self.doc.next_id = self.doc.next_id.max(max_id + 1);
     }
@@ -121,6 +125,7 @@ impl Editor {
             Change::Selection,
             Change::Crop,
             Change::Recipe,
+            Change::Timeline,
             Change::History,
         ]
     }
@@ -222,7 +227,8 @@ impl Editor {
             | Command::UpdateObjects { merge, .. }
             | Command::MoveObjects { merge, .. }
             | Command::ResizeObject { merge, .. }
-            | Command::SetTone { merge, .. } => merge.clone(),
+            | Command::SetTone { merge, .. }
+            | Command::SetTimeline { merge, .. } => merge.clone(),
             _ => None,
         };
         let before = self.snapshot();
@@ -579,6 +585,23 @@ impl Editor {
                     .map(|o| o.id)
                     .collect();
                 Ok(changed(ids))
+            }
+            Command::SetTimeline { timeline, .. } => {
+                let Some(cur) = &self.doc.timeline else {
+                    return Err(CoreError::Invalid("not a video document".into()));
+                };
+                if !timeline.is_valid() || timeline.frames() != cur.frames() {
+                    return Err(CoreError::Invalid(format!(
+                        "the timeline must cover 0..{} in contiguous non-empty parts, with 0 ≤ in < out ≤ {}",
+                        cur.frames(),
+                        cur.frames()
+                    )));
+                }
+                self.doc.timeline = Some(timeline);
+                Ok(Applied {
+                    changes: vec![Change::Timeline],
+                    created: None,
+                })
             }
             Command::SetCrop { rect } => {
                 self.doc.crop = match rect {
@@ -1326,5 +1349,89 @@ mod tests {
             .query_json(r#"{"query":"hit_test","x":15,"y":15}"#)
             .unwrap();
         assert_eq!(hit, format!(r#"{{"result":"hit","id":{id}}}"#));
+    }
+
+    #[test]
+    fn timeline_and_marks_share_one_undo_history() {
+        let mut e = editor();
+        e.doc.timeline = Some(Timeline::whole(90));
+        let first = add(&mut e, rect(10, 10, 20, 20));
+        let mut cut = Timeline::whole(90);
+        cut.parts = vec![
+            TimelinePart {
+                a: 0,
+                b: 30,
+                off: false,
+            },
+            TimelinePart {
+                a: 30,
+                b: 60,
+                off: true,
+            },
+            TimelinePart {
+                a: 60,
+                b: 90,
+                off: false,
+            },
+        ];
+        e.apply(Command::SetTimeline {
+            timeline: cut.clone(),
+            merge: None,
+        })
+        .unwrap();
+        // A drag of the out handle: many commands, one step.
+        let k = MergeKey::Drag { id: 99 };
+        for out in [85, 80, 75] {
+            let mut t = cut.clone();
+            t.out_point = out;
+            e.apply(Command::SetTimeline {
+                timeline: t,
+                merge: Some(k.clone()),
+            })
+            .unwrap();
+        }
+        let second = add(&mut e, rect(50, 50, 20, 20));
+        assert_eq!(e.doc.timeline.as_ref().unwrap().out_point, 75);
+        e.apply(Command::Undo).unwrap();
+        assert!(e.doc.get(second).is_none());
+        e.apply(Command::Undo).unwrap();
+        assert_eq!(e.doc.timeline.as_ref(), Some(&cut), "the drag is one step");
+        e.apply(Command::Undo).unwrap();
+        assert_eq!(e.doc.timeline, Some(Timeline::whole(90)));
+        assert!(e.doc.get(first).is_some());
+        e.apply(Command::Undo).unwrap();
+        assert!(e.doc.get(first).is_none());
+        for _ in 0..4 {
+            e.apply(Command::Redo).unwrap();
+        }
+        assert!(e.doc.get(second).is_some());
+        assert_eq!(e.doc.timeline.as_ref().unwrap().out_point, 75);
+        // The number of frames cannot change; a gap is refused; a screenshot has no timeline.
+        let mut bad = cut.clone();
+        bad.parts[2].b = 100;
+        assert!(
+            e.apply(Command::SetTimeline {
+                timeline: bad,
+                merge: None
+            })
+            .is_err()
+        );
+        let mut gap = cut.clone();
+        gap.parts[1].a = 31;
+        assert!(
+            e.apply(Command::SetTimeline {
+                timeline: gap,
+                merge: None
+            })
+            .is_err()
+        );
+        let mut shot = editor();
+        assert!(
+            shot.apply(Command::SetTimeline {
+                timeline: cut,
+                merge: None
+            })
+            .is_err()
+        );
     }
 }

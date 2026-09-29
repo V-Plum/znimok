@@ -156,6 +156,30 @@ impl VideoEdit {
         e.is_valid().then_some(e)
     }
 
+    /// As the document's timeline in `znimok-core`: the editor keeps the edits there, so cutting
+    /// and marking share one undo history (ZK-144, variant «б»).
+    pub fn to_timeline(&self) -> znimok_core::Timeline {
+        znimok_core::Timeline {
+            parts: self
+                .parts
+                .iter()
+                .map(|p| znimok_core::TimelinePart {
+                    a: p.a,
+                    b: p.b,
+                    off: p.off,
+                })
+                .collect(),
+            in_point: self.in_point,
+            out_point: self.out_point,
+        }
+    }
+
+    /// From the document's timeline; `None` when it breaks the invariant.
+    pub fn from_timeline(t: &znimok_core::Timeline) -> Option<Self> {
+        let parts: Vec<Part> = t.parts.iter().map(|p| Part::new(p.a, p.b, p.off)).collect();
+        Self::from_saved(&parts, t.in_point, t.out_point, t.frames())
+    }
+
     pub fn parts(&self) -> &[Part] {
         &self.parts
     }

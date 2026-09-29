@@ -106,6 +106,44 @@ pub struct Edit {
 }
 
 impl Edit {
+    /// As the document's timeline (ZK-144: the editor keeps the edits there, one undo history
+    /// with the marks).
+    pub fn to_timeline(&self) -> znimok_core::Timeline {
+        znimok_core::Timeline {
+            parts: self
+                .parts
+                .iter()
+                .map(|p| znimok_core::TimelinePart {
+                    a: p.a as i64,
+                    b: p.b as i64,
+                    off: p.off,
+                })
+                .collect(),
+            in_point: self.in_frame as i64,
+            out_point: self.out_frame as i64,
+        }
+    }
+
+    /// From the document's timeline; `None` when a frame number does not fit.
+    pub fn from_timeline(t: &znimok_core::Timeline) -> Option<Self> {
+        let u = |v: i64| u32::try_from(v).ok();
+        Some(Self {
+            parts: t
+                .parts
+                .iter()
+                .map(|p| {
+                    Some(Part {
+                        a: u(p.a)?,
+                        b: u(p.b)?,
+                        off: p.off,
+                    })
+                })
+                .collect::<Option<Vec<_>>>()?,
+            in_frame: u(t.in_point)?,
+            out_frame: u(t.out_point)?,
+        })
+    }
+
     /// Nothing cut: one part `[0, N)`, handles at the ends.
     pub fn whole(frames: u32) -> Self {
         Self {

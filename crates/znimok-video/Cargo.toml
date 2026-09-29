@@ -12,3 +12,4 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
+znimok-core = { path = "../znimok-core" }

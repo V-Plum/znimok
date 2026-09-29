@@ -947,3 +947,24 @@ fn property_shared_queue() {
         }
     }
 }
+
+#[test]
+fn to_and_from_the_document_timeline() {
+    let e = VideoEdit::from_saved(
+        &[
+            Part::new(0, 30, false),
+            Part::new(30, 60, true),
+            Part::new(60, 90, false),
+        ],
+        5,
+        80,
+        90,
+    )
+    .expect("valid");
+    let t = e.to_timeline();
+    assert_eq!((t.frames(), t.in_point, t.out_point), (90, 5, 80));
+    assert_eq!(VideoEdit::from_timeline(&t), Some(e));
+    let mut bad = t;
+    bad.parts[1].a = 31;
+    assert_eq!(VideoEdit::from_timeline(&bad), None);
+}

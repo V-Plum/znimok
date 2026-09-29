@@ -619,7 +619,60 @@ pub struct Meta {
     pub tags: Vec<String>,
 }
 
-/// A screenshot with its annotations.
+/// One part of a video's timeline: frames `[a, b)`; `off` = cut out (ZK-144).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct TimelinePart {
+    pub a: i64,
+    pub b: i64,
+    #[serde(default)]
+    pub off: bool,
+}
+
+/// The edits of a video's timeline (LH `EvEdit`): the parts cover `[0, N)` without gaps, each
+/// non-empty; `in`/`out` are trim handles, `0 ≤ in < out ≤ N`. Part of the document, so cutting
+/// the video and changing marks are steps of one undo history (ZK-144, variant «б»).
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct Timeline {
+    pub parts: Vec<TimelinePart>,
+    pub in_point: i64,
+    pub out_point: i64,
+}
+
+impl Timeline {
+    /// Nothing cut: one part `[0, frames)`, handles at the ends.
+    pub fn whole(frames: i64) -> Self {
+        Timeline {
+            parts: vec![TimelinePart {
+                a: 0,
+                b: frames,
+                off: false,
+            }],
+            in_point: 0,
+            out_point: frames,
+        }
+    }
+
+    /// Frames of the video (the end of the last part).
+    pub fn frames(&self) -> i64 {
+        self.parts.last().map_or(0, |p| p.b)
+    }
+
+    pub fn is_valid(&self) -> bool {
+        let mut at = 0;
+        for p in &self.parts {
+            if p.a != at || p.b <= p.a {
+                return false;
+            }
+            at = p.b;
+        }
+        !self.parts.is_empty()
+            && 0 <= self.in_point
+            && self.in_point < self.out_point
+            && self.out_point <= at
+    }
+}
+
+/// A screenshot with its annotations (for a video: the poster and the marks, plus the timeline).
 #[derive(Clone, Debug, PartialEq)]
 pub struct Document {
     /// Stable identity: survives renaming and synchronisation.
@@ -641,6 +694,8 @@ pub struct Document {
     pub group_names: BTreeMap<GroupId, String>,
     /// Next object id to hand out; only grows.
     pub next_id: ObjectId,
+    /// A video document's timeline edits; `None` for a screenshot.
+    pub timeline: Option<Timeline>,
 }
 
 impl Document {
@@ -657,6 +712,7 @@ impl Document {
             objects: Vec::new(),
             group_names: BTreeMap::new(),
             next_id: 1,
+            timeline: None,
         }
     }
 

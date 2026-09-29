@@ -819,7 +819,18 @@ pub fn save_same_kind(
         .map_err(|e| FormatError::Io(format!("{}: {e}", v.source.display())))?;
     let reader = PayloadReader::new(std::io::BufReader::new(f), &v.payload);
     let len = reader.len();
-    save_video(path, doc, &v.video, reader, len, opts)?;
+    // The editor keeps the video's edits as the document's timeline (ZK-144): that is the edit
+    // list to write, when it is a valid one for this video.
+    let mut video = v.video.clone();
+    if let Some(e) = doc
+        .timeline
+        .as_ref()
+        .and_then(Edit::from_timeline)
+        .filter(|e| e.is_valid(video.info.frames))
+    {
+        video.edit = e;
+    }
+    save_video(path, doc, &video, reader, len, opts)?;
     match open(path)? {
         Loaded::Video(n) => Ok(Some(VideoPart {
             video: n.video,
@@ -902,11 +913,15 @@ impl Parsed {
     fn into_loaded(self) -> Loaded {
         match self.video {
             None => Loaded::Image(self.doc),
-            Some((video, payload)) => Loaded::Video(VideoDocument {
-                doc: self.doc,
-                video,
-                payload,
-            }),
+            Some((video, payload)) => {
+                let mut doc = self.doc;
+                doc.timeline = Some(video.edit.to_timeline());
+                Loaded::Video(VideoDocument {
+                    doc,
+                    video,
+                    payload,
+                })
+            }
         }
     }
 }

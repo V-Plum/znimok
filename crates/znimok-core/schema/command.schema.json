@@ -927,6 +927,53 @@
         }
       },
       "type": "object"
+    },
+    "Timeline": {
+      "description": "The edits of a video's timeline (LH `EvEdit`): the parts cover `[0, N)` without gaps, each\nnon-empty; `in`/`out` are trim handles, `0 ≤ in < out ≤ N`. Part of the document, so cutting\nthe video and changing marks are steps of one undo history (ZK-144, variant «б»).",
+      "properties": {
+        "in_point": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "out_point": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "parts": {
+          "items": {
+            "$ref": "#/$defs/TimelinePart"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "parts",
+        "in_point",
+        "out_point"
+      ],
+      "type": "object"
+    },
+    "TimelinePart": {
+      "description": "One part of a video's timeline: frames `[a, b)`; `off` = cut out (ZK-144).",
+      "properties": {
+        "a": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "b": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "off": {
+          "default": false,
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "a",
+        "b"
+      ],
+      "type": "object"
     }
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -1372,6 +1419,35 @@
         "cmd",
         "group",
         "start"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "description": "Replaces a video document's timeline edits (parts, cuts, in/out). The number of frames\ncannot change. One undo step, or one per drag with the same `merge` key (ZK-144).",
+      "properties": {
+        "cmd": {
+          "const": "set_timeline",
+          "type": "string"
+        },
+        "merge": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MergeKey"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "timeline": {
+          "$ref": "#/$defs/Timeline"
+        }
+      },
+      "required": [
+        "cmd",
+        "timeline"
       ],
       "type": "object"
     },

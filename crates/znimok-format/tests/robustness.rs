@@ -386,3 +386,34 @@ fn a_video_saved_again_stays_a_video() {
     }
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// ZK-144: a video's edits come in as the document's timeline and go out from it.
+#[test]
+fn the_timeline_is_the_edit_list() {
+    let dir = std::env::temp_dir().join(format!("znimok-timeline-{}", std::process::id()));
+    let _ = std::fs::create_dir_all(&dir);
+    let path = dir.join("video.znimok");
+    std::fs::write(&path, video_sample()).unwrap();
+    let (mut doc, part) = znimok_format::open_parts(&path).unwrap();
+    let t = doc.timeline.clone().expect("a video has a timeline");
+    assert_eq!(t.frames(), 90);
+    assert_eq!((t.in_point, t.out_point), (2, 88));
+    let mut cut = znimok_core::Timeline::whole(90);
+    cut.parts = vec![
+        znimok_core::TimelinePart {
+            a: 0,
+            b: 45,
+            off: false,
+        },
+        znimok_core::TimelinePart {
+            a: 45,
+            b: 90,
+            off: true,
+        },
+    ];
+    doc.timeline = Some(cut.clone());
+    znimok_format::save_same_kind(&path, &doc, part.as_ref(), &WriteOptions::default()).unwrap();
+    let (again, _) = znimok_format::open_parts(&path).unwrap();
+    assert_eq!(again.timeline, Some(cut));
+    let _ = std::fs::remove_dir_all(&dir);
+}

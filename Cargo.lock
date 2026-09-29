@@ -7058,6 +7058,9 @@ dependencies = [
 [[package]]
 name = "znimok-video"
 version = "0.0.0"
+dependencies = [
+ "znimok-core",
+]
 
 [[package]]
 name = "znimok-win"

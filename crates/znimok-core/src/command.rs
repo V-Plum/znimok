@@ -17,7 +17,7 @@ use serde::{Deserialize, Serialize};
 use crate::history::MergeKey;
 use crate::model::{
     Align, Corners, CounterGroup, Dash, Data, Effect, GroupId, IRect, Meta, Object, ObjectId,
-    Recipe, Rgb, Style,
+    Recipe, Rgb, Style, Timeline,
 };
 
 /// Version of the command/query schema. Bumped on incompatible changes; additions of optional
@@ -234,6 +234,15 @@ pub enum Command {
         start: i32,
     },
 
+    // ---- document: video
+    /// Replaces a video document's timeline edits (parts, cuts, in/out). The number of frames
+    /// cannot change. One undo step, or one per drag with the same `merge` key (ZK-144).
+    SetTimeline {
+        timeline: Timeline,
+        #[serde(default)]
+        merge: Option<MergeKey>,
+    },
+
     // ---- document: picture
     /// `None` removes the crop.
     SetCrop {
@@ -395,6 +404,7 @@ pub enum Change {
     Recipe,
     Meta,
     History,
+    Timeline,
 }
 
 /// Result of a command.
@@ -646,6 +656,10 @@ pub fn examples() -> (Vec<Command>, Vec<Query>) {
             axis: Axis::Vertical,
         },
         Command::SetCounterStart { group: 1, start: 5 },
+        Command::SetTimeline {
+            timeline: Timeline::whole(90),
+            merge: None,
+        },
         Command::SetCrop {
             rect: Some(IRect::new(0, 0, 640, 480)),
         },
