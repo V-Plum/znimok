@@ -173,6 +173,8 @@ jobs:
 
           $p = Start-Process msiexec -ArgumentList "/x `"$((Resolve-Path upd/Znimok-0.0.2-windows-x64.msi).Path)`" /qn" -Wait -PassThru
           "update: 0.0.1 → 0.0.2 installed; 0.0.3 did not start → 0.0.2 back; foreign path refused"
+          # The refused install above left exit code 3; the step itself succeeded.
+          $global:LASTEXITCODE = 0
       - name: winget manifest (ZK-81) is valid
         shell: pwsh
         run: |
