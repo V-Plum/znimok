@@ -4587,6 +4587,11 @@ impl App {
 
     /// For the self-test: scale, and where the picture's centre sits on the canvas relative to
     /// the canvas centre (output pixels).
+    /// The fitted scale for the current canvas (self-test, ZK-127).
+    pub fn fit_probe(&self) -> f64 {
+        self.fit_scale()
+    }
+
     pub fn view_probe(&self) -> (f64, f64, f64, f64) {
         let Some(s) = self.s.as_ref() else {
             return (0.0, 0.0, 0.0, 0.0);
@@ -5101,6 +5106,9 @@ impl App {
             // Keep the doc point at the centre of the canvas where it was, then re-centre /
             // clamp for the new size (owner, 28.09: a picture smaller than the window stays
             // centred while the window is resized).
+            // A fitted picture follows the window: it grows with it up to 100 % and shrinks
+            // with it (owner, 29.09, ZK-127); a zoom the person chose is left alone.
+            let fitted = (self.view.scale - self.fit_scale()).abs() < 1e-3;
             let c = self
                 .view
                 .to_doc(self.view.width as f64 / 2.0, self.view.height as f64 / 2.0);
@@ -5108,7 +5116,10 @@ impl App {
             self.view.height = h.min(65535) as u16;
             let sc = self.view.scale.max(1e-6);
             self.view.origin = Point::new(c.x - w as f64 / 2.0 / sc, c.y - h as f64 / 2.0 / sc);
-            if !self.fit_pending {
+            if fitted && !self.fit_pending {
+                self.fit();
+                self.sync(ui);
+            } else if !self.fit_pending {
                 self.constrain();
             }
             self.dirty = true;
