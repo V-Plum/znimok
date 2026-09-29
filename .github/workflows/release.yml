@@ -1,0 +1,216 @@
+# Release (ZK-79): a tag v* builds Windows and macOS, the SBOM and the MCP bundle, writes
+# SHA256SUMS, signs it when the signing key is set up, and creates a DRAFT GitHub release — the
+# owner reviews and publishes it (docs/RELEASE.md). `workflow_dispatch` runs the same without
+# a release: everything lands in the «release-preview» artifact.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  # The pipeline checks itself when it changes (preview only, no release).
+  pull_request:
+    paths:
+      - ".github/workflows/release.yml"
+      - "packaging/**"
+      - "tools/verify_release.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: v
+        name: version from the tag, checked against Cargo.toml
+        run: |
+          ws=$(sed -n '/^\[workspace.package\]/,/^\[/{s/^version *= *"\(.*\)"/\1/p}' Cargo.toml)
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            tag="${GITHUB_REF_NAME#v}"
+            if [[ "$tag" != "$ws" ]]; then
+              echo "::error::tag $GITHUB_REF_NAME does not match the workspace version $ws (Cargo.toml)"
+              exit 1
+            fi
+            echo "version=$tag" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=$ws-preview.${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+          fi
+
+  windows:
+    needs: version
+    runs-on: windows-2025
+    env:
+      # A standalone exe: no VC++ Redistributable needed.
+      RUSTFLAGS: -C target-feature=+crt-static
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-auditable,cargo-audit
+      - name: build (dependency list embedded)
+        run: cargo auditable build --release --locked -p znimok-app -p znimok-cli
+      - name: audit the binaries
+        run: |
+          cargo audit bin target/release/znimok-app.exe
+          cargo audit bin target/release/znimok.exe
+      - name: package
+        shell: pwsh
+        run: |
+          $v = "${{ needs.version.outputs.version }}"
+          $dir = "dist/Znimok-$v-windows-x64"
+          New-Item -ItemType Directory -Force $dir | Out-Null
+          Copy-Item target/release/znimok-app.exe, target/release/znimok.exe, LICENSE, README.md, README.en.md $dir
+          Compress-Archive -Path "$dir/*" -DestinationPath "dist/Znimok-$v-windows-x64.zip"
+          Copy-Item target/release/znimok.exe dist/znimok.exe
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: |
+            dist/*.zip
+            dist/znimok.exe
+          retention-days: 14
+
+  macos:
+    needs: version
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-auditable,cargo-audit
+      - name: build (dependency list embedded)
+        run: cargo auditable build --release --locked -p znimok-app -p znimok-cli
+      - name: audit the binaries
+        run: |
+          cargo audit bin target/release/znimok-app
+          cargo audit bin target/release/znimok
+      - name: Znimok.app (ad-hoc signed; Developer ID and notarisation come with ZK-80)
+        run: |
+          v="${{ needs.version.outputs.version }}"
+          app="dist/Znimok.app"
+          mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
+          cp target/release/znimok-app target/release/znimok "$app/Contents/MacOS/"
+          sed -e "s/@BUILD@/${GITHUB_SHA::7}/" \
+              -e "s#<key>CFBundleShortVersionString</key><string>[^<]*</string>#<key>CFBundleShortVersionString</key><string>$v</string>#" \
+              crates/znimok-app/mac/Info.plist > "$app/Contents/Info.plist"
+          codesign --force --deep --sign - --identifier ua.plum.znimok.app "$app"
+          codesign --verify --strict "$app"
+          (cd dist && ditto -c -k --keepParent Znimok.app "Znimok-$v-macos-arm64.zip")
+          cp target/release/znimok dist/znimok
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos
+          path: |
+            dist/*.zip
+            dist/znimok
+          retention-days: 14
+
+  mcpb:
+    needs: [version, windows, macos]
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: in
+      - name: MCP bundle for Claude Desktop (tool list read from the binary)
+        run: |
+          chmod +x in/macos/znimok
+          python3 packaging/mcpb/pack.py --win in/windows/znimok.exe --mac in/macos/znimok \
+            --out "dist/znimok-${{ needs.version.outputs.version }}.mcpb"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mcpb
+          path: dist/*.mcpb
+          retention-days: 14
+
+  sbom:
+    needs: version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-cyclonedx
+      - name: SBOM (CycloneDX, every crate, every target)
+        run: |
+          cargo cyclonedx --format json --target all
+          mkdir -p dist
+          find crates -name '*.cdx.json' -exec cp {} dist/ \;
+          (cd dist && zip -q "../znimok-${{ needs.version.outputs.version }}-sbom-cyclonedx.zip" *.cdx.json)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: znimok-*-sbom-cyclonedx.zip
+          retention-days: 14
+
+  release:
+    needs: [version, windows, macos, mcpb, sbom]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: in
+      - name: collect, checksum, sign
+        env:
+          SIGNING_KEY: ${{ secrets.ZNIMOK_SIGNING_KEY }}
+        run: |
+          mkdir -p out
+          cp in/windows/*.zip in/macos/*.zip in/mcpb/*.mcpb in/sbom/*.zip out/
+          cd out
+          sha256sum * > SHA256SUMS
+          cat SHA256SUMS
+          pub=../keys/znimok-release-p256.pub.pem
+          if [[ -n "$SIGNING_KEY" ]]; then
+            [[ -f "$pub" ]] || { echo "::error::signing key set but $pub is not committed"; exit 1; }
+            printf '%s' "$SIGNING_KEY" > "$RUNNER_TEMP/k.pem"
+            openssl dgst -sha256 -sign "$RUNNER_TEMP/k.pem" -out SHA256SUMS.sig SHA256SUMS
+            rm "$RUNNER_TEMP/k.pem"
+            openssl dgst -sha256 -verify "$pub" -signature SHA256SUMS.sig SHA256SUMS
+            echo "SIGNED=1" >> "$GITHUB_ENV"
+          else
+            echo "::warning::ZNIMOK_SIGNING_KEY is not set — the release is not signed (ZK-111)"
+            echo "SIGNED=0" >> "$GITHUB_ENV"
+          fi
+      - name: notes
+        run: |
+          {
+            echo "Znimok ${{ needs.version.outputs.version }}"
+            echo
+            echo "- Windows: Znimok-…-windows-x64.zip (znimok-app.exe, znimok.exe CLI; no installer yet — ZK-78)."
+            echo "- macOS (Apple silicon): Znimok-…-macos-arm64.zip — ad-hoc signed, not notarised: open with right-click → Open."
+            echo "- Claude Desktop: znimok-….mcpb. SBOM: …-sbom-cyclonedx.zip. Binaries carry their dependency list (cargo auditable)."
+            if [[ "$SIGNED" == "1" ]]; then
+              echo "- Signed: SHA256SUMS.sig (ECDSA P-256, keys/znimok-release-p256.pub.pem). Check: python tools/verify_release.py <tag>."
+            else
+              echo "- **Not signed** (the signing key is not set up yet). Check the checksums: python tools/verify_release.py <tag>."
+            fi
+          } > notes.md
+          cat notes.md
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-preview
+          path: |
+            out/*
+            notes.md
+          retention-days: 14
+      - name: draft release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" out/* --draft --title "Znimok ${{ needs.version.outputs.version }}" \
+            --notes-file notes.md $([[ "${{ needs.version.outputs.version }}" == 0.* ]] && echo --prerelease)
