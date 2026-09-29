@@ -43,6 +43,8 @@ pub fn take_outcome() -> Option<String> {
 #[derive(Clone, Debug)]
 pub enum Found {
     UpToDate,
+    /// Windows: a release with an installer to download.
+    #[cfg_attr(target_os = "macos", allow(dead_code))]
     Available(znimok_update::Available),
     /// No release key in this build yet (ZK-111).
     NotConfigured,
@@ -121,7 +123,8 @@ pub mod mac {
     }
 }
 
-/// Checks on a worker thread; `then` runs on the UI thread.
+/// Checks on a worker thread; `then` runs on the UI thread (Windows; macOS asks Sparkle).
+#[cfg_attr(target_os = "macos", allow(dead_code))]
 pub fn check(then: impl FnOnce(Found) + Send + 'static) {
     std::thread::spawn(move || {
         // Without a release key the answer needs no HTTP client (making one may take long:
@@ -145,6 +148,7 @@ pub fn check(then: impl FnOnce(Found) + Send + 'static) {
 
 /// Windows: downloads and verifies the installer, starts `znimok.exe update install` (it waits for
 /// this process to exit) and asks the app to quit. `failed` gets the reason otherwise.
+#[cfg_attr(target_os = "macos", allow(dead_code))]
 pub fn install(a: znimok_update::Available, failed: impl FnOnce(String) + Send + 'static) {
     std::thread::spawn(move || {
         let http = znimok_models::http::system();
