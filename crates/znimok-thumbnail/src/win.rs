@@ -1,6 +1,6 @@
 //! The COM side: class factory, the provider, DLL exports and per-user registration.
 
-use super::{CLSID_STR, HEAD_LIMIT, thumbnail_rgba};
+use super::{CLSID_STR, HEAD_LIMIT, ICON_CLSID_STR, thumbnail_rgba};
 use std::ffi::c_void;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicIsize, Ordering};
@@ -29,6 +29,9 @@ use windows::core::{BOOL, GUID, HRESULT, HSTRING, Interface, Ref, Result, implem
 
 /// The shell's thumbnail handler slot: `.znimok\ShellEx\{this}` → our CLSID.
 const THUMBNAIL_HANDLER: &str = "{e357fccd-a995-4576-b01f-234630154e96}";
+
+/// The document type `.znimok` points to (znimok-win's `WinFileAssoc`, the MSI).
+const PROG_ID: &str = "Znimok.Document";
 
 fn clsid() -> GUID {
     GUID::from_u128(0x787777d8_e076_4fdc_8065_f7282e5d3f86)
@@ -130,8 +133,11 @@ impl IThumbnailProvider_Impl for Provider_Impl {
     }
 }
 
+/// Which class a factory makes: the thumbnail provider or the icon handler (ZK-150).
 #[implement(IClassFactory)]
-struct Factory;
+struct Factory {
+    icons: bool,
+}
 
 impl IClassFactory_Impl for Factory_Impl {
     fn CreateInstance(
@@ -143,12 +149,16 @@ impl IClassFactory_Impl for Factory_Impl {
         if !outer.is_null() {
             return Err(CLASS_E_NOAGGREGATION.into());
         }
-        let p: IInitializeWithStream = Provider {
-            head: Mutex::new(None),
-        }
-        .into();
+        let obj: windows::core::IUnknown = if self.icons {
+            super::icon::IconHandler::new().into()
+        } else {
+            Provider {
+                head: Mutex::new(None),
+            }
+            .into()
+        };
         // SAFETY: standard QueryInterface into the caller's out pointer.
-        unsafe { p.query(riid, ppv).ok() }
+        unsafe { obj.query(riid, ppv).ok() }
     }
 
     fn LockServer(&self, _lock: BOOL) -> Result<()> {
@@ -170,10 +180,11 @@ pub unsafe extern "system" fn DllGetClassObject(
     // SAFETY: checked non-null above.
     unsafe {
         *ppv = std::ptr::null_mut();
-        if *rclsid != clsid() {
+        let icons = *rclsid == super::icon::clsid();
+        if *rclsid != clsid() && !icons {
             return CLASS_E_CLASSNOTAVAILABLE;
         }
-        let f: IClassFactory = Factory.into();
+        let f: IClassFactory = Factory { icons }.into();
         f.query(riid, ppv)
     }
 }
@@ -184,7 +195,7 @@ pub extern "system" fn DllCanUnloadNow() -> HRESULT {
     S_FALSE
 }
 
-fn module_path() -> Option<String> {
+pub(crate) fn module_path() -> Option<String> {
     let mut buf = vec![0u16; 1024];
     // SAFETY: the buffer and its length.
     let n = unsafe {
@@ -256,6 +267,22 @@ pub fn register_in(scope: Scope, dll: &str, classes: &str) -> Result<()> {
         "",
         CLSID_STR,
     )?;
+    // The icon handler (ZK-150): its class, and the document type asking it per file
+    // (`DefaultIcon` = "%1" tells Explorer to ask the handler).
+    let icon = format!(r"{classes}\CLSID\{ICON_CLSID_STR}");
+    set(&icon, "", "Znimok file icon")?;
+    set(&format!(r"{icon}\InprocServer32"), "", dll)?;
+    set(
+        &format!(r"{icon}\InprocServer32"),
+        "ThreadingModel",
+        "Apartment",
+    )?;
+    set(
+        &format!(r"{classes}\{PROG_ID}\shellex\IconHandler"),
+        "",
+        ICON_CLSID_STR,
+    )?;
+    set(&format!(r"{classes}\{PROG_ID}\DefaultIcon"), "", "%1")?;
     Ok(())
 }
 
@@ -263,10 +290,38 @@ pub fn unregister(classes: &str) -> Result<()> {
     unregister_in(Scope::User, classes)
 }
 
+/// A string value, if present.
+fn get(root: HKEY, key: &str, name: &str) -> Option<String> {
+    let mut buf = vec![0u16; 1024];
+    let mut len = (buf.len() * 2) as u32;
+    // SAFETY: a buffer of `len` bytes.
+    let r = unsafe {
+        windows::Win32::System::Registry::RegGetValueW(
+            root,
+            &HSTRING::from(key),
+            &HSTRING::from(name),
+            windows::Win32::System::Registry::RRF_RT_REG_SZ,
+            None,
+            Some(buf.as_mut_ptr().cast()),
+            Some(&mut len),
+        )
+    };
+    (r == ERROR_SUCCESS && len >= 2).then(|| String::from_utf16_lossy(&buf[..len as usize / 2 - 1]))
+}
+
 pub fn unregister_in(scope: Scope, classes: &str) -> Result<()> {
+    // `DefaultIcon` = "%1" only means something with the icon handler: without it, the type's
+    // own icon (the app's association) should show again.
+    let default_icon = format!(r"{classes}\{PROG_ID}\DefaultIcon");
+    if get(scope.root(), &default_icon, "").as_deref() == Some("%1") {
+        // SAFETY: plain call.
+        let _ = unsafe { RegDeleteTreeW(scope.root(), &HSTRING::from(default_icon.as_str())) };
+    }
     for k in [
         format!(r"{classes}\CLSID\{CLSID_STR}"),
         format!(r"{classes}\.znimok\ShellEx\{THUMBNAIL_HANDLER}"),
+        format!(r"{classes}\CLSID\{ICON_CLSID_STR}"),
+        format!(r"{classes}\{PROG_ID}\shellex\IconHandler"),
     ] {
         // SAFETY: plain call; a missing key is fine.
         let _ = unsafe { RegDeleteTreeW(scope.root(), &HSTRING::from(k)) };
@@ -394,6 +449,19 @@ mod tests {
             ),
             CLSID_STR
         );
+        // The icon handler (ZK-150): its class and the document type asking it per file.
+        assert_eq!(
+            read(&format!(r"{classes}\{PROG_ID}\shellex\IconHandler"), ""),
+            ICON_CLSID_STR
+        );
+        assert_eq!(read(&format!(r"{classes}\{PROG_ID}\DefaultIcon"), ""), "%1");
+        assert_eq!(
+            read(
+                &format!(r"{classes}\CLSID\{ICON_CLSID_STR}\InprocServer32"),
+                "ThreadingModel"
+            ),
+            "Apartment"
+        );
         assert_eq!(
             read(
                 &format!(r"{classes}\CLSID\{CLSID_STR}\InprocServer32"),
@@ -402,6 +470,14 @@ mod tests {
             "Apartment"
         );
         unregister(&classes).unwrap();
+        // Nothing of the handlers left, not even the "%1" icon (it means nothing without them).
+        for k in [
+            format!(r"{classes}\{PROG_ID}\DefaultIcon"),
+            format!(r"{classes}\{PROG_ID}\shellex\IconHandler"),
+            format!(r"{classes}\CLSID\{ICON_CLSID_STR}"),
+        ] {
+            assert_eq!(get(HKEY_CURRENT_USER, &k, ""), None, "{k}");
+        }
         // SAFETY: deletes only the scratch key.
         let _ = unsafe {
             RegDeleteTreeW(

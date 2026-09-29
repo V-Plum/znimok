@@ -35,6 +35,7 @@
       <Directory Id="ProgramsDir" Name="Programs">
         <Directory Id="INSTALLFOLDER" Name="Znimok">
           <Directory Id="TESSDATA" Name="tessdata" />
+          <Directory Id="DOCICONS" Name="icons" />
         </Directory>
       </Directory>
     </StandardDirectory>
@@ -69,6 +70,16 @@
           </RegistryKey>
         </RegistryKey>
         <RegistryValue Root="HKCU" Key="Software\Classes\.znimok\ShellEx\{e357fccd-a995-4576-b01f-234630154e96}" Type="string" Value="{787777D8-E076-4FDC-8065-F7282E5D3F86}" />
+        <!-- File icons by kind (ZK-150): the icon handler in the same DLL; the document type asks it
+             per file ("%1" in DefaultIcon). -->
+        <RegistryKey Root="HKCU" Key="Software\Classes\CLSID\{0F5C6E12-2A39-4AAC-9C34-3E2C9305E05A}">
+          <RegistryValue Type="string" Value="Znimok file icon" />
+          <RegistryKey Key="InprocServer32">
+            <RegistryValue Type="string" Value="[INSTALLFOLDER]znimok_thumbnail.dll" />
+            <RegistryValue Name="ThreadingModel" Type="string" Value="Apartment" />
+          </RegistryKey>
+        </RegistryKey>
+        <RegistryValue Root="HKCU" Key="Software\Classes\Znimok.Document\shellex\IconHandler" Type="string" Value="{0F5C6E12-2A39-4AAC-9C34-3E2C9305E05A}" />
       </Component>
       <Component Id="License" Guid="{A63EC25C-3911-4DC9-8450-A17B6788BAF9}">
         <File Id="LicenseFile" Source="$(var.Bin)\LICENSE" Name="LICENSE.txt" />
@@ -80,6 +91,15 @@
         <File Id="OcrExe" Source="$(var.Bin)\znimok-ocr.exe" />
         <File Id="OcrNotice" Source="$(var.Bin)\NOTICE-ocr.txt" />
         <RegistryValue Root="HKCU" Key="Software\Znimok\Installed" Name="ocr" Type="integer" Value="1" KeyPath="yes" />
+      </Component>
+      <!-- The .znimok file icons (a screenshot, a video, a video with a DevTools log), next to the
+           DLL whose icon handler names them (ZK-150). -->
+      <Component Id="DocIcons" Directory="DOCICONS" Guid="{E51B4249-A03A-4914-B0F8-58CC73E570D3}">
+        <File Id="DocIconImage" Source="$(var.Bin)\icons\doc-image.ico" />
+        <File Id="DocIconVideo" Source="$(var.Bin)\icons\doc-video.ico" />
+        <File Id="DocIconReport" Source="$(var.Bin)\icons\doc-report.ico" />
+        <RegistryValue Root="HKCU" Key="Software\Znimok\Installed" Name="doc-icons" Type="integer" Value="1" KeyPath="yes" />
+        <RemoveFolder Id="RemoveDocIcons" On="uninstall" />
       </Component>
       <Component Id="OcrModels" Directory="TESSDATA" Guid="{ECF62A12-0E8E-42A1-BF20-E3760024E24E}">
         <File Id="OcrUkr" Source="$(var.Bin)\tessdata\ukr.traineddata" />
@@ -98,7 +118,7 @@
           <RegistryValue Type="string" Value="Znimok document" />
           <RegistryValue Name="FriendlyTypeName" Type="string" Value="Znimok document" />
           <RegistryKey Key="DefaultIcon">
-            <RegistryValue Type="string" Value="[INSTALLFOLDER]znimok-app.exe,0" />
+            <RegistryValue Type="string" Value="%1" />
           </RegistryKey>
           <RegistryKey Key="shell\open\command">
             <RegistryValue Type="string" Value="&quot;[INSTALLFOLDER]znimok-app.exe&quot; &quot;%1&quot;" />
