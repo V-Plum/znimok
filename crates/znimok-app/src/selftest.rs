@@ -671,6 +671,30 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
                 plate == Some(true) && st == Some((crate::app::PALETTE[0], None, false)),
                 format!("plate {plate:?} → {st:?}"),
             );
+            // ZK-161 (owner, 29.09: with the outline off the fill could not be changed). A plate
+            // is one colour: no outline takes the fill's colour, the fill row then recolours the
+            // plate, and no fill brings the outline back in that colour — never both gone.
+            let p = crate::app::PALETTE;
+            let style = |app: &Shared| get(app, id).map(|o| (o.style.color, o.style.color2, o.style.no_main));
+            ui.invoke_set_prop("fill".into(), 3);
+            ui.invoke_set_prop("stroke-none".into(), 0);
+            let a = style(app);
+            let shown_a = (ui.get_color_index(), ui.get_fill_index());
+            ui.invoke_set_prop("fill".into(), 5);
+            let b = style(app);
+            let shown_b = ui.get_fill_index();
+            ui.invoke_set_prop("fill".into(), -1);
+            let c = style(app);
+            r.check(
+                "no outline: the fill colour changes the plate; no fill brings the outline back",
+                a == Some((p[3], None, true))
+                    && shown_a == (-1, 3)
+                    && b == Some((p[5], None, true))
+                    && shown_b == 5
+                    && c == Some((p[5], None, false)),
+                format!("{a:?} shown {shown_a:?} → {b:?} shown {shown_b} → {c:?}"),
+            );
+            ui.invoke_set_prop("color".into(), 0);
             ui.invoke_set_prop("fill".into(), 4);
             r.snapshot(ui, "14-props-rect");
             ui.invoke_set_prop("corners".into(), 2);

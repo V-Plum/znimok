@@ -31,6 +31,11 @@ pub const PALETTE: [Rgb; 8] = [
 ];
 pub const THICK: [i32; 3] = [2, 4, 7];
 
+/// A rectangle or ellipse without an outline: one solid colour, its main one (LH's plate).
+fn is_plate(o: &Object) -> bool {
+    matches!(o.kind(), Kind::Rect | Kind::Ellipse) && o.style.no_main
+}
+
 /// Held by every writer of a document: the background autosave and `save_now`. Both write
 /// `<file>.part` and rename it, so two writers at once would corrupt the part file; leaving a
 /// document also waits here so the library is scanned after the file is complete.
@@ -1909,12 +1914,21 @@ impl App {
     }
 
     fn style_for(&self, t: usize) -> Style {
+        let shape = matches!(t, tool::RECT | tool::ELLIPSE);
+        // Without an outline a shape is a plate of the fill colour (ZK-161).
+        let plate = self.no_stroke && shape;
         let base = Style {
-            color: PALETTE[self.color],
+            color: PALETTE[if plate {
+                self.fill.unwrap_or(self.color)
+            } else {
+                self.color
+            }],
             thick: THICK[self.thick],
             alpha: self.alpha,
-            no_main: self.no_stroke && matches!(t, tool::RECT | tool::ELLIPSE),
-            color2: if matches!(t, tool::RECT | tool::ELLIPSE) {
+            no_main: plate,
+            color2: if plate {
+                None
+            } else if shape {
                 self.fill.map(|i| PALETTE[i])
             } else if t == tool::TEXT {
                 self.text_outline.map(|i| PALETTE[i])
@@ -3378,6 +3392,41 @@ impl App {
             .collect()
     }
 
+    /// A style patch of its own for each selected mark `ok` accepts.
+    fn style_each(
+        &self,
+        ok: impl Fn(&Object) -> bool,
+        patch: impl Fn(&Object) -> StylePatch,
+    ) -> Vec<(ObjectId, StylePatch)> {
+        let Some(s) = self.s.as_ref() else {
+            return Vec::new();
+        };
+        s.ed.selection()
+            .iter()
+            .filter_map(|id| s.ed.doc.get(*id))
+            .filter(|o| ok(o))
+            .map(|o| (o.id, patch(o)))
+            .collect()
+    }
+
+    /// Applies per-mark style patches as one undo step.
+    fn apply_each(&mut self, ui: &AppWindow, items: Vec<(ObjectId, StylePatch)>) {
+        let merge = (items.len() > 1).then(|| self.merge_key());
+        for (id, sp) in items {
+            self.apply(
+                ui,
+                Command::UpdateObjects {
+                    ids: vec![id],
+                    patch: ObjectPatch {
+                        style: Some(sp),
+                        ..Default::default()
+                    },
+                    merge: merge.clone(),
+                },
+            );
+        }
+    }
+
     fn patch_selected(
         &mut self,
         ui: &AppWindow,
@@ -3407,18 +3456,20 @@ impl App {
         match name {
             "color" => {
                 self.color = (v.max(0) as usize).min(PALETTE.len() - 1);
+                // New shapes without an outline were plates of the fill colour: the fill stays.
                 self.no_stroke = false;
                 let c = PALETTE[self.color];
-                self.patch_selected(
-                    ui,
+                // A plate gets its outline back and keeps its colour as the fill (ZK-161).
+                let items = self.style_each(
                     |o| !matches!(o.kind(), Kind::Hide | Kind::Image),
-                    style(StylePatch {
+                    |o| StylePatch {
                         color: Some(c),
                         no_main: Some(false),
+                        color2: is_plate(o).then_some(Some(o.style.color)),
                         ..Default::default()
-                    }),
-                    None,
+                    },
                 );
+                self.apply_each(ui, items);
             }
             "shadow" | "glow" => {
                 let e = match v {
@@ -3541,16 +3592,22 @@ impl App {
                 });
             }
             "stroke-none" => {
+                // A shape without an outline is a plate of one colour — the fill's, or the
+                // outline's when there was no fill: never both colours gone (ZK-161).
                 self.no_stroke = true;
-                self.patch_selected(
-                    ui,
-                    |o| matches!(o.kind(), Kind::Rect | Kind::Ellipse),
-                    style(StylePatch {
+                if self.fill.is_none() {
+                    self.fill = Some(self.color);
+                }
+                let items = self.style_each(
+                    |o| matches!(o.kind(), Kind::Rect | Kind::Ellipse) && !is_plate(o),
+                    |o| StylePatch {
+                        color: Some(o.style.color2.unwrap_or(o.style.color)),
                         no_main: Some(true),
+                        color2: Some(None),
                         ..Default::default()
-                    }),
-                    None,
+                    },
                 );
+                self.apply_each(ui, items);
             }
             "thick" => {
                 self.thick = (v.max(0) as usize).min(THICK.len() - 1);
@@ -3566,17 +3623,37 @@ impl App {
                 );
             }
             "fill" => {
+                let old = self.fill;
                 self.fill = (v >= 0).then(|| (v as usize).min(PALETTE.len() - 1));
+                // No fill on a plate: its colour becomes the outline instead (ZK-161).
+                if self.fill.is_none() && self.no_stroke {
+                    self.no_stroke = false;
+                    if let Some(f) = old {
+                        self.color = f;
+                    }
+                }
                 let c2 = self.fill.map(|i| PALETTE[i]);
-                self.patch_selected(
-                    ui,
+                // A plate (no outline) is drawn in its main colour: the fill row edits that one
+                // (owner, 29.09: with the outline off the fill could not be changed).
+                let items = self.style_each(
                     |o| matches!(o.kind(), Kind::Rect | Kind::Ellipse),
-                    style(StylePatch {
-                        color2: Some(c2),
-                        ..Default::default()
-                    }),
-                    None,
+                    |o| match (is_plate(o), c2) {
+                        (true, Some(c)) => StylePatch {
+                            color: Some(c),
+                            ..Default::default()
+                        },
+                        (true, None) => StylePatch {
+                            no_main: Some(false),
+                            color2: Some(None),
+                            ..Default::default()
+                        },
+                        (false, c2) => StylePatch {
+                            color2: Some(c2),
+                            ..Default::default()
+                        },
+                    },
                 );
+                self.apply_each(ui, items);
             }
             // The outline of a text (owner 29.09: it did nothing — the row went to "fill", which
             // only touches shapes).
@@ -3734,12 +3811,17 @@ impl App {
                         .filter_map(|id| s.ed.doc.get(*id))
                         .filter(|o| matches!(o.kind(), Kind::Rect | Kind::Ellipse | Kind::Text))
                         .map(|o| {
-                            let plate = o.kind() != Kind::Text && o.style.no_main;
+                            // A plate is all fill, in its main colour (ZK-161).
+                            let plate = is_plate(o);
                             (
                                 o.id,
                                 o.kind(),
                                 (!plate).then_some(o.style.color),
-                                o.style.color2,
+                                if plate {
+                                    Some(o.style.color)
+                                } else {
+                                    o.style.color2
+                                },
                             )
                         })
                         // Text keeps its letters: it swaps only when it has an outline.
@@ -3765,12 +3847,23 @@ impl App {
                     }
                 } else {
                     let merge = (entries.len() > 1).then(|| self.merge_key());
-                    for (id, _, stroke, fill) in entries {
-                        let sp = StylePatch {
-                            color: fill,
-                            no_main: Some(fill.is_none()),
-                            color2: Some(stroke),
-                            ..Default::default()
+                    for (id, kind, stroke, fill) in entries {
+                        let sp = if kind == Kind::Text {
+                            StylePatch {
+                                color: fill,
+                                no_main: Some(fill.is_none()),
+                                color2: Some(stroke),
+                                ..Default::default()
+                            }
+                        } else {
+                            // Outline ↔ fill; without a fill the outline becomes a plate of
+                            // its colour (the swapped shape shows one colour, never none).
+                            StylePatch {
+                                color: fill.or(stroke),
+                                no_main: Some(fill.is_none()),
+                                color2: Some(if fill.is_some() { stroke } else { None }),
+                                ..Default::default()
+                            }
                         };
                         self.apply(
                             ui,
@@ -5250,9 +5343,10 @@ impl App {
                         .position(|t| *t == st.thick)
                         .map_or(-1, |i| i as i32),
                 );
+                // A plate's colour is its fill (ZK-161).
+                let fill = if plate { Some(st.color) } else { st.color2 };
                 ui.set_fill_index(
-                    st.color2
-                        .and_then(|c| PALETTE.iter().position(|p| *p == c))
+                    fill.and_then(|c| PALETTE.iter().position(|p| *p == c))
                         .map_or(-1, |i| i as i32),
                 );
                 ui.set_dash_index(dash_index(st.dash));
