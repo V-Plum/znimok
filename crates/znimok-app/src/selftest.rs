@@ -1573,6 +1573,7 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
             return;
         };
         let frozen = crate::capture::Frozen {
+            displays: Vec::new(),
             bounds: znimok_platform::Rect {
                 x: 0,
                 y: 0,
@@ -1732,6 +1733,7 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
             (raster.width, raster.height)
         };
         let frozen = crate::capture::Frozen {
+            displays: Vec::new(),
             bounds: znimok_platform::Rect {
                 x: 0,
                 y: 0,
@@ -2023,6 +2025,7 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
         crate::codes::clear_last();
         if let Some(raster) = QR_SCENE.with(|q| q.borrow().clone()) {
             let frozen = crate::capture::Frozen {
+                displays: Vec::new(),
                 bounds: znimok_platform::Rect {
                     x: 0,
                     y: 0,
@@ -2152,11 +2155,99 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
         ui.invoke_setting("close".into(), 0);
     }));
 
+    // ZK-139: two displays side by side, the right one twice as dense (like Retina next to a
+    // plain screen): a window on each, one frame under them, a region dragged across the seam.
+    steps.push(Box::new(|_, _, r| {
+        let solid = |w: u32, h: u32, c: [u8; 3]| {
+            let mut v = vec![0u8; (w * h * 4) as usize];
+            for p in v.chunks_mut(4) {
+                p.copy_from_slice(&[c[0], c[1], c[2], 255]);
+            }
+            znimok_core::Raster::new(w, h, v)
+        };
+        let a = (
+            znimok_platform::Rect::new(0, 0, 800, 500),
+            solid(800, 500, [200, 40, 40]),
+        );
+        let b = (
+            znimok_platform::Rect::new(800, 0, 800, 500),
+            solid(1600, 1000, [40, 40, 200]),
+        );
+        let (raster, union, displays) = crate::capture::compose(&[a, b]);
+        r.check(
+            "two displays: one frame in the denser grid",
+            (raster.width, raster.height) == (3200, 1000)
+                && union == znimok_platform::Rect::new(0, 0, 1600, 500)
+                && displays.len() == 2
+                && displays[1].rect.x == 1600,
+            format!(
+                "{}×{} · {union:?} · {displays:?}",
+                raster.width, raster.height
+            ),
+        );
+        let frozen = crate::capture::Frozen {
+            raster,
+            bounds: union,
+            windows: Vec::new(),
+            displays,
+        };
+        let _ = crate::overlay::open(frozen, true);
+        let windows = crate::overlay::window_count();
+        if let Some(ov) = crate::overlay::handle() {
+            // Logical pixels of the left window: frame pixels ÷ its own scale.
+            let sf = ov.window().scale_factor();
+            let lw = ov.window().size().width as f32 / sf;
+            let k = 1600.0 / lw.max(1.0);
+            ov.invoke_pointer(0, 1200.0 / k, 400.0 / k, false, false);
+            for i in 1..=8 {
+                let t = i as f32 / 8.0;
+                ov.invoke_pointer(
+                    1,
+                    (1200.0 + 800.0 * t) / k,
+                    (400.0 + 200.0 * t) / k,
+                    false,
+                    false,
+                );
+            }
+            ov.invoke_pointer(2, 2000.0 / k, 600.0 / k, false, false);
+        }
+        MULTI_WINDOWS.with(|m| m.set(windows));
+    }));
+    steps.push(Box::new(|app, _, r| {
+        let a = app.borrow();
+        let doc =
+            a.s.as_ref()
+                .map(|s| (s.ed.doc.image_size(), s.ed.doc.banks[0].clone()));
+        drop(a);
+        let ok = doc.as_ref().is_some_and(|((w, h), bank)| {
+            let (w, h) = (*w as i32, *h as i32);
+            // Left half red (from the plain display, enlarged), right half blue.
+            let px = |x: u32| {
+                let i = ((h as u32 / 2 * bank.width + x) * 4) as usize;
+                [bank.rgba[i], bank.rgba[i + 1], bank.rgba[i + 2]]
+            };
+            (w - 800).abs() <= 3
+                && (h - 200).abs() <= 3
+                && px(10) == [200, 40, 40]
+                && px(bank.width - 10) == [40, 40, 200]
+        });
+        r.check(
+            "two displays: a window on each, a region across the seam has both",
+            MULTI_WINDOWS.with(|m| m.get()) == 2 && ok,
+            format!(
+                "{} windows · {:?}",
+                MULTI_WINDOWS.with(|m| m.get()),
+                doc.map(|d| d.0)
+            ),
+        );
+    }));
+
     // ZK-128: a second click takes the shot after a countdown; Esc cancels the countdown.
     steps.push(Box::new(|_, _, _| {
         let open = || -> Option<(crate::Overlay, f32, f32)> {
             let raster = OVER_SRC.with(|o| o.borrow().clone())?;
             let frozen = crate::capture::Frozen {
+                displays: Vec::new(),
                 bounds: znimok_platform::Rect {
                     x: 0,
                     y: 0,
@@ -2204,6 +2295,7 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
         let open = || -> Option<(crate::Overlay, f32, f32)> {
             let raster = OVER_SRC.with(|o| o.borrow().clone())?;
             let frozen = crate::capture::Frozen {
+                displays: Vec::new(),
                 bounds: znimok_platform::Rect {
                     x: 0,
                     y: 0,
@@ -2404,4 +2496,8 @@ thread_local! {
 
 thread_local! {
     static SCROLL_WANT: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
+}
+
+thread_local! {
+    static MULTI_WINDOWS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }

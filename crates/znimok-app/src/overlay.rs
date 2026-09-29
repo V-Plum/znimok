@@ -21,12 +21,23 @@ use slint::ComponentHandle;
 use crate::capture::{Frozen, PxRect};
 use crate::{Overlay, io};
 
-struct Session {
+/// One overlay window: a display, and where it is in the frozen frame (ZK-139).
+struct Part {
     ui: Overlay,
-    frozen: Frozen,
-    /// Frame pixels per logical pixel of the overlay window, horizontally and vertically.
+    /// The display in the frame, frame pixels.
+    rect: PxRect,
+    /// Frame pixels per logical pixel of this window, horizontally and vertically.
     kx: f32,
     ky: f32,
+}
+
+struct Session {
+    /// A window per display; the selection, the lens and the gestures work in frame pixels
+    /// across all of them, so a region may cross from one screen to the next.
+    parts: Vec<Part>,
+    /// The window the pointer is in (or that holds the drag).
+    active: usize,
+    frozen: Frozen,
     drag_start: Option<(f32, f32)>,
     dragging: bool,
     sel: Option<PxRect>,
@@ -178,7 +189,16 @@ thread_local! {
 
 /// The open overlay window, for the self-test.
 pub fn handle() -> Option<Overlay> {
-    SESSION.with(|s| s.borrow().as_ref().map(|s| s.ui.clone_strong()))
+    SESSION.with(|s| {
+        s.borrow()
+            .as_ref()
+            .and_then(|s| s.parts.first().map(|p| p.ui.clone_strong()))
+    })
+}
+
+/// How many overlay windows are open (one per display), for the self-test.
+pub fn window_count() -> usize {
+    SESSION.with(|s| s.borrow().as_ref().map_or(0, |s| s.parts.len()))
 }
 
 pub fn is_open() -> bool {
@@ -403,140 +423,163 @@ pub fn covers_screen() -> Option<(bool, String)> {
     None
 }
 
-/// Shows the overlay over the frozen display. Runs on the UI thread.
+/// Shows the overlay over the frozen screen: a window per display. Runs on the UI thread.
 pub fn open(frozen: Frozen, editor_was_visible: bool) -> Result<(), slint::PlatformError> {
-    let ui = Overlay::new()?;
-    let (w, h) = (frozen.raster.width, frozen.raster.height);
-    let buf =
-        slint::SharedPixelBuffer::<slint::Rgba8Pixel>::clone_from_slice(&frozen.raster.rgba, w, h);
-    ui.set_shot(slint::Image::from_rgba8(buf));
-    let b = frozen.bounds;
-    // Desktop units are physical pixels on Windows (per-monitor DPI aware) and points on macOS.
-    if cfg!(target_os = "macos") {
-        ui.window()
-            .set_position(slint::LogicalPosition::new(b.x as f32, b.y as f32));
-        ui.window()
-            .set_size(slint::LogicalSize::new(b.width as f32, b.height as f32));
-    } else {
-        ui.window()
-            .set_position(slint::PhysicalPosition::new(b.x, b.y));
-        ui.window()
-            .set_size(slint::PhysicalSize::new(b.width, b.height));
-    }
-    ui.set_mac(cfg!(target_os = "macos"));
-    // Switching to another program (Cmd+Tab, Alt+Tab) cancels — once the overlay has had the
-    // focus (it may never get it when a global hotkey leaves another program in front).
-    {
-        use slint::winit_030::{EventResult, WinitWindowAccessor, winit};
-        let had = std::rc::Rc::new(std::cell::Cell::new(false));
-        let selftest = std::env::var_os("ZNIMOK_SELFTEST").is_some();
-        ui.window().on_winit_window_event(move |_, ev| {
-            if let winit::event::WindowEvent::Focused(f) = ev {
-                if *f {
-                    had.set(true);
-                } else if had.get() && !selftest {
-                    let _ = slint::invoke_from_event_loop(cancel);
-                }
-            }
-            EventResult::Propagate
-        });
-    }
-    ui.on_pointer(|kind, x, y, shift, alt| {
-        with_session(|s| {
-            s.pointer(
-                kind,
-                x,
-                y,
-                Gesture {
-                    shift,
-                    alt,
-                    delayed: false,
-                },
-            )
-        })
-    });
-    ui.on_key(|text, shift, alt| {
-        with_session(|s| {
-            s.key(
-                &text,
-                Gesture {
-                    shift,
-                    alt,
-                    delayed: false,
-                },
-            )
-        })
-    });
-    ui.on_wheel(|dy| {
-        with_session(|s| {
-            // A trackpad sends a stream of small deltas (and keeps going with momentum): add
-            // them up, step once past a threshold, then ignore the rest of the gesture for a
-            // moment — one flick = one zoom level (owner, MacBook, 28.09).
-            let now = std::time::Instant::now();
-            if s.wheel_pause.is_some_and(|t| now < t) {
-                return None;
-            }
-            if s.wheel_acc.signum() != dy.signum() {
-                s.wheel_acc = 0.0;
-            }
-            s.wheel_acc += dy;
-            if s.wheel_acc.abs() < 24.0 {
-                return None;
-            }
-            let dy = s.wheel_acc;
-            s.wheel_acc = 0.0;
-            s.wheel_pause = Some(now + std::time::Duration::from_millis(260));
-            let before = s.zoom;
-            s.zoom = if dy > 0.0 {
-                match s.zoom {
-                    0 => 4,
-                    z => (z * 2).min(16),
-                }
-            } else if s.zoom <= 4 {
-                0
-            } else {
-                s.zoom / 2
-            };
-            let (x, y) = s.last_pointer;
-            s.update_lens(x, y);
-            if s.zoom != 0 && s.zoom != before {
-                // A short "breath" of the lens on each level change.
-                s.ui.set_lens_pulse(true);
-                let weak = s.ui.as_weak();
-                slint::Timer::single_shot(std::time::Duration::from_millis(90), move || {
-                    if let Some(ui) = weak.upgrade() {
-                        ui.set_lens_pulse(false);
+    let mut parts = Vec::new();
+    for (i, d) in frozen.parts().into_iter().enumerate() {
+        let ui = Overlay::new()?;
+        let piece = frozen
+            .crop(d.rect)
+            .unwrap_or_else(|| znimok_core::Raster::new(1, 1, vec![0, 0, 0, 255]));
+        let buf = slint::SharedPixelBuffer::<slint::Rgba8Pixel>::clone_from_slice(
+            &piece.rgba,
+            piece.width,
+            piece.height,
+        );
+        ui.set_shot(slint::Image::from_rgba8(buf));
+        let b = d.bounds;
+        // Desktop units are physical pixels on Windows (per-monitor DPI aware) and points on
+        // macOS.
+        if cfg!(target_os = "macos") {
+            ui.window()
+                .set_position(slint::LogicalPosition::new(b.x as f32, b.y as f32));
+            ui.window()
+                .set_size(slint::LogicalSize::new(b.width as f32, b.height as f32));
+        } else {
+            ui.window()
+                .set_position(slint::PhysicalPosition::new(b.x, b.y));
+            ui.window()
+                .set_size(slint::PhysicalSize::new(b.width, b.height));
+        }
+        ui.set_mac(cfg!(target_os = "macos"));
+        // Switching to another program (Cmd+Tab, Alt+Tab) cancels — once the overlay has had
+        // the focus (it may never get it when a global hotkey leaves another program in front).
+        // Focus moving between our own windows (another display) is not a switch.
+        {
+            use slint::winit_030::{EventResult, WinitWindowAccessor, winit};
+            let had = std::rc::Rc::new(std::cell::Cell::new(false));
+            let selftest = std::env::var_os("ZNIMOK_SELFTEST").is_some();
+            ui.window().on_winit_window_event(move |_, ev| {
+                if let winit::event::WindowEvent::Focused(f) = ev {
+                    if *f {
+                        had.set(true);
+                    } else if had.get() && !selftest {
+                        slint::Timer::single_shot(std::time::Duration::from_millis(60), || {
+                            if !overlay_has_focus() {
+                                cancel();
+                            }
+                        });
                     }
-                });
-            }
-            None
-        })
-    });
-    if cfg!(target_os = "macos") {
-        ui.set_on_top(false);
-    }
-    ui.show()?;
-    cover_display(&ui);
-    // Slint and winit apply window properties (size, level) after `show` returns, which undid
-    // the level and frame set above (Mac self-test 28.09: level 3, frame below the menu bar).
-    // Set them again once the window has settled.
-    for ms in [30u64, 150, 400] {
-        let weak = ui.as_weak();
-        slint::Timer::single_shot(std::time::Duration::from_millis(ms), move || {
-            if let Some(ui) = weak.upgrade() {
-                cover_display(&ui);
-            }
+                }
+                EventResult::Propagate
+            });
+        }
+        ui.on_pointer(move |kind, x, y, shift, alt| {
+            with_session(|s| {
+                s.active = i;
+                s.pointer(
+                    kind,
+                    x,
+                    y,
+                    Gesture {
+                        shift,
+                        alt,
+                        delayed: false,
+                    },
+                )
+            })
+        });
+        ui.on_key(|text, shift, alt| {
+            with_session(|s| {
+                s.key(
+                    &text,
+                    Gesture {
+                        shift,
+                        alt,
+                        delayed: false,
+                    },
+                )
+            })
+        });
+        ui.on_wheel(move |dy| {
+            with_session(|s| {
+                s.active = i;
+                // A trackpad sends a stream of small deltas (and keeps going with momentum): add
+                // them up, step once past a threshold, then ignore the rest of the gesture for a
+                // moment — one flick = one zoom level (owner, MacBook, 28.09).
+                let now = std::time::Instant::now();
+                if s.wheel_pause.is_some_and(|t| now < t) {
+                    return None;
+                }
+                if s.wheel_acc.signum() != dy.signum() {
+                    s.wheel_acc = 0.0;
+                }
+                s.wheel_acc += dy;
+                if s.wheel_acc.abs() < 24.0 {
+                    return None;
+                }
+                let dy = s.wheel_acc;
+                s.wheel_acc = 0.0;
+                s.wheel_pause = Some(now + std::time::Duration::from_millis(260));
+                let before = s.zoom;
+                s.zoom = if dy > 0.0 {
+                    match s.zoom {
+                        0 => 4,
+                        z => (z * 2).min(16),
+                    }
+                } else if s.zoom <= 4 {
+                    0
+                } else {
+                    s.zoom / 2
+                };
+                let (x, y) = s.last_pointer;
+                s.update_lens(x, y);
+                if s.zoom != 0 && s.zoom != before {
+                    // A short "breath" of the lens on each level change.
+                    s.ui().set_lens_pulse(true);
+                    let weak = s.ui().as_weak();
+                    slint::Timer::single_shot(std::time::Duration::from_millis(90), move || {
+                        if let Some(ui) = weak.upgrade() {
+                            ui.set_lens_pulse(false);
+                        }
+                    });
+                }
+                None
+            })
+        });
+        if cfg!(target_os = "macos") {
+            ui.set_on_top(false);
+        }
+        parts.push(Part {
+            ui,
+            rect: d.rect,
+            kx: 1.0,
+            ky: 1.0,
         });
     }
-    {
-        use slint::winit_030::WinitWindowAccessor;
-        ui.window().with_winit_window(|w| w.focus_window());
+    for p in &parts {
+        p.ui.show()?;
+        cover_display(&p.ui);
+        // Slint and winit apply window properties (size, level) after `show` returns, which
+        // undid the level and frame set above (Mac self-test 28.09: level 3, frame below the
+        // menu bar). Set them again once the window has settled.
+        for ms in [30u64, 150, 400] {
+            let weak = p.ui.as_weak();
+            slint::Timer::single_shot(std::time::Duration::from_millis(ms), move || {
+                if let Some(ui) = weak.upgrade() {
+                    cover_display(&ui);
+                }
+            });
+        }
     }
-    ui.invoke_grab_focus();
+    if let Some(p) = parts.first() {
+        use slint::winit_030::WinitWindowAccessor;
+        p.ui.window().with_winit_window(|w| w.focus_window());
+        p.ui.invoke_grab_focus();
+    }
     let session = Session {
-        kx: 1.0,
-        ky: 1.0,
-        ui,
+        parts,
+        active: 0,
         frozen,
         drag_start: None,
         dragging: false,
@@ -553,6 +596,20 @@ pub fn open(frozen: Frozen, editor_was_visible: bool) -> Result<(), slint::Platf
     SESSION.with(|s| *s.borrow_mut() = Some(session));
     crate::hotkeys::grab_escape(true);
     Ok(())
+}
+
+/// One of the overlay's windows has the keyboard focus.
+fn overlay_has_focus() -> bool {
+    SESSION.with(|s| {
+        s.borrow().as_ref().is_some_and(|s| {
+            use slint::winit_030::WinitWindowAccessor;
+            s.parts.iter().any(|p| {
+                p.ui.window()
+                    .with_winit_window(|w| w.has_focus())
+                    .unwrap_or(false)
+            })
+        })
+    })
 }
 
 /// Modifiers at the moment the choice is made: Shift = to the clipboard and the library,
@@ -583,7 +640,9 @@ fn with_session(f: impl FnOnce(&mut Session) -> Option<Outcome>) {
         return;
     };
     crate::hotkeys::grab_escape(false);
-    let _ = session.ui.hide();
+    for p in &session.parts {
+        let _ = p.ui.hide();
+    }
     let Session {
         frozen,
         editor_was_visible,
@@ -591,10 +650,12 @@ fn with_session(f: impl FnOnce(&mut Session) -> Option<Outcome>) {
     } = session;
     let display = frozen.bounds;
     match outcome {
-        // ZK-128: the countdown, then a fresh frame of the same display, cut the same way.
+        // ZK-128: the countdown (in the corner of the display with the choice), then a fresh
+        // frame of the same displays, cut the same way.
         Outcome::Keep(rect, source, id, g) if g.delayed => {
+            let corner = frozen.part_at(rect).bounds;
             drop(frozen);
-            countdown(display, editor_was_visible, move || {
+            countdown(corner, editor_was_visible, move || {
                 std::thread::spawn(move || {
                     let fresh = crate::capture::freeze_display(Some(display));
                     let _ = slint::invoke_from_event_loop(move || match fresh {
@@ -627,6 +688,8 @@ fn with_session(f: impl FnOnce(&mut Session) -> Option<Outcome>) {
 /// What the choice becomes: the editor, the clipboard, over the screen — or nothing.
 fn finish(frozen: Frozen, outcome: Outcome, editor_was_visible: bool) {
     let display = frozen.bounds;
+    // The card after the capture goes to the display with the choice (ZK-139).
+    let card = |r: PxRect| frozen.part_at(r).bounds;
     match outcome {
         Outcome::Codes(rect) => {
             if let Some(r) = frozen.crop(rect) {
@@ -653,18 +716,35 @@ fn finish(frozen: Frozen, outcome: Outcome, editor_was_visible: bool) {
         }
         // Over the screen (ZK-58): the whole frozen display is the document, the choice its
         // frame — a window too (what overlaps it stays visible around the frame anyway).
+        // With several displays: the one with the middle of the choice (the editor window covers
+        // one display; the frame is cut to it).
         Outcome::Keep(rect, source, _, g) if g.alt => {
-            let raster = frozen.raster;
+            let d = frozen.part_at(rect);
+            let (raster, frame, display) = if frozen.displays.len() > 1 {
+                let x0 = rect.x.max(d.rect.x);
+                let y0 = rect.y.max(d.rect.y);
+                let x1 = (rect.x + rect.w).min(d.rect.x + d.rect.w);
+                let y1 = (rect.y + rect.h).min(d.rect.y + d.rect.h);
+                (
+                    frozen.crop(d.rect).unwrap_or_else(|| frozen.raster.clone()),
+                    znimok_core::IRect::new(
+                        x0 - d.rect.x,
+                        y0 - d.rect.y,
+                        (x1 - x0).max(1),
+                        (y1 - y0).max(1),
+                    ),
+                    d.bounds,
+                )
+            } else {
+                (
+                    frozen.raster,
+                    znimok_core::IRect::new(rect.x, rect.y, rect.w, rect.h),
+                    display,
+                )
+            };
             let _ = slint::invoke_from_event_loop(move || {
                 crate::with_ctx(|a, ui| {
-                    a.over_open(
-                        ui,
-                        raster,
-                        znimok_core::IRect::new(rect.x, rect.y, rect.w, rect.h),
-                        source,
-                        display,
-                        editor_was_visible,
-                    );
+                    a.over_open(ui, raster, frame, source, display, editor_was_visible);
                     crate::show_window(ui);
                 })
             });
@@ -673,6 +753,7 @@ fn finish(frozen: Frozen, outcome: Outcome, editor_was_visible: bool) {
             // The window alone: capture it now that the overlay is gone; on failure keep the
             // cut from the frozen frame (it may include what overlapped the window).
             let fallback = frozen.crop(rect);
+            let display = card(rect);
             std::thread::spawn(move || {
                 // Give the compositor a moment to take the overlay off the screen.
                 std::thread::sleep(std::time::Duration::from_millis(80));
@@ -686,6 +767,7 @@ fn finish(frozen: Frozen, outcome: Outcome, editor_was_visible: bool) {
         }
         Outcome::Keep(rect, source, None, Gesture { shift, .. }) => {
             let raster = frozen.crop(rect);
+            let display = card(rect);
             let _ = slint::invoke_from_event_loop(move || {
                 if let Some(r) = raster {
                     deliver(r, source, shift, editor_was_visible, display);
@@ -820,18 +902,34 @@ fn render_lens(f: &znimok_core::Raster, cx: i32, cy: i32, n: i32, z: i32) -> (Ve
 }
 
 impl Session {
+    fn ui(&self) -> &Overlay {
+        &self.parts[self.active].ui
+    }
+
+    fn part(&self) -> &Part {
+        &self.parts[self.active]
+    }
+
     fn update_k(&mut self) {
-        let size = self.ui.window().size();
-        let sf = self.ui.window().scale_factor().max(0.1);
-        let (lw, lh) = (size.width as f32 / sf, size.height as f32 / sf);
-        if lw > 1.0 && lh > 1.0 {
-            self.kx = self.frozen.raster.width as f32 / lw;
-            self.ky = self.frozen.raster.height as f32 / lh;
+        for p in &mut self.parts {
+            let size = p.ui.window().size();
+            let sf = p.ui.window().scale_factor().max(0.1);
+            let (lw, lh) = (size.width as f32 / sf, size.height as f32 / sf);
+            if lw > 1.0 && lh > 1.0 {
+                p.kx = p.rect.w as f32 / lw;
+                p.ky = p.rect.h as f32 / lh;
+            }
         }
     }
 
+    /// A logical point of the active window → frame pixels (outside the window too, while a
+    /// drag started in it goes on over another display).
     fn px(&self, x: f32, y: f32) -> (i32, i32) {
-        ((x * self.kx).floor() as i32, (y * self.ky).floor() as i32)
+        let p = self.part();
+        (
+            p.rect.x + (x * p.kx).floor() as i32,
+            p.rect.y + (y * p.ky).floor() as i32,
+        )
     }
 
     fn window_at(&self, x: i32, y: i32) -> Option<(PxRect, u64)> {
@@ -856,19 +954,21 @@ impl Session {
         }
     }
 
-    /// A guide line: black over light pixels, white over dark ones (owner, 28.09).
+    /// A guide line across the active window: black over light pixels, white over dark ones
+    /// (owner, 28.09).
     fn guide(&self, horizontal: bool, at: i32) -> slint::Image {
+        let r = self.part().rect;
         let (fw, fh) = (
             self.frozen.raster.width as i32,
             self.frozen.raster.height as i32,
         );
-        let len = if horizontal { fw } else { fh };
-        let mut rgba = Vec::with_capacity(len as usize * 4);
+        let len = if horizontal { r.w } else { r.h };
+        let mut rgba = Vec::with_capacity(len.max(0) as usize * 4);
         for t in 0..len {
             let (x, y) = if horizontal {
-                (t, at.clamp(0, fh - 1))
+                ((r.x + t).clamp(0, fw - 1), at.clamp(0, fh - 1))
             } else {
-                (at.clamp(0, fw - 1), t)
+                (at.clamp(0, fw - 1), (r.y + t).clamp(0, fh - 1))
             };
             let [r, g, b] = self.shown(x, y);
             // Relative luminance (sRGB weights) against the middle grey.
@@ -886,7 +986,16 @@ impl Session {
     }
 
     fn update_lens(&mut self, x: f32, y: f32) {
-        let ui = &self.ui;
+        // The guides and the lens belong to the window the pointer is in.
+        for (i, p) in self.parts.iter().enumerate() {
+            if i != self.active {
+                p.ui.set_pointer_x(-100.0);
+                p.ui.set_pointer_y(-100.0);
+                p.ui.set_lens_visible(false);
+            }
+        }
+        let kx = self.part().kx;
+        let ui = self.ui();
         ui.set_pointer_x(x);
         ui.set_pointer_y(y);
         let (gx, gy) = self.px(x, y);
@@ -903,12 +1012,12 @@ impl Session {
         let (px, py) = self.px(x, y);
         let (px, py) = (px.clamp(0, fw - 1), py.clamp(0, fh - 1));
         // One frame pixel = `zoom` screen (= frame) pixels; the lens is sized in frame pixels.
-        let n = lens_pixels(self.zoom, self.kx);
+        let n = lens_pixels(self.zoom, kx);
         let (rgba, side) = render_lens(&self.frozen.raster, px, py, n, self.zoom as i32);
         let buf =
             slint::SharedPixelBuffer::<slint::Rgba8Pixel>::clone_from_slice(&rgba, side, side);
         ui.set_lens(slint::Image::from_rgba8(buf));
-        ui.set_lens_size(side as f32 / self.kx.max(0.01));
+        ui.set_lens_size(side as f32 / kx.max(0.01));
         let coords = match self.sel.filter(|_| self.dragging) {
             Some(r) => format!("{px}, {py}   {} × {}", r.w, r.h),
             None => format!("{px}, {py}   ×{}", self.zoom),
@@ -922,14 +1031,28 @@ impl Session {
     }
 
     fn show(&self) {
-        let ui = &self.ui;
-        match self.sel {
+        for p in &self.parts {
+            self.show_in(p);
+        }
+    }
+
+    /// The selection as this window sees it: its part, in its own logical pixels (edges past
+    /// the window are simply not drawn).
+    fn show_in(&self, p: &Part) {
+        let ui = &p.ui;
+        let meets = |r: &PxRect| {
+            r.x < p.rect.x + p.rect.w
+                && r.x + r.w > p.rect.x
+                && r.y < p.rect.y + p.rect.h
+                && r.y + r.h > p.rect.y
+        };
+        match self.sel.filter(meets) {
             Some(r) => {
                 ui.set_has_sel(true);
-                ui.set_sel_x(r.x as f32 / self.kx.max(0.01));
-                ui.set_sel_y(r.y as f32 / self.ky.max(0.01));
-                ui.set_sel_w(r.w as f32 / self.kx.max(0.01));
-                ui.set_sel_h(r.h as f32 / self.ky.max(0.01));
+                ui.set_sel_x((r.x - p.rect.x) as f32 / p.kx.max(0.01));
+                ui.set_sel_y((r.y - p.rect.y) as f32 / p.ky.max(0.01));
+                ui.set_sel_w(r.w as f32 / p.kx.max(0.01));
+                ui.set_sel_h(r.h as f32 / p.ky.max(0.01));
                 // A window shows its title too (shortened), a region only its size.
                 let title = self
                     .window
