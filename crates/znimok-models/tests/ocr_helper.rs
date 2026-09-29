@@ -14,7 +14,9 @@ fn helper() -> Option<TessHelper> {
 }
 
 fn picture(name: &str) -> Rgba {
-    let p = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tools/ocr-eval/set").join(name);
+    let p = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../tools/ocr-eval/set")
+        .join(name);
     let img = image::open(&p).unwrap().into_rgba8();
     Rgba::new(img.width(), img.height(), img.into_raw()).unwrap()
 }
@@ -32,7 +34,11 @@ fn reads_ukrainian_and_the_masking_reading_sees_the_email() {
     assert!(r.missing.is_empty());
     assert!(!r.lines[0].words.is_empty());
     let both = read_for_masking(&h, &img).unwrap();
-    assert!(both.text().contains("v.plum@example.com"), "{}", both.text());
+    assert!(
+        both.text().contains("v.plum@example.com"),
+        "{}",
+        both.text()
+    );
     // Russian is never asked for, never used.
     assert!(matches!(
         h.recognize(&img, &["ru"]),
