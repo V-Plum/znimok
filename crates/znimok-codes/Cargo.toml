@@ -1,0 +1,22 @@
+[package]
+name = "znimok-codes"
+description = "Znimok code reader (ZK-119) — QR codes and barcodes on a screenshot, on the device (rxing), with what each one is: a link, Wi-Fi, a contact, an event or text"
+version.workspace = true
+edition.workspace = true
+license-file.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[features]
+# A QR code as a picture (the app's self-test; later: sharing a link as a code).
+encode = ["rxing/encoders"]
+
+[dependencies]
+rxing = { version = "0.9", default-features = false, features = ["decoders", "multi_barcode_readers", "encoding_rs", "qrcode", "datamatrix", "oned", "pdf417", "aztec"] }
+
+[dev-dependencies]
+rxing = { version = "0.9", default-features = false, features = ["decoders", "multi_barcode_readers", "encoding_rs", "qrcode", "encoders"] }

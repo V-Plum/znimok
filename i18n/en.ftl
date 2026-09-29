@@ -1954,6 +1954,11 @@ capture-double = double click
 # @max: 20
 capture-delayed = after 3 s
 
+# @where: Hint after the "Q" chip: read QR codes and barcodes in the selection or the screen
+# @kind: hint
+# @max: 20
+capture-qr = QR code
+
 # @where: Hint after "Esc"
 # @kind: hint
 # @max: 20
@@ -2085,6 +2090,11 @@ tray-record = Record video
 # @kind: menu
 # @max: 28
 tray-open = Open Znimok
+
+# @where: Tray / menu bar item: read QR codes and barcodes on the screen under the pointer
+# @kind: menu
+# @max: 40
+tray-read-codes = Read a QR code from the screen
 
 # @where: Tray menu: release all hotkeys for a while
 # @kind: menu
@@ -2224,6 +2234,91 @@ export-error = Could not save the file.
 # @kind: toast
 # @max: 24
 clipboard-copied = Copied
+
+# @where: Title of the list of codes found; $count is how many
+# @kind: title
+# @max: 40
+codes-title = Codes found: { $count }
+
+# @where: Title when no code was found
+# @kind: title
+# @max: 40
+codes-none-title = No codes
+
+# @where: Body when no code was found
+# @kind: body
+# @max: 120
+codes-none-body = There are no QR codes or barcodes on this picture.
+
+# @where: A found code: a web link
+# @kind: body
+# @max: 200
+codes-link = Link: { $url }
+
+# @where: A found code: a Wi-Fi network with a password
+# @kind: body
+# @max: 200
+codes-wifi = Wi-Fi “{ $ssid }” · password: { $password } · { $security }
+
+# @where: A found code: a Wi-Fi network without a password
+# @kind: body
+# @max: 120
+codes-wifi-open = Wi-Fi “{ $ssid }” without a password
+
+# @where: A found code: a contact card
+# @kind: label
+# @max: 32
+codes-contact = Contact
+
+# @where: A found code: a calendar event
+# @kind: label
+# @max: 32
+codes-event = Event
+
+# @where: A found code: an e-mail address
+# @kind: body
+# @max: 120
+codes-email = E-mail: { $address }
+
+# @where: A found code: a phone number
+# @kind: body
+# @max: 80
+codes-phone = Phone: { $number }
+
+# @where: A found code: plain text
+# @kind: body
+# @max: 200
+codes-text = Text: { $text }
+
+# @where: Button: copy the text of the codes
+# @kind: button
+# @max: 24
+codes-copy = Copy text
+
+# @where: Button: open the link of a code (a confirmation follows)
+# @kind: button
+# @max: 24
+codes-open-link = Open link…
+
+# @where: Question before a link from a code opens in the browser
+# @kind: title
+# @max: 40
+codes-open-title = Open this link?
+
+# @where: Body of that question; $url is the whole address
+# @kind: body
+# @max: 400
+codes-open-body = { $url } — check the whole address: QR codes are often used for phishing.
+
+# @where: Button: open the link
+# @kind: button
+# @max: 16
+codes-open = Open
+
+# @where: Editor, Image tab: button to read QR codes and barcodes on the picture
+# @kind: button
+# @max: 28
+img-read-codes = Read QR codes and barcodes
 
 # @where: Toast when the clipboard is locked or fails
 # @kind: error

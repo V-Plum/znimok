@@ -43,6 +43,9 @@ enum Cmd {
         #[arg(long)]
         name: Option<String>,
     },
+    /// QR codes and barcodes on a document (as rendered) or a PNG / JPEG / WebP picture, read on
+    /// this device (ZK-119).
+    Codes { file: PathBuf },
     /// Renders the document with its marks to a PNG (the crop, 1:1 unless --scale).
     Render {
         file: PathBuf,
@@ -387,6 +390,54 @@ fn run(cli: Cli) -> Result<(), Fail> {
                 json!({ "output": output.display().to_string(), "id": doc.id.to_string(), "width": w, "height": h }),
                 format!("created {} ({w}×{h})", output.display()),
             );
+        }
+        Cmd::Codes { file } => {
+            let (w, h, rgba) =
+                if znimok_format::is_znimok(&std::fs::read(&file).map_err(io(&file))?) {
+                    let pix = render(&load(&file)?, 1.0);
+                    (
+                        pix.width() as u32,
+                        pix.height() as u32,
+                        znimok_render::pixmap_to_rgba(&pix),
+                    )
+                } else {
+                    let img = image::open(&file)
+                        .map_err(|e| Fail(3, format!("{}: {e}", file.display())))?
+                        .to_rgba8();
+                    let (w, h) = img.dimensions();
+                    (w, h, img.into_raw())
+                };
+            let codes = znimok_codes::read(w, h, &rgba);
+            let list: Vec<serde_json::Value> = codes
+                .iter()
+                .map(|c| {
+                    let kind = match &c.kind {
+                        znimok_codes::Kind::Link(_) => "link",
+                        znimok_codes::Kind::Wifi { .. } => "wifi",
+                        znimok_codes::Kind::Contact => "contact",
+                        znimok_codes::Kind::Event => "event",
+                        znimok_codes::Kind::Email(_) => "email",
+                        znimok_codes::Kind::Phone(_) => "phone",
+                        znimok_codes::Kind::Text => "text",
+                    };
+                    json!({
+                        "format": c.format,
+                        "kind": kind,
+                        "text": c.text,
+                        "bounds": [c.bounds.0, c.bounds.1, c.bounds.2, c.bounds.3],
+                    })
+                })
+                .collect();
+            let text = if codes.is_empty() {
+                "no codes".to_string()
+            } else {
+                codes
+                    .iter()
+                    .map(|c| format!("{}\t{}", c.format, c.text))
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            };
+            out(json!({ "codes": list }), text);
         }
         Cmd::Render {
             file,

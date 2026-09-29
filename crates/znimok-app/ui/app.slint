@@ -1153,6 +1153,7 @@ export component Overlay inherits Window {
             HintChip { key: @tr("capture-click" => "click"); text: @tr("capture-window" => "window"); }
             HintChip { key: @tr("capture-wheel" => "wheel"); text: @tr("capture-magnifier" => "magnifier"); }
             HintChip { key: @tr("capture-double" => "double click"); text: @tr("capture-delayed" => "after 3 s"); }
+            HintChip { key: "Q"; text: @tr("capture-qr" => "QR code"); }
             HintChip { key: "Esc"; text: @tr("capture-cancel" => "cancel"); }
         }
     }
@@ -1254,6 +1255,7 @@ export component AppTray inherits SystemTrayIcon {
     tooltip: root.paused ? @tr("tray-tooltip-paused-keys" => "Znimok — hotkeys paused") : @tr("tray-tooltip" => "Znimok");
 
     callback shot();
+    callback read-codes();
     callback open-window();
     callback quit();
     // ZK-44: all global hotkeys released until resumed.
@@ -1267,6 +1269,11 @@ export component AppTray inherits SystemTrayIcon {
             title: @tr("tray-screen" => "Screenshot") + "    " + root.capture-key;
             enabled: root.capture-available;
             activated => { root.shot(); }
+        }
+        MenuItem {
+            title: @tr("tray-read-codes" => "Read a QR code from the screen");
+            enabled: root.capture-available;
+            activated => { root.read-codes(); }
         }
         MenuItem {
             title: @tr("tray-open" => "Open Znimok");
@@ -1436,6 +1443,8 @@ export component AppWindow inherits Window {
     in property <length> ov-w;
     in property <length> ov-h;
     callback over-to-window();
+    // ZK-119: QR codes and barcodes on the picture.
+    callback read-codes();
     callback over-copy();
     callback over-close();
     out property <length> canvas-width: canvas-area.width;
@@ -3060,6 +3069,15 @@ export component AppWindow inherits Window {
                             VerticalLayout {
                                 spacing: 18px;
                                 alignment: start;
+                                // ZK-119: QR codes and barcodes on the picture (on the device).
+                                HorizontalLayout {
+                                    alignment: start;
+                                    TextButton {
+                                        icon: "M4 4 h6 v6 H4 z M14 4 h6 v6 h-6 z M4 14 h6 v6 H4 z M14 14 h2 v2 h-2 z M18 18 h2 v2 h-2 z M14 18 h2 M18 14 h2";
+                                        text: @tr("img-read-codes" => "Read QR codes and barcodes");
+                                        clicked => { root.read-codes(); }
+                                    }
+                                }
                                 // Crop: the panel while the Crop tool is on, a button otherwise.
                                 if root.tool == 10: PropSection {
                                     title: @tr("crop-title" => "Crop");

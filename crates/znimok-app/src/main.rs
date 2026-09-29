@@ -10,6 +10,7 @@
 
 mod app;
 mod capture;
+mod codes;
 mod crash;
 mod dialog;
 #[cfg(target_os = "macos")]
@@ -200,6 +201,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             });
         }
+        // ZK-119: the display under the pointer, read for QR codes and barcodes.
+        t.on_read_codes(|| {
+            if capture::available() {
+                codes::from_screen();
+            }
+        });
         {
             let weak = ui.as_weak();
             t.on_open_window(move || {
@@ -839,6 +846,11 @@ fn wire(ui: &AppWindow, app: &Shared) {
     });
     on!(ui, app, on_over_close, |a, w| {
         a.over_finish(&w, false, false);
+    });
+    on!(ui, app, on_read_codes, |a, _w| {
+        if let Some((w, h, rgba)) = a.flatten() {
+            codes::read_and_show(znimok_core::Raster::new(w, h, rgba));
+        }
     });
     on!(ui, app, on_canvas_double, |a, w, x, y| {
         a.canvas_double(&w, x, y);

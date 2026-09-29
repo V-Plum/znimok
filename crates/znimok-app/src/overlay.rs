@@ -566,6 +566,8 @@ struct Gesture {
 enum Outcome {
     /// Rectangle in frame pixels, source label, window id (for an unoccluded capture), gesture.
     Keep(PxRect, &'static str, Option<u64>, Gesture),
+    /// Q: read QR codes and barcodes in this part of the frame (ZK-119).
+    Codes(PxRect),
     Cancel,
 }
 
@@ -622,6 +624,11 @@ fn with_session(f: impl FnOnce(&mut Session) -> Option<Outcome>) {
 fn finish(frozen: Frozen, outcome: Outcome, editor_was_visible: bool) {
     let display = frozen.bounds;
     match outcome {
+        Outcome::Codes(rect) => {
+            if let Some(r) = frozen.crop(rect) {
+                crate::codes::read_and_show(r);
+            }
+        }
         Outcome::Cancel => {
             // (`invoke_from_event_loop` wakes the loop; a zero timer waits for the next event.)
             let _ = slint::invoke_from_event_loop(move || {
@@ -1034,6 +1041,10 @@ impl Session {
     fn key(&mut self, text: &str, g: Gesture) -> Option<Outcome> {
         match text {
             "\u{1b}" => Some(Outcome::Cancel),
+            // Q (Й in the Ukrainian layout): codes in the highlighted part, or on the whole screen.
+            "q" | "Q" | "й" | "Й" => Some(Outcome::Codes(
+                self.sel.unwrap_or_else(|| self.frozen.whole()),
+            )),
             " " => Some(Outcome::Keep(self.frozen.whole(), "screen", None, g)),
             "\n" | "\r" => match self.sel {
                 Some(r) => Some(match self.window {

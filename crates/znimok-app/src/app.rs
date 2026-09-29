@@ -325,6 +325,11 @@ fn args(pairs: &[(&'static str, String)]) -> FluentArgs<'static> {
     a
 }
 
+/// Fluent arguments from pairs, for other modules.
+pub fn fargs(pairs: &[(&'static str, String)]) -> FluentArgs<'static> {
+    args(pairs)
+}
+
 fn bounds_of_points(points: &[(i32, i32)]) -> IRect {
     Object::new(IRect::default(), Data::pen(points.to_vec())).bounds()
 }

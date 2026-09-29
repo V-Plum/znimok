@@ -1964,6 +1964,11 @@ capture-double = подвійний клік
 # @max: 20
 capture-delayed = через 3 с
 
+# @where: Hint after the "Q" chip: read QR codes and barcodes in the selection or the screen
+# @kind: hint
+# @max: 20
+capture-qr = QR-код
+
 # @where: Hint after "Esc"
 # @kind: hint
 # @max: 20
@@ -2095,6 +2100,11 @@ tray-record = Записати відео
 # @kind: menu
 # @max: 28
 tray-open = Відкрити Znimok
+
+# @where: Tray / menu bar item: read QR codes and barcodes on the screen under the pointer
+# @kind: menu
+# @max: 40
+tray-read-codes = Зчитати QR-код з екрана
 
 # @where: Tray menu: release all hotkeys for a while
 # @kind: menu
@@ -2234,6 +2244,91 @@ export-error = Не вдалося зберегти файл.
 # @kind: toast
 # @max: 24
 clipboard-copied = Скопійовано
+
+# @where: Title of the list of codes found; $count is how many
+# @kind: title
+# @max: 40
+codes-title = Знайдено кодів: { $count }
+
+# @where: Title when no code was found
+# @kind: title
+# @max: 40
+codes-none-title = Кодів немає
+
+# @where: Body when no code was found
+# @kind: body
+# @max: 120
+codes-none-body = На цій картинці немає QR-кодів чи штрихкодів.
+
+# @where: A found code: a web link
+# @kind: body
+# @max: 200
+codes-link = Посилання: { $url }
+
+# @where: A found code: a Wi-Fi network with a password
+# @kind: body
+# @max: 200
+codes-wifi = Wi-Fi «{ $ssid }» · пароль: { $password } · { $security }
+
+# @where: A found code: a Wi-Fi network without a password
+# @kind: body
+# @max: 120
+codes-wifi-open = Wi-Fi «{ $ssid }» без пароля
+
+# @where: A found code: a contact card
+# @kind: label
+# @max: 32
+codes-contact = Контакт
+
+# @where: A found code: a calendar event
+# @kind: label
+# @max: 32
+codes-event = Подія
+
+# @where: A found code: an e-mail address
+# @kind: body
+# @max: 120
+codes-email = Пошта: { $address }
+
+# @where: A found code: a phone number
+# @kind: body
+# @max: 80
+codes-phone = Телефон: { $number }
+
+# @where: A found code: plain text
+# @kind: body
+# @max: 200
+codes-text = Текст: { $text }
+
+# @where: Button: copy the text of the codes
+# @kind: button
+# @max: 24
+codes-copy = Копіювати текст
+
+# @where: Button: open the link of a code (a confirmation follows)
+# @kind: button
+# @max: 24
+codes-open-link = Відкрити посилання…
+
+# @where: Question before a link from a code opens in the browser
+# @kind: title
+# @max: 40
+codes-open-title = Відкрити посилання?
+
+# @where: Body of that question; $url is the whole address
+# @kind: body
+# @max: 400
+codes-open-body = { $url } — перевірте всю адресу: через QR-коди часто підсовують фішингові сторінки.
+
+# @where: Button: open the link
+# @kind: button
+# @max: 16
+codes-open = Відкрити
+
+# @where: Editor, Image tab: button to read QR codes and barcodes on the picture
+# @kind: button
+# @max: 28
+img-read-codes = Зчитати QR-коди й штрихкоди
 
 # @where: Toast when the clipboard is locked or fails
 # @kind: error

@@ -1966,6 +1966,92 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
         r.snapshot(ui, "copy-title");
     }));
 
+    // ZK-119: QR codes — from the editor (Image tab) and with Q in the capture overlay.
+    steps.push(Box::new(|app, ui, _| {
+        let Some((qw, qh, qr)) = znimok_codes::qr_rgba("https://example.org/znimok", 5) else {
+            return;
+        };
+        // A light "screenshot" with the code in it.
+        let (w, h) = (900u32, 600u32);
+        let mut rgba = vec![240u8; (w * h * 4) as usize];
+        for y in 0..qh {
+            for x in 0..qw {
+                let (si, di) = (
+                    ((y * qw + x) * 4) as usize,
+                    (((y + 150) * w + x + 300) * 4) as usize,
+                );
+                rgba[di..di + 4].copy_from_slice(&qr[si..si + 4]);
+            }
+        }
+        let raster = znimok_core::Raster::new(w, h, rgba);
+        QR_SCENE.with(|q| *q.borrow_mut() = Some(raster.clone()));
+        app.borrow_mut().new_document(ui, raster, "region", None);
+        ui.invoke_read_codes();
+    }));
+    // (the reading runs on a worker thread; one step later it has answered)
+    steps.push(Box::new(|_, _, _| {}));
+    steps.push(Box::new(|_, ui, r| {
+        let codes = crate::codes::last();
+        let link = codes.first().map(|c| c.kind.clone());
+        r.check(
+            "codes: the editor finds the QR link and asks what to do",
+            codes.len() == 1
+                && link
+                    == Some(znimok_codes::Kind::Link(
+                        "https://example.org/znimok".into(),
+                    ))
+                && ui.get_dialog_open()
+                && slint::Model::row_count(&ui.get_dialog_buttons()) == 3,
+            format!(
+                "{codes:?} · dialog {} «{}»",
+                ui.get_dialog_open(),
+                ui.get_dialog_title()
+            ),
+        );
+        r.snapshot(ui, "34-codes");
+        // "Open link…" asks again with the whole address; Cancel opens nothing.
+        ui.invoke_dialog_answer(1);
+        let asked =
+            ui.get_dialog_open() && ui.get_dialog_body().contains("https://example.org/znimok");
+        ui.invoke_dialog_answer(1);
+        r.check(
+            "codes: a link opens only after a second question with the whole address",
+            asked && !ui.get_dialog_open(),
+            String::new(),
+        );
+        // Q in the capture overlay reads the frozen screen.
+        crate::codes::clear_last();
+        if let Some(raster) = QR_SCENE.with(|q| q.borrow().clone()) {
+            let frozen = crate::capture::Frozen {
+                bounds: znimok_platform::Rect {
+                    x: 0,
+                    y: 0,
+                    width: raster.width,
+                    height: raster.height,
+                },
+                windows: Vec::new(),
+                raster,
+            };
+            if crate::overlay::open(frozen, true).is_ok()
+                && let Some(ov) = crate::overlay::handle()
+            {
+                ov.invoke_key("q".into(), false, false);
+            }
+        }
+    }));
+    steps.push(Box::new(|_, _, _| {}));
+    steps.push(Box::new(|_, ui, r| {
+        let codes = crate::codes::last();
+        r.check(
+            "codes: Q in the capture overlay reads the screen",
+            !crate::overlay::is_open() && codes.len() == 1,
+            format!("{codes:?}"),
+        );
+        if ui.get_dialog_open() {
+            ui.invoke_dialog_answer(2);
+        }
+    }));
+
     // ZK-132: the Agents and Updates pages; the MCP switch is the one the server checks.
     steps.push(Box::new(|_, ui, _| {
         ui.invoke_settings_open();
@@ -2240,4 +2326,8 @@ thread_local! {
 
 thread_local! {
     static DOUBLE_OK: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+thread_local! {
+    static QR_SCENE: std::cell::RefCell<Option<znimok_core::Raster>> = const { std::cell::RefCell::new(None) };
 }
