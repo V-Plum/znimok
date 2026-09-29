@@ -1,4 +1,4 @@
-//! `.znimok` v1.0 — the document format (specification: `docs/FORMAT.md`).
+//! `.znimok` v1.1 — the document format (specification: `docs/FORMAT.md`).
 //!
 //! In short: 8-byte magic `ZNIMOK\x1A\n`, `u16 major`, `u16 minor`, then blocks
 //! `tag[4] + u32 len + value` to the end of the file, little-endian throughout. Unknown blocks
@@ -6,9 +6,13 @@
 //! checked. Descriptive blocks come before the pixels so the library can read a record by
 //! parsing only its head ([`peek`]). Objects are TLV records whose kind is a text tag — no enum
 //! ordinals in the file. Fields are written only when they differ from the default.
+//!
+//! A document is a screenshot or a video ([`DocKind`], in `INFO`). A video document is the
+//! poster document plus the video blocks and the encoded stream ([`video`], format 1.1).
 
 mod codec;
 mod image;
+pub mod video;
 
 #[doc(hidden)]
 pub use codec::Writer;
@@ -24,10 +28,19 @@ use znimok_core::{
 };
 
 pub use image::{decode_png, encode_png};
+pub use video::{
+    AudioSource, AudioTrack, DevEvent, DevLog, DocKind, Edit, MouseButton, MouseEvent, Part,
+    Payload, PayloadReader, Video, VideoInfo, extension_for,
+};
 
 pub const MAGIC: [u8; 8] = *b"ZNIMOK\x1A\n";
 pub const MAJOR: u16 = 1;
-pub const MINOR: u16 = 0;
+/// The newest minor version this crate writes. A file is stamped with the lowest minor that
+/// describes its content: screenshots stay 1.0 (byte-identical to older writers), video
+/// documents are 1.1.
+pub const MINOR: u16 = 1;
+/// Minor version that introduced video documents.
+pub const MINOR_VIDEO: u16 = 1;
 /// File extension, without the dot.
 pub const EXTENSION: &str = "znimok";
 
@@ -71,6 +84,13 @@ pub struct Limits {
     pub max_banks: usize,
     pub max_groups: usize,
     pub max_tags: usize,
+    /// Video: parts of the edit list, mouse log entries, browser events, audio tracks, and
+    /// `MP4 ` chunks of the encoded stream.
+    pub max_cuts: usize,
+    pub max_mouse_events: usize,
+    pub max_dev_events: usize,
+    pub max_audio_tracks: usize,
+    pub max_payload_chunks: usize,
     pub max_image_side: u32,
     pub max_image_pixels: u64,
     /// Allocation budget of the PNG decoder per image.
@@ -101,6 +121,11 @@ impl Default for Limits {
             max_banks: 4096,
             max_groups: 10_000,
             max_tags: 1000,
+            max_cuts: 100_000,
+            max_mouse_events: 1 << 22,
+            max_dev_events: 200_000,
+            max_audio_tracks: 16,
+            max_payload_chunks: 65_536,
             max_image_side: 32767,
             max_image_pixels: 1 << 28,
             max_image_bytes: 1 << 30,
@@ -184,10 +209,21 @@ fn rgb_bytes(c: Rgb) -> [u8; 4] {
 /// Serialises the document. Only the current original and the banks that image marks use are
 /// stored; bank numbers are renumbered in the file (the reader puts the original first).
 pub fn write(doc: &Document, opts: &WriteOptions) -> Vec<u8> {
+    write_doc(doc, opts, None).buf
+}
+
+/// Everything but the encoded stream; `video` makes it a video document (the payload chunks
+/// are appended by the caller).
+fn write_doc(doc: &Document, opts: &WriteOptions, video: Option<&Video>) -> Writer {
     let mut w = Writer::default();
     w.bytes(&MAGIC);
     w.u16(MAJOR);
-    w.u16(MINOR);
+    w.u16(if video.is_some() { MINOR_VIDEO } else { 0 });
+    let kind = if video.is_some() {
+        DocKind::Video
+    } else {
+        DocKind::Image
+    };
 
     w.record(b"META", |w| {
         w.bytes(doc.id.as_bytes());
@@ -214,12 +250,19 @@ pub fn write(doc: &Document, opts: &WriteOptions) -> Vec<u8> {
         });
     }
     let frame = doc.frame();
+    // What export produces: for a video with a resize, the export size.
+    let (fw, fh) = video
+        .and_then(|v| v.out_size)
+        .unwrap_or((frame.w as u32, frame.h as u32));
     w.record(b"INFO", |w| {
-        w.u32(frame.w as u32);
-        w.u32(frame.h as u32);
+        w.u32(fw);
+        w.u32(fh);
         w.u32(doc.objects.len() as u32);
-        w.u8(0); // document kind: 0 = image (v2 adds video)
+        w.u8(kind.code());
     });
+    if let Some(v) = video {
+        video::write_vinf(&mut w, &v.info);
+    }
     if let Some(t) = &opts.thumbnail {
         w.record(b"THMB", |w| {
             w.bytes(&encode_png(t, png::Compression::Balanced))
@@ -252,7 +295,8 @@ pub fn write(doc: &Document, opts: &WriteOptions) -> Vec<u8> {
             }
         });
     }
-    if doc.recipe != Recipe::default() {
+    // A video has no tone/turn recipe, and its frame is in GEOM.
+    if doc.recipe != Recipe::default() && video.is_none() {
         let r = doc.recipe;
         w.record(b"RCPE", |w| {
             w.f32(r.exposure);
@@ -262,7 +306,7 @@ pub fn write(doc: &Document, opts: &WriteOptions) -> Vec<u8> {
             w.u8(r.mirror as u8);
         });
     }
-    if let Some(c) = doc.crop {
+    if let Some(c) = doc.crop.filter(|_| video.is_none()) {
         let c = c.normalized();
         w.record(b"CROP", |w| {
             w.i32(c.x);
@@ -277,7 +321,8 @@ pub fn write(doc: &Document, opts: &WriteOptions) -> Vec<u8> {
     w.record(b"OBJS", |w| {
         w.u32(doc.objects.len() as u32);
         for o in &doc.objects {
-            write_object(w, o, &bank_map);
+            let span = video.and_then(|v| v.mark_spans.get(&o.id).copied());
+            write_object(w, o, &bank_map, span);
         }
     });
     if !doc.group_names.is_empty() {
@@ -289,10 +334,18 @@ pub fn write(doc: &Document, opts: &WriteOptions) -> Vec<u8> {
             }
         });
     }
-    w.buf
+    if let Some(v) = video {
+        video::write_blocks(&mut w, v, doc.crop);
+    }
+    w
 }
 
-fn write_object(w: &mut Writer, o: &Object, bank_map: &BTreeMap<BankId, u32>) {
+fn write_object(
+    w: &mut Writer,
+    o: &Object,
+    bank_map: &BTreeMap<BankId, u32>,
+    span: Option<(u32, u32)>,
+) {
     let d = Style::default();
     let s = &o.style;
     w.record(b"OBJ ", |w| {
@@ -348,6 +401,12 @@ fn write_object(w: &mut Writer, o: &Object, bank_map: &BTreeMap<BankId, u32>) {
         }
         if o.hidden {
             w.record(b"hidn", |w| w.u8(1));
+        }
+        if let Some((a, b)) = span {
+            w.record(b"vspn", |w| {
+                w.u32(a);
+                w.u32(b);
+            });
         }
         match &o.data {
             Data::Rect | Data::Ellipse | Data::Mark => {}
@@ -432,19 +491,113 @@ fn write_object(w: &mut Writer, o: &Object, bank_map: &BTreeMap<BankId, u32>) {
 /// Writes atomically: `<path>.part`, flushed to disk, then renamed over the target (§7 п.50).
 pub fn save(path: &Path, doc: &Document, opts: &WriteOptions) -> Result<(), FormatError> {
     let bytes = write(doc, opts);
+    save_atomic(path, |f| f.write_all(&bytes))
+}
+
+fn save_atomic(
+    path: &Path,
+    body: impl FnOnce(&mut std::fs::File) -> std::io::Result<()>,
+) -> Result<(), FormatError> {
     let mut part = path.as_os_str().to_owned();
     part.push(".part");
     let part = std::path::PathBuf::from(part);
     let io = |e: std::io::Error| FormatError::Io(format!("{}: {e}", path.display()));
-    {
-        let mut f = std::fs::File::create(&part).map_err(io)?;
-        f.write_all(&bytes).map_err(io)?;
-        f.sync_all().map_err(io)?;
+    let written = (|| {
+        let mut f = std::fs::File::create(&part)?;
+        body(&mut f)?;
+        f.sync_all()
+    })();
+    if let Err(e) = written {
+        let _ = std::fs::remove_file(&part);
+        return Err(io(e));
     }
     std::fs::rename(&part, path).map_err(|e| {
         let _ = std::fs::remove_file(&part);
         io(e)
     })
+}
+
+/// A video document in memory, the encoded stream `mp4` included (tests, small files; the app
+/// streams with [`write_video_to`] / [`save_video`]).
+///
+/// The poster (`doc`'s current original) must be the first frame at the video's size; the
+/// document's recipe is not written (video has none) and its crop goes to `GEOM`.
+///
+/// Panics when the poster is not the size of the video (see [`write_video_to`]).
+pub fn write_video(doc: &Document, video: &Video, mp4: &[u8], opts: &WriteOptions) -> Vec<u8> {
+    let mut out = Vec::new();
+    if let Err(e) = write_video_to(&mut out, doc, video, mp4, mp4.len() as u64, opts) {
+        panic!("{e}");
+    }
+    out
+}
+
+/// Streams a video document into `out`: the blocks, then `mp4_len` bytes of `mp4` as `MP4 `
+/// chunks of at most [`video::PAYLOAD_CHUNK`] bytes. The stream is copied, never held in
+/// memory whole. Fails when `mp4` ends before `mp4_len` bytes, and — before writing anything —
+/// when the poster is not the size of the video (a reader would refuse the file).
+pub fn write_video_to(
+    out: &mut impl std::io::Write,
+    doc: &Document,
+    video: &Video,
+    mut mp4: impl std::io::Read,
+    mp4_len: u64,
+    opts: &WriteOptions,
+) -> Result<(), FormatError> {
+    let io = |e: std::io::Error| FormatError::Io(e.to_string());
+    let (pw, ph) = (doc.source().width, doc.source().height);
+    if (pw, ph) != (video.info.width, video.info.height) {
+        return Err(FormatError::Io(format!(
+            "the poster {pw}×{ph} is not a frame of the {}×{} video",
+            video.info.width, video.info.height
+        )));
+    }
+    out.write_all(&write_doc(doc, opts, Some(video)).buf)
+        .map_err(io)?;
+    let mut left = mp4_len;
+    while left > 0 {
+        let n = left.min(video::PAYLOAD_CHUNK);
+        out.write_all(b"MP4 ").map_err(io)?;
+        out.write_all(&(n as u32).to_le_bytes()).map_err(io)?;
+        let copied = std::io::copy(&mut std::io::Read::take(&mut mp4, n), out).map_err(io)?;
+        if copied != n {
+            return Err(FormatError::Io(format!(
+                "the video stream ended after {} of {mp4_len} bytes",
+                mp4_len - left + copied
+            )));
+        }
+        left -= n;
+    }
+    Ok(())
+}
+
+/// Saves a video document atomically (like [`save`]). `mp4` is read to the end of `mp4_len`
+/// and dropped before the rename, so it may be a [`PayloadReader`] over the very file being
+/// replaced (saving a project again).
+pub fn save_video(
+    path: &Path,
+    doc: &Document,
+    video: &Video,
+    mp4: impl std::io::Read,
+    mp4_len: u64,
+    opts: &WriteOptions,
+) -> Result<(), FormatError> {
+    let mut err = None;
+    let r = save_atomic(path, |f| {
+        let mut buf = std::io::BufWriter::with_capacity(1 << 20, f);
+        match write_video_to(&mut buf, doc, video, mp4, mp4_len, opts) {
+            Ok(()) => buf.flush(),
+            Err(e) => {
+                let msg = e.to_string();
+                err = Some(e);
+                Err(std::io::Error::other(msg))
+            }
+        }
+    });
+    match (r, err) {
+        (Err(_), Some(e)) => Err(e),
+        (r, _) => r,
+    }
 }
 
 // ---- reading --------------------------------------------------------------------------------
@@ -484,6 +637,10 @@ pub struct Peek {
     pub object_count: u32,
     /// PNG bytes of the thumbnail, if the file has one.
     pub thumbnail_png: Option<Vec<u8>>,
+    /// Screenshot or video — the library, thumbnails and Quick Look tell them apart by this.
+    pub kind: DocKind,
+    /// For a video: size, frame rate, frames and duration of the stream (`VINF`).
+    pub video: Option<VideoInfo>,
 }
 
 /// Reads descriptive blocks up to the pixels (`SRC `), without decoding any image.
@@ -505,12 +662,26 @@ pub fn peek(data: &[u8]) -> Result<Peek, FormatError> {
                 p.width = b.u32()?;
                 p.height = b.u32()?;
                 p.object_count = b.u32()?;
+                p.kind = read_kind(&mut b)?;
             }
+            b"VINF" => p.video = Some(video::read_vinf(&mut b, &limits)?),
             b"THMB" => p.thumbnail_png = Some(b.take(b.remaining())?.to_vec()),
             _ => {}
         }
     }
+    if p.kind != DocKind::Video {
+        p.video = None;
+    }
     Ok(p)
+}
+
+/// The kind byte closing `INFO` (absent in a truncated block of an old writer → image).
+fn read_kind(b: &mut Reader<'_>) -> Result<DocKind, FormatError> {
+    Ok(if b.is_empty() {
+        DocKind::Image
+    } else {
+        DocKind::from_code(b.u8()?)
+    })
 }
 
 fn read_meta(b: &mut Reader<'_>, p: &mut Peek) -> Result<(), FormatError> {
@@ -537,11 +708,164 @@ fn read_desc(b: &mut Reader<'_>, m: &mut Meta, limits: &Limits) -> Result<(), Fo
 }
 
 /// Parses a whole document. It is built only after the entire file parsed successfully.
+///
+/// A video document reads as its poster document (the first frame with the marks); use
+/// [`read_any`] or [`open`] to get the video too — saving the result of `read` with [`save`]
+/// would turn a video into a screenshot.
 pub fn read(data: &[u8]) -> Result<Document, FormatError> {
     read_with_limits(data, &Limits::default())
 }
 
 pub fn read_with_limits(data: &[u8], limits: &Limits) -> Result<Document, FormatError> {
+    parse(data, limits).map(|p| p.doc)
+}
+
+/// A document of either kind.
+// One value per opened file: the size difference of the variants does not matter.
+#[allow(clippy::large_enum_variant)]
+#[derive(Clone, Debug)]
+pub enum Loaded {
+    Image(Document),
+    Video(VideoDocument),
+}
+
+impl Loaded {
+    pub fn kind(&self) -> DocKind {
+        match self {
+            Loaded::Image(_) => DocKind::Image,
+            Loaded::Video(_) => DocKind::Video,
+        }
+    }
+
+    /// The document with the marks (for a video, its poster).
+    pub fn document(&self) -> &Document {
+        match self {
+            Loaded::Image(d) => d,
+            Loaded::Video(v) => &v.doc,
+        }
+    }
+}
+
+/// A video document: the poster document with the marks, the video blocks, and where the
+/// encoded stream lies in the file.
+#[derive(Clone, Debug)]
+pub struct VideoDocument {
+    pub doc: Document,
+    pub video: Video,
+    /// Offsets are in the bytes given to [`read_any`], or in the file given to [`open`] /
+    /// [`read_from`].
+    pub payload: Payload,
+}
+
+/// Parses a document of either kind from memory.
+pub fn read_any(data: &[u8]) -> Result<Loaded, FormatError> {
+    read_any_with_limits(data, &Limits::default())
+}
+
+pub fn read_any_with_limits(data: &[u8], limits: &Limits) -> Result<Loaded, FormatError> {
+    parse(data, limits).map(Parsed::into_loaded)
+}
+
+/// Opens a document file of either kind. The encoded stream of a video is not read: the reader
+/// seeks over it, so a recording of any length opens with memory bounded by the limits.
+pub fn open(path: &Path) -> Result<Loaded, FormatError> {
+    let f = std::fs::File::open(path)
+        .map_err(|e| FormatError::Io(format!("{}: {e}", path.display())))?;
+    read_from(&mut std::io::BufReader::new(f), &Limits::default())
+}
+
+/// Like [`open`], from any seekable source. Everything but the `MP4 ` chunks is read into memory
+/// (at most `limits.max_file` bytes) and parsed as usual; the chunks are only located.
+pub fn read_from<R: std::io::Read + std::io::Seek>(
+    r: &mut R,
+    limits: &Limits,
+) -> Result<Loaded, FormatError> {
+    use std::io::SeekFrom;
+    let io = |e: std::io::Error| FormatError::Io(e.to_string());
+    let file_len = r.seek(SeekFrom::End(0)).map_err(io)?;
+    r.seek(SeekFrom::Start(0)).map_err(io)?;
+    let mut head = [0u8; 12];
+    if file_len < 12 {
+        return Err(FormatError::NotZnimok);
+    }
+    r.read_exact(&mut head).map_err(io)?;
+    if head[..8] != MAGIC {
+        return Err(FormatError::NotZnimok);
+    }
+    let mut buf = head.to_vec();
+    let mut ranges: Vec<std::ops::Range<u64>> = Vec::new();
+    let mut pos = 12u64;
+    while pos < file_len {
+        if file_len - pos < 8 {
+            return Err(FormatError::Corrupt(format!(
+                "unexpected end at byte {pos} (need 8)"
+            )));
+        }
+        let mut th = [0u8; 8];
+        r.read_exact(&mut th).map_err(io)?;
+        pos += 8;
+        let tag: Tag = th[..4].try_into().expect("4 bytes");
+        let len = u32::from_le_bytes(th[4..].try_into().expect("4 bytes")) as u64;
+        if len > file_len - pos {
+            return Err(FormatError::Corrupt(format!(
+                "record {} runs past the end",
+                tag_str(&tag)
+            )));
+        }
+        if &tag == b"MP4 " {
+            if ranges.len() >= limits.max_payload_chunks {
+                return Err(FormatError::Corrupt(
+                    "video stream chunks exceed the limit".into(),
+                ));
+            }
+            ranges.push(pos..pos + len);
+            r.seek(SeekFrom::Current(len as i64)).map_err(io)?;
+        } else {
+            if buf.len() as u64 + 8 + len > limits.max_file as u64 {
+                return Err(FormatError::Corrupt(
+                    "the document without its video stream exceeds the limit".into(),
+                ));
+            }
+            buf.extend_from_slice(&th);
+            let at = buf.len();
+            buf.resize(at + len as usize, 0);
+            r.read_exact(&mut buf[at..]).map_err(io)?;
+        }
+        pos += len;
+    }
+    parse_blocks(&buf, limits, ranges).map(Parsed::into_loaded)
+}
+
+/// Result of parsing: the document, and for a video its blocks and the stream's location.
+struct Parsed {
+    doc: Document,
+    video: Option<(Video, Payload)>,
+}
+
+impl Parsed {
+    fn into_loaded(self) -> Loaded {
+        match self.video {
+            None => Loaded::Image(self.doc),
+            Some((video, payload)) => Loaded::Video(VideoDocument {
+                doc: self.doc,
+                video,
+                payload,
+            }),
+        }
+    }
+}
+
+fn parse(data: &[u8], limits: &Limits) -> Result<Parsed, FormatError> {
+    parse_blocks(data, limits, Vec::new())
+}
+
+/// The shared parser. `outside` are `MP4 ` chunks already located outside `data` (by
+/// [`read_from`]); chunks inside `data` are added to them in file order.
+fn parse_blocks(
+    data: &[u8],
+    limits: &Limits,
+    outside: Vec<std::ops::Range<u64>>,
+) -> Result<Parsed, FormatError> {
     let mut r = header(data, limits)?;
     let mut peek = Peek::default();
     let mut src: Option<Raster> = None;
@@ -549,14 +873,29 @@ pub fn read_with_limits(data: &[u8], limits: &Limits) -> Result<Document, Format
     let mut recipe = Recipe::default();
     let mut crop = None;
     let mut scale = 1000u16;
-    let mut objects: Vec<Object> = Vec::new();
+    let mut objects: Vec<(Object, Option<(u32, u32)>)> = Vec::new();
     let mut group_names = BTreeMap::new();
+    // Video blocks, applied once the kind is known.
+    let mut vinf = None;
+    let mut geom = None;
+    let mut cuts = None;
+    let mut audio = Vec::new();
+    let mut mouse = Vec::new();
+    let mut devlog = None;
+    let mut payload = outside;
 
     while !r.is_empty() {
+        let at = r.at as u64;
         let (tag, mut b) = r.record()?;
         match &tag {
             b"META" => read_meta(&mut b, &mut peek)?,
             b"DESC" => read_desc(&mut b, &mut peek.meta, limits)?,
+            b"INFO" => {
+                if b.remaining() >= 12 {
+                    b.take(12)?;
+                    peek.kind = read_kind(&mut b)?;
+                }
+            }
             b"SRC " => src = Some(decode_png(b.take(b.remaining())?, limits)?),
             b"BANK" => {
                 let n = b.u32()? as usize;
@@ -623,11 +962,47 @@ pub fn read_with_limits(data: &[u8], limits: &Limits) -> Result<Document, Format
                     group_names.insert(g, b.str()?);
                 }
             }
-            _ => {} // INFO, THMB and unknown blocks
+            b"VINF" => vinf = Some(video::read_vinf(&mut b, limits)?),
+            b"GEOM" => geom = Some(video::read_geom(&mut b, limits)?),
+            b"CUTS" => cuts = Some(video::read_cuts(&mut b, limits)?),
+            b"AUDI" => audio = video::read_audi(&mut b, limits)?,
+            b"MOUS" => mouse = video::read_mous(&mut b, limits)?,
+            b"DEVT" => devlog = Some(video::read_devt(&mut b, limits)?),
+            b"MP4 " => {
+                if payload.len() >= limits.max_payload_chunks {
+                    return Err(FormatError::Corrupt(
+                        "video stream chunks exceed the limit".into(),
+                    ));
+                }
+                let start = at + 8;
+                payload.push(start..start + b.remaining() as u64);
+            }
+            _ => {} // THMB and unknown blocks
         }
     }
 
     let src = src.ok_or_else(|| FormatError::Corrupt("no picture (SRC block)".into()))?;
+    let is_video = peek.kind == DocKind::Video;
+    let video_info = if is_video {
+        let info =
+            vinf.ok_or_else(|| FormatError::Corrupt("a video without its VINF block".into()))?;
+        if (src.width, src.height) != (info.width, info.height) {
+            return Err(FormatError::Corrupt(format!(
+                "poster {}×{} is not the size of the video {}×{}",
+                src.width, src.height, info.width, info.height
+            )));
+        }
+        if payload.iter().all(|r| r.end == r.start) {
+            return Err(FormatError::Corrupt("a video without its stream".into()));
+        }
+        // A video has no recipe; its frame comes from GEOM.
+        recipe = Recipe::default();
+        crop = geom.and_then(|g| g.1);
+        Some(info)
+    } else {
+        None
+    };
+
     let mut doc = Document::from_raster(peek.name, src);
     if let Some(id) = peek.id {
         doc.id = id;
@@ -641,14 +1016,18 @@ pub fn read_with_limits(data: &[u8], limits: &Limits) -> Result<Document, Format
     }
     doc.recipe = recipe;
     doc.shot_scale = scale;
-    for mut o in objects {
+    let mut spans = BTreeMap::new();
+    for (mut o, span) in objects {
         if let Data::Image { bank } = &mut o.data {
             match map.get(bank) {
                 Some(b) => *bank = *b,
                 None => continue, // the image is missing: drop the mark rather than fail
             }
         }
-        doc.push(o);
+        let i = doc.push(o);
+        if let Some(s) = span {
+            spans.insert(doc.objects[i].id, s);
+        }
     }
     doc.group_names = group_names;
     let used: Vec<_> = doc.objects.iter().map(|o| o.group).collect();
@@ -662,11 +1041,32 @@ pub fn read_with_limits(data: &[u8], limits: &Limits) -> Result<Document, Format
         let y1 = c.bottom().clamp(0, h as i32);
         (x1 - x0 >= 1 && y1 - y0 >= 1).then(|| IRect::new(x0, y0, x1 - x0, y1 - y0))
     });
-    Ok(doc)
+
+    let video = video_info.map(|info| {
+        // An edit list that does not fit the stream is dropped, not fatal: the video still
+        // opens, uncut.
+        let edit = cuts
+            .filter(|e| e.is_valid(info.frames))
+            .unwrap_or_else(|| Edit::whole(info.frames));
+        let v = Video {
+            info,
+            edit,
+            out_size: geom.and_then(|g| g.0),
+            audio,
+            mouse,
+            devlog,
+            mark_spans: spans,
+        };
+        (v, Payload { ranges: payload })
+    });
+    Ok(Parsed { doc, video })
 }
 
+/// Result of [`read_object`]: the mark and its time span in a video.
+type ReadObject = (Object, Option<(u32, u32)>);
+
 /// One mark; `None` for kinds this version does not know (written by a newer minor version).
-fn read_object(b: &mut Reader<'_>, limits: &Limits) -> Result<Option<Object>, FormatError> {
+fn read_object(b: &mut Reader<'_>, limits: &Limits) -> Result<Option<ReadObject>, FormatError> {
     let mut id = 0;
     let mut kind = None;
     let mut unknown_kind = false;
@@ -681,6 +1081,7 @@ fn read_object(b: &mut Reader<'_>, limits: &Limits) -> Result<Option<Object>, Fo
     let (mut cseq, mut cgrp, mut cstr, mut cshp) = (0u32, 1u32, 1i32, CounterShape::Circle);
     let mut stamp = 0u32;
     let mut img = u32::MAX;
+    let mut span = None;
     let rgb = |f: &mut Reader<'_>| -> Result<Rgb, FormatError> {
         let v = f.take(4)?;
         Ok(Rgb::new(v[0], v[1], v[2]))
@@ -711,6 +1112,7 @@ fn read_object(b: &mut Reader<'_>, limits: &Limits) -> Result<Option<Object>, Fo
             b"grp " => group = f.u32()?,
             b"name" => name = Some(f.str()?).filter(|n: &String| !n.is_empty()),
             b"hidn" => hidden = f.bool()?,
+            b"vspn" => span = video::read_span(&mut f)?,
             b"hdf " => hdf = head_from(f.u8()?),
             b"hdb " => hdb = head_from(f.u8()?),
             b"hds " => hds = f.u8()?.min(2),
@@ -783,17 +1185,22 @@ fn read_object(b: &mut Reader<'_>, limits: &Limits) -> Result<Option<Object>, Fo
         Kind::Stamp => Data::Stamp { id: stamp },
         Kind::Image => Data::Image { bank: img },
     };
-    Ok(Some(Object {
-        id,
-        rect,
-        style: s,
-        rot,
-        group,
-        name,
-        hidden,
-        data,
-    }))
+    Ok(Some((
+        Object {
+            id,
+            rect,
+            style: s,
+            rot,
+            group,
+            name,
+            hidden,
+            data,
+        },
+        span,
+    )))
 }
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod video_tests;
