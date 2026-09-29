@@ -62,8 +62,9 @@ def easyocr_run():
 def paddle():
     from paddleocr import PaddleOCR
 
+    # oneDNN in PaddlePaddle 3.x fails on CPU (ConvertPirAttribute2RuntimeAttribute): off.
     ocr = PaddleOCR(lang="uk", use_doc_orientation_classify=False, use_doc_unwarping=False,
-                    use_textline_orientation=False)
+                    use_textline_orientation=False, enable_mkldnn=False, device="cpu")
     out = {}
     for p in pictures():
         res = ocr.predict(str(p))
