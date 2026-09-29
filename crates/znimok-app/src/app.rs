@@ -755,27 +755,28 @@ impl App {
                 ui.set_upd_busy(true);
                 ui.set_upd_progress(0.0);
             }
-            return;
         }
         #[cfg(not(target_os = "macos"))]
-        let Some(crate::update::Found::Available(a)) = self.update_found.clone() else {
-            return;
-        };
-        if self.update_busy {
-            return;
-        }
-        self.update_busy = true;
-        self.save_now(ui);
-        ui.set_upd_busy(true);
-        ui.set_upd_status(self.tr.tr("upd-downloading").into());
-        crate::update::install(a, |reason| {
-            crate::with_ctx(|a, ui| {
-                a.update_busy = false;
-                a.update_found = Some(crate::update::Found::Failed(reason));
-                let p = a.prefs();
-                a.agents_sync(ui, &p);
+        {
+            let Some(crate::update::Found::Available(a)) = self.update_found.clone() else {
+                return;
+            };
+            if self.update_busy {
+                return;
+            }
+            self.update_busy = true;
+            self.save_now(ui);
+            ui.set_upd_busy(true);
+            ui.set_upd_status(self.tr.tr("upd-downloading").into());
+            crate::update::install(a, |reason| {
+                crate::with_ctx(|a, ui| {
+                    a.update_busy = false;
+                    a.update_found = Some(crate::update::Found::Failed(reason));
+                    let p = a.prefs();
+                    a.agents_sync(ui, &p);
+                });
             });
-        });
+        }
     }
 
     /// The Agents and Updates pages: clients with lasting permissions, the last actions, the
