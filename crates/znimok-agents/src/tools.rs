@@ -580,7 +580,9 @@ impl Agent {
                 let apply = args["apply"].as_bool().unwrap_or(true);
                 let r = library::render(&doc, 1.0);
                 let img = Rgba::new(r.width, r.height, r.rgba.clone()).ok_or("empty picture")?;
-                let text = znimok_models::ocr::system().and_then(|o| o.recognize(&img, &[]).ok());
+                // Both readings: the masking one reads Latin (e-mail, keys) better (ZK-120).
+                let text = znimok_models::ocr::system()
+                    .and_then(|o| znimok_models::ocr::read_for_masking(o.as_ref(), &img));
                 let faces = if args["faces"].as_bool().unwrap_or(true) {
                     znimok_models::faces::detect(&img).unwrap_or_default()
                 } else {

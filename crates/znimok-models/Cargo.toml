@@ -33,7 +33,10 @@ windows = { version = "0.62", features = [
     "Storage_Streams",
     "Web_Http",
     "Web_Http_Headers",
+    "Win32_Security",
     "Win32_System_Com",
+    "Win32_System_JobObjects",
+    "Win32_System_Threading",
     "Win32_System_WinRT",
 ] }
 

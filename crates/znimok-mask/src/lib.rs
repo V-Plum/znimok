@@ -76,7 +76,29 @@ pub fn suggest(ocr: Option<&OcrResult>, faces: &[Rect], w: u32, h: u32) -> Vec<S
         });
     }
     out.retain(|s| s.rect.w > 0 && s.rect.h > 0);
-    out
+    // Two readings of the same picture find the same secret twice: keep the first of boxes of one
+    // kind that mostly overlap.
+    let mut kept: Vec<Suggestion> = Vec::with_capacity(out.len());
+    for s in out {
+        if !kept
+            .iter()
+            .any(|k| k.kind == s.kind && overlap(&k.rect, &s.rect) > 0.5)
+        {
+            kept.push(s);
+        }
+    }
+    kept
+}
+
+/// Intersection over the smaller box.
+fn overlap(a: &IRect, b: &IRect) -> f32 {
+    let ix = (a.x + a.w).min(b.x + b.w) - a.x.max(b.x);
+    let iy = (a.y + a.h).min(b.y + b.h) - a.y.max(b.y);
+    if ix <= 0 || iy <= 0 {
+        return 0.0;
+    }
+    let small = (a.w * a.h).min(b.w * b.h).max(1) as f32;
+    (ix * iy) as f32 / small
 }
 
 /// Hide marks for the accepted suggestions, one undo step (`merge`).

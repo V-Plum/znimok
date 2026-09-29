@@ -116,6 +116,11 @@ jobs:
           python tools/ocr-eval/run_helper.py $exe out/znimok-ocr-mask.json --mode 1
           python tools/ocr-eval/run_helper.py $exe --screens | Tee-Object helper-memory.md
           Get-Content helper-memory.md | Add-Content $env:GITHUB_STEP_SUMMARY
+      - name: the Rust client against the helper
+        shell: pwsh
+        run: |
+          $env:ZNIMOK_OCR_HELPER = (Resolve-Path target/ocr-helper/znimok-ocr.exe).Path
+          cargo test -p znimok-models --test ocr_helper
       - uses: actions/upload-artifact@v4
         with:
           name: ocr-helper
