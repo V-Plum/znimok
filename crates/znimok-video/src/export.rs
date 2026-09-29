@@ -52,6 +52,19 @@ pub fn map_frame(keep: &[KeepSeg], idx: i64) -> Option<i64> {
     None
 }
 
+/// Source frame of output frame `out` — the inverse of [`map_frame`] (`EvSrcOfOut`, used by the
+/// GIF palette probes, §6.4). Past the end — the last kept frame; nothing kept — 0.
+pub fn src_of_out(keep: &[KeepSeg], out: i64) -> i64 {
+    let mut out = out;
+    for s in keep {
+        if out < s.len() {
+            return s.a + out;
+        }
+        out -= s.len();
+    }
+    keep.last().map_or(0, |s| s.b - 1)
+}
+
 /// Output frames in total.
 pub fn kept_frames(keep: &[KeepSeg]) -> i64 {
     keep.iter().map(KeepSeg::len).sum()

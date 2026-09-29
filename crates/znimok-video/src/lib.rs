@@ -16,6 +16,9 @@
 //! - [`recorder`] — the recording loop of `VidRecord`, step by step, over those traits.
 //! - [`export`] — timing for re-encoding with cuts: splitting a sample that covers several frames,
 //!   cutting audio by TIME with 10 ms fades at real joints (§6.3, §7 items 17, 18).
+//! - [`edit`] — the edit model of the video editor (ZK-93, §6.2): parts over `[0, N)`, in/out,
+//!   split, cut, the kept segments the export consumes, playback that skips cuts, timeline
+//!   geometry (§6.5) and the undo queue shared with the marks (CAPS-80).
 //! - [`settings`] — frame rate, bitrate, even sizes and the like (§1, §2.6, §7 items 2, 3, 7, 15).
 //! - [`stride`] — row pitch of decoded buffers and copying by rows (§7 items 5, 6).
 //! - [`events`] — timed input events (clicks) gated by `t0` and pauses (§2.4, §4).
@@ -29,6 +32,7 @@
 pub mod audio;
 pub mod cfr;
 pub mod clock;
+pub mod edit;
 pub mod events;
 pub mod export;
 pub mod pause;
@@ -41,6 +45,7 @@ pub mod traits;
 pub use audio::{AudioBuffer, AudioTimeline, PacketPlacer};
 pub use cfr::{Cfr, Slot, VideoSampleTime};
 pub use clock::{Clock, ManualClock, MonotonicClock};
+pub use edit::{EditTimeline, MarksUndo, Part, Track, UndoOrder, VideoEdit};
 pub use pause::{PauseLog, PauseSpan};
 pub use recorder::{Recorder, RecorderConfig, RecordingControl, RecordingResult};
 pub use traits::*;
