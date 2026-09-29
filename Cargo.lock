@@ -6824,6 +6824,7 @@ name = "znimok-win"
 version = "0.0.0"
 dependencies = [
  "image",
+ "png",
  "windows",
  "windows-collections",
  "windows-core",

@@ -426,3 +426,51 @@ fn annotate_schema_references_resolve() {
         assert!(s["$defs"].get(name).is_some(), "{name} does not resolve");
     }
 }
+
+/// `export` never overwrites and only writes what it says it writes (ZK-113).
+#[test]
+fn export_does_not_clobber_files() {
+    let e = env("clobber", true);
+    for s in [Scope::Capture, Scope::LibraryRead] {
+        e.agent
+            .perms
+            .grant("Claude Code", s, Grant::Always)
+            .unwrap();
+    }
+    let mut s = Server::new(&e.agent);
+    let shot = s
+        .handle_line(&req(
+            1,
+            "tools/call",
+            modern(json!({"name": "capture_screen", "arguments": {}})),
+        ))
+        .unwrap();
+    let id = shot["result"]["structuredContent"]["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let victim = e.dir.join("notes.txt");
+    std::fs::create_dir_all(&e.dir).unwrap();
+    std::fs::write(&victim, "important").unwrap();
+    let call = |s: &mut Server, n, path: &PathBuf, fmt: &str| {
+        s.handle_line(&req(
+            n,
+            "tools/call",
+            modern(json!({"name": "export",
+            "arguments": {"document": id, "format": fmt, "path": path.display().to_string()}})),
+        ))
+        .unwrap()["result"]
+            .clone()
+    };
+    let r = call(&mut s, 2, &victim, "png");
+    assert_eq!(r["isError"], true, "wrong extension refused");
+    let existing = e.dir.join("old.png");
+    std::fs::write(&existing, "keep").unwrap();
+    let r = call(&mut s, 3, &existing, "png");
+    assert_eq!(r["isError"], true, "existing file refused");
+    assert_eq!(std::fs::read_to_string(&existing).unwrap(), "keep");
+    assert_eq!(std::fs::read_to_string(&victim).unwrap(), "important");
+    let fresh = e.dir.join("new.png");
+    assert_eq!(call(&mut s, 4, &fresh, "png")["isError"], false);
+    assert!(fresh.exists());
+}

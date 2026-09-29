@@ -482,7 +482,25 @@ impl Agent {
                     _ => f,
                 };
                 let out = match arg_str(args, "path") {
-                    Some(p) => PathBuf::from(p),
+                    // An agent never overwrites a file and only writes what it says (ZK-113):
+                    // library_read must not become «replace any file of the person».
+                    Some(p) => {
+                        let p = PathBuf::from(p);
+                        let ok_ext = p
+                            .extension()
+                            .and_then(|e| e.to_str())
+                            .is_some_and(|e| ExportFormat::parse(e) == Some(fmt));
+                        if !ok_ext {
+                            return Err(format!("the path must end with .{ext} for {f}"));
+                        }
+                        if p.exists() {
+                            return Err(format!(
+                                "{} exists; Znimok does not overwrite files",
+                                p.display()
+                            ));
+                        }
+                        p
+                    }
                     None => {
                         std::fs::create_dir_all(&self.export_dir).map_err(|e| e.to_string())?;
                         self.export_dir.join(format!(

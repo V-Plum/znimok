@@ -67,11 +67,16 @@ impl Library {
             .collect()
     }
 
-    /// A document by its id (from the library) or by a path to a `.znimok` file.
+    /// A document by its id (from the library) or by a path to a `.znimok` file **inside the
+    /// library** — an agent's scopes are about the library, not any file of the person (ZK-113).
     pub fn resolve(&self, doc: &str) -> Option<PathBuf> {
         let p = Path::new(doc);
         if p.extension().is_some_and(|e| e == "znimok") && p.is_file() {
-            return Some(p.to_path_buf());
+            let inside = match (p.canonicalize(), self.dir.canonicalize()) {
+                (Ok(f), Ok(d)) => f.starts_with(d),
+                _ => false,
+            };
+            return inside.then(|| p.to_path_buf());
         }
         self.items()
             .into_iter()
@@ -233,6 +238,12 @@ mod tests {
         assert!(lib.search("нема", None, 10).is_empty());
         assert_eq!(lib.resolve(&d.id.to_string()[..8]), Some(p.clone()));
         assert_eq!(lib.resolve(&p.display().to_string()), Some(p.clone()));
+        // A .znimok outside the library is not reachable by path (ZK-113).
+        let outside =
+            std::env::temp_dir().join(format!("zk-outside-{}.znimok", std::process::id()));
+        save(&outside, &d).unwrap();
+        assert_eq!(lib.resolve(&outside.display().to_string()), None);
+        let _ = std::fs::remove_file(&outside);
         for (f, ext) in [
             (ExportFormat::Png, "png"),
             (ExportFormat::Jpeg, "jpg"),
