@@ -17,6 +17,7 @@
 pub const CLSID_STR: &str = "{787777D8-E076-4FDC-8065-F7282E5D3F86}";
 
 /// How much of the file is read before the stored thumbnail must have appeared.
+#[cfg(windows)]
 const HEAD_LIMIT: usize = 64 << 20;
 
 /// The stored thumbnail of a `.znimok` file, scaled to fit `size`×`size`, as straight RGBA.
