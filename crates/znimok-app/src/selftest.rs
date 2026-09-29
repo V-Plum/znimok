@@ -1882,6 +1882,25 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
         ui.invoke_tool_chosen(1);
         r.snapshot(ui, "28-over-screen");
     }));
+    // ZK-157: the frame pulled to the left edge of the screen — the tool rail slides over to
+    // its right side (a snapshot after the animation), then the frame goes back (undo).
+    steps.push(Box::new(|_app, ui, _r| {
+        let (fx, fy) = (ui.get_ov_x(), ui.get_ov_y());
+        ui.invoke_pointer(0, fx, fy, 0, false, false);
+        for i in 1..=6 {
+            ui.invoke_pointer(1, fx - (fx - 2.0) * i as f32 / 6.0, fy, 0, false, false);
+        }
+        ui.invoke_pointer(2, 2.0, fy, 0, false, false);
+    }));
+    steps.push(Box::new(|_app, ui, r| {
+        r.check(
+            "over the screen: the frame at the left edge (the rail moves to its right)",
+            ui.get_ov_x() < 60.0,
+            format!("frame x {}", ui.get_ov_x()),
+        );
+        r.snapshot(ui, "28b-over-rail-right");
+        ui.invoke_undo();
+    }));
     steps.push(Box::new(|app, ui, r| {
         // Draw a rectangle inside the frame, then pull the frame's bottom-right corner.
         let (fx, fy, fw, fh) = (ui.get_ov_x(), ui.get_ov_y(), ui.get_ov_w(), ui.get_ov_h());
