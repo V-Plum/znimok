@@ -43,7 +43,7 @@
       <Component Id="Cli">
         <File Id="CliExe" Source="$(var.Bin)\znimok.exe" />
         <RegistryValue Root="HKCU" Key="Software\Znimok\Installed" Name="cli" Type="integer" Value="1" KeyPath="yes" />
-        <!-- `znimok` on the user's PATH: the CLI and `claude mcp add znimok -- znimok mcp`. -->
+        <!-- `znimok` on the user's PATH: the CLI and `claude mcp add znimok` (then `znimok mcp`). -->
         <Environment Id="UserPath" Name="PATH" Value="[INSTALLFOLDER]" Part="last" Action="set" System="no" Permanent="no" />
       </Component>
       <Component Id="Thumbnails">
