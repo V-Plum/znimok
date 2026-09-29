@@ -995,6 +995,39 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
             format!("{n} → {} marks", count(app)),
         );
         key(app, ui, "z", true, false);
+        // ZK-163: the Image button / I — a picture file becomes a selected mark; a file that is
+        // not a picture says so and adds nothing. I asks for the file (the dialog is main's).
+        let asks = app.borrow_mut().key(ui, "i", false, false);
+        let asks_uk = app.borrow_mut().key(ui, "ш", false, false);
+        let sample = std::env::args_os().nth(1).map(std::path::PathBuf::from);
+        let added = sample.is_some_and(|p| app.borrow_mut().insert_image_file(ui, &p));
+        let kind = {
+            let a = app.borrow();
+            let s = a.s.as_ref().unwrap();
+            let sel = s.ed.selection().to_vec();
+            (sel.len() == 1)
+                .then(|| s.ed.doc.get(sel[0]).map(|o| o.kind()))
+                .flatten()
+        };
+        let not_image = r.dir.join("not-a-picture.txt");
+        let _ = std::fs::write(&not_image, "text");
+        let n2 = count(app);
+        let refused = !app.borrow_mut().insert_image_file(ui, &not_image);
+        r.check(
+            "Image button / I: a picture file becomes a selected mark, other files are refused",
+            matches!(asks, crate::app::KeyAction::InsertImage)
+                && matches!(asks_uk, crate::app::KeyAction::InsertImage)
+                && added
+                && kind == Some(znimok_core::Kind::Image)
+                && refused
+                && count(app) == n2
+                && !ui.get_toast().is_empty(),
+            format!(
+                "added {added} kind {kind:?} refused {refused} toast «{}»",
+                ui.get_toast()
+            ),
+        );
+        key(app, ui, "z", true, false);
         ui.invoke_tool_chosen(0);
     }));
     // Cursors (ZK-47) and dragging rows of the layers list (ZK-54).

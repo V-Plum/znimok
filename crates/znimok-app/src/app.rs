@@ -3305,6 +3305,14 @@ impl App {
             ui.window().request_redraw();
             return KeyAction::None;
         }
+        // I: a picture from a file (a dialog — so not over the screen, ZK-163).
+        if latin == Some('i') {
+            return if self.over.is_some() {
+                KeyAction::None
+            } else {
+                KeyAction::InsertImage
+            };
+        }
         let tools = ['v', 'r', 'e', 'l', 'p', 't', 'b', 'h', 'n', 's', 'c'];
         // Over the screen the frame itself is the crop: no Crop tool there.
         if let Some(i) = latin
@@ -3425,6 +3433,26 @@ impl App {
             }
             Err(_) => false,
         }
+    }
+
+    /// The Image button / I (ZK-163): a picture file becomes a mark, as a dropped one does; one
+    /// Znimok can't read says so. Returns whether a mark was added.
+    pub fn insert_image_file(&mut self, ui: &AppWindow, path: &Path) -> bool {
+        if self.s.is_none() {
+            return false;
+        }
+        if self.drop_image_mark(ui, path) {
+            return true;
+        }
+        let name = path
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        let msg = self
+            .tr
+            .tr_args("open-error-not-image", &args(&[("name", name)]));
+        self.toast(ui, msg);
+        false
     }
 
     /// A picture as a mark in the middle of the frame, at most 80 % of it.
@@ -6087,6 +6115,8 @@ pub enum KeyAction {
     Back,
     /// Ctrl+S over the screen: to the library and close.
     Save,
+    /// I: a picture from a file as a mark (ZK-163).
+    InsertImage,
 }
 
 /// The rubber band: a dashed white rectangle in screen pixels.
