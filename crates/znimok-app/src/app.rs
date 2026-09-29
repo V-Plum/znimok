@@ -31,6 +31,46 @@ pub const PALETTE: [Rgb; 8] = [
 ];
 pub const THICK: [i32; 3] = [2, 4, 7];
 
+/// How a colour control shows a colour: its palette chip (index), -1 for none, -2 for a colour
+/// off the palette (the picker's chip then shows it, ZK-160) — and the colour itself.
+fn colour_shown(c: Option<Rgb>) -> (i32, slint::Color) {
+    match c {
+        None => (-1, slint::Color::from_argb_u8(0, 0, 0, 0)),
+        Some(c) => (
+            PALETTE
+                .iter()
+                .position(|p| *p == c)
+                .map_or(-2, |i| i as i32),
+            slint::Color::from_rgb_u8(c.r, c.g, c.b),
+        ),
+    }
+}
+
+/// `#RRGGBB` of a colour.
+pub fn hex_of(c: Rgb) -> String {
+    format!("#{:02X}{:02X}{:02X}", c.r, c.g, c.b)
+}
+
+/// A colour typed as hex: `#RGB`, `RGB`, `#RRGGBB` or `RRGGBB`, any case, spaces around.
+pub fn parse_hex(t: &str) -> Option<Rgb> {
+    let h = t.trim().trim_start_matches('#');
+    if !h.chars().all(|c| c.is_ascii_hexdigit()) {
+        return None;
+    }
+    let v = |s: &str| u8::from_str_radix(s, 16).ok();
+    match h.len() {
+        3 => {
+            let d: Vec<u8> = h
+                .chars()
+                .filter_map(|c| c.to_digit(16).map(|d| d as u8 * 17))
+                .collect();
+            Some(Rgb::new(d[0], d[1], d[2]))
+        }
+        6 => Some(Rgb::new(v(&h[0..2])?, v(&h[2..4])?, v(&h[4..6])?)),
+        _ => None,
+    }
+}
+
 /// A rectangle or ellipse without an outline: one solid colour, its main one (LH's plate).
 fn is_plate(o: &Object) -> bool {
     matches!(o.kind(), Kind::Rect | Kind::Ellipse) && o.style.no_main
@@ -214,15 +254,15 @@ pub struct App {
     dirty: bool,
     fit_pending: bool,
     tool: usize,
-    color: usize,
+    color: Rgb,
     thick: usize,
     /// Defaults for new marks (and what the inspector changes on a selection), ZK-54.
     alpha: u8,
     /// Rectangle / ellipse without an outline (a solid plate of the fill).
     no_stroke: bool,
-    fill: Option<usize>,
+    fill: Option<Rgb>,
     /// Outline colour of new texts (its own default: a shape's fill is not a text's outline).
-    text_outline: Option<usize>,
+    text_outline: Option<Rgb>,
     dash: Dash,
     corners: Corners,
     head_start: Head,
@@ -243,7 +283,10 @@ pub struct App {
     /// black or white), which stamp or emoji.
     counter_shape: CounterShape,
     counter_group: u32,
-    digit: Option<usize>,
+    digit: Option<Rgb>,
+    /// The eyedropper is armed for this colour control ("color", "fill", "outline", "digit"):
+    /// the next click on the canvas picks the colour there (ZK-160).
+    eyedrop: Option<String>,
     stamp_id: u32,
     /// One undo step per drag of the opacity slider.
     alpha_merge: Option<MergeKey>,
@@ -376,7 +419,7 @@ impl App {
             dirty: true,
             fit_pending: true,
             tool: tool::RECT,
-            color: 0,
+            color: PALETTE[0],
             thick: 1,
             alpha: 100,
             no_stroke: false,
@@ -398,6 +441,7 @@ impl App {
             counter_shape: CounterShape::Circle,
             counter_group: 1,
             digit: None,
+            eyedrop: None,
             stamp_id: 0,
             alpha_merge: None,
             crop: None,
@@ -447,6 +491,7 @@ impl App {
         crate::filemeta::set_enabled(p.editor.write_metadata);
         ui.set_export_meta(p.editor.write_metadata);
         crate::overlay::set_prefs(&p.capture);
+        self.show_recent_colours(ui);
         self.apply_theme(ui, &p);
         self.settings_sync(ui);
     }
@@ -1918,20 +1963,20 @@ impl App {
         // Without an outline a shape is a plate of the fill colour (ZK-161).
         let plate = self.no_stroke && shape;
         let base = Style {
-            color: PALETTE[if plate {
+            color: if plate {
                 self.fill.unwrap_or(self.color)
             } else {
                 self.color
-            }],
+            },
             thick: THICK[self.thick],
             alpha: self.alpha,
             no_main: plate,
             color2: if plate {
                 None
             } else if shape {
-                self.fill.map(|i| PALETTE[i])
+                self.fill
             } else if t == tool::TEXT {
-                self.text_outline.map(|i| PALETTE[i])
+                self.text_outline
             } else {
                 None
             },
@@ -1966,10 +2011,10 @@ impl App {
         match t {
             tool::MARKER => Style {
                 // The red default reads badly as a highlighter: yellow unless a colour was picked.
-                color: if self.color == 0 {
+                color: if self.color == PALETTE[0] {
                     Rgb::YELLOW
                 } else {
-                    PALETTE[self.color]
+                    self.color
                 },
                 thick: 8 * THICK[self.thick] + 8,
                 ..base
@@ -1979,10 +2024,10 @@ impl App {
                 ..base
             },
             tool::STAMP => Style {
-                color: if self.color == 0 {
+                color: if self.color == PALETTE[0] {
                     Rgb::GREEN
                 } else {
-                    PALETTE[self.color]
+                    self.color
                 },
                 thick: badge + 8,
                 ..base
@@ -2088,6 +2133,15 @@ impl App {
             return;
         }
         if button != 0 {
+            return;
+        }
+        // The eyedropper takes the colour under the click, nothing else happens (ZK-160).
+        if let Some(key) = self.eyedrop.clone() {
+            self.eyedrop_cancel(ui);
+            if let Some(c) = self.colour_at_canvas(out) {
+                let v = ((c.r as i32) << 16) | ((c.g as i32) << 8) | c.b as i32;
+                self.set_prop(ui, &format!("{key}-rgb"), v);
+            }
             return;
         }
         if self.editing.is_some() && self.text_press(ui, out, shift) {
@@ -2219,7 +2273,7 @@ impl App {
                 };
                 let mut st = st;
                 if self.tool == tool::COUNTER {
-                    st.color2 = self.digit.map(|i| PALETTE[i]);
+                    st.color2 = self.digit;
                 }
                 // A pin is taller than wide: its point sits under the pointer's click.
                 let (w, h) =
@@ -2576,6 +2630,9 @@ impl App {
         let Some(s) = self.s.as_ref() else {
             return ARROW;
         };
+        if self.eyedrop.is_some() {
+            return CROSS;
+        }
         let doc = &s.ed.doc;
         if let Some(o) = self.edited_object() {
             let pd = self.view.to_doc(out.x, out.y);
@@ -3138,6 +3195,7 @@ impl App {
 
     pub fn set_tool(&mut self, ui: &AppWindow, t: usize) {
         self.finish_text(ui);
+        self.eyedrop_cancel(ui);
         let t = t.min(tool::CROP);
         let was_crop = self.tool == tool::CROP;
         if was_crop && t != tool::CROP {
@@ -3305,6 +3363,10 @@ impl App {
                         KeyAction::Copy
                     };
                 }
+                // The eyedropper goes first (ZK-160).
+                "\u{1b}" if self.eyedrop.is_some() => {
+                    self.eyedrop_cancel(ui);
+                }
                 "\u{1b}" if self.tool == tool::CROP => {
                     self.drag = None;
                     self.crop = None;
@@ -3409,6 +3471,92 @@ impl App {
             .collect()
     }
 
+    /// The colour picker's "recent" row (ZK-160): newest first, eight at most, kept in the
+    /// settings so it outlives the session.
+    fn remember_colour(&mut self, ui: &AppWindow, c: Rgb) {
+        let hex = hex_of(c);
+        if let Some(store) = self.store.as_ref() {
+            let _ = store.update(|p| {
+                let r = &mut p.editor.recent_colours;
+                r.retain(|h| !h.eq_ignore_ascii_case(&hex));
+                r.insert(0, hex.clone());
+                r.truncate(8);
+            });
+        }
+        self.show_recent_colours(ui);
+    }
+
+    /// Hands the recent colours to the picker (ZK-160).
+    pub fn show_recent_colours(&self, ui: &AppWindow) {
+        let v: Vec<slint::Color> = self
+            .recent_colours()
+            .into_iter()
+            .map(|c| slint::Color::from_rgb_u8(c.r, c.g, c.b))
+            .collect();
+        ui.global::<crate::ColourPick>()
+            .set_recent(std::rc::Rc::new(slint::VecModel::from(v)).into());
+    }
+
+    /// The recent colours for the picker.
+    pub fn recent_colours(&self) -> Vec<Rgb> {
+        self.prefs()
+            .editor
+            .recent_colours
+            .iter()
+            .filter_map(|h| parse_hex(h))
+            .collect()
+    }
+
+    /// A hex code typed into the picker: applied like a picked colour; `false` if it is not one.
+    pub fn colour_hex(&mut self, ui: &AppWindow, key: &str, text: &str) -> bool {
+        let Some(c) = parse_hex(text) else {
+            return false;
+        };
+        let v = ((c.r as i32) << 16) | ((c.g as i32) << 8) | c.b as i32;
+        self.set_prop(ui, &format!("{key}-rgb"), v);
+        true
+    }
+
+    /// Arms the eyedropper for a colour control: the next click on the canvas takes the colour
+    /// of the picture there (the marks included, as shown); Esc or another tool cancels it.
+    pub fn eyedrop(&mut self, ui: &AppWindow, key: &str) {
+        self.eyedrop = Some(key.to_string());
+        ui.set_canvas_cursor(1);
+        let hint = self.tr.tr("colour-eyedropper-hint");
+        self.toast(ui, hint);
+    }
+
+    fn eyedrop_cancel(&mut self, ui: &AppWindow) -> bool {
+        let was = self.eyedrop.take().is_some();
+        if was {
+            ui.set_canvas_cursor(0);
+            // Its hint goes with it.
+            ui.set_toast(SharedString::new());
+            self.toast_at = None;
+        }
+        was
+    }
+
+    /// The colour of the picture at a canvas point (physical pixels of the canvas), as shown.
+    fn colour_at_canvas(&self, out: Point) -> Option<Rgb> {
+        let (x, y) = (out.x.floor(), out.y.floor());
+        let (w, h) = (self.base.width() as f64, self.base.height() as f64);
+        if x < 0.0 || y < 0.0 || x >= w || y >= h {
+            return None;
+        }
+        let px = self.base.sample(x as u16, y as u16);
+        if px.a == 0 {
+            return None;
+        }
+        let un = |v: u8| ((v as u32 * 255 + px.a as u32 / 2) / px.a as u32).min(255) as u8;
+        Some(Rgb::new(un(px.r), un(px.g), un(px.b)))
+    }
+
+    /// For the self-test: the colour the eyedropper would take at a document point.
+    pub fn colour_probe(&self, x: f64, y: f64) -> Option<Rgb> {
+        self.colour_at_canvas(self.view.to_out(Point::new(x, y)))
+    }
+
     /// A style patch of its own for each selected mark `ok` accepts.
     fn style_each(
         &self,
@@ -3470,12 +3618,27 @@ impl App {
             style: Some(sp),
             ..Default::default()
         };
+        // A colour control gives a palette index, or — the colour picker, names ending in
+        // "-rgb" (ZK-160) — 0xRRGGBB; below 0 is "none".
+        let (name, col) = match name.strip_suffix("-rgb") {
+            Some(base) => {
+                let c = (v >= 0).then(|| Rgb::new((v >> 16) as u8, (v >> 8) as u8, v as u8));
+                if let Some(c) = c {
+                    self.remember_colour(ui, c);
+                }
+                (base, c)
+            }
+            None => (
+                name,
+                (v >= 0).then(|| PALETTE[(v as usize).min(PALETTE.len() - 1)]),
+            ),
+        };
         match name {
             "color" => {
-                self.color = (v.max(0) as usize).min(PALETTE.len() - 1);
+                self.color = col.unwrap_or(PALETTE[0]);
                 // New shapes without an outline were plates of the fill colour: the fill stays.
                 self.no_stroke = false;
-                let c = PALETTE[self.color];
+                let c = self.color;
                 // A plate gets its outline back and keeps its colour as the fill (ZK-161).
                 let items = self.style_each(
                     |o| !matches!(o.kind(), Kind::Hide | Kind::Image),
@@ -3523,8 +3686,8 @@ impl App {
                 });
             }
             "digit" => {
-                self.digit = (v >= 0).then(|| (v as usize).min(PALETTE.len() - 1));
-                let c = self.digit.map(|i| PALETTE[i]);
+                self.digit = col;
+                let c = self.digit;
                 self.patch_selected(
                     ui,
                     |o| o.kind() == Kind::Counter,
@@ -3641,7 +3804,7 @@ impl App {
             }
             "fill" => {
                 let old = self.fill;
-                self.fill = (v >= 0).then(|| (v as usize).min(PALETTE.len() - 1));
+                self.fill = col;
                 // No fill on a plate: its colour becomes the outline instead (ZK-161).
                 if self.fill.is_none() && self.no_stroke {
                     self.no_stroke = false;
@@ -3649,7 +3812,7 @@ impl App {
                         self.color = f;
                     }
                 }
-                let c2 = self.fill.map(|i| PALETTE[i]);
+                let c2 = self.fill;
                 // A plate (no outline) is drawn in its main colour: the fill row edits that one
                 // (owner, 29.09: with the outline off the fill could not be changed).
                 let items = self.style_each(
@@ -3675,8 +3838,8 @@ impl App {
             // The outline of a text (owner 29.09: it did nothing — the row went to "fill", which
             // only touches shapes).
             "outline" => {
-                self.text_outline = (v >= 0).then(|| (v as usize).min(PALETTE.len() - 1));
-                let c2 = self.text_outline.map(|i| PALETTE[i]);
+                self.text_outline = col;
+                let c2 = self.text_outline;
                 self.patch_selected(
                     ui,
                     |o| o.kind() == Kind::Text,
@@ -5346,14 +5509,9 @@ impl App {
                 ui.set_prop_title(title.into());
                 let st = &o.style;
                 let plate = matches!(o.kind(), Kind::Rect | Kind::Ellipse) && st.no_main;
-                ui.set_color_index(if plate {
-                    -1
-                } else {
-                    PALETTE
-                        .iter()
-                        .position(|c| *c == st.color)
-                        .map_or(-1, |i| i as i32)
-                });
+                let (i, c) = colour_shown((!plate).then_some(st.color));
+                ui.set_color_index(i);
+                ui.set_color_rgb(c);
                 ui.set_thick_index(
                     THICK
                         .iter()
@@ -5362,10 +5520,9 @@ impl App {
                 );
                 // A plate's colour is its fill (ZK-161).
                 let fill = if plate { Some(st.color) } else { st.color2 };
-                ui.set_fill_index(
-                    fill.and_then(|c| PALETTE.iter().position(|p| *p == c))
-                        .map_or(-1, |i| i as i32),
-                );
+                let (i, c) = colour_shown(fill);
+                ui.set_fill_index(i);
+                ui.set_fill_rgb(c);
                 ui.set_dash_index(dash_index(st.dash));
                 ui.set_corners_index(corners_index(st.corners));
                 ui.set_alpha(st.alpha as f32 / 100.0);
@@ -5408,11 +5565,9 @@ impl App {
                 if let Data::Counter { shape, start, .. } = o.data {
                     ui.set_counter_shape(shape_index(shape));
                     ui.set_counter_start(start.to_string().into());
-                    ui.set_digit_index(
-                        st.color2
-                            .and_then(|c| PALETTE.iter().position(|p| *p == c))
-                            .map_or(-1, |i| i as i32),
-                    );
+                    let (i, c) = colour_shown(st.color2);
+                    ui.set_digit_index(i);
+                    ui.set_digit_rgb(c);
                     ui.set_pin_rot((o.rot / 90) as i32);
                 }
                 if let Data::Stamp { id } = o.data {
@@ -5443,20 +5598,19 @@ impl App {
                     }
                     .into(),
                 );
-                ui.set_color_index(
-                    if self.no_stroke && matches!(self.tool, tool::RECT | tool::ELLIPSE) {
-                        -1
-                    } else {
-                        self.color as i32
-                    },
-                );
+                let plate = self.no_stroke && matches!(self.tool, tool::RECT | tool::ELLIPSE);
+                let (i, c) = colour_shown((!plate).then_some(self.color));
+                ui.set_color_index(i);
+                ui.set_color_rgb(c);
                 ui.set_thick_index(self.thick as i32);
                 let fill = if self.tool == tool::TEXT {
                     self.text_outline
                 } else {
                     self.fill
                 };
-                ui.set_fill_index(fill.map_or(-1, |i| i as i32));
+                let (i, c) = colour_shown(fill);
+                ui.set_fill_index(i);
+                ui.set_fill_rgb(c);
                 ui.set_dash_index(dash_index(self.dash));
                 ui.set_corners_index(corners_index(self.corners));
                 ui.set_alpha(self.alpha as f32 / 100.0);
@@ -5476,7 +5630,9 @@ impl App {
                 ui.set_text_align(align_index(self.align));
                 ui.set_text_box("".into());
                 ui.set_counter_shape(shape_index(self.counter_shape));
-                ui.set_digit_index(self.digit.map_or(-1, |i| i as i32));
+                let (i, c) = colour_shown(self.digit);
+                ui.set_digit_index(i);
+                ui.set_digit_rgb(c);
                 ui.set_stamp_id(self.stamp_id as i32);
                 // What the next counter will say.
                 let (start, n) = doc

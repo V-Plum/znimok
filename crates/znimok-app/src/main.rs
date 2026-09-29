@@ -1006,6 +1006,28 @@ fn wire(ui: &AppWindow, app: &Shared) {
     on!(ui, app, on_set_prop, |a, w, name, v| {
         a.set_prop(&w, &name, v);
     });
+    // The colour picker (ZK-160).
+    {
+        let pick = ui.global::<ColourPick>();
+        pick.on_hex(|c| app::hex_of(znimok_core::Rgb::new(c.red(), c.green(), c.blue())).into());
+        let (a2, weak) = (app.clone(), ui.as_weak());
+        pick.on_pick(move |key, c| {
+            let Some(w) = weak.upgrade() else { return };
+            let v = ((c.red() as i32) << 16) | ((c.green() as i32) << 8) | c.blue() as i32;
+            a2.borrow_mut().set_prop(&w, &format!("{key}-rgb"), v);
+        });
+        let (a2, weak) = (app.clone(), ui.as_weak());
+        pick.on_hex_entered(move |key, text| {
+            let Some(w) = weak.upgrade() else { return };
+            a2.borrow_mut().colour_hex(&w, &key, &text);
+        });
+        let (a2, weak) = (app.clone(), ui.as_weak());
+        pick.on_eyedrop(move |key| {
+            let Some(w) = weak.upgrade() else { return };
+            a2.borrow_mut().eyedrop(&w, &key);
+            w.invoke_focus_canvas();
+        });
+    }
     on!(ui, app, on_set_text_size, |a, w, text| {
         a.set_text_size(&w, &text);
         w.invoke_focus_canvas();

@@ -345,6 +345,16 @@ component NumField inherits HorizontalLayout {
     }
 }
 
+// The colour picker (ZK-160) talks to the app through this: a colour for a control ("color",
+// "fill", "outline", "digit"), a typed hex code, the eyedropper; the app keeps the recent colours.
+export global ColourPick {
+    in property <[color]> recent;
+    callback pick(string, color);
+    callback hex-entered(string, string);
+    callback eyedrop(string);
+    pure callback hex(color) -> string;
+}
+
 // Palette shared by the stroke and fill rows.
 global Palette {
     out property <[color]> colors: [#FF5A5F, #FF8A3D, #FFD23F, #34C48A, #3D7BF5, #9B5CF5, #FFFFFF, #14161A];
@@ -659,22 +669,53 @@ component PropRow inherits HorizontalLayout {
     @children
 }
 
-// Palette chips plus, at the right, the chip that will open the colour picker with the
-// eyedropper (strings `colour-picker` / `colour-eyedropper` already exist; the popover is
-// a later ticket) — the room is reserved now so the layout does not move when it lands.
+// Palette chips plus, at the right, the chip that opens the colour picker (ZK-160): a
+// saturation/brightness square, a hue strip, the hex code, the eyedropper and recent colours.
+// A colour off the palette (`selected` -2) shows inside that chip.
 component ColourRow inherits Rectangle {
     in property <int> selected: -1;
     in property <bool> with-none;
     in property <string> none-tip;
+    // Which colour this row sets, for the picker, and the colour it has now.
+    in property <string> key: "color";
+    in property <color> current;
     callback picked(int);
     // Ten columns in every row (none, eight colours, the picker at the right edge), so rows line
     // up under each other whether or not they offer "none" (owner, 29.09).
     property <length> cell: min(27px, self.width / 10);
     property <length> chip: min(22px, self.cell - 3px);
+    // The picker's colour while it is open: hue 0–360, saturation and value 0–1.
+    property <float> h;
+    property <float> s;
+    property <float> v;
+    property <string> hex-text;
+    property <color> picked-colour: Colors.hsv(self.h, self.s, self.v);
+    function load() {
+        if (root.selected == -1) {
+            root.h = 0;
+            root.s = 0;
+            root.v = 1;
+        } else {
+            root.h = root.current.to-hsv().hue;
+            root.s = root.current.to-hsv().saturation;
+            root.v = root.current.to-hsv().value;
+        }
+        root.hex-text = ColourPick.hex(root.picked-colour);
+    }
+    function commit() {
+        root.hex-text = ColourPick.hex(root.picked-colour);
+        ColourPick.pick(root.key, root.picked-colour);
+    }
+    // A colour set from outside (the hex field, the eyedropper, undo) moves the picker there.
+    changed current => {
+        if (root.selected != -1 && root.current != root.picked-colour) {
+            root.load();
+        }
+    }
     height: 24px;
-    if root.with-none: Swatch { x: 0; y: (parent.height - self.height) / 2; width: root.chip; height: root.chip; none: true; on: root.selected < 0; tip: root.none-tip; clicked => { root.picked(-1); } }
+    if root.with-none: Swatch { x: 0; y: (parent.height - self.height) / 2; width: root.chip; height: root.chip; none: true; on: root.selected == -1; tip: root.none-tip; clicked => { root.picked(-1); } }
     for c[i] in Palette.colors: Swatch { x: (i + 1) * root.cell; y: (parent.height - self.height) / 2; width: root.chip; height: root.chip; c: c; on: root.selected == i; clicked => { root.picked(i); } }
-    Rectangle {
+    pick-chip := Rectangle {
         x: parent.width - self.width;
         y: (parent.height - self.height) / 2;
         width: root.chip;
@@ -682,11 +723,186 @@ component ColourRow inherits Rectangle {
         border-radius: 7px;
         background: @linear-gradient(135deg, #FF5A5F 0%, #FFD23F 30%, #34C48A 55%, #3D7BF5 80%, #9B5CF5 100%);
         transform-origin: { x: self.width / 2, y: self.height / 2 };
-        transform-scale: pick-ta.has-hover ? 1.08 : 1.0;
+        transform-scale: pick-ta.pressed ? 0.88 : (pick-ta.has-hover ? 1.08 : 1.0);
         animate transform-scale { duration: 140ms; easing: cubic-bezier(0.2, 0.8, 0.2, 1); }
-        Rectangle { x: 2px; y: 2px; width: parent.width - 4px; height: parent.height - 4px; border-radius: 5px; background: Theme.panel; }
-        Icon { width: 12px; height: 12px; d: "M3 21 l6 -6 M15 3 l6 6 -9 9 -6 -6 z M13 5 l6 6"; tint: Theme.text2; }
-        pick-ta := TipTouch { tip: @tr("colour-picker" => "Colour picker") + " — " + @tr("common-in-development" => "Coming soon"); }
+        // A colour of its own shows inside the rainbow ring; otherwise the pipette icon.
+        Rectangle {
+            x: root.selected == -2 ? 3px : 2px;
+            y: self.x;
+            width: parent.width - 2 * self.x;
+            height: parent.height - 2 * self.y;
+            border-radius: 5px;
+            background: root.selected == -2 ? root.current : Theme.panel;
+            border-width: root.selected == -2 ? 1px : 0px;
+            border-color: Theme.panel;
+        }
+        if root.selected != -2: Icon { width: 12px; height: 12px; d: "M3 21 l6 -6 M15 3 l6 6 -9 9 -6 -6 z M13 5 l6 6"; tint: Theme.text2; }
+        pick-ta := TipTouch {
+            tip: @tr("colour-picker" => "Colour picker");
+            clicked => {
+                root.load();
+                picker.show();
+            }
+        }
+    }
+    picker := PopupWindow {
+        x: root.width - 236px;
+        y: root.height + 6px;
+        width: 236px;
+        close-policy: close-on-click-outside;
+        // Opens with a quick fade and grow from the chip's corner (owner: tactile motion).
+        Rectangle {
+            property <bool> shown;
+            init => { self.shown = true; }
+            opacity: self.shown ? 1 : 0;
+            transform-scale: self.shown ? 1 : 0.94;
+            transform-origin: { x: self.width - 12px, y: 0 };
+            animate opacity { duration: 140ms; easing: ease-out; }
+            animate transform-scale { duration: 180ms; easing: cubic-bezier(0.2, 0.8, 0.2, 1); }
+        Rectangle {
+            background: Theme.panel;
+            border-radius: 12px;
+            border-width: 1px;
+            border-color: Theme.swatch-rim;
+            drop-shadow-blur: 18px;
+            drop-shadow-offset-y: 6px;
+            drop-shadow-color: #00000060;
+        }
+        VerticalLayout {
+            padding: 12px;
+            spacing: 10px;
+            // Saturation → right, brightness → up, in the hue below.
+            sv := Rectangle {
+                height: 132px;
+                border-radius: 8px;
+                clip: true;
+                background: Colors.hsv(root.h, 1, 1);
+                Rectangle { background: @linear-gradient(90deg, #FFFFFF 0%, #FFFFFF00 100%); }
+                Rectangle { background: @linear-gradient(180deg, #00000000 0%, #000000 100%); }
+                Rectangle {
+                    x: root.s * parent.width - self.width / 2;
+                    y: (1 - root.v) * parent.height - self.height / 2;
+                    width: sv-ta.pressed ? 18px : 14px;
+                    height: self.width;
+                    animate width { duration: 120ms; easing: cubic-bezier(0.2, 0.8, 0.2, 1); }
+                    border-radius: self.width / 2;
+                    border-width: 2px;
+                    border-color: #FFFFFF;
+                    background: root.picked-colour;
+                    drop-shadow-blur: 3px;
+                    drop-shadow-color: #00000080;
+                }
+                sv-ta := TouchArea {
+                    function at() {
+                        root.s = clamp(self.mouse-x / self.width, 0, 1);
+                        root.v = 1 - clamp(self.mouse-y / self.height, 0, 1);
+                        root.hex-text = ColourPick.hex(root.picked-colour);
+                    }
+                    pointer-event(e) => {
+                        if (e.kind == PointerEventKind.down) { self.at(); }
+                        if (e.kind == PointerEventKind.up) { root.commit(); }
+                    }
+                    moved => { self.at(); }
+                }
+            }
+            hue := Rectangle {
+                height: 14px;
+                border-radius: 7px;
+                background: @linear-gradient(90deg, #FF0000 0%, #FFFF00 16.67%, #00FF00 33.33%, #00FFFF 50%, #0000FF 66.67%, #FF00FF 83.33%, #FF0000 100%);
+                Rectangle {
+                    x: root.h / 360 * (parent.width - self.width);
+                    y: (parent.height - self.height) / 2;
+                    width: hue-ta.pressed ? 18px : 16px;
+                    height: self.width;
+                    animate width { duration: 120ms; easing: cubic-bezier(0.2, 0.8, 0.2, 1); }
+                    border-radius: self.width / 2;
+                    border-width: 2px;
+                    border-color: #FFFFFF;
+                    background: Colors.hsv(root.h, 1, 1);
+                    drop-shadow-blur: 3px;
+                    drop-shadow-color: #00000080;
+                }
+                hue-ta := TouchArea {
+                    function at() {
+                        root.h = clamp(self.mouse-x / self.width, 0, 1) * 360;
+                        if (root.s == 0 && root.v == 1) {
+                            // From white a hue alone would change nothing: show it at full strength.
+                            root.s = 1;
+                        }
+                        root.hex-text = ColourPick.hex(root.picked-colour);
+                    }
+                    pointer-event(e) => {
+                        if (e.kind == PointerEventKind.down) { self.at(); }
+                        if (e.kind == PointerEventKind.up) { root.commit(); }
+                    }
+                    moved => { self.at(); }
+                }
+            }
+            HorizontalLayout {
+                spacing: 8px;
+                height: 28px;
+                Rectangle {
+                    width: 28px;
+                    border-radius: 7px;
+                    background: root.picked-colour;
+                    border-width: 1px;
+                    border-color: Theme.swatch-rim;
+                }
+                Rectangle {
+                    horizontal-stretch: 1;
+                    border-radius: 6px;
+                    background: Theme.elevated;
+                    border-width: 1px;
+                    border-color: hex-input.has-focus ? Theme.accent : Theme.control-on;
+                    animate border-color { duration: 120ms; }
+                    HorizontalLayout {
+                        padding-left: 8px;
+                        padding-right: 6px;
+                        spacing: 6px;
+                        Text { text: @tr("colour-hex" => "HEX"); color: Theme.text3; font-size: 10px; font-weight: 600; vertical-alignment: center; }
+                        hex-input := TextInput {
+                            vertical-alignment: center;
+                            color: Theme.text;
+                            font-size: 12px;
+                            font-family: "JetBrains Mono";
+                            single-line: true;
+                            text <=> root.hex-text;
+                            accepted => { ColourPick.hex-entered(root.key, self.text); }
+                        }
+                    }
+                }
+                IconButton {
+                    width: 28px;
+                    height: 28px;
+                    icon: "M3 21 l6 -6 M15 3 l6 6 -9 9 -6 -6 z M13 5 l6 6";
+                    label: @tr("colour-eyedropper" => "Eyedropper");
+                    tip: @tr("colour-eyedropper-tip" => "Eyedropper: pick a colour from the screenshot or the screen");
+                    clicked => {
+                        picker.close();
+                        ColourPick.eyedrop(root.key);
+                    }
+                }
+            }
+            if ColourPick.recent.length > 0: VerticalLayout {
+                spacing: 6px;
+                Text { text: @tr("colour-recent" => "Recent"); color: Theme.text3; font-size: 11px; font-weight: 600; letter-spacing: 0.4px; }
+                HorizontalLayout {
+                    spacing: 4px;
+                    alignment: start;
+                    for c in ColourPick.recent: Swatch {
+                        width: 22px;
+                        height: 22px;
+                        c: c;
+                        on: root.selected == -2 && root.current == c;
+                        clicked => {
+                            ColourPick.pick(root.key, c);
+                            picker.close();
+                        }
+                    }
+                }
+            }
+        }
+        }
     }
 }
 
@@ -1406,6 +1622,10 @@ export component AppWindow inherits Window {
     in property <string> zoom-text: "100 %";
     in property <string> crop-text;
     in property <int> color-index: 0;
+    // The colours shown by the colour rows; an index of -2 means "off the palette" (ZK-160).
+    in property <color> color-rgb;
+    in property <color> fill-rgb;
+    in property <color> digit-rgb;
     in property <int> thick-index: 1;
     in property <bool> has-selection;
     in property <int> selection-count;
@@ -2658,7 +2878,7 @@ export component AppWindow inherits Window {
                             }
                             VerticalLayout {
                                 alignment: center;
-                                ColourRow { width: 270px; selected: root.color-index; picked(i) => { root.set-prop("color", i); } }
+                                ColourRow { width: 270px; selected: root.color-index; key: "color"; current: root.color-rgb; picked(i) => { root.set-prop("color", i); } }
                             }
                             IconButton { tip-side: 2; label: @tr("doc-undo" => "Undo"); tip: self.label + "  " + Keys.k("Ctrl+Z", "⌘Z"); icon: "M9 14 L4 9 l5 -5 M4 9 h11 a5 5 0 0 1 0 10 h-3"; enabled: root.can-undo; clicked => { root.undo(); } }
                             IconButton { tip-side: 2; label: @tr("doc-redo" => "Redo"); tip: self.label + "  " + Keys.k("Ctrl+Shift+Z", "⇧⌘Z"); icon: "M15 14 l5 -5 -5 -5 M20 9 H9 a5 5 0 0 0 0 10 h3"; enabled: root.can-redo; clicked => { root.redo(); } }
@@ -2726,12 +2946,16 @@ export component AppWindow inherits Window {
                                         Text { height: 22px; text: root.prop-kind == 4 ? @tr("ctx-text-colour" => "Text colour") : @tr("insp-fill" => "Fill"); color: Theme.text3; font-size: 11px; font-weight: 600; letter-spacing: 0.4px; vertical-alignment: center; }
                                         if root.prop-kind <= 1: ColourRow {
                                             selected: root.fill-index;
+                                            key: "fill";
+                                            current: root.fill-rgb;
                                             with-none: true;
                                             none-tip: @tr("ctx-fill-none" => "Fill colour: none");
                                             picked(i) => { root.set-prop("fill", i); }
                                         }
                                         if root.prop-kind == 4: ColourRow {
                                             selected: root.color-index;
+                                            key: "color";
+                                            current: root.color-rgb;
                                             picked(i) => { root.set-prop("color", i); }
                                         }
                                     }
@@ -2751,12 +2975,16 @@ export component AppWindow inherits Window {
                                     }
                                     if root.prop-kind == 4: ColourRow {
                                         selected: root.fill-index;
+                                        key: "outline";
+                                        current: root.fill-rgb;
                                         with-none: true;
                                         none-tip: @tr("ctx-outline-none" => "No outline");
                                         picked(i) => { root.set-prop("outline", i); }
                                     }
                                     if root.prop-kind != 4: ColourRow {
                                         selected: root.color-index;
+                                        key: "color";
+                                        current: root.color-rgb;
                                         with-none: root.prop-kind <= 1;
                                         none-tip: @tr("insp-stroke-none" => "No outline");
                                         picked(i) => { root.set-prop(i < 0 ? "stroke-none" : "color", i); }
@@ -2890,6 +3118,8 @@ export component AppWindow inherits Window {
                                     Text { height: 22px; text: @tr("counter-digit-colour" => "Number"); color: Theme.text3; font-size: 11px; font-weight: 600; letter-spacing: 0.4px; vertical-alignment: center; }
                                     ColourRow {
                                         selected: root.digit-index;
+                                        key: "digit";
+                                        current: root.digit-rgb;
                                         with-none: true;
                                         none-tip: @tr("counter-digit-auto" => "Auto: black or white, whichever reads better");
                                         picked(i) => { root.set-prop("digit", i); }
