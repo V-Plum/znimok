@@ -167,6 +167,20 @@ pub fn hold_for_test() {
     });
 }
 
+/// Whether the system tells where the pointer is (not on a disconnected remote session).
+pub fn pointer_known() -> bool {
+    #[cfg(windows)]
+    {
+        let mut p = windows::Win32::Foundation::POINT::default();
+        // SAFETY: valid out-pointer.
+        unsafe { windows::Win32::UI::WindowsAndMessaging::GetCursorPos(&mut p) }.is_ok()
+    }
+    #[cfg(not(windows))]
+    {
+        true
+    }
+}
+
 pub fn paused() -> Option<bool> {
     PILL.with(|p| p.borrow().as_ref().map(|s| s.paused))
 }
