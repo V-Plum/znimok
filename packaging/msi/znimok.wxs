@@ -1,0 +1,105 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Znimok for Windows (ZK-78): a per-user MSI — no UAC prompt, installs into
+  %LOCALAPPDATA%\Programs\Znimok, a newer version replaces the older one (MajorUpgrade), settings
+  and the library in the profile are never touched, uninstall removes everything it added.
+
+  Built by .github/workflows/release.yml:
+    wix build packaging/msi/znimok.wxs -arch x64 -d Version=1.2.3 -d Bin=<folder with the exes> -o Znimok.msi
+
+  UpgradeCode must NEVER change: it is how a new version finds and replaces the old one.
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package Name="Znimok"
+           Manufacturer="Vadym Slyva"
+           Version="$(var.Version)"
+           UpgradeCode="{7B593159-BA4C-4248-9B58-82E33A5A9DBB}"
+           Scope="perUser"
+           Compressed="yes"
+           Language="1033">
+    <SummaryInformation Description="Znimok — screenshots, annotations, agents" />
+    <MajorUpgrade DowngradeErrorMessage="A newer version of Znimok is already installed." />
+    <MediaTemplate EmbedCab="yes" />
+
+    <Property Id="ARPURLINFOABOUT" Value="https://github.com/V-Plum/znimok" />
+    <Property Id="ARPHELPLINK" Value="https://github.com/V-Plum/znimok/issues" />
+    <Property Id="ARPNOMODIFY" Value="1" />
+
+    <StandardDirectory Id="LocalAppDataFolder">
+      <Directory Id="ProgramsDir" Name="Programs">
+        <Directory Id="INSTALLFOLDER" Name="Znimok" />
+      </Directory>
+    </StandardDirectory>
+    <StandardDirectory Id="ProgramMenuFolder" />
+
+    <!-- Per-user components keep an HKCU value as their key path (ICE38). -->
+    <ComponentGroup Id="Program" Directory="INSTALLFOLDER">
+      <Component Id="App">
+        <File Id="AppExe" Source="$(var.Bin)\znimok-app.exe" />
+        <RegistryValue Root="HKCU" Key="Software\Znimok\Installed" Name="app" Type="integer" Value="1" KeyPath="yes" />
+        <RemoveFolder Id="RemoveInstallFolder" On="uninstall" />
+        <RemoveFolder Id="RemoveProgramsDir" Directory="ProgramsDir" On="uninstall" />
+      </Component>
+      <Component Id="Cli">
+        <File Id="CliExe" Source="$(var.Bin)\znimok.exe" />
+        <RegistryValue Root="HKCU" Key="Software\Znimok\Installed" Name="cli" Type="integer" Value="1" KeyPath="yes" />
+        <!-- `znimok` on the user's PATH: the CLI and `claude mcp add znimok -- znimok mcp`. -->
+        <Environment Id="UserPath" Name="PATH" Value="[INSTALLFOLDER]" Part="last" Action="set" System="no" Permanent="no" />
+      </Component>
+      <Component Id="Thumbnails">
+        <File Id="ThumbDll" Source="$(var.Bin)\znimok_thumbnail.dll" />
+        <RegistryValue Root="HKCU" Key="Software\Znimok\Installed" Name="thumbnails" Type="integer" Value="1" KeyPath="yes" />
+        <!-- Explorer thumbnails of .znimok (ZK-76): the same keys as znimok_thumbnail::register. -->
+        <RegistryKey Root="HKCU" Key="Software\Classes\CLSID\{787777D8-E076-4FDC-8065-F7282E5D3F86}">
+          <RegistryValue Type="string" Value="Znimok thumbnail" />
+          <RegistryKey Key="InprocServer32">
+            <RegistryValue Type="string" Value="[INSTALLFOLDER]znimok_thumbnail.dll" />
+            <RegistryValue Name="ThreadingModel" Type="string" Value="Apartment" />
+          </RegistryKey>
+        </RegistryKey>
+        <RegistryValue Root="HKCU" Key="Software\Classes\.znimok\ShellEx\{e357fccd-a995-4576-b01f-234630154e96}" Type="string" Value="{787777D8-E076-4FDC-8065-F7282E5D3F86}" />
+      </Component>
+      <Component Id="License">
+        <File Id="LicenseFile" Source="$(var.Bin)\LICENSE" Name="LICENSE.txt" />
+        <RegistryValue Root="HKCU" Key="Software\Znimok\Installed" Name="license" Type="integer" Value="1" KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+
+    <!-- .znimok opens in Znimok (ZK-75): the keys of znimok_win::WinFileAssoc. The installer owns
+         the type, so it is the default here; the user's own choice (UserChoice) still wins. -->
+    <ComponentGroup Id="Association" Directory="INSTALLFOLDER">
+      <Component Id="FileType">
+        <RegistryValue Root="HKCU" Key="Software\Znimok\Installed" Name="association" Type="integer" Value="1" KeyPath="yes" />
+        <RegistryKey Root="HKCU" Key="Software\Classes\Znimok.Document">
+          <RegistryValue Type="string" Value="Znimok document" />
+          <RegistryValue Name="FriendlyTypeName" Type="string" Value="Znimok document" />
+          <RegistryKey Key="DefaultIcon">
+            <RegistryValue Type="string" Value="[INSTALLFOLDER]znimok-app.exe,0" />
+          </RegistryKey>
+          <RegistryKey Key="shell\open\command">
+            <RegistryValue Type="string" Value="&quot;[INSTALLFOLDER]znimok-app.exe&quot; &quot;%1&quot;" />
+          </RegistryKey>
+        </RegistryKey>
+        <RegistryValue Root="HKCU" Key="Software\Classes\.znimok" Type="string" Value="Znimok.Document" />
+        <RegistryValue Root="HKCU" Key="Software\Classes\.znimok\OpenWithProgids" Name="Znimok.Document" Type="string" Value="" />
+        <RegistryKey Root="HKCU" Key="Software\Classes\Applications\znimok-app.exe">
+          <RegistryValue Key="SupportedTypes" Name=".znimok" Type="string" Value="" />
+          <RegistryValue Key="shell\open\command" Type="string" Value="&quot;[INSTALLFOLDER]znimok-app.exe&quot; &quot;%1&quot;" />
+        </RegistryKey>
+      </Component>
+    </ComponentGroup>
+
+    <ComponentGroup Id="Menu" Directory="ProgramMenuFolder">
+      <Component Id="StartMenu">
+        <Shortcut Id="StartMenuShortcut" Name="Znimok" Target="[INSTALLFOLDER]znimok-app.exe" WorkingDirectory="INSTALLFOLDER" Description="Screenshots and annotations" />
+        <RegistryValue Root="HKCU" Key="Software\Znimok\Installed" Name="menu" Type="integer" Value="1" KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+
+    <Feature Id="Main" Title="Znimok" Level="1">
+      <ComponentGroupRef Id="Program" />
+      <ComponentGroupRef Id="Association" />
+      <ComponentGroupRef Id="Menu" />
+    </Feature>
+  </Package>
+</Wix>

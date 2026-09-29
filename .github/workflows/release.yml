@@ -12,6 +12,7 @@ on:
     paths:
       - ".github/workflows/release.yml"
       - "packaging/**"
+      - "crates/znimok-thumbnail/mac/**"
       - "tools/verify_release.py"
   workflow_dispatch:
 
@@ -56,7 +57,7 @@ jobs:
         with:
           tool: cargo-auditable,cargo-audit
       - name: build (dependency list embedded)
-        run: cargo auditable build --release --locked -p znimok-app -p znimok-cli
+        run: cargo auditable build --release --locked -p znimok-app -p znimok-cli -p znimok-thumbnail
       - name: audit the binaries
         run: |
           cargo audit bin target/release/znimok-app.exe
@@ -67,14 +68,51 @@ jobs:
           $v = "${{ needs.version.outputs.version }}"
           $dir = "dist/Znimok-$v-windows-x64"
           New-Item -ItemType Directory -Force $dir | Out-Null
-          Copy-Item target/release/znimok-app.exe, target/release/znimok.exe, LICENSE, README.md, README.en.md $dir
+          Copy-Item target/release/znimok-app.exe, target/release/znimok.exe, target/release/znimok_thumbnail.dll, LICENSE, README.md, README.en.md $dir
           Compress-Archive -Path "$dir/*" -DestinationPath "dist/Znimok-$v-windows-x64.zip"
           Copy-Item target/release/znimok.exe dist/znimok.exe
+      - name: MSI (WiX, per-user)
+        shell: pwsh
+        run: |
+          $v = "${{ needs.version.outputs.version }}"
+          $msiVersion = ($v -split '-')[0]          # MSI takes only numbers
+          # WiX 5 (MS-RL): v6 needs accepting an extra EULA (the maintenance-fee terms) — not done on the owner's behalf.
+          dotnet tool install --global wix --version 5.0.2
+          $bin = "msi-bin"
+          New-Item -ItemType Directory -Force $bin | Out-Null
+          Copy-Item target/release/znimok-app.exe, target/release/znimok.exe, target/release/znimok_thumbnail.dll, LICENSE $bin
+          wix build packaging/msi/znimok.wxs -arch x64 -d Version=$msiVersion -d Bin=$bin -o "dist/Znimok-$v-windows-x64.msi"
+          if ($LASTEXITCODE -ne 0) { throw "wix build failed" }
+      - name: MSI installs, registers and uninstalls cleanly
+        shell: pwsh
+        run: |
+          $msi = (Get-Item dist/*.msi).FullName
+          $dir = Join-Path $env:LOCALAPPDATA "Programs\Znimok"
+          $p = Start-Process msiexec -ArgumentList "/i `"$msi`" /qn /l*v install.log" -Wait -PassThru
+          if ($p.ExitCode -ne 0) { Get-Content install.log -Tail 40; throw "install failed: $($p.ExitCode)" }
+          foreach ($f in "znimok-app.exe", "znimok.exe", "znimok_thumbnail.dll", "LICENSE.txt") {
+            if (-not (Test-Path (Join-Path $dir $f))) { throw "missing after install: $f" }
+          }
+          $assoc = (Get-ItemProperty "HKCU:\Software\Classes\.znimok").'(default)'
+          if ($assoc -ne "Znimok.Document") { throw ".znimok is '$assoc'" }
+          $thumb = (Get-ItemProperty "HKCU:\Software\Classes\.znimok\ShellEx\{e357fccd-a995-4576-b01f-234630154e96}").'(default)'
+          if ($thumb -ne "{787777D8-E076-4FDC-8065-F7282E5D3F86}") { throw "thumbnail handler is '$thumb'" }
+          $path = [Environment]::GetEnvironmentVariable("PATH", "User")
+          if ($path -notlike "*$dir*") { throw "the install folder is not on the user PATH" }
+          & (Join-Path $dir "znimok.exe") --version
+          $p = Start-Process msiexec -ArgumentList "/x `"$msi`" /qn /l*v uninstall.log" -Wait -PassThru
+          if ($p.ExitCode -ne 0) { Get-Content uninstall.log -Tail 40; throw "uninstall failed: $($p.ExitCode)" }
+          if (Test-Path (Join-Path $dir "znimok-app.exe")) { throw "files left after uninstall" }
+          if (Test-Path "HKCU:\Software\Classes\Znimok.Document") { throw "ProgID left after uninstall" }
+          $path = [Environment]::GetEnvironmentVariable("PATH", "User")
+          if ($path -like "*$dir*") { throw "PATH entry left after uninstall" }
+          "install → check → uninstall: clean"
       - uses: actions/upload-artifact@v4
         with:
           name: windows
           path: |
             dist/*.zip
+            dist/*.msi
             dist/znimok.exe
           retention-days: 14
 
@@ -93,24 +131,48 @@ jobs:
         run: |
           cargo audit bin target/release/znimok-app
           cargo audit bin target/release/znimok
+      - name: Quick Look thumbnails (ZnimokThumbnail.appex, ZK-76)
+        run: bash crates/znimok-thumbnail/mac/build-appex.sh target/appex "${{ needs.version.outputs.version }}"
       - name: Znimok.app (ad-hoc signed; Developer ID and notarisation come with ZK-80)
         run: |
           v="${{ needs.version.outputs.version }}"
           app="dist/Znimok.app"
-          mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
+          mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources" "$app/Contents/PlugIns"
           cp target/release/znimok-app target/release/znimok "$app/Contents/MacOS/"
+          cp -R target/appex/ZnimokThumbnail.appex "$app/Contents/PlugIns/"
           sed -e "s/@BUILD@/${GITHUB_SHA::7}/" \
               -e "s#<key>CFBundleShortVersionString</key><string>[^<]*</string>#<key>CFBundleShortVersionString</key><string>$v</string>#" \
               crates/znimok-app/mac/Info.plist > "$app/Contents/Info.plist"
-          codesign --force --deep --sign - --identifier ua.plum.znimok.app "$app"
+          # The document type (ZK-75): exported UTI + document type, unless the app's plist has them.
+          python3 - "$app/Contents/Info.plist" <<'PY'
+          import sys
+          p = sys.argv[1]
+          s = open(p).read()
+          if "UTExportedTypeDeclarations" not in s:
+              frag = open("crates/znimok-mac/assoc/document-types.plist").read().split("-->", 1)[1]
+              i = s.rindex("</dict>")
+              s = s[:i] + frag + s[i:]
+              open(p, "w").write(s)
+          PY
+          plutil -lint "$app/Contents/Info.plist"
+          # The extension keeps its own signature (sandbox entitlement): no --deep here.
+          codesign --force --sign - --identifier ua.plum.znimok.app "$app"
           codesign --verify --strict "$app"
+          codesign -d --entitlements - "$app/Contents/PlugIns/ZnimokThumbnail.appex" | grep -q app-sandbox
           (cd dist && ditto -c -k --keepParent Znimok.app "Znimok-$v-macos-arm64.zip")
           cp target/release/znimok dist/znimok
+      - name: DMG
+        run: |
+          v="${{ needs.version.outputs.version }}"
+          mkdir -p dmg && cp -R dist/Znimok.app dmg/ && ln -s /Applications dmg/Applications
+          hdiutil create -volname "Znimok $v" -srcfolder dmg -ov -format UDZO "dist/Znimok-$v-macos-arm64.dmg"
+          hdiutil verify "dist/Znimok-$v-macos-arm64.dmg"
       - uses: actions/upload-artifact@v4
         with:
           name: macos
           path: |
             dist/*.zip
+            dist/*.dmg
             dist/znimok
           retention-days: 14
 
@@ -169,7 +231,7 @@ jobs:
           SIGNING_KEY: ${{ secrets.ZNIMOK_SIGNING_KEY }}
         run: |
           mkdir -p out
-          cp in/windows/*.zip in/macos/*.zip in/mcpb/*.mcpb in/sbom/*.zip out/
+          cp in/windows/*.zip in/windows/*.msi in/macos/*.zip in/macos/*.dmg in/mcpb/*.mcpb in/sbom/*.zip out/
           cd out
           sha256sum * > SHA256SUMS
           cat SHA256SUMS
@@ -190,8 +252,8 @@ jobs:
           {
             echo "Znimok ${{ needs.version.outputs.version }}"
             echo
-            echo "- Windows: Znimok-…-windows-x64.zip (znimok-app.exe, znimok.exe CLI; no installer yet — ZK-78)."
-            echo "- macOS (Apple silicon): Znimok-…-macos-arm64.zip — ad-hoc signed, not notarised: open with right-click → Open."
+            echo "- Windows: Znimok-…-windows-x64.msi — installs for the current user, no admin rights (Start menu, .znimok files, Explorer thumbnails, \`znimok\` on PATH). The .zip is the same without installing."
+            echo "- macOS (Apple silicon): Znimok-…-macos-arm64.dmg (or .zip) — ad-hoc signed, not notarised: open with right-click → Open. Finder thumbnails included."
             echo "- Claude Desktop: znimok-….mcpb. SBOM: …-sbom-cyclonedx.zip. Binaries carry their dependency list (cargo auditable)."
             if [[ "$SIGNED" == "1" ]]; then
               echo "- Signed: SHA256SUMS.sig (ECDSA P-256, keys/znimok-release-p256.pub.pem). Check: python tools/verify_release.py <tag>."
