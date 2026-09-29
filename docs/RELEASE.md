@@ -103,3 +103,22 @@ Sparkle's key rotates the same way: an appcast item signed with the old key carr
 `SUPublicEDKey` is the new one.
 
 Developer ID (macOS) and Authenticode (Windows) come with ZK-80.
+
+## macOS updates: Sparkle (ZK-143)
+
+- `Znimok.app/Contents/Frameworks/Sparkle.framework` is the framework of the pinned release
+  (`SPARKLE_VERSION` / `SPARKLE_SHA256` in `release.yml` and `mac/bundle.sh`), copied as
+  published — its own signatures stay valid; the app loads it at run time
+  (`znimok_mac::sparkle`), there is no link step. With Developer ID (ZK-80) the framework, its
+  `Autoupdate` and `Updater.app` get re-signed with our identity (Sparkle's order: helpers
+  first, the framework last, never `--deep`).
+- Info.plist: `SUFeedURL` = `https://github.com/V-Plum/znimok/releases/latest/download/appcast.xml`
+  (GitHub redirects to the latest published release's asset), `SUPublicEDKey`,
+  `SUEnableAutomaticChecks = false` — the app asks on its own daily timer, as on Windows.
+  `CFBundleVersion` = the version (what Sparkle compares with `sparkle:version`).
+- The release job signs the DMG with `ZNIMOK_SPARKLE_KEY` (`tools/sparkle_appcast.py sign`) and
+  publishes `appcast.xml` next to it; `verify_release.py` and CI check the signature with the
+  committed public key. Without the secret there is no appcast and macOS updates stay off.
+- Dev builds (`bundle.sh`) carry the framework but no feed: the Updates page says updates are
+  not set up. To try the whole flow: `ZNIMOK_SPARKLE_FEED=<appcast url> open Znimok.app`.
+- Sparkle 2.10 needs macOS 12; the appcast says `minimumSystemVersion` 15.0 (ours).
