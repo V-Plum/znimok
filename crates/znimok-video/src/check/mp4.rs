@@ -891,6 +891,9 @@ impl Mp4Info {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Mp4Expect {
     pub fps: Option<Fps>,
+    /// Frames between key frames; `None` = one per second (`GOP = fps`, as LH wrote). Znimok
+    /// records with ~0.25 s (decision ZK-17) and says so here.
+    pub keyframe_interval: Option<u32>,
     /// Output frames (sum of durations in frames).
     pub slots: Option<i64>,
     pub duration_s: Option<f64>,
@@ -901,6 +904,7 @@ impl Default for Mp4Expect {
     fn default() -> Self {
         Self {
             fps: None,
+            keyframe_interval: None,
             slots: None,
             duration_s: None,
             duration_tol_s: DURATION_TOL_S,
@@ -1099,8 +1103,11 @@ pub fn check_mp4(info: &Mp4Info, e: &Mp4Expect) -> Vec<Check> {
                     format!("{} (очікується {want})", c.slots),
                 ));
             }
-            // §7 item 3: GOP = fps — key frames 1, 1+fps, 1+2·fps… (mp4boxes "first: (1, 31, 61").
-            let gop = f.as_f64().round() as u64;
+            // §7 item 3: GOP = fps — key frames 1, 1+fps, 1+2·fps… (mp4boxes "first: (1, 31, 61");
+            // or the interval the recording asked for.
+            let gop = e
+                .keyframe_interval
+                .map_or(f.as_f64().round() as u64, u64::from);
             match &v.stss {
                 None => out.push(Check::new("gop", true, "stss немає: усі кадри ключові")),
                 Some(s) => {

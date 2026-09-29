@@ -7089,6 +7089,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "znimok-video-win"
+version = "0.0.0"
+dependencies = [
+ "pollster",
+ "wgpu",
+ "windows",
+ "windows-core",
+ "znimok-platform",
+ "znimok-video",
+ "znimok-win",
+]
+
+[[package]]
 name = "znimok-win"
 version = "0.0.0"
 dependencies = [

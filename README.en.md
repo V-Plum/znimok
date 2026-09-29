@@ -125,6 +125,10 @@ check passed.
 - Work is tracked in the Jira project `ZK`. **Every commit, branch and PR carries the
   issue key** (`ZK-21: …`, branch `zk-21-workspace`) so changes link to the ticket.
 - The main branch is `main`; force-pushes and deletion are blocked on it.
+- Video recording (phase 8) is a library only so far: `crates/znimok-video-win` — Windows
+  (WGC or Desktop Duplication → a wgpu shader → NV12 on the GPU → hardware H.264 through
+  Media Foundation, AAC audio; the software encoder as the fallback). Try it without the app:
+  `cargo run --release -p znimok-video-win --example record -- --seconds 5 [--window Title]`.
 
 ## License
 

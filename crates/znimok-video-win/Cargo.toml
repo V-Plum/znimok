@@ -1,0 +1,46 @@
+[package]
+name = "znimok-video-win"
+description = "Windows backend of Znimok video (ZK-87): screen/window frames from WGC or Desktop Duplication → a wgpu compute shader (crop/fit, HDR tone, click rings, cursor overlay) → BGRA8 on the same GPU → Media Foundation Sink Writer (NV12 conversion and H.264 High on the GPU, AAC audio), the software encoder as the fallback; a Source Reader decoder for checks"
+version.workspace = true
+edition.workspace = true
+license-file.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+znimok-video = { path = "../znimok-video" }
+znimok-platform = { path = "../znimok-platform" }
+
+[target.'cfg(windows)'.dependencies]
+znimok-win = { path = "../znimok-win" }
+wgpu = "30"
+pollster = "0.4"
+windows-core = "0.62"
+windows = { version = "0.62", features = [
+    "Foundation",
+    "Graphics",
+    "Graphics_Capture",
+    "Graphics_DirectX",
+    "Graphics_DirectX_Direct3D11",
+    "Win32_Foundation",
+    "Win32_Graphics_Direct3D",
+    "Win32_Graphics_Direct3D11",
+    "Win32_Graphics_Direct3D12",
+    "Win32_Graphics_Dxgi",
+    "Win32_Graphics_Dxgi_Common",
+    "Win32_Graphics_Gdi",
+    "Win32_Media_MediaFoundation",
+    "Win32_Security",
+    "Win32_System_Com",
+    "Win32_System_Com_StructuredStorage",
+    "Win32_System_Variant",
+    "Win32_System_WinRT",
+    "Win32_System_WinRT_Direct3D11",
+    "Win32_System_WinRT_Graphics_Capture",
+    "Win32_System_Threading",
+    "Win32_UI_WindowsAndMessaging",
+] }

@@ -37,7 +37,7 @@ pub fn ticks_to_ms(q: i64, f: i64) -> i64 {
 
 /// `std::time::Instant` in nanoseconds (frequency 1e9). Good enough for tests and as a fallback;
 /// the OS crates use the counter their audio API stamps packets with.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct MonotonicClock {
     origin: Instant,
 }

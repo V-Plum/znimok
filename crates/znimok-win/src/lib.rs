@@ -25,6 +25,8 @@ pub use win::clipboard::WinClipboard;
 #[cfg(windows)]
 pub use win::fileassoc::{PROG_ID, WinFileAssoc};
 #[cfg(windows)]
+pub use win::raw;
+#[cfg(windows)]
 pub use win::share::WinShare;
 #[cfg(windows)]
 pub use win::{Api, WinCapture, init_process};

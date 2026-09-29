@@ -152,6 +152,7 @@ fn main() -> ExitCode {
     }
     let e = Mp4Expect {
         fps: a.fps,
+        keyframe_interval: None,
         slots: a.slots,
         duration_s: a.duration,
         duration_tol_s: a.tol.unwrap_or(mp4::DURATION_TOL_S),

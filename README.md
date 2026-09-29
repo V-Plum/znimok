@@ -122,6 +122,10 @@ cargo run --release -p znimok-app -- shot.png  # одразу відкрити �
 - Задачі ведуться в Jira-проєкті `ZK`. **Кожен коміт, гілка й PR несуть ключ задачі**
   (`ZK-21: …`, гілка `zk-21-workspace`) — так зміни прив'язуються до тікета.
 - Основна гілка — `main`; на ній заборонено force-push і видалення.
+- Запис відео (Фаза 8) поки лише як бібліотека: `crates/znimok-video-win` — Windows
+  (WGC або дублювання робочого столу → шейдер wgpu → NV12 на GPU → апаратний H.264 через
+  Media Foundation, звук AAC; програмний кодувальник — запасний). Спробувати без застосунку:
+  `cargo run --release -p znimok-video-win --example record -- --seconds 5 [--window Назва]`.
 
 ## Ліцензія
 

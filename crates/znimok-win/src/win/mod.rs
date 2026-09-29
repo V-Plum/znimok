@@ -8,6 +8,15 @@ pub mod share;
 mod wgc;
 mod winlist;
 
+/// Building blocks for other Windows crates (video recording, ZK-87): monitors with their
+/// `HMONITOR`, window helpers, the WGC capability checks and the COM/WinRT thread set-up.
+pub mod raw {
+    pub use super::com_thread;
+    pub use super::display::{Monitor, list as monitors};
+    pub use super::wgc::{borderless, supported as wgc_supported};
+    pub use super::winlist::{display_of, dwm_bounds, hwnd, is_alive, is_minimized};
+}
+
 use std::sync::Once;
 
 use windows::Win32::Foundation::POINT;
@@ -46,7 +55,7 @@ pub fn init_process() {
 /// created the MTA ended (a test thread, a worker), the MTA went down with it and the next thread
 /// used a cached factory of a dead apartment → ACCESS_VIOLATION. `CoIncrementMTAUsage` pins the MTA
 /// until the process exits (the cookie is never released on purpose).
-pub(crate) fn com_thread() {
+pub fn com_thread() {
     static PIN: Once = Once::new();
     PIN.call_once(|| {
         // SAFETY: no arguments besides the out-cookie; failure only means no pin (then each thread's
