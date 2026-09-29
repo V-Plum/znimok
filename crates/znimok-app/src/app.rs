@@ -260,6 +260,8 @@ pub struct App {
     undo_trash: Option<(PathBuf, PathBuf)>,
     /// Re-reads the macOS permissions while the first-run guide is open.
     recheck_timer: slint::Timer,
+    /// Watches the system's light / dark.
+    theme_timer: slint::Timer,
 }
 
 /// The library folder: `ZNIMOK_LIBRARY` (tests, the CLI), then the one chosen in the settings,
@@ -371,6 +373,7 @@ impl App {
             settings_from: 0,
             undo_trash: None,
             recheck_timer: slint::Timer::default(),
+            theme_timer: slint::Timer::default(),
         }
     }
 
@@ -393,30 +396,38 @@ impl App {
     /// macOS window chrome (the overlay stays dark by itself).
     pub fn apply_theme(&self, ui: &AppWindow, p: &znimok_settings::Settings) {
         let mode = theme_mode(p.general.theme);
-        {
-            use slint::winit_030::WinitWindowAccessor;
-            if let Some(dark) = ui
-                .window()
-                .with_winit_window(|w| {
-                    w.theme()
-                        .map(|t| t == slint::winit_030::winit::window::Theme::Dark)
-                })
-                .flatten()
-            {
-                ui.global::<crate::Theme>().set_system_dark(dark);
-                SYSTEM_DARK.with(|d| d.set(dark));
-            }
-        }
+        let dark = crate::system::system_dark();
+        ui.global::<crate::Theme>().set_system_dark(dark);
+        SYSTEM_DARK.with(|d| d.set(dark));
         ui.global::<crate::Theme>().set_mode(mode);
+        // "As the system" follows a change of the system's theme within a couple of seconds.
+        if !self.theme_timer.running() {
+            let weak = ui.as_weak();
+            self.theme_timer.start(
+                slint::TimerMode::Repeated,
+                std::time::Duration::from_secs(2),
+                move || {
+                    let dark = crate::system::system_dark();
+                    if SYSTEM_DARK.with(|d| d.get()) != dark
+                        && let Some(ui) = weak.upgrade()
+                    {
+                        crate::with_ctx(|a, ui| a.system_theme(ui, dark));
+                        let _ = ui;
+                    }
+                },
+            );
+        }
         THEME_MODE.with(|m| m.set(mode));
         crate::frame::set_dark(ui, ui.global::<crate::Theme>().get_dark());
     }
 
     /// The system switched light / dark (winit's ThemeChanged).
-    pub fn system_theme(&self, ui: &AppWindow, dark: bool) {
+    pub fn system_theme(&mut self, ui: &AppWindow, dark: bool) {
         SYSTEM_DARK.with(|d| d.set(dark));
         ui.global::<crate::Theme>().set_system_dark(dark);
         crate::frame::set_dark(ui, ui.global::<crate::Theme>().get_dark());
+        self.dirty = true;
+        ui.window().request_redraw();
     }
 
     pub fn prefs(&self) -> znimok_settings::Settings {
@@ -448,6 +459,11 @@ impl App {
     pub fn settings_close(&mut self, ui: &AppWindow) {
         if crate::REC.with(|r| r.get()).is_some() {
             self.hotkey_stop(ui);
+        }
+        if self.settings_from == 3 {
+            self.settings_from = 0;
+            self.onboarding_open(ui);
+            return;
         }
         let back = if self.s.is_some() {
             self.settings_from.max(0)
@@ -819,9 +835,77 @@ impl App {
                 return;
             }
             "onb-screen" => crate::system::ask_screen(),
+            "dev-onboarding" => {
+                self.save_prefs(ui, |p| p.general.onboarding_done = false);
+                self.onboarding_open(ui);
+                return;
+            }
+            "dev-pill" => {
+                let raster = self
+                    .s
+                    .as_ref()
+                    .map(|s| (*s.ed.doc.banks[s.ed.doc.source as usize]).clone())
+                    .unwrap_or_else(|| Raster::new(320, 200, vec![200; 320 * 200 * 4]));
+                let path = self
+                    .s
+                    .as_ref()
+                    .map(|s| s.path.clone())
+                    .unwrap_or_else(|| self.lib_dir.join("demo.znimok"));
+                let (w, h) = (raster.width, raster.height);
+                let heading = self.tr.tr("pill-region-copied");
+                let sub = self.tr.tr_args(
+                    "pill-where",
+                    &args(&[("width", w.to_string()), ("height", h.to_string())]),
+                );
+                crate::pill::show(
+                    raster,
+                    path,
+                    "Znimok".into(),
+                    heading,
+                    sub,
+                    znimok_platform::Rect::new(0, 0, 1920, 1080),
+                );
+            }
+            "dev-crash" => {
+                let ctx = crate::CTX.with(|c| c.borrow().clone());
+                if let Some((app, _)) = ctx {
+                    let title = self.tr.tr("crash-title");
+                    let buttons = vec![self.tr.tr("common-close")];
+                    let _ = app;
+                    crate::dialog::ask(ui, title, "(test)".into(), buttons, 0, Some(0), |_, _| {});
+                }
+            }
+            "dev-open-settings" => {
+                if let Some(dir) = self
+                    .store
+                    .as_ref()
+                    .and_then(|s| s.path().parent().map(Path::to_path_buf))
+                {
+                    library::show_in_folder(&dir);
+                }
+            }
+            "dev-open-logs" => library::show_in_folder(&znimok_log::logs_dir()),
+            "dev-empty-trash" => {
+                let _ = std::fs::remove_dir_all(library::trash_dir(&self.lib_dir));
+                let msg = self.tr.tr("dev-done");
+                self.toast(ui, msg);
+            }
+            "dev-reset" => {
+                if let Some(store) = self.store.as_ref() {
+                    let _ = store.reset();
+                }
+                let store = self.store.take();
+                self.use_settings(ui, store);
+                let p = self.prefs();
+                crate::hotkeys::apply(&p.capture.hotkeys, p.capture.enabled);
+                self.show_capture_key(ui);
+                let msg = self.tr.tr("dev-done");
+                self.toast(ui, msg);
+            }
             "onb-keys" => {
                 self.recheck_timer.stop();
-                self.settings_from = 0;
+                // Back / Esc returns to the guide, not past it (owner, 29.09).
+                self.settings_from = 3;
                 ui.set_settings_page(1);
                 ui.set_page(2);
                 ui.invoke_focus_settings();
@@ -4861,6 +4945,19 @@ impl App {
         if let Some(c) = self.crop {
             draw_crop(&mut self.pixmap, &self.view, c, self.dpr);
         }
+        let frame_rect = if self.crop.is_some() {
+            let (w, h) = s.ed.doc.image_size();
+            IRect::new(0, 0, w as i32, h as i32)
+        } else {
+            s.ed.doc.frame()
+        };
+        draw_frame_edge(
+            &mut self.pixmap,
+            &self.view,
+            frame_rect,
+            self.dpr,
+            ui.global::<crate::Theme>().get_dark(),
+        );
         let typing = self.editing.as_ref().and_then(|e| e.id);
         if let Some(ed) = self.editing.as_ref() {
             let caret = match ed.id.and_then(|id| s.ed.doc.get(id)) {
@@ -5060,6 +5157,85 @@ pub fn release_pointer(w: &slint::Window) {
         button: PointerEventButton::Left,
     });
     w.dispatch_event(WindowEvent::PointerExited);
+}
+
+/// The picture's edge on the canvas (owner, 29.09: a white or transparent picture melted into
+/// the canvas): a checkerboard under transparent parts, a hairline rim and a soft shadow around.
+fn draw_frame_edge(pix: &mut Pixmap, view: &View, f: IRect, dpr: f64, dark: bool) {
+    use znimok_render::vello_cpu::color::PremulRgba8;
+    let (w, h) = (pix.width() as i64, pix.height() as i64);
+    let a = view.to_out(Point::new(f.x as f64, f.y as f64));
+    let b = view.to_out(Point::new(f.right() as f64, f.bottom() as f64));
+    let (x0, y0, x1, y1) = (
+        a.x.round() as i64,
+        a.y.round() as i64,
+        b.x.round() as i64,
+        b.y.round() as i64,
+    );
+    let data = pix.data_mut();
+    // Transparent parts over a checkerboard of 8-point squares.
+    let sq = (8.0 * dpr).round().max(4.0) as i64;
+    let (c1, c2) = if dark {
+        (58u16, 44u16)
+    } else {
+        (255u16, 226u16)
+    };
+    for y in y0.max(0)..y1.min(h) {
+        for x in x0.max(0)..x1.min(w) {
+            let p = &mut data[(y * w + x) as usize];
+            if p.a == 255 {
+                continue;
+            }
+            let c = if ((x - x0) / sq + (y - y0) / sq) % 2 == 0 {
+                c1
+            } else {
+                c2
+            };
+            let k = 255 - p.a as u16;
+            // premultiplied: result = src + checker·(1 − αsrc)
+            let mix = |v: u8| (v as u16 + c * k / 255).min(255) as u8;
+            *p = PremulRgba8 {
+                r: mix(p.r),
+                g: mix(p.g),
+                b: mix(p.b),
+                a: 255,
+            };
+        }
+    }
+    // Shadow: a few pixels fading out around the frame; the rim: one pixel.
+    let blur = (6.0 * dpr).round() as i64;
+    let mut dim = |x: i64, y: i64, k: u16| {
+        if x >= 0 && y >= 0 && x < w && y < h && !(x >= x0 && x < x1 && y >= y0 && y < y1) {
+            let p = &mut data[(y * w + x) as usize];
+            let m = |v: u8| (v as u16 * (255 - k) / 255) as u8;
+            *p = PremulRgba8 {
+                r: m(p.r),
+                g: m(p.g),
+                b: m(p.b),
+                a: p.a.max(k as u8),
+            };
+        }
+    };
+    for d in 1..=blur {
+        let k = (if dark { 90 } else { 40 }) * (blur - d + 1) as u16 / blur as u16;
+        for x in x0 - d..x1 + d {
+            dim(x, y0 - d, k / 2);
+            dim(x, y1 - 1 + d, k);
+        }
+        for y in y0 - d..y1 + d {
+            dim(x0 - d, y, k / 2);
+            dim(x1 - 1 + d, y, k / 2);
+        }
+    }
+    let rim = if dark { 110 } else { 60 };
+    for x in x0 - 1..=x1 {
+        dim(x, y0 - 1, rim);
+        dim(x, y1, rim);
+    }
+    for y in y0 - 1..=y1 {
+        dim(x0 - 1, y, rim);
+        dim(x1, y, rim);
+    }
 }
 
 /// Caret and selection of the text being typed, in screen pixels: the selection as a translucent

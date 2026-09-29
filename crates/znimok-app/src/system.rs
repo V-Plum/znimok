@@ -66,3 +66,41 @@ pub fn ask_screen() {
         }
     }
 }
+
+/// The system's own light / dark (not the window's: on macOS our window carries its own
+/// appearance, so winit's window theme would only echo it back). Read at start and every few
+/// seconds (ZK-46).
+pub fn system_dark() -> bool {
+    #[cfg(windows)]
+    {
+        use windows::Win32::System::Registry::{HKEY_CURRENT_USER, RRF_RT_REG_DWORD, RegGetValueW};
+        use windows::core::w;
+        let mut v: u32 = 1;
+        let mut len = std::mem::size_of::<u32>() as u32;
+        // SAFETY: a DWORD read into a u32 of the stated size.
+        let r = unsafe {
+            RegGetValueW(
+                HKEY_CURRENT_USER,
+                w!("Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize"),
+                w!("AppsUseLightTheme"),
+                RRF_RT_REG_DWORD,
+                None,
+                Some((&mut v as *mut u32).cast()),
+                Some(&mut len),
+            )
+        };
+        // No value (older systems): light.
+        r.is_ok() && v == 0
+    }
+    #[cfg(target_os = "macos")]
+    {
+        use objc2_foundation::{NSString, NSUserDefaults};
+        let style = NSUserDefaults::standardUserDefaults()
+            .stringForKey(&NSString::from_str("AppleInterfaceStyle"));
+        style.is_some_and(|s| s.to_string().eq_ignore_ascii_case("dark"))
+    }
+    #[cfg(not(any(windows, target_os = "macos")))]
+    {
+        true
+    }
+}

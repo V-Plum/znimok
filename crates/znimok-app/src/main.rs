@@ -548,8 +548,10 @@ fn wire(ui: &AppWindow, app: &Shared) {
                 }
             }
             // The system switched light / dark (ZK-46): "as the system" follows at once.
-            if let winit::event::WindowEvent::ThemeChanged(t) = ev {
-                let dark = *t == winit::window::Theme::Dark;
+            // (The event's value is the window's own appearance on macOS — ours — so the system
+            // is asked directly.)
+            if let winit::event::WindowEvent::ThemeChanged(_) = ev {
+                let dark = system::system_dark();
                 let _ = slint::invoke_from_event_loop(move || {
                     with_ctx(|a, ui| a.system_theme(ui, dark));
                 });

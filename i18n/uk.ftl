@@ -3972,3 +3972,57 @@ vexp-estimate = Оцінка:
 # @kind: hint
 # @max: 140
 vexp-gif-warning = GIF понад 25 МБ погано вантажаться в чатах. Для таких кліпів кращий MP4 або WebP.
+
+## For developers
+## A temporary settings page for testing (owner, 29.09).
+
+
+# @where: Settings → For developers
+# @kind: button
+# @max: 60
+dev-page = Для розробника
+
+# @where: Settings → For developers: the note at the top of the page
+# @kind: body
+# @max: 120
+dev-intro = Тимчасова сторінка для перевірок: скинути стан і показати те, що зазвичай з'являється лише раз.
+
+# @where: Settings → For developers
+# @kind: button
+# @max: 60
+dev-onboarding = Показати провідник першого запуску знову
+
+# @where: Settings → For developers
+# @kind: button
+# @max: 60
+dev-pill = Показати плашку після знімка
+
+# @where: Settings → For developers
+# @kind: button
+# @max: 60
+dev-crash = Показати питання про звіт збою
+
+# @where: Settings → For developers
+# @kind: button
+# @max: 60
+dev-open-settings = Відкрити теку налаштувань
+
+# @where: Settings → For developers
+# @kind: button
+# @max: 60
+dev-open-logs = Відкрити теку журналів
+
+# @where: Settings → For developers
+# @kind: button
+# @max: 60
+dev-empty-trash = Очистити кошик бібліотеки
+
+# @where: Settings → For developers
+# @kind: button
+# @max: 60
+dev-reset = Скинути всі налаштування
+
+# @where: Settings → For developers
+# @kind: button
+# @max: 60
+dev-done = Готово

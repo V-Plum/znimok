@@ -543,35 +543,41 @@ component MenuItemRow inherits Rectangle {
 }
 
 // Check box: a rounded square that fills with the accent and draws its tick (tactile press).
-component CheckBox inherits HorizontalLayout {
+component CheckBox inherits Rectangle {
     in property <string> text;
     in-out property <bool> checked;
     callback toggled;
-    spacing: 8px;
-    Rectangle {
-        width: 18px;
-        height: 18px;
-        y: (parent.height - self.height) / 2;
-        border-radius: 5px;
-        background: root.checked ? Theme.accent : transparent;
-        border-width: root.checked ? 0 : 1.5px;
-        border-color: Theme.text3;
-        animate background { duration: 140ms; easing: ease-out; }
-        transform-origin: { x: self.width / 2, y: self.height / 2 };
-        transform-scale: ta.pressed ? 0.88 : 1.0;
-        animate transform-scale { duration: 140ms; easing: cubic-bezier(0.2, 0.8, 0.2, 1); }
-        if root.checked: Path {
-            width: parent.width;
-            height: parent.height;
-            viewbox-width: 24;
-            viewbox-height: 24;
-            commands: "M6 12.5 l4 4 L18 8";
-            stroke: white;
-            stroke-width: 2.4px;
-            fill: transparent;
+    // The row is one target: box and caption (a TouchArea inside a layout would be a cell of its
+    // own, zero wide — the first version never got the click).
+    width: row.preferred-width;
+    height: max(20px, row.preferred-height);
+    row := HorizontalLayout {
+        spacing: 8px;
+        Rectangle {
+            width: 18px;
+            height: 18px;
+            y: (parent.height - self.height) / 2;
+            border-radius: 5px;
+            background: root.checked ? Theme.accent : transparent;
+            border-width: root.checked ? 0 : 1.5px;
+            border-color: Theme.text3;
+            animate background { duration: 140ms; easing: ease-out; }
+            transform-origin: { x: self.width / 2, y: self.height / 2 };
+            transform-scale: ta.pressed ? 0.88 : 1.0;
+            animate transform-scale { duration: 140ms; easing: cubic-bezier(0.2, 0.8, 0.2, 1); }
+            if root.checked: Path {
+                width: parent.width;
+                height: parent.height;
+                viewbox-width: 24;
+                viewbox-height: 24;
+                commands: "M6 12.5 l4 4 L18 8";
+                stroke: white;
+                stroke-width: 2.4px;
+                fill: transparent;
+            }
         }
+        Text { text: root.text; color: Theme.text2; font-size: 12px; vertical-alignment: center; }
     }
-    Text { text: root.text; color: Theme.text2; font-size: 12px; vertical-alignment: center; }
     ta := TouchArea {
         mouse-cursor: MouseCursor.pointer;
         clicked => {
@@ -652,24 +658,29 @@ component PropRow inherits HorizontalLayout {
 // Palette chips plus, at the right, the chip that will open the colour picker with the
 // eyedropper (strings `colour-picker` / `colour-eyedropper` already exist; the popover is
 // a later ticket) — the room is reserved now so the layout does not move when it lands.
-component ColourRow inherits HorizontalLayout {
+component ColourRow inherits Rectangle {
     in property <int> selected: -1;
     in property <bool> with-none;
     in property <string> none-tip;
     callback picked(int);
-    spacing: 3px;
-    if root.with-none: Swatch { width: 22px; height: 22px; none: true; on: root.selected < 0; tip: root.none-tip; clicked => { root.picked(-1); } }
-    for c[i] in Palette.colors: Swatch { width: 22px; height: 22px; c: c; on: root.selected == i; clicked => { root.picked(i); } }
-    Rectangle { horizontal-stretch: 1; }
+    // Ten columns in every row (none, eight colours, the picker at the right edge), so rows line
+    // up under each other whether or not they offer "none" (owner, 29.09).
+    property <length> cell: min(27px, self.width / 10);
+    property <length> chip: min(22px, self.cell - 3px);
+    height: 24px;
+    if root.with-none: Swatch { x: 0; y: (parent.height - self.height) / 2; width: root.chip; height: root.chip; none: true; on: root.selected < 0; tip: root.none-tip; clicked => { root.picked(-1); } }
+    for c[i] in Palette.colors: Swatch { x: (i + 1) * root.cell; y: (parent.height - self.height) / 2; width: root.chip; height: root.chip; c: c; on: root.selected == i; clicked => { root.picked(i); } }
     Rectangle {
-        width: 22px;
-        height: 22px;
+        x: parent.width - self.width;
+        y: (parent.height - self.height) / 2;
+        width: root.chip;
+        height: root.chip;
         border-radius: 7px;
         background: @linear-gradient(135deg, #FF5A5F 0%, #FFD23F 30%, #34C48A 55%, #3D7BF5 80%, #9B5CF5 100%);
         transform-origin: { x: self.width / 2, y: self.height / 2 };
         transform-scale: pick-ta.has-hover ? 1.08 : 1.0;
         animate transform-scale { duration: 140ms; easing: cubic-bezier(0.2, 0.8, 0.2, 1); }
-        Rectangle { x: 2px; y: 2px; width: 18px; height: 18px; border-radius: 5px; background: Theme.panel; }
+        Rectangle { x: 2px; y: 2px; width: parent.width - 4px; height: parent.height - 4px; border-radius: 5px; background: Theme.panel; }
         Icon { width: 12px; height: 12px; d: "M3 21 l6 -6 M15 3 l6 6 -9 9 -6 -6 z M13 5 l6 6"; tint: Theme.text2; }
         pick-ta := TipTouch { tip: @tr("colour-picker" => "Colour picker") + " — " + @tr("common-in-development" => "Coming soon"); }
     }
@@ -1786,6 +1797,7 @@ export component AppWindow inherits Window {
                                 @tr("set-page-look" => "Appearance and language"),
                                 @tr("set-page-privacy" => "Privacy"),
                                 @tr("set-page-about" => "About Znimok"),
+                                @tr("dev-page" => "For developers"),
                             ]: Rectangle {
                                 height: 34px;
                                 border-radius: 8px;
@@ -1961,6 +1973,24 @@ export component AppWindow inherits Window {
                                     spacing: 12px;
                                     Text { text: root.mac ? @tr("priv-mac-perms" => "macOS permissions") : @tr("onb-open-guide" => "First-run guide"); color: Theme.text2; font-size: 12px; vertical-alignment: center; horizontal-stretch: 1; }
                                     TextButton { text: @tr("priv-check" => "Check"); clicked => { root.setting("onb-open", 0); } }
+                                }
+                                Text { text: root.pref-file; color: Theme.text3; font-size: 10px; wrap: word-wrap; }
+                            }
+                            // ---- For developers (temporary, owner 29.09): reset and replay things
+                            if root.settings-page == 7: VerticalLayout {
+                                spacing: 12px;
+                                Text { text: @tr("dev-intro" => "A temporary page for testing: reset state and show what normally appears only once."); color: Theme.text3; font-size: 12px; wrap: word-wrap; }
+                                for a[i] in [
+                                    { key: "dev-onboarding", label: @tr("dev-onboarding" => "Show the first-run guide again") },
+                                    { key: "dev-pill", label: @tr("dev-pill" => "Show the card after a capture") },
+                                    { key: "dev-crash", label: @tr("dev-crash" => "Show the crash-report question") },
+                                    { key: "dev-open-settings", label: @tr("dev-open-settings" => "Open the settings folder") },
+                                    { key: "dev-open-logs", label: @tr("dev-open-logs" => "Open the logs folder") },
+                                    { key: "dev-empty-trash", label: @tr("dev-empty-trash" => "Empty the library trash") },
+                                    { key: "dev-reset", label: @tr("dev-reset" => "Reset all settings") },
+                                ]: HorizontalLayout {
+                                    alignment: start;
+                                    TextButton { text: a.label; clicked => { root.setting(a.key, 0); } }
                                 }
                                 Text { text: root.pref-file; color: Theme.text3; font-size: 10px; wrap: word-wrap; }
                             }
@@ -2356,7 +2386,7 @@ export component AppWindow inherits Window {
                                         height: 22px;
                                         Text { text: root.prop-kind == 4 ? @tr("ctx-text-outline" => "Outline colour") : @tr("insp-stroke" => "Stroke"); color: Theme.text3; font-size: 11px; font-weight: 600; letter-spacing: 0.4px; vertical-alignment: center; horizontal-stretch: 1; }
                                         if root.prop-kind <= 1 || root.prop-kind == 4: IconButton {
-                                            width: 26px;
+                                            width: 22px;
                                             height: 22px;
                                             icon: "M7 4 L3 8 l4 4 M3 8 h13 a4 4 0 0 1 4 4 M17 20 l4 -4 -4 -4 M21 16 H8 a4 4 0 0 1 -4 -4";
                                             label: @tr("insp-swap-colours" => "Swap stroke and fill");

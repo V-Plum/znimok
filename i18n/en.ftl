@@ -3940,3 +3940,57 @@ vexp-estimate = Estimate:
 # @kind: hint
 # @max: 140
 vexp-gif-warning = GIFs over 25 MB load poorly in chats. MP4 or WebP suits such clips better.
+
+## For developers
+## A temporary settings page for testing (owner, 29.09).
+
+
+# @where: Settings → For developers
+# @kind: button
+# @max: 60
+dev-page = For developers
+
+# @where: Settings → For developers: the note at the top of the page
+# @kind: body
+# @max: 120
+dev-intro = A temporary page for testing: reset state and show what normally appears only once.
+
+# @where: Settings → For developers
+# @kind: button
+# @max: 60
+dev-onboarding = Show the first-run guide again
+
+# @where: Settings → For developers
+# @kind: button
+# @max: 60
+dev-pill = Show the card after a capture
+
+# @where: Settings → For developers
+# @kind: button
+# @max: 60
+dev-crash = Show the crash-report question
+
+# @where: Settings → For developers
+# @kind: button
+# @max: 60
+dev-open-settings = Open the settings folder
+
+# @where: Settings → For developers
+# @kind: button
+# @max: 60
+dev-open-logs = Open the logs folder
+
+# @where: Settings → For developers
+# @kind: button
+# @max: 60
+dev-empty-trash = Empty the library trash
+
+# @where: Settings → For developers
+# @kind: button
+# @max: 60
+dev-reset = Reset all settings
+
+# @where: Settings → For developers
+# @kind: button
+# @max: 60
+dev-done = Done

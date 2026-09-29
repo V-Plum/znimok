@@ -1261,6 +1261,17 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
     steps.push(Box::new(|_, ui, _| {
         ui.invoke_setting("onb-open".into(), 0);
     }));
+    // From the guide to the hotkeys and back to the guide, not past it (owner, 29.09).
+    steps.push(Box::new(|_, ui, r| {
+        ui.invoke_setting("onb-keys".into(), 0);
+        let in_keys = ui.get_page() == 2 && ui.get_settings_page() == 1;
+        ui.invoke_setting("close".into(), 0);
+        r.check(
+            "guide → hotkeys → back returns to the guide",
+            in_keys && ui.get_page() == 3,
+            format!("page {}", ui.get_page()),
+        );
+    }));
     steps.push(Box::new(|app, ui, r| {
         r.snapshot(ui, "27-onboarding");
         let shown = ui.get_page() == 3;
@@ -1524,6 +1535,10 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
     }));
     steps.push(Box::new(|_, ui, r| {
         r.snapshot(ui, "L4-settings-light");
+        ui.set_settings_page(7);
+    }));
+    steps.push(Box::new(|_, ui, r| {
+        r.snapshot(ui, "L7-developer-light");
         ui.invoke_setting("onb-open".into(), 0);
     }));
     steps.push(Box::new(|app, ui, r| {
