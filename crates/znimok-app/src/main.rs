@@ -283,8 +283,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
     }
 
-    ui.show()?;
-    frame::after_show(&ui);
+    // Started at login with a tray icon: stay in the tray until called (ZK-77). The window is
+    // shown later by the tray, the hotkey or a second start (show_window).
+    if !(background && tray_ui.is_some()) {
+        ui.show()?;
+        frame::after_show(&ui);
+    }
     slint::run_event_loop_until_quit()?;
     drop(timer);
     drop(tray_ui);
@@ -302,7 +306,12 @@ thread_local! {
 /// Shows the window and brings it to the front (from the tray, the hotkey, a second start).
 fn show_window(ui: &AppWindow) {
     use slint::winit_030::WinitWindowAccessor;
+    let first = !ui.window().is_visible();
     let _ = ui.show();
+    // The first show after a silent start: our frame (rounded corners, macOS title bar).
+    if first {
+        frame::after_show(ui);
+    }
     ui.window().with_winit_window(|w| {
         w.set_minimized(false);
         w.focus_window();
