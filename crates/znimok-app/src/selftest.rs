@@ -1966,6 +1966,36 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
         r.snapshot(ui, "copy-title");
     }));
 
+    // ZK-132: the Agents and Updates pages; the MCP switch is the one the server checks.
+    steps.push(Box::new(|_, ui, _| {
+        ui.invoke_settings_open();
+        ui.set_settings_page(8);
+    }));
+    steps.push(Box::new(|_, ui, r| {
+        r.snapshot(ui, "32-agents");
+        ui.invoke_setting("mcp".into(), 1);
+        let file = std::fs::read_to_string(r.dir.join("settings.json")).unwrap_or_default();
+        let on = file.contains("\"mcp_enabled\": true") && ui.get_pref_mcp();
+        ui.invoke_setting("mcp".into(), 0);
+        let file = std::fs::read_to_string(r.dir.join("settings.json")).unwrap_or_default();
+        let off = !file.contains("\"mcp_enabled\": true") && !ui.get_pref_mcp();
+        r.check(
+            "agents: the MCP switch goes into settings.json",
+            on && off,
+            String::new(),
+        );
+        ui.set_settings_page(9);
+    }));
+    steps.push(Box::new(|_, ui, r| {
+        r.snapshot(ui, "33-updates");
+        r.check(
+            "updates page: version and last check shown",
+            !ui.get_upd_version().is_empty() && !ui.get_upd_last().is_empty(),
+            format!("{} · {}", ui.get_upd_version(), ui.get_upd_last()),
+        );
+        ui.invoke_setting("close".into(), 0);
+    }));
+
     // ZK-128: a second click takes the shot after a countdown; Esc cancels the countdown.
     steps.push(Box::new(|_, _, _| {
         let open = || -> Option<(crate::Overlay, f32, f32)> {

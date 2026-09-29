@@ -18,6 +18,7 @@ path = "src/main.rs"
 [dependencies]
 znimok-core = { path = "../znimok-core" }
 znimok-format = { path = "../znimok-format" }
+znimok-agents = { path = "../znimok-agents" }
 znimok-render = { path = "../znimok-render" }
 znimok-platform = { path = "../znimok-platform" }
 znimok-i18n = { path = "../znimok-i18n" }

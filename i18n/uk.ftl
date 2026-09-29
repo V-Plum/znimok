@@ -3464,6 +3464,61 @@ agents-models = Моделі для функцій Znimok
 # @max: 140
 agents-models-hint = Спершу на пристрої. Хмара — лише з вашим ключем і лише для функцій, які ви дозволили.
 
+# @where: A permission of a connected agent
+# @kind: label
+# @max: 24
+agents-scope-settings = налаштування
+
+# @where: Switch: the local MCP server for agents on this computer
+# @kind: label
+# @max: 48
+agents-access = Доступ агентам на цьому комп’ютері (MCP)
+
+# @where: Under the switch: how an agent connects
+# @kind: body
+# @max: 160
+agents-connect-hint = Claude Code: claude mcp add znimok -- znimok mcp. Claude Desktop: відкрийте файл .mcpb з релізу.
+
+# @where: The action log has no entries
+# @kind: body
+# @max: 48
+agents-log-empty = Поки нічого
+
+# @where: A line of the action log; $when is a date and time
+# @kind: body
+# @max: 80
+agents-log-entry = { $when } · { $client } · { $tool }
+
+# @where: Button: show the action log file in its folder
+# @kind: button
+# @max: 24
+agents-log-show = Показати файл
+
+# @where: Status of the cloud assistant without a key
+# @kind: value
+# @max: 32
+agents-cloud-off = вимкнено, ключа немає
+
+# @where: Updates page: when the last check was; $when is a date or "never"
+# @kind: value
+# @max: 48
+upd-last-check = Остання перевірка: { $when }
+
+# @where: Updates page, instead of the last check when there was none
+# @kind: value
+# @max: 48
+upd-never-checked = Перевірок ще не було
+
+# @where: Updates page: button to check right now
+# @kind: button
+# @max: 24
+upd-check-now = Перевірити зараз
+
+# @where: Updates page: where updates come from
+# @kind: body
+# @max: 160
+upd-channel-hint = Релізи на GitHub із підписом; перед установкою перевіряється підпис.
+
 # @where: Model row
 # @kind: label
 # @max: 48

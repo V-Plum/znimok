@@ -3444,6 +3444,61 @@ agents-models = Models for Znimok features
 # @max: 140
 agents-models-hint = On the device first. The cloud — only with your key and only for the features you allowed.
 
+# @where: A permission of a connected agent
+# @kind: label
+# @max: 24
+agents-scope-settings = settings
+
+# @where: Switch: the local MCP server for agents on this computer
+# @kind: label
+# @max: 48
+agents-access = Access for agents on this computer (MCP)
+
+# @where: Under the switch: how an agent connects
+# @kind: body
+# @max: 160
+agents-connect-hint = Claude Code: claude mcp add znimok -- znimok mcp. Claude Desktop: open the .mcpb file from the release.
+
+# @where: The action log has no entries
+# @kind: body
+# @max: 48
+agents-log-empty = Nothing yet
+
+# @where: A line of the action log; $when is a date and time
+# @kind: body
+# @max: 80
+agents-log-entry = { $when } · { $client } · { $tool }
+
+# @where: Button: show the action log file in its folder
+# @kind: button
+# @max: 24
+agents-log-show = Show file
+
+# @where: Status of the cloud assistant without a key
+# @kind: value
+# @max: 32
+agents-cloud-off = off, no key
+
+# @where: Updates page: when the last check was; $when is a date or "never"
+# @kind: value
+# @max: 48
+upd-last-check = Last check: { $when }
+
+# @where: Updates page, instead of the last check when there was none
+# @kind: value
+# @max: 48
+upd-never-checked = Not checked yet
+
+# @where: Updates page: button to check right now
+# @kind: button
+# @max: 24
+upd-check-now = Check now
+
+# @where: Updates page: where updates come from
+# @kind: body
+# @max: 160
+upd-channel-hint = Releases on GitHub, signed; the installer checks the signature before installing.
+
 # @where: Model row
 # @kind: label
 # @max: 48

@@ -1008,6 +1008,11 @@ export component Pill inherits Window {
 // Countdown before a delayed capture (ZK-128, LH CAPS-85): a small square in the bottom-right
 // corner of the display. It takes no focus and lets the mouse through (Rust sets that up), so
 // a menu that closes on a hotkey can be opened while it counts; it is gone before the capture.
+export struct AgentClient {
+    name: string,
+    scopes: string,
+}
+
 export component Countdown inherits Window {
     init => { Theme.mode = 2; }
     default-font-family: "Onest";
@@ -1526,6 +1531,14 @@ export component AppWindow inherits Window {
     in property <bool> pref-autosave;
     in property <bool> pref-metadata;
     in property <bool> pref-updates;
+    // Agents page (ZK-132).
+    in property <bool> pref-mcp;
+    in property <[AgentClient]> agent-clients;
+    in property <[string]> agent-log;
+    in property <string> agent-model;
+    // Updates page.
+    in property <string> upd-version;
+    in property <string> upd-last;
     in property <int> pref-lang;
     in property <bool> pref-ret-size;
     in-out property <string> pref-ret-count;
@@ -1885,22 +1898,32 @@ export component AppWindow inherits Window {
                             padding: 12px;
                             spacing: 2px;
                             alignment: start;
-                            for t[i] in [
-                                @tr("set-page-shots" => "Screenshots"),
-                                @tr("set-page-keys" => "Hotkeys"),
-                                @tr("set-page-library" => "Library"),
-                                @tr("set-page-sharing" => "Sharing"),
-                                @tr("set-page-look" => "Appearance and language"),
-                                @tr("set-page-privacy" => "Privacy"),
-                                @tr("set-page-about" => "About Znimok"),
-                                @tr("dev-page" => "For developers"),
+                            // Page numbers stay as they were (the code and the self-test use them); the
+                            // list shows them in the design's order. -1 = not yet (stable layout).
+                            for t in [
+                                { p: 0, t: @tr("set-page-shots" => "Screenshots") },
+                                { p: 1, t: @tr("set-page-keys" => "Hotkeys") },
+                                { p: -1, t: @tr("set-page-recording" => "Recording") },
+                                { p: 2, t: @tr("set-page-library" => "Library") },
+                                { p: 3, t: @tr("set-page-sharing" => "Sharing") },
+                                { p: 8, t: @tr("set-page-agents" => "Agents and models") },
+                                { p: 4, t: @tr("set-page-look" => "Appearance and language") },
+                                { p: 5, t: @tr("set-page-privacy" => "Privacy") },
+                                { p: 9, t: @tr("set-page-updates" => "Updates") },
+                                { p: 6, t: @tr("set-page-about" => "About Znimok") },
+                                { p: 7, t: @tr("dev-page" => "For developers") },
                             ]: Rectangle {
                                 height: 34px;
                                 border-radius: 8px;
-                                background: root.settings-page == i ? Theme.control-on : (nav-ta.has-hover ? Theme.elevated : transparent);
+                                background: t.p >= 0 && root.settings-page == t.p ? Theme.control-on : (nav-ta.has-hover && t.p >= 0 ? Theme.elevated : transparent);
                                 animate background { duration: 120ms; }
-                                Text { x: 12px; text: t; color: root.settings-page == i ? Theme.text : Theme.text2; font-size: 13px; font-weight: root.settings-page == i ? 600 : 400; vertical-alignment: center; height: parent.height; }
-                                nav-ta := TouchArea { mouse-cursor: MouseCursor.pointer; clicked => { root.settings-page = i; } }
+                                Text { x: 12px; text: t.t; color: t.p < 0 ? Theme.disabled : (root.settings-page == t.p ? Theme.text : Theme.text2); font-size: 13px; font-weight: root.settings-page == t.p ? 600 : 400; vertical-alignment: center; height: parent.height; }
+                                nav-ta := TipTouch {
+                                    enabled: t.p >= 0;
+                                    tip: t.p < 0 ? @tr("common-in-development" => "Coming soon") : "";
+                                    tip-side: 1;
+                                    clicked => { root.settings-page = t.p; }
+                                }
                             }
                         }
                     }
@@ -2072,6 +2095,55 @@ export component AppWindow inherits Window {
                                 }
                                 Text { text: root.pref-file; color: Theme.text3; font-size: 10px; wrap: word-wrap; }
                             }
+                            // ---- Agents and models (ZK-132)
+                            if root.settings-page == 8: VerticalLayout {
+                                spacing: 14px;
+                                SwitchRow { text: @tr("agents-access" => "Access for agents on this computer (MCP)"); checked: root.pref-mcp; toggled => { root.setting("mcp", self.checked ? 1 : 0); } }
+                                Text { text: @tr("agents-connect-hint" => "Claude Code: claude mcp add znimok -- znimok mcp. Claude Desktop: open the .mcpb file from the release."); color: Theme.text3; font-size: 11px; wrap: word-wrap; }
+                                Text { text: @tr("agents-clients" => "Connected clients"); color: Theme.text2; font-size: 12px; font-weight: 600; }
+                                Text { text: @tr("agents-clients-hint" => "Each agent gets its own key and its own permissions. Access is off until you turn it on."); color: Theme.text3; font-size: 11px; wrap: word-wrap; }
+                                if root.agent-clients.length == 0: Text { text: @tr("agents-empty-title" => "No agent has connected yet"); color: Theme.text3; font-size: 12px; }
+                                for c in root.agent-clients: HorizontalLayout {
+                                    spacing: 12px;
+                                    Text { text: c.name; color: Theme.text; font-size: 12px; font-weight: 600; }
+                                    Text { text: c.scopes; color: Theme.text3; font-size: 12px; horizontal-stretch: 1; wrap: word-wrap; }
+                                }
+                                if root.agent-clients.length > 0: HorizontalLayout {
+                                    alignment: start;
+                                    TextButton { text: @tr("agents-revoke-all" => "Revoke all permissions"); clicked => { root.setting("agents-revoke", 0); } }
+                                }
+                                Text { text: @tr("agents-models" => "Models for Znimok features"); color: Theme.text2; font-size: 12px; font-weight: 600; }
+                                Text { text: @tr("agents-models-hint" => "On the device first. The cloud — only with your key and only for the features you allowed."); color: Theme.text3; font-size: 11px; wrap: word-wrap; }
+                                for row in [
+                                    { k: @tr("agents-ocr" => "Recognising text in screenshots"), v: @tr("agents-on-device" => "On device") },
+                                    { k: @tr("agents-redact" => "Finding secrets and faces to mask"), v: @tr("agents-on-device" => "On device") },
+                                    { k: @tr("agents-assistant" => "Natural-language assistant") + " · " + root.agent-model, v: @tr("agents-cloud-off" => "off, no key") },
+                                ]: HorizontalLayout {
+                                    spacing: 12px;
+                                    Text { text: row.k; color: Theme.text2; font-size: 12px; horizontal-stretch: 1; wrap: word-wrap; }
+                                    Text { text: row.v; color: Theme.text3; font-size: 12px; }
+                                }
+                                HorizontalLayout {
+                                    spacing: 12px;
+                                    Text { text: @tr("agents-log" => "Action log"); color: Theme.text2; font-size: 12px; font-weight: 600; vertical-alignment: center; horizontal-stretch: 1; }
+                                    TextButton { text: @tr("agents-log-show" => "Show file"); clicked => { root.setting("agents-log", 0); } }
+                                }
+                                if root.agent-log.length == 0: Text { text: @tr("agents-log-empty" => "Nothing yet"); color: Theme.text3; font-size: 12px; }
+                                for line in root.agent-log: Text { text: line; color: Theme.text3; font-size: 11px; wrap: word-wrap; }
+                            }
+                            // ---- Updates (ZK-132; the updater itself is ZK-122)
+                            if root.settings-page == 9: VerticalLayout {
+                                spacing: 14px;
+                                Text { text: root.upd-version; color: Theme.text; font-size: 13px; font-weight: 600; }
+                                SwitchRow { text: @tr("priv-updates" => "Check for updates daily"); checked: root.pref-updates; toggled => { root.setting("updates", self.checked ? 1 : 0); } }
+                                Text { text: @tr("upd-channel-hint" => "Releases on GitHub, signed; the installer checks the signature before installing."); color: Theme.text3; font-size: 11px; wrap: word-wrap; }
+                                HorizontalLayout {
+                                    spacing: 12px;
+                                    Text { text: root.upd-last; color: Theme.text2; font-size: 12px; vertical-alignment: center; horizontal-stretch: 1; }
+                                    TextButton { text: @tr("upd-check-now" => "Check now"); enabled: false; }
+                                }
+                                Text { text: @tr("common-in-development" => "Coming soon"); color: Theme.text3; font-size: 11px; }
+                            }
                             // ---- For developers (temporary, owner 29.09): reset and replay things
                             if root.settings-page == 7: VerticalLayout {
                                 spacing: 12px;
@@ -2096,6 +2168,10 @@ export component AppWindow inherits Window {
                                 Text { text: root.pref-version; color: Theme.text; font-size: 18px; font-weight: 700; }
                                 Text { text: @tr("about-fonts" => "Fonts: Onest, JetBrains Mono, Unbounded — SIL Open Font License 1.1"); color: Theme.text3; font-size: 12px; wrap: word-wrap; }
                                 HorizontalLayout { alignment: start; AboutSlint { height: 160px; } }
+                                HorizontalLayout {
+                                    alignment: start;
+                                    TextButton { text: @tr("about-support" => "Support"); enabled: false; }
+                                }
                             }
                         }
                     }

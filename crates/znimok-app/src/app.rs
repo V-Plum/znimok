@@ -476,6 +476,86 @@ impl App {
         }
     }
 
+    /// The Agents and Updates pages: clients with lasting permissions, the last actions, the
+    /// version and the last update check.
+    fn agents_sync(&self, ui: &AppWindow, p: &znimok_settings::Settings) {
+        use znimok_agents::permissions::Scope;
+        let clients: Vec<crate::AgentClient> =
+            znimok_agents::permissions::Permissions::open_default()
+                .map(|perm| perm.clients())
+                .unwrap_or_default()
+                .into_iter()
+                .map(|(name, scopes)| crate::AgentClient {
+                    name: name.into(),
+                    scopes: scopes
+                        .iter()
+                        .map(|s| {
+                            self.tr.tr(match s {
+                                Scope::Capture => "agents-scope-screen",
+                                Scope::LibraryRead => "agents-scope-library",
+                                Scope::LibraryWrite => "agents-scope-marks",
+                                Scope::Settings => "agents-scope-settings",
+                            })
+                        })
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                        .into(),
+                })
+                .collect();
+        ui.set_agent_clients(std::rc::Rc::new(VecModel::from(clients)).into());
+        let mut log: Vec<SharedString> = znimok_agents::audit::Audit::open_default()
+            .map(|a| a.entries())
+            .unwrap_or_default()
+            .into_iter()
+            .rev()
+            .take(8)
+            .map(|e| {
+                let when = chrono::Local
+                    .timestamp_millis_opt(e.ts)
+                    .single()
+                    .map(|t| t.format("%d.%m %H:%M").to_string())
+                    .unwrap_or_default();
+                if !e.ok && e.grant.is_none() {
+                    format!(
+                        "{when} · {}",
+                        self.tr
+                            .tr_args("agents-log-denied", &args(&[("client", e.client.clone())]))
+                    )
+                    .into()
+                } else {
+                    self.tr
+                        .tr_args(
+                            "agents-log-entry",
+                            &args(&[("when", when), ("client", e.client), ("tool", e.tool)]),
+                        )
+                        .into()
+                }
+            })
+            .collect();
+        log.truncate(8);
+        ui.set_agent_log(std::rc::Rc::new(VecModel::from(log)).into());
+        ui.set_agent_model(p.agents.assistant_model.clone().into());
+        ui.set_upd_version(
+            self.tr
+                .tr_args(
+                    "about-version",
+                    &args(&[("version", env!("CARGO_PKG_VERSION").to_string())]),
+                )
+                .into(),
+        );
+        let last = if p.updates.last_check == 0 {
+            self.tr.tr("upd-never-checked")
+        } else {
+            let when = chrono::Local
+                .timestamp_opt(p.updates.last_check as i64, 0)
+                .single()
+                .map(|t| t.format("%d.%m.%Y %H:%M").to_string())
+                .unwrap_or_default();
+            self.tr.tr_args("upd-last-check", &args(&[("when", when)]))
+        };
+        ui.set_upd_last(last.into());
+    }
+
     pub fn settings_open(&mut self, ui: &AppWindow) {
         self.finish_text(ui);
         let page = ui.get_page();
@@ -728,6 +808,8 @@ impl App {
         ui.set_pref_autosave(p.editor.autosave);
         ui.set_pref_metadata(p.editor.write_metadata);
         ui.set_pref_updates(p.updates.check_daily);
+        ui.set_pref_mcp(p.agents.mcp_enabled);
+        self.agents_sync(ui, &p);
         ui.set_pref_lang(match p.general.language.as_deref() {
             Some("uk") => 1,
             Some("en") => 2,
@@ -787,6 +869,23 @@ impl App {
                 self.save_prefs(ui, |p| p.editor.write_metadata = on);
             }
             "updates" => self.save_prefs(ui, |p| p.updates.check_daily = on),
+            // Agents page (ZK-132): the switch the MCP server checks, revoking, the log file.
+            "mcp" => {
+                self.save_prefs(ui, |p| p.agents.mcp_enabled = on);
+                ui.set_pref_mcp(on);
+            }
+            "agents-revoke" => {
+                if let Some(perm) = znimok_agents::permissions::Permissions::open_default() {
+                    let _ = perm.revoke_all();
+                }
+                let p = self.prefs();
+                self.agents_sync(ui, &p);
+            }
+            "agents-log" => {
+                if let Some(a) = znimok_agents::audit::Audit::open_default() {
+                    crate::library::show_in_folder(a.path());
+                }
+            }
             "theme" => {
                 use znimok_settings::Theme as T;
                 let t = match value {
