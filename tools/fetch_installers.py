@@ -28,6 +28,9 @@ import sys
 import tempfile
 import time
 
+# The Windows console is cp1251 here: «→» in a print would stop the copy half-way.
+sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
 REPO = "V-Plum/znimok"
 WORKFLOW = "release.yml"
 DEFAULT_DEST = pathlib.Path("C:/AIHome/builds/znimok-installers")

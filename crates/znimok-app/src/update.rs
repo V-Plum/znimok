@@ -48,7 +48,10 @@ pub enum Found {
 /// Checks on a worker thread; `then` runs on the UI thread.
 pub fn check(then: impl FnOnce(Found) + Send + 'static) {
     std::thread::spawn(move || {
+        // Without a release key the answer needs no HTTP client (making one may take long:
+        // proxy discovery on Windows).
         let found = match znimok_update::Platform::current() {
+            _ if !znimok_update::configured() => Found::NotConfigured,
             None => Found::Failed("no installer for this system".into()),
             Some(platform) => {
                 let http = znimok_models::http::system();

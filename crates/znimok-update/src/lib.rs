@@ -178,6 +178,11 @@ fn get_status(
     Ok((r.status, r.body))
 }
 
+/// Whether this build can check for updates at all (a release key is committed, ZK-111).
+pub fn configured() -> bool {
+    RELEASE_KEY.is_some()
+}
+
 /// The latest release, if it is newer than `current` and has this platform's installer, the
 /// checksums and their signature. `Ok(None)` = up to date.
 pub fn check(
