@@ -209,7 +209,8 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
         let size = ui.window().size();
         let (w, h) = (size.width as f32 / sf, size.height as f32 / sf);
         b.set((app.borrow().view_probe().0, w, h));
-        ui.window().set_size(slint::LogicalSize::new(w * 0.6, h * 0.6));
+        ui.window()
+            .set_size(slint::LogicalSize::new(w * 0.6, h * 0.6));
     }));
     let b = before.clone();
     steps.push(Box::new(move |app, ui, r| {
