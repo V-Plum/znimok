@@ -1109,6 +1109,21 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
             }
             None => r.check("snapshot 22-pill", false, "no card window".into()),
         }
+        // ZK-133: a drag out to another app leaves the hover pause stuck; with the pointer away
+        // and no button down the card must resume by itself.
+        crate::pill::hold_for_test();
+    }));
+    steps.push(Box::new(|_, _, r| {
+        // A disconnected remote session has no pointer to ask about: nothing to check there.
+        if crate::pill::pointer_known() {
+            r.check(
+                "card resumes after a drag left the hover stuck",
+                crate::pill::paused() == Some(false) && crate::pill::is_open(),
+                format!("paused {:?}", crate::pill::paused()),
+            );
+        } else {
+            println!("skip card resumes after a drag: no pointer (disconnected session)");
+        }
         crate::pill::close();
     }));
     // ZK-60: Esc takes off one layer at a time, Enter repeats the last share, [ ] thickness,
