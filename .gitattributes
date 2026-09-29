@@ -1,5 +1,6 @@
 # Signed test data: the bytes must not change with the platform line endings (ZK-122).
 crates/znimok-update/tests/fixtures/** -text
+crates/znimok-update/tests/release-key/** -text
 # cargo-vet reads its store byte for byte: LF on every checkout (a CRLF checkout on Windows
 # makes `cargo vet` refuse the store as "not correctly formatted").
 supply-chain/*.toml text eol=lf

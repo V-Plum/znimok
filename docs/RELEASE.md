@@ -65,12 +65,41 @@ hand, by the owner:
   Gatekeeper asks on first start; the official `homebrew/cask` repository waits for a notarised
   DMG and an audience.
 
-## Signing key (ZK-111)
+## Signing keys (ZK-111)
 
-- The private key (ECDSA P-256, PEM) lives only in the GitHub secret `ZNIMOK_SIGNING_KEY` and in
-  the owner's backup (`C:\AIHome\keys\`, mirrored to the NAS) — never in git.
-- The public key is committed as `keys/znimok-release-p256.pub.pem`; the workflow verifies every
-  signature with it before the release is created.
-- Rotation: a release signed with the **old** key ships the new public key; only after that do
-  releases switch to the new key (the same procedure as Little Helpers, `keys/README.md`).
-- Developer ID (macOS) and Authenticode (Windows) come with ZK-80; the MSI installer with ZK-78.
+Two keys, both made on 30.09.2026:
+
+| Key | Private (never in git) | Public (committed) | Signs |
+|---|---|---|---|
+| ECDSA P-256 | `C:\AIHome\keys\znimok_signing_p256.pem` · secret `ZNIMOK_SIGNING_KEY` (the PEM) | `keys/znimok-release-p256.pub.pem` | `SHA256SUMS` of every release (`SHA256SUMS.sig`); the app and `znimok update` check it before an installer runs |
+| Ed25519 (Sparkle) | `C:\AIHome\keys\znimok_sparkle_ed25519.pem` · secret `ZNIMOK_SPARKLE_KEY` (the 32-byte seed, base64 — what Sparkle's `sign_update --ed-key-file` takes) | `keys/znimok-sparkle-ed25519.pub.pem`; `SUPublicEDKey` = `p50rDlGE6KaWMf+pVP4wg11kaaew9Ka4CvoCDKXtBQc=` | the macOS appcast (ZK-143) |
+
+- `C:\AIHome\keys\` is mirrored to the NAS with the rest of `C:\AIHome` (`backup_to_nas.ps1`).
+- `znimok-update` embeds the committed P-256 key at build time (`build.rs`); without it the app
+  says updates are not set up. The test `committed_release_key_verifies_a_ci_signature` checks the
+  committed key against a signature made with the private key (`crates/znimok-update/tests/release-key`).
+- The workflow signs with `openssl dgst -sha256 -sign` and verifies with the committed key before
+  the release is created.
+- Derived values, when needed again:
+  `openssl pkey -in znimok_sparkle_ed25519.pem -outform DER | tail -c 32 | base64` → the Sparkle seed;
+  `openssl pkey -pubin -in keys/znimok-sparkle-ed25519.pub.pem -outform DER | tail -c 32 | base64` → `SUPublicEDKey`.
+
+### Rotation
+
+Installed copies trust only the key they were built with, so a new key reaches them through a
+release signed with the **old** one (as in Little Helpers):
+
+1. Make the new pair (`openssl ecparam -name prime256v1 -genkey -noout -out new.pem`,
+   `openssl ec -in new.pem -pubout`); keep the old private key.
+2. Release N: commit the new public key, sign the fixture in `tests/release-key` with the new
+   private key, but keep the secret on the **old** key — installed copies verify N with the old
+   key and get the new one inside it.
+3. After N is out: put the new private key into `ZNIMOK_SIGNING_KEY`; releases from N+1 are signed
+   with it. Keep the old private key until nobody runs a version older than N.
+4. Lost private key: there is no way to reach installed copies automatically — people download
+   the new version by hand once (say so in the release notes and on the site).
+
+Sparkle's key rotates the same way: an appcast item signed with the old key carries an app whose
+`SUPublicEDKey` is the new one.
+
+Developer ID (macOS) and Authenticode (Windows) come with ZK-80.
