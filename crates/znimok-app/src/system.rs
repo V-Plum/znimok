@@ -104,3 +104,67 @@ pub fn system_dark() -> bool {
         true
     }
 }
+
+/// The usable part of the display with these bounds (ZK-147): without the taskbar on Windows,
+/// without the menu bar and the Dock on macOS; desktop units (pixels / points, top-left origin).
+/// Windows that sit in a corner of the screen (the countdown, the scrolling panel) go inside it.
+pub fn work_area(display: znimok_platform::Rect) -> znimok_platform::Rect {
+    #[cfg(windows)]
+    {
+        use windows::Win32::Foundation::POINT;
+        use windows::Win32::Graphics::Gdi::{
+            GetMonitorInfoW, MONITOR_DEFAULTTONEAREST, MONITORINFO, MonitorFromPoint,
+        };
+        let c = POINT {
+            x: display.x + display.width as i32 / 2,
+            y: display.y + display.height as i32 / 2,
+        };
+        // SAFETY: plain Win32 queries with a correctly sized MONITORINFO.
+        unsafe {
+            let m = MonitorFromPoint(c, MONITOR_DEFAULTTONEAREST);
+            let mut info = MONITORINFO {
+                cbSize: std::mem::size_of::<MONITORINFO>() as u32,
+                ..Default::default()
+            };
+            if GetMonitorInfoW(m, &mut info).as_bool() {
+                let r = info.rcWork;
+                return znimok_platform::Rect::new(
+                    r.left,
+                    r.top,
+                    (r.right - r.left).max(1) as u32,
+                    (r.bottom - r.top).max(1) as u32,
+                );
+            }
+        }
+        display
+    }
+    #[cfg(target_os = "macos")]
+    {
+        use objc2::MainThreadMarker;
+        use objc2_app_kit::NSScreen;
+        let Some(mtm) = MainThreadMarker::new() else {
+            return display;
+        };
+        let screens = NSScreen::screens(mtm);
+        let Some(main_h) = screens.firstObject().map(|s| s.frame().size.height) else {
+            return display;
+        };
+        for s in screens.iter() {
+            let f = s.frame();
+            // Cocoa's origin is the bottom-left of the main screen: flip to top-left.
+            let top = main_h - (f.origin.y + f.size.height);
+            if (f.origin.x - display.x as f64).abs() < 1.0 && (top - display.y as f64).abs() < 1.0 {
+                let v = s.visibleFrame();
+                return znimok_platform::Rect::new(
+                    v.origin.x.round() as i32,
+                    (main_h - (v.origin.y + v.size.height)).round() as i32,
+                    v.size.width.round().max(1.0) as u32,
+                    v.size.height.round().max(1.0) as u32,
+                );
+            }
+        }
+        display
+    }
+    #[cfg(not(any(windows, target_os = "macos")))]
+    display
+}

@@ -192,18 +192,20 @@ pub fn start(
         display.x + (rect.x as f32 * k) as i32,
         display.y + (rect.y as f32 * k) as i32,
     );
-    let (ab, dbottom) = (
-        ay + (rect.h as f32 * k) as i32,
-        display.y + display.height as i32,
-    );
+    // Inside the usable area: not under the taskbar or the Dock (ZK-147).
+    let work = crate::system::work_area(display);
+    let (ab, dbottom) = (ay + (rect.h as f32 * k) as i32, work.y + work.height as i32);
     let py = if ab + 12 + ph <= dbottom {
         ab + 12
-    } else if ay - 12 - ph >= display.y {
+    } else if ay - 12 - ph >= work.y {
         ay - 12 - ph
     } else {
-        ab - ph - 12
+        (ab - ph - 12).min(dbottom - ph - 8)
     };
-    let px = ax.clamp(display.x + 8, display.x + display.width as i32 - pw - 8);
+    let px = ax.clamp(
+        work.x + 8,
+        (work.x + work.width as i32 - pw - 8).max(work.x + 8),
+    );
     let grab = move || {
         let f = crate::capture::display_frame(display).ok()?;
         crop(&f, rect)

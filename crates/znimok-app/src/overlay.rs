@@ -120,7 +120,9 @@ fn countdown(
         });
     }
     crate::frame::round_window(ui.window());
-    // Bottom-right, 32 px from the edges; desktop units are pixels on Windows, points on macOS.
+    // Bottom-right of the usable area (above the taskbar / the Dock, ZK-147), 32 px from the
+    // edges; desktop units are pixels on Windows, points on macOS.
+    let display = crate::system::work_area(display);
     if cfg!(target_os = "macos") {
         ui.window().set_position(slint::LogicalPosition::new(
             (display.x + display.width as i32 - 32 - 120) as f32,
