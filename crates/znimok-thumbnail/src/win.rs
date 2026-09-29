@@ -15,7 +15,7 @@ use windows::Win32::Graphics::Gdi::{
 use windows::Win32::System::Com::{IClassFactory, IClassFactory_Impl, IStream, STREAM_SEEK_SET};
 use windows::Win32::System::LibraryLoader::GetModuleFileNameW;
 use windows::Win32::System::Registry::{
-    HKEY_CURRENT_USER, REG_SZ, RegDeleteTreeW, RegSetKeyValueW,
+    HKEY, HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, REG_SZ, RegDeleteTreeW, RegSetKeyValueW,
 };
 use windows::Win32::System::SystemServices::DLL_PROCESS_ATTACH;
 use windows::Win32::UI::Shell::PropertiesSystem::{
@@ -196,12 +196,29 @@ fn module_path() -> Option<String> {
     (n > 0).then(|| String::from_utf16_lossy(&buf[..n as usize]))
 }
 
-fn set(key: &str, name: &str, value: &str) -> Result<()> {
+/// Where the registration goes: the user's classes (normal), or the machine's — only for an
+/// elevated process, which COM does not let read per-user registrations (a test on CI).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Scope {
+    User,
+    Machine,
+}
+
+impl Scope {
+    fn root(self) -> HKEY {
+        match self {
+            Scope::User => HKEY_CURRENT_USER,
+            Scope::Machine => HKEY_LOCAL_MACHINE,
+        }
+    }
+}
+
+fn set(root: HKEY, key: &str, name: &str, value: &str) -> Result<()> {
     let data: Vec<u16> = value.encode_utf16().chain([0]).collect();
     // SAFETY: NUL-terminated UTF-16 data of the given size.
     let r = unsafe {
         RegSetKeyValueW(
-            HKEY_CURRENT_USER,
+            root,
             &HSTRING::from(key),
             &HSTRING::from(name),
             REG_SZ.0,
@@ -219,6 +236,13 @@ fn set(key: &str, name: &str, value: &str) -> Result<()> {
 /// Registers the handler for the current user: the CLSID with this DLL (apartment-threaded) and
 /// the `.znimok` thumbnail slot. `classes` is `Software\Classes` (tests pass a scratch key).
 pub fn register(dll: &str, classes: &str) -> Result<()> {
+    register_in(Scope::User, dll, classes)
+}
+
+/// [`register`] into a chosen hive; `Scope::Machine` needs admin rights.
+pub fn register_in(scope: Scope, dll: &str, classes: &str) -> Result<()> {
+    let root = scope.root();
+    let set = |k: &str, n: &str, v: &str| set(root, k, n, v);
     let clsid = format!(r"{classes}\CLSID\{CLSID_STR}");
     set(&clsid, "", "Znimok thumbnail")?;
     set(&format!(r"{clsid}\InprocServer32"), "", dll)?;
@@ -236,12 +260,16 @@ pub fn register(dll: &str, classes: &str) -> Result<()> {
 }
 
 pub fn unregister(classes: &str) -> Result<()> {
+    unregister_in(Scope::User, classes)
+}
+
+pub fn unregister_in(scope: Scope, classes: &str) -> Result<()> {
     for k in [
         format!(r"{classes}\CLSID\{CLSID_STR}"),
         format!(r"{classes}\.znimok\ShellEx\{THUMBNAIL_HANDLER}"),
     ] {
         // SAFETY: plain call; a missing key is fine.
-        let _ = unsafe { RegDeleteTreeW(HKEY_CURRENT_USER, &HSTRING::from(k)) };
+        let _ = unsafe { RegDeleteTreeW(scope.root(), &HSTRING::from(k)) };
     }
     Ok(())
 }
