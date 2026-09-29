@@ -96,6 +96,8 @@ pub struct MfSink {
     /// Encoder name and whether it is a hardware transform.
     pub encoder: String,
     pub hardware: bool,
+    /// NV12 made by our own converter (BT.709 exact); false = RGB32 through Media Foundation's.
+    pub own_nv12: bool,
     began: bool,
 }
 
@@ -541,10 +543,27 @@ impl MfSink {
                         format_checked: false,
                     }
                 }
-                Input::Nv12Memory => Path_::SwNv12 {
-                    c: converted(&gpu, &bridge, cfg)?,
-                    nv12: nv12_texture(&bridge, cfg.width, cfg.height, false)?,
-                    staging: nv12_texture(&bridge, cfg.width, cfg.height, true)?,
+                Input::Nv12Memory => match converted(&gpu, &bridge, cfg) {
+                    Ok(c) => Path_::SwNv12 {
+                        c,
+                        nv12: nv12_texture(&bridge, cfg.width, cfg.height, false)?,
+                        staging: nv12_texture(&bridge, cfg.width, cfg.height, true)?,
+                    },
+                    // No video processor on this device: RGB32 to the writer, its converter.
+                    Err(e) => {
+                        eprintln!("без відеопроцесора D3D11 ({e}): RGB32 у кодувальник");
+                        let (_, inp) = video_types(cfg, Input::Rgb32Memory)?;
+                        writer
+                            .SetInputMediaType(video, &inp, &ep)
+                            .map_err(err("SetInputMediaType (RGB32)"))?;
+                        let tex = local_output(&gpu, format, cfg.width, cfg.height);
+                        let view = tex.create_view(&Default::default());
+                        Path_::SwRgb32 {
+                            tex,
+                            view,
+                            swizzle: format == OutFormat::Rgba8,
+                        }
+                    }
                 },
                 Input::Rgb32Memory => {
                     let tex = local_output(&gpu, format, cfg.width, cfg.height);
@@ -557,6 +576,7 @@ impl MfSink {
                 }
             };
             writer.BeginWriting().map_err(err("BeginWriting"))?;
+            let own_nv12 = !matches!(path_, Path_::SwRgb32 { .. });
             Ok(Self {
                 writer,
                 video,
@@ -572,6 +592,7 @@ impl MfSink {
                     if hw { " (hardware)" } else { " (software)" }
                 ),
                 hardware,
+                own_nv12,
                 began: true,
             })
         }

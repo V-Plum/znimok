@@ -16,7 +16,9 @@ use std::cell::Cell;
 
 use wgpu::hal::api::Dx12;
 use windows::Win32::Foundation::{CloseHandle, GENERIC_ALL, HANDLE, HMODULE, LUID};
-use windows::Win32::Graphics::Direct3D::D3D_DRIVER_TYPE_UNKNOWN;
+use windows::Win32::Graphics::Direct3D::{
+    D3D_DRIVER_TYPE, D3D_DRIVER_TYPE_UNKNOWN, D3D_DRIVER_TYPE_WARP,
+};
 use windows::Win32::Graphics::Direct3D11::*;
 use windows::Win32::Graphics::Direct3D12::{
     D3D12_FENCE_FLAG_SHARED, ID3D12Device, ID3D12Fence, ID3D12Resource,
@@ -67,8 +69,17 @@ impl Gpu {
         let mut desc = wgpu::InstanceDescriptor::new_without_display_handle();
         desc.backends = wgpu::Backends::DX12;
         let instance = wgpu::Instance::new(desc);
+        // ZNIMOK_GPU_SOFTWARE=1: the software adapter, as on a CI runner without a GPU.
+        let software = std::env::var_os("ZNIMOK_GPU_SOFTWARE").is_some_and(|v| v == "1");
         let mut adapter = None;
-        if let Some(want) = prefer {
+        if software {
+            adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
+                power_preference: wgpu::PowerPreference::None,
+                force_fallback_adapter: true,
+                ..Default::default()
+            }))
+            .ok();
+        } else if let Some(want) = prefer {
             adapter = pollster::block_on(instance.enumerate_adapters(wgpu::Backends::DX12))
                 .into_iter()
                 .find(|a| luid_of(a).is_some_and(|l| same_luid(l, want)));
@@ -184,21 +195,51 @@ impl Bridge {
             let name = String::from_utf16_lossy(&desc.Description)
                 .trim_end_matches('\0')
                 .to_string();
+            // DXGI_ADAPTER_FLAG_SOFTWARE: the Basic Render Driver (WARP).
+            let software = desc.Flags & 2 != 0;
             let (mut device, mut ctx) = (None, None);
-            D3D11CreateDevice(
-                &adapter
-                    .cast::<IDXGIAdapter>()
-                    .map_err(err("IDXGIAdapter"))?,
-                D3D_DRIVER_TYPE_UNKNOWN,
-                HMODULE::default(),
-                D3D11_CREATE_DEVICE_VIDEO_SUPPORT | D3D11_CREATE_DEVICE_BGRA_SUPPORT,
-                None,
-                D3D11_SDK_VERSION,
-                Some(&mut device),
-                None,
-                Some(&mut ctx),
-            )
-            .map_err(err("D3D11CreateDevice"))?;
+            let dxgi_adapter: IDXGIAdapter = adapter.cast().map_err(err("IDXGIAdapter"))?;
+            // The video-support flag is what Media Foundation's hardware paths want; an adapter
+            // that refuses it (WARP on a CI runner: DXGI_ERROR_UNSUPPORTED) still gives a plain
+            // device, and the software adapter is asked for by its own driver type.
+            let attempts: [(
+                Option<&IDXGIAdapter>,
+                D3D_DRIVER_TYPE,
+                D3D11_CREATE_DEVICE_FLAG,
+            ); 3] = [
+                (
+                    Some(&dxgi_adapter),
+                    D3D_DRIVER_TYPE_UNKNOWN,
+                    D3D11_CREATE_DEVICE_VIDEO_SUPPORT | D3D11_CREATE_DEVICE_BGRA_SUPPORT,
+                ),
+                (
+                    Some(&dxgi_adapter),
+                    D3D_DRIVER_TYPE_UNKNOWN,
+                    D3D11_CREATE_DEVICE_BGRA_SUPPORT,
+                ),
+                (None, D3D_DRIVER_TYPE_WARP, D3D11_CREATE_DEVICE_BGRA_SUPPORT),
+            ];
+            let mut r = Ok(());
+            for (ad, driver, flags) in attempts {
+                if driver == D3D_DRIVER_TYPE_WARP && !software {
+                    break;
+                }
+                r = D3D11CreateDevice(
+                    ad,
+                    driver,
+                    HMODULE::default(),
+                    flags,
+                    None,
+                    D3D11_SDK_VERSION,
+                    Some(&mut device),
+                    None,
+                    Some(&mut ctx),
+                );
+                if r.is_ok() {
+                    break;
+                }
+            }
+            r.map_err(err("D3D11CreateDevice"))?;
             let device: ID3D11Device = device.ok_or("немає D3D11-пристрою")?;
             let ctx: ID3D11DeviceContext4 = ctx
                 .ok_or("немає контексту D3D11")?
