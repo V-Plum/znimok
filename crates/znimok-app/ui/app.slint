@@ -1683,6 +1683,13 @@ export component AppWindow inherits Window {
     in-out property <string> geom-y;
     in-out property <string> geom-w;
     in-out property <string> geom-h;
+    // The angle of the selected mark and whether its kind turns (ZK-164).
+    in-out property <string> geom-rot;
+    in property <bool> prop-can-turn;
+    // The angle beside the pointer while turning (ZK-164); empty = hidden.
+    in property <string> rot-hint;
+    in property <float> rot-hint-x;
+    in property <float> rot-hint-y;
     in property <[LayerRow]> layers;
     in property <string> info-size;
     in property <string> info-source;
@@ -2759,6 +2766,7 @@ export component AppWindow inherits Window {
                                 : self.c == 7 ? MouseCursor.ew-resize
                                 : self.c == 8 ? MouseCursor.grab
                                 : self.c == 9 ? MouseCursor.grabbing
+                                : self.c == 10 ? MouseCursor.custom(@image-url("cursors/rotate.svg"), 12, 12)
                                 : MouseCursor.default;
                             pointer-event(e) => {
                                 if (!root.editing) { keys.focus(); }
@@ -2812,6 +2820,20 @@ export component AppWindow inherits Window {
                         changed enabled => {
                             if (self.enabled) { self.focus(); }
                         }
+                    }
+                    // The angle beside the pointer while a mark turns (ZK-164).
+                    if root.rot-hint != "": Rectangle {
+                        x: min(root.rot-hint-x * 1px + 18px, parent.width - self.width - 4px);
+                        y: max(4px, root.rot-hint-y * 1px - self.height - 10px);
+                        width: rot-text.preferred-width + 14px;
+                        height: 22px;
+                        border-radius: 6px;
+                        background: Theme.tip-bg;
+                        border-width: 1px;
+                        border-color: Theme.control-on;
+                        drop-shadow-blur: 8px;
+                        drop-shadow-color: #00000070;
+                        rot-text := Text { text: root.rot-hint; color: Theme.text; font-size: 12px; font-family: "JetBrains Mono"; horizontal-alignment: center; vertical-alignment: center; }
                     }
                     // ---- over the screen (ZK-58): the rail at the left of the frame and the bar below
                     // it; where there is no room — on the other side, else inside the frame.
@@ -3228,6 +3250,11 @@ export component AppWindow inherits Window {
                                         NumField { label: @tr("insp-x2" => "X2"); value: root.geom-x2; committed(v) => { root.set-geom("x2", v); } }
                                         NumField { label: @tr("insp-y2" => "Y2"); value: root.geom-y2; committed(v) => { root.set-geom("y2", v); } }
                                     }
+                                    HorizontalLayout {
+                                        spacing: 8px;
+                                        NumField { label: "∠"; value: root.geom-rot; committed(v) => { root.set-geom("rot", v); } }
+                                        Rectangle { horizontal-stretch: 1; }
+                                    }
                                 }
                                 if root.prop-for-selection && root.selection-count == 1 && root.prop-kind != 2: PropSection {
                                     title: @tr("insp-position" => "Position and size");
@@ -3240,6 +3267,11 @@ export component AppWindow inherits Window {
                                         spacing: 8px;
                                         NumField { label: @tr("insp-w" => "W"); value: root.geom-w; committed(v) => { root.set-geom("w", v); } }
                                         NumField { label: @tr("insp-h" => "H"); value: root.geom-h; committed(v) => { root.set-geom("h", v); } }
+                                    }
+                                    if root.prop-can-turn: HorizontalLayout {
+                                        spacing: 8px;
+                                        NumField { label: "∠"; value: root.geom-rot; committed(v) => { root.set-geom("rot", v); } }
+                                        Rectangle { horizontal-stretch: 1; }
                                     }
                                 }
                                 // ---- Arrange (ZK-52)

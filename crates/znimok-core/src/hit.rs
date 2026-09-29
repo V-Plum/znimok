@@ -21,19 +21,67 @@ pub fn dist_to_segment(p: (f64, f64), a: (f64, f64), b: (f64, f64)) -> f64 {
 /// The point turned back by the object's rotation around its centre, so a rotated box can be
 /// tested as an axis-aligned one.
 pub fn unrotate(p: (f64, f64), b: IRect, rot: u16) -> (f64, f64) {
-    let (cx, cy) = b.center();
-    let a = -(rot as f64).to_radians();
-    let (dx, dy) = (p.0 - cx, p.1 - cy);
+    turn(p, b.center(), -(rot as f64))
+}
+
+/// `p` turned clockwise by `deg` degrees about `c` (y grows downwards, as on screen).
+pub fn turn(p: (f64, f64), c: (f64, f64), deg: f64) -> (f64, f64) {
+    let a = deg.to_radians();
+    let (dx, dy) = (p.0 - c.0, p.1 - c.1);
     (
-        cx + dx * a.cos() - dy * a.sin(),
-        cy + dx * a.sin() + dy * a.cos(),
+        c.0 + dx * a.cos() - dy * a.sin(),
+        c.1 + dx * a.sin() + dy * a.cos(),
     )
+}
+
+/// Whether the object is drawn turned (its kind can turn and it has an angle).
+pub fn turned(o: &Object) -> bool {
+    o.kind().can_rotate() && o.rot != 0
+}
+
+/// Where the rotation handle stands (ZK-164, LH `EdRotHandle`): `stem` screen pixels above the
+/// middle of the top edge, turned with the mark. None for kinds that do not turn.
+pub fn rotation_handle(o: &Object, px_per_doc: f64) -> Option<(f64, f64)> {
+    if !o.kind().can_rotate() {
+        return None;
+    }
+    let b = o.bounds();
+    let (cx, _) = b.center();
+    let p = (cx, b.y as f64 - ROTATION_STEM / px_per_doc.max(1e-6));
+    Some(if turned(o) {
+        turn(p, b.center(), o.rot as f64)
+    } else {
+        p
+    })
+}
+
+/// Length of the rotation handle's stem, screen pixels.
+pub const ROTATION_STEM: f64 = 24.0;
+
+/// Whether `p` is on the rotation handle (a screen-constant 7 px radius).
+pub fn hit_rotation_handle(o: &Object, p: (f64, f64), px_per_doc: f64) -> bool {
+    let k = px_per_doc.max(1e-6);
+    rotation_handle(o, k)
+        .is_some_and(|(x, y)| ((x - p.0).powi(2) + (y - p.1).powi(2)).sqrt() <= 7.0 / k)
+}
+
+/// The angle of `p` seen from `c`, in degrees clockwise from straight up (the handle's
+/// direction when the mark is not turned).
+pub fn angle_from_up(c: (f64, f64), p: (f64, f64)) -> f64 {
+    (p.0 - c.0).atan2(c.1 - p.1).to_degrees()
 }
 
 /// Whether `p` hits the object: segments by distance ≤ 4 screen px + half the thickness;
 /// everything else by its whole box grown by 3 screen px.
 pub fn hits(o: &Object, p: (f64, f64), px_per_doc: f64) -> bool {
     let k = px_per_doc.max(1e-6);
+    // A turned mark is tested in its own frame: the point is turned back (lines and pens too —
+    // they are drawn turned about their box centre, ZK-164).
+    let p = if turned(o) {
+        unrotate(p, o.bounds(), o.rot)
+    } else {
+        p
+    };
     match &o.data {
         Data::Line { .. } => {
             let r = o.rect;
@@ -54,11 +102,7 @@ pub fn hits(o: &Object, p: (f64, f64), px_per_doc: f64) -> bool {
         }
         _ => {
             let b = o.bounds();
-            let q = if o.kind().can_rotate() && o.rot != 0 {
-                unrotate(p, b, o.rot)
-            } else {
-                p
-            };
+            let q = p;
             let slack = 3.0 / k;
             q.0 >= b.x as f64 - slack
                 && q.1 >= b.y as f64 - slack
@@ -93,8 +137,28 @@ pub fn pick_in_rect(doc: &Document, r: IRect) -> Vec<usize> {
 }
 
 /// Handle positions (screenshot coordinates): 8 around a box, the two ends of a line, the
-/// left and right side of text and marker (width, not size); stamped marks have none.
+/// left and right side of text and marker (width, not size); stamped marks have none. A turned
+/// mark has them turned with it about its centre (LH `EdHandles`).
 pub fn handles(o: &Object) -> Vec<(f64, f64)> {
+    let h = local_handles(o);
+    if !turned(o) {
+        return h;
+    }
+    let c = o.bounds().center();
+    h.into_iter().map(|p| turn(p, c, o.rot as f64)).collect()
+}
+
+/// The handle across from `handle`: the one that stays put while `handle` is dragged.
+fn opposite(o: &Object, handle: usize) -> usize {
+    match local_handles(o).len() {
+        8 => (handle + 4) % 8,
+        2 => 1 - handle.min(1),
+        _ => handle,
+    }
+}
+
+/// Handles of the mark as if it were not turned.
+fn local_handles(o: &Object) -> Vec<(f64, f64)> {
     match o.kind() {
         Kind::Line => {
             let r = o.rect;
@@ -137,7 +201,32 @@ pub fn hit_handle(o: &Object, p: (f64, f64), px_per_doc: f64) -> Option<usize> {
 
 /// Resizes by dragging `handle` by (dx, dy) from the original rectangle `orig`. Always computed
 /// from the original, never incrementally, so rounding does not accumulate (LH `EdManyBegin`).
+/// A turned mark is resized in its own frame (the drag is turned back), and then shifted so the
+/// handle across from the dragged one stays where it was on the screenshot (ZK-164).
 pub fn resize(o: &mut Object, handle: usize, orig: IRect, dx: i32, dy: i32) {
+    if !turned(o) {
+        resize_local(o, handle, orig, dx, dy);
+        return;
+    }
+    let rot = o.rot as f64;
+    let (ldx, ldy) = turn((dx as f64, dy as f64), (0.0, 0.0), -rot);
+    let before = {
+        let mut a = o.clone();
+        a.rect = orig;
+        let fixed = local_handles(&a)[opposite(&a, handle)];
+        turn(fixed, a.bounds().center(), rot)
+    };
+    resize_local(o, handle, orig, ldx.round() as i32, ldy.round() as i32);
+    let after = turn(
+        local_handles(o)[opposite(o, handle)],
+        o.bounds().center(),
+        rot,
+    );
+    o.rect.x += (before.0 - after.0).round() as i32;
+    o.rect.y += (before.1 - after.1).round() as i32;
+}
+
+fn resize_local(o: &mut Object, handle: usize, orig: IRect, dx: i32, dy: i32) {
     match o.kind() {
         Kind::Line => {
             o.rect = if handle == 0 {
@@ -202,6 +291,50 @@ mod tests {
             },
         ));
         d
+    }
+
+    #[test]
+    fn turned_marks_have_turned_handles_and_resize_in_their_own_frame() {
+        let mut o = Object::new(IRect::new(100, 100, 100, 50), Data::Rect);
+        o.rot = 90;
+        // Turned a quarter clockwise about (150, 125): the top-left handle goes top-right.
+        let h = handles(&o);
+        assert!(
+            (h[0].0 - 175.0).abs() < 1e-9 && (h[0].1 - 75.0).abs() < 1e-9,
+            "{h:?}"
+        );
+        // The rotation handle stands to the right of the turned mark.
+        let (rx, ry) = rotation_handle(&o, 1.0).unwrap();
+        assert!((rx - (175.0 + ROTATION_STEM)).abs() < 1e-9 && (ry - 125.0).abs() < 1e-9);
+        assert!(hit_rotation_handle(&o, (rx + 3.0, ry), 1.0));
+        // Dragging the "right edge" handle (3) down by 20 on the screen makes the mark 20 wider
+        // in its own frame; the left edge (handle 7) stays where it was.
+        let fixed = handles(&o)[7];
+        let orig = o.rect;
+        resize(&mut o, 3, orig, 0, 20);
+        assert_eq!((o.rect.w, o.rect.h), (120, 50));
+        let now = handles(&o)[7];
+        assert!(
+            (now.0 - fixed.0).abs() <= 1.0 && (now.1 - fixed.1).abs() <= 1.0,
+            "{fixed:?} → {now:?}"
+        );
+    }
+
+    #[test]
+    fn a_turned_line_is_hit_where_it_is_drawn() {
+        let mut l = Object::new(
+            IRect::new(0, 100, 100, 0),
+            Data::Line {
+                head_front: Head::None,
+                head_back: Head::None,
+                head_size: 1,
+            },
+        );
+        l.rot = 90;
+        // Drawn vertical through (50, 100).
+        assert!(hits(&l, (50.0, 60.0), 1.0));
+        assert!(!hits(&l, (10.0, 100.0), 1.0));
+        assert_eq!(angle_from_up((0.0, 0.0), (10.0, 0.0)).round(), 90.0);
     }
 
     #[test]

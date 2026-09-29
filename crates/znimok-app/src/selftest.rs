@@ -1030,6 +1030,114 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
         key(app, ui, "z", true, false);
         ui.invoke_tool_chosen(0);
     }));
+    // ZK-164: the rotation handle — one mark turns about its centre (Shift: 15° steps), several
+    // turn about the middle of their box; one undo step; the angle field.
+    steps.push(Box::new(|app, ui, r| {
+        use znimok_core::Kind;
+        let ids = |k: Kind| -> Vec<u32> {
+            app.borrow()
+                .s
+                .as_ref()
+                .map(|s| {
+                    s.ed.doc
+                        .objects
+                        .iter()
+                        .filter(|o| o.kind() == k)
+                        .map(|o| o.id)
+                        .collect()
+                })
+                .unwrap_or_default()
+        };
+        let obj = |id: u32| app.borrow().s.as_ref().and_then(|s| s.ed.doc.get(id).cloned());
+        // Drags the grip a quarter turn clockwise about its centre (in steps, as a hand would).
+        let quarter = |shift: bool| -> bool {
+            let Some((g, c)) = app.borrow().rotation_grip_probe() else {
+                return false;
+            };
+            let (dx, dy) = (g.0 - c.0, g.1 - c.1);
+            let mut a = app.borrow_mut();
+            a.pointer(ui, 0, g.0, g.1, 0, shift, false);
+            for i in 1..=9 {
+                let t = std::f32::consts::FRAC_PI_2 * i as f32 / 9.0;
+                let (x, y) = (
+                    c.0 + dx * t.cos() - dy * t.sin(),
+                    c.1 + dx * t.sin() + dy * t.cos(),
+                );
+                a.pointer(ui, 1, x, y, 0, shift, false);
+            }
+            a.pointer(ui, 2, c.0 - dy, c.1 + dx, 0, shift, false);
+            true
+        };
+        let Some(&rect) = ids(Kind::Rect).first() else {
+            r.check("rotation: a rectangle to turn", false, String::new());
+            return;
+        };
+        ui.invoke_tool_chosen(0);
+        app.borrow_mut().layer_click(ui, rect as i32, false);
+        let grip = app.borrow().rotation_grip_probe().map(|p| p.0);
+        let cursor = grip.map(|g| {
+            app.borrow_mut().pointer(ui, 1, g.0, g.1, 0, false, false);
+            ui.get_canvas_cursor()
+        });
+        let c0 = obj(rect).map(|o| o.bounds().center());
+        let turned = quarter(false);
+        let a1 = obj(rect).map(|o| o.rot);
+        let c1 = obj(rect).map(|o| o.bounds().center());
+        r.snapshot(ui, "36-rotated");
+        key(app, ui, "z", true, false);
+        let back = obj(rect).map(|o| o.rot);
+        ui.invoke_set_geom("rot".into(), "33".into());
+        let typed = obj(rect).map(|o| o.rot);
+        quarter(true);
+        let snapped = obj(rect).map(|o| o.rot);
+        r.check(
+            "rotation handle: a quarter turn about the centre, one undo step, typed angle, Shift snaps to 15°",
+            turned
+                && cursor == Some(10)
+                && a1.is_some_and(|a| (88..=92).contains(&a))
+                && c0 == c1
+                && back == Some(0)
+                && typed == Some(33)
+                && snapped.is_some_and(|a| a % 15 == 0 && (120..=125).contains(&a)),
+            format!(
+                "cursor {cursor:?} · {a1:?} centre {c0:?}→{c1:?} · undo {back:?} · typed {typed:?} · Shift {snapped:?}"
+            ),
+        );
+        key(app, ui, "z", true, false);
+        key(app, ui, "z", true, false);
+        // Several marks turn about the middle of their box.
+        let counters = ids(Kind::Counter);
+        if counters.len() >= 2 {
+            app.borrow_mut().layer_click(ui, counters[0] as i32, false);
+            app.borrow_mut().layer_click(ui, counters[1] as i32, true);
+            let centres = |ids: &[u32]| -> Vec<(f64, f64)> {
+                ids.iter()
+                    .filter_map(|id| obj(*id).map(|o| o.bounds().center()))
+                    .collect()
+            };
+            let before = centres(&counters[..2]);
+            quarter(false);
+            let after = centres(&counters[..2]);
+            let rots: Vec<u16> = counters[..2]
+                .iter()
+                .filter_map(|id| obj(*id).map(|o| o.rot))
+                .collect();
+            // The segment between them turns a quarter too: (x, y) becomes (-y, x).
+            let ok = before.len() == 2 && after.len() == 2 && {
+                let (bx, by) = (before[1].0 - before[0].0, before[1].1 - before[0].1);
+                let (ax, ay) = (after[1].0 - after[0].0, after[1].1 - after[0].1);
+                (ax + by).abs() <= 3.0 && (ay - bx).abs() <= 3.0
+            };
+            r.snapshot(ui, "36b-rotated-many");
+            r.check(
+                "rotation handle: several marks turn about the middle of their box",
+                ok && rots.iter().all(|a| (88..=92).contains(a)),
+                format!("{before:?} → {after:?} · {rots:?}"),
+            );
+            key(app, ui, "z", true, false);
+        }
+        key(app, ui, "\u{1b}", false, false);
+    }));
     // Cursors (ZK-47) and dragging rows of the layers list (ZK-54).
     steps.push(Box::new(|app, ui, r| {
         let order = |app: &Shared| -> Vec<(u32, u32)> {
