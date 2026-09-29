@@ -78,6 +78,13 @@ Mac) the screen-recording permission. Counters have a shape (circle, square, a p
 direction), a digit colour and a new numbering group; stamps offer 6 signs and 24 emoji. A picture
 dropped on an open document becomes a mark.
 
+The theme is light, dark or as the system (Settings → Appearance and language; it follows the
+system live); the capture overlay is always dark. Fonts are bundled: Onest (interface and text on
+screenshots — the same on both systems and in files), JetBrains Mono (numbers, key combinations),
+Unbounded (the Znimok wordmark), all SIL OFL 1.1 (`crates/znimok-render/fonts`). Golden images
+check the renderer (`cargo test -p znimok-render --test golden`; `ZNIMOK_BLESS=1` rewrites them),
+and the self-test snapshots the main screens in both themes and checks text contrast.
+
 ```sh
 cargo run --release -p znimok-app              # the library
 cargo run --release -p znimok-app -- shot.png  # open an image right away
