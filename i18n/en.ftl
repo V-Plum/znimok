@@ -2154,6 +2154,10 @@ export-quality = Quality
 # @kind: label
 # @max: 56
 export-metadata = Write metadata (title, description, author, date)
+
+# @where: Item of the Copy button's menu; toggles writing title, description, author and date into files
+# @kind: menu
+# @max: 28
 export-metadata-menu = Write metadata
 
 # @where: Checkbox
