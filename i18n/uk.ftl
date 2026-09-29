@@ -426,11 +426,6 @@ share-system-long = Системне меню «Поділитися»…
 # @max: 32
 share-export = Експортувати файл…
 
-# @where: Other ways menu: a switch; the full list of what is written is in the settings
-# @kind: menu
-# @max: 24
-export-metadata-menu = Записати метадані
-
 # @where: Other ways menu: a copy of the document (.znimok) in any folder
 # @kind: menu
 # @max: 24
