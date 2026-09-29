@@ -220,11 +220,15 @@ fn glyphs(
                 })
                 .collect();
             ctx.set_transform(base * Affine::translate(origin.to_vec2()));
-            let run = ctx
+            let mut run = ctx
                 .glyph_run(res, r.font())
                 .font_size(r.font_size())
                 .normalized_coords(r.normalized_coords())
                 .hint(false);
+            // A face without its own italic (Onest) gets the slant Parley asks for.
+            if let Some(angle) = r.synthesis().skew() {
+                run = run.glyph_transform(Affine::skew(-(angle as f64).to_radians().tan(), 0.0));
+            }
             if stroke {
                 run.stroke_glyphs(glyphs.into_iter());
             } else {
