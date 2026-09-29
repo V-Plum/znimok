@@ -6809,6 +6809,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "znimok-thumbnail"
+version = "0.0.0"
+dependencies = [
+ "image",
+ "windows",
+ "windows-core",
+ "znimok-core",
+ "znimok-format",
+]
+
+[[package]]
 name = "znimok-win"
 version = "0.0.0"
 dependencies = [

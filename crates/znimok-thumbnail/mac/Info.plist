@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleIdentifier</key><string>ua.plum.znimok.app.thumbnail</string>
+    <key>CFBundleName</key><string>Znimok Thumbnail</string>
+    <key>CFBundleDisplayName</key><string>Znimok</string>
+    <key>CFBundleExecutable</key><string>ZnimokThumbnail</string>
+    <key>CFBundlePackageType</key><string>XPC!</string>
+    <key>CFBundleShortVersionString</key><string>@VERSION@</string>
+    <key>CFBundleVersion</key><string>@BUILD@</string>
+    <key>LSMinimumSystemVersion</key><string>15.0</string>
+    <key>NSExtension</key>
+    <dict>
+        <key>NSExtensionPointIdentifier</key><string>com.apple.quicklook.thumbnail</string>
+        <key>NSExtensionPrincipalClass</key><string>ZnimokThumbnail.ThumbnailProvider</string>
+        <key>NSExtensionAttributes</key>
+        <dict>
+            <key>QLSupportedContentTypes</key>
+            <array><string>ua.plum.znimok.document</string></array>
+            <key>QLThumbnailMinimumDimension</key><integer>16</integer>
+        </dict>
+    </dict>
+</dict>
+</plist>
