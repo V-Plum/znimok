@@ -3410,6 +3410,21 @@ err-capture-title = Знімок не вдалося зробити
 # @max: 200
 err-capture-mac-perm = macOS не дозволяє Znimok бачити екран. Увімкніть «Запис екрана й системного звуку» в Системних параметрах і поверніться.
 
+# @where: Question title (macOS, no Screen Recording permission)
+# @kind: title
+# @max: 48
+perm-missing-title = Немає дозволу на запис екрана
+
+# @where: After the permission text: the alternative without it
+# @kind: body
+# @max: 200
+perm-picker-hint = Або виберіть вікно чи екран у системному вікні macOS зараз — без дозволу, але macOS додасть на знімок свій значок трансляції.
+
+# @where: Button: capture through the macOS content picker
+# @kind: button
+# @max: 28
+perm-use-picker = Вибрати без дозволу
+
 # @where: Error action
 # @kind: button
 # @max: 32

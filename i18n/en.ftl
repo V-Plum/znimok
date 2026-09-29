@@ -3390,6 +3390,21 @@ err-capture-title = Couldn't take the screenshot
 # @max: 200
 err-capture-mac-perm = macOS does not let Znimok see the screen. Turn on “Screen and system audio recording” in System Settings and come back.
 
+# @where: Question title (macOS, no Screen Recording permission)
+# @kind: title
+# @max: 48
+perm-missing-title = No screen recording permission
+
+# @where: After the permission text: the alternative without it
+# @kind: body
+# @max: 200
+perm-picker-hint = Or pick a window or a screen in the macOS picker now — no permission needed, but macOS puts its sharing badge on the shot.
+
+# @where: Button: capture through the macOS content picker
+# @kind: button
+# @max: 28
+perm-use-picker = Pick without permission
+
 # @where: Error action
 # @kind: button
 # @max: 32

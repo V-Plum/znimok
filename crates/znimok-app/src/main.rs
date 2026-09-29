@@ -505,6 +505,30 @@ fn start_capture(app: &Shared, ui: &AppWindow, whole: bool) {
                             a.toast(ui, e.to_string());
                         }
                     }
+                    // macOS without the Screen Recording permission (ZK-129): the permission, or
+                    // the system picker now — without it, with macOS's sharing badge on the shot.
+                    Err(capture::Fail::Permission) => {
+                        show_window(ui);
+                        let (title, body, pick, close) = (
+                            a.tr.tr("perm-missing-title"),
+                            a.tr.tr("err-capture-mac-perm") + " " + &a.tr.tr("perm-picker-hint"),
+                            a.tr.tr("perm-use-picker"),
+                            a.tr.tr("common-close"),
+                        );
+                        dialog::ask(
+                            ui,
+                            title,
+                            body,
+                            vec![pick, close],
+                            0,
+                            Some(1),
+                            |_, answer| {
+                                if answer == Some(0) {
+                                    pick_without_permission();
+                                }
+                            },
+                        );
+                    }
                     Err(e) => {
                         show_window(ui);
                         let msg = match e {
@@ -520,6 +544,29 @@ fn start_capture(app: &Shared, ui: &AppWindow, whole: bool) {
                 });
             });
         }
+    });
+}
+
+/// The system content picker (macOS): a window or a display, captured without the permission.
+fn pick_without_permission() {
+    #[cfg(target_os = "macos")]
+    znimok_mac::picker::pick_and_capture(|r| {
+        let _ = slint::invoke_from_event_loop(move || {
+            with_ctx(|a, ui| match r {
+                Ok(Some(p)) => {
+                    show_window(ui);
+                    let raster = znimok_core::Raster::new(p.width, p.height, p.rgba);
+                    a.new_document(ui, raster, "picker", None);
+                }
+                Ok(None) => {}
+                Err(e) => {
+                    let mut args = znimok_i18n::FluentArgs::new();
+                    args.set("reason", e);
+                    let msg = a.tr.tr_args("err-capture-generic", &args);
+                    a.toast(ui, msg);
+                }
+            })
+        });
     });
 }
 

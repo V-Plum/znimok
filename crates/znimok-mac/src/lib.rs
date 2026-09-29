@@ -4,8 +4,9 @@
 //!
 //! Coordinates are macOS "desktop units" — points in the global CoreGraphics space (origin at
 //! the top-left of the primary display, y down); `pixels_per_unit` is 2 on a Retina display.
-//! Frames are always physical pixels. Not yet here: window capture, the system picker, EDR/HDR
-//! frames (SDR sRGB for now), work area without the menu bar and Dock.
+//! Frames are always physical pixels, SDR sRGB: on an EDR display macOS itself maps HDR content
+//! to SDR for a screenshot (ZK-129 decision: no own tone mapping on the Mac). The system picker
+//! (`picker`) is the fallback without the Screen Recording permission.
 //!
 //! Binaries that link this crate need the rpath `/usr/lib/swift` (see `crates/znimok-app/build.rs`):
 //! screencapturekit's Swift bridge links `@rpath/libswift_Concurrency.dylib`.
@@ -19,6 +20,8 @@ mod clipboard;
 mod fileassoc;
 #[cfg(target_os = "macos")]
 mod mac;
+#[cfg(target_os = "macos")]
+pub mod picker;
 #[cfg(target_os = "macos")]
 mod share;
 
