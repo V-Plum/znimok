@@ -1,0 +1,17 @@
+[package]
+name = "znimok-gpu"
+description = "Znimok GPU work outside the canvas (ZK-38): HDR → SDR tone mapping of captured frames in WGSL, the formulas of Little Helpers, with the CPU version of znimok-platform as the reference"
+version.workspace = true
+edition.workspace = true
+license-file.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+znimok-platform = { path = "../znimok-platform" }
+wgpu = "30"
+pollster = "0.4"

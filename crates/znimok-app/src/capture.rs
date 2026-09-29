@@ -379,8 +379,24 @@ pub fn freeze_display(_same: Option<Rect>) -> Result<Frozen, Fail> {
 
 #[cfg_attr(not(any(windows, target_os = "macos")), allow(dead_code))]
 fn to_raster(frame: Frame) -> Raster {
-    let rgba = frame.to_srgb8();
+    // HDR frames are tone mapped on the GPU (ZK-38; ~20× faster at 4K), else on the CPU.
+    let rgba = znimok_gpu::to_srgb8(&frame);
     Raster::new(frame.width, frame.height, rgba)
+}
+
+/// ZK-38: with an HDR display the tone-mapping device is made ahead of the first capture
+/// (≈0.5 s once), on a thread of its own. macOS gives SDR frames, so there is nothing to do.
+pub fn warm_up_tone() {
+    #[cfg(windows)]
+    std::thread::spawn(|| {
+        use znimok_platform::Capture;
+        let hdr = znimok_win::WinCapture::new()
+            .displays()
+            .is_ok_and(|d| d.iter().any(|d| d.color.hdr));
+        if hdr {
+            let _ = znimok_gpu::ToneMapper::shared();
+        }
+    });
 }
 
 /// Runs on a worker thread (WinRT wants the MTA; ScreenCaptureKit calls back on the main queue).

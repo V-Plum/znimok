@@ -199,6 +199,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     {
         app.borrow_mut().onboarding_open(&ui);
     }
+    capture::warm_up_tone();
+
     // Global hotkeys from the settings (ZK-44); the self-test uses them too (recording a key).
     {
         let p = app.borrow().prefs();

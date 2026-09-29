@@ -6791,6 +6791,7 @@ dependencies = [
  "znimok-codes",
  "znimok-core",
  "znimok-format",
+ "znimok-gpu",
  "znimok-i18n",
  "znimok-log",
  "znimok-mac",
@@ -6859,6 +6860,15 @@ dependencies = [
  "uuid",
  "znimok-core",
  "znimok-render",
+]
+
+[[package]]
+name = "znimok-gpu"
+version = "0.0.0"
+dependencies = [
+ "pollster",
+ "wgpu",
+ "znimok-platform",
 ]
 
 [[package]]
