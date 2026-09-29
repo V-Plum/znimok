@@ -1423,6 +1423,30 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
         ui.invoke_setting("lang".into(), 1);
         let uk = app.borrow().tr.tr("set-title");
         ui.invoke_setting("lang".into(), 0);
+        // ZK-155/156: the gestures page; giving «release» the over-the-screen editor swaps it
+        // with Alt, the file keeps a permutation; the hint strip switch is saved.
+        {
+            use znimok_settings::CaptureAction as A;
+            ui.set_settings_page(0);
+            r.snapshot(ui, "24b-settings-shots");
+            ui.invoke_setting("gesture-plain".into(), 1);
+            let g = app.borrow().prefs().capture.gestures;
+            let shown = (ui.get_pref_gesture_plain(), ui.get_pref_gesture_alt());
+            ui.invoke_setting("show-hints".into(), 0);
+            let hints_off = !app.borrow().prefs().capture.show_hints;
+            ui.invoke_setting("show-hints".into(), 1);
+            ui.invoke_setting("gesture-plain".into(), 0);
+            let back = app.borrow().prefs().capture.gestures;
+            r.check(
+                "gestures swap and are saved; hint strip switch saved",
+                (g.plain, g.shift, g.alt) == (A::OverScreen, A::Clipboard, A::Editor)
+                    && shown == (1, 0)
+                    && hints_off
+                    && back == znimok_settings::Gestures::default(),
+                format!("{g:?}, shown {shown:?}, hints off {hints_off}, back {back:?}"),
+            );
+            ui.set_settings_page(2);
+        }
         // ZK-44: record a combination for the region shot (physical keys), Esc cancels a
         // recording, "Restore defaults" brings the defaults back.
         {

@@ -2789,6 +2789,21 @@ shots-gesture-option = ⌥ + release
 # @max: 48
 shots-show-hints = Show the hint strip while capturing
 
+# @where: Settings, Screenshots: segment — the capture opens in the editor window
+# @kind: label
+# @max: 16
+shots-seg-editor = Editor
+
+# @where: Settings, Screenshots: segment — the capture opens in the editor right over the screen
+# @kind: label
+# @max: 16
+shots-seg-over = Over the screen
+
+# @where: Settings, Screenshots: segment — the capture goes straight to the clipboard
+# @kind: label
+# @max: 16
+shots-seg-clipboard = Clipboard
+
 # @where: Switch
 # @kind: label
 # @max: 60

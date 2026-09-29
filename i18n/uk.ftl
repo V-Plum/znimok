@@ -2803,6 +2803,21 @@ shots-gesture-option = ⌥ + відпустити
 # @max: 48
 shots-show-hints = Показувати смугу підказок під час знімання
 
+# @where: Settings, Screenshots: segment — the capture opens in the editor window
+# @kind: label
+# @max: 16
+shots-seg-editor = Редактор
+
+# @where: Settings, Screenshots: segment — the capture opens in the editor right over the screen
+# @kind: label
+# @max: 16
+shots-seg-over = Поверх екрану
+
+# @where: Settings, Screenshots: segment — the capture goes straight to the clipboard
+# @kind: label
+# @max: 16
+shots-seg-clipboard = У буфер
+
 # @where: Switch
 # @kind: label
 # @max: 60

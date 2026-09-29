@@ -487,7 +487,7 @@ pub fn open(frozen: Frozen, editor_was_visible: bool) -> Result<(), slint::Platf
             // The choice is made on release: the modifiers held at that moment count, however
             // early or late they were pressed (ZK-154).
             let (shift, alt) = if kind == 2 {
-                held_modifiers().unwrap_or((shift, alt))
+                with_held(shift, alt)
             } else {
                 (shift, alt)
             };
@@ -497,7 +497,7 @@ pub fn open(frozen: Frozen, editor_was_visible: bool) -> Result<(), slint::Platf
             })
         });
         ui.on_key(|text, shift, alt| {
-            let (shift, alt) = held_modifiers().unwrap_or((shift, alt));
+            let (shift, alt) = with_held(shift, alt);
             with_session(|s| s.key(&text, chosen(shift, alt)))
         });
         ui.on_wheel(move |dy| {
@@ -637,6 +637,13 @@ fn held_modifiers() -> Option<(bool, bool)> {
 #[cfg(not(any(windows, target_os = "macos")))]
 fn held_modifiers() -> Option<(bool, bool)> {
     None
+}
+
+/// Held if the OS says so or the event does: the OS knows a key pressed before the overlay had
+/// the focus; the event carries the self-test's (and any synthetic) modifiers.
+fn with_held(shift: bool, alt: bool) -> (bool, bool) {
+    let (os_shift, os_alt) = held_modifiers().unwrap_or((false, false));
+    (shift || os_shift, alt || os_alt)
 }
 
 thread_local! {
