@@ -305,6 +305,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     slint::run_event_loop_until_quit()?;
     drop(timer);
     drop(tray_ui);
+    // ZK-146: leaving main hands the windows kept in thread-locals (the card after a capture,
+    // the overlay…) to the runtime's thread-local cleanup at process exit. On Windows their
+    // wgpu/DXGI swap chains are then released after the windows are gone: DXGI raises
+    // 0x087A0001 (DXGI_ERROR_INVALID_CALL) and the exit is reported as a crash. So: close what
+    // must be closed cleanly, wait for background saves, flush the log, and end the process
+    // without that cleanup — the OS frees the rest.
+    app.borrow_mut().before_exit();
+    drop(app::SAVE_LOCK.lock().unwrap_or_else(|e| e.into_inner()));
+    drop(_log);
+    #[cfg(windows)]
+    {
+        use windows::Win32::System::Threading::{GetCurrentProcess, TerminateProcess};
+        let code = selftest::EXIT_CODE.load(std::sync::atomic::Ordering::SeqCst) as u32;
+        // SAFETY: ends this process; everything that must persist is written above.
+        let _ = unsafe { TerminateProcess(GetCurrentProcess(), code) };
+    }
     Ok(())
 }
 

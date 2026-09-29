@@ -106,6 +106,9 @@ fn centre(ui: &AppWindow) -> (f32, f32) {
     (ui.get_canvas_width() / 2.0, ui.get_canvas_height() / 2.0)
 }
 
+/// The self-test's result when it ends through the event loop (see `ZNIMOK_SELFTEST_REAL_QUIT`).
+pub static EXIT_CODE: std::sync::atomic::AtomicI32 = std::sync::atomic::AtomicI32::new(0);
+
 pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) {
     let _ = std::fs::create_dir_all(&dir);
     let mut steps: Vec<Step> = Vec::new();
@@ -2475,7 +2478,16 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
                         format!("{}\n{summary}\n", r.lines.join("\n")),
                     );
                     let code = if r.failed == 0 { 0 } else { 1 };
-                    std::process::exit(code);
+                    // ZNIMOK_SELFTEST_REAL_QUIT: end the way the tray's «Quit» does — leave the
+                    // event loop and go through the end of main (the exit crash of ZK-146).
+                    if std::env::var_os("ZNIMOK_SELFTEST_REAL_QUIT").is_some() {
+                        EXIT_CODE.store(code, std::sync::atomic::Ordering::SeqCst);
+                        // As from the tray: the window is hidden when «Quit» is chosen.
+                        let _ = ui.hide();
+                        let _ = slint::quit_event_loop();
+                    } else {
+                        std::process::exit(code);
+                    }
                 }
             }
         },
