@@ -41,7 +41,11 @@ fn main() {
     println!("cargo:rerun-if-changed=ui/cursors");
     check_tr_texts(&en);
 
-    let config = slint_build::CompilerConfiguration::new().with_bundled_translations(&out);
+    let mut config = slint_build::CompilerConfiguration::new().with_bundled_translations(&out);
+    // The UI tests find elements by their accessible names (ZK-33): debug builds only.
+    if std::env::var("PROFILE").as_deref() == Ok("debug") {
+        config = config.with_debug_info(true);
+    }
     slint_build::compile_with_config("ui/app.slint", config).expect("slint compile");
 }
 

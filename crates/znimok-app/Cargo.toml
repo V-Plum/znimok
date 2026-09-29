@@ -52,3 +52,7 @@ objc2-foundation = "0.3"
 embed-resource = "3"
 slint-build = "~1.18"
 znimok-i18n = { path = "../znimok-i18n" }
+
+[dev-dependencies]
+# UI tests without a window or GPU (ZK-33); the same version as slint.
+i-slint-backend-testing = "=1.18.1"

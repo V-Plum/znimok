@@ -29,6 +29,8 @@ mod scroll;
 mod selftest;
 mod system;
 mod tray;
+#[cfg(test)]
+mod ui_tests;
 mod update;
 
 use std::cell::RefCell;

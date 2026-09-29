@@ -630,6 +630,10 @@ criteria = "safe-to-deploy"
 version = "1.18.1"
 criteria = "safe-to-deploy"
 
+[[exemptions.i-slint-backend-testing]]
+version = "1.18.1"
+criteria = "safe-to-run"
+
 [[exemptions.i-slint-backend-winit]]
 version = "1.18.1"
 criteria = "safe-to-deploy"

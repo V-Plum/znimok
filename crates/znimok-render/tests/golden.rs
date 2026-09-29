@@ -24,22 +24,37 @@ fn dir() -> PathBuf {
 }
 
 fn render(doc: &Document) -> Pixmap {
+    render_view(doc, View::one_to_one(doc))
+}
+
+fn render_view(doc: &Document, view: View) -> Pixmap {
     let mut r = Renderer::deterministic();
     let mut pix = Pixmap::new(1, 1);
-    r.render(doc, View::one_to_one(doc), &mut pix);
+    r.render(doc, view, &mut pix);
     pix
 }
 
 /// Rectangles (output pixels) not compared: emoji stamps, a little larger than their marks.
 fn masked(doc: &Document) -> Vec<IRect> {
-    let f = doc.frame();
+    masked_in(doc, View::one_to_one(doc))
+}
+
+fn masked_in(doc: &Document, view: View) -> Vec<IRect> {
     doc.objects
         .iter()
         .filter(|o| matches!(o.data, Data::Stamp { id } if id >= 100))
         .map(|o| {
             let b = o.bounds();
             let m = b.w.max(b.h) / 3 + 4;
-            IRect::new(b.x - m - f.x, b.y - m - f.y, b.w + 2 * m, b.h + 2 * m)
+            let x = ((b.x - m) as f64 - view.origin.x) * view.scale;
+            let y = ((b.y - m) as f64 - view.origin.y) * view.scale;
+            let side = |v: i32| ((v + 2 * m) as f64 * view.scale).ceil() as i32 + 2;
+            IRect::new(
+                x.floor() as i32 - 1,
+                y.floor() as i32 - 1,
+                side(b.w),
+                side(b.h),
+            )
         })
         .collect()
 }
@@ -83,7 +98,11 @@ fn diff_map(actual: &Pixmap, golden: &Pixmap, mask: &[IRect]) -> Vec<u8> {
 }
 
 fn check(name: &str, doc: &Document) {
-    let actual = render(doc);
+    check_view(name, doc, View::one_to_one(doc));
+}
+
+fn check_view(name: &str, doc: &Document, view: View) {
+    let actual = render_view(doc, view);
     let path = dir().join(format!("{name}.png"));
     if std::env::var_os("ZNIMOK_BLESS").is_some() || !path.exists() {
         std::fs::create_dir_all(dir()).unwrap();
@@ -98,14 +117,15 @@ fn check(name: &str, doc: &Document) {
         "{name}: size differs from the golden"
     );
     let (w, h) = (actual.width() as i32, actual.height() as i32);
-    let (bad, compared) = compare(&actual, &golden, &masked(doc));
+    let mask = masked_in(doc, view);
+    let (bad, compared) = compare(&actual, &golden, &mask);
     let share = bad as f64 / compared.max(1) as f64;
     if share > SHARE {
         let out = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/golden-diff");
         std::fs::create_dir_all(&out).unwrap();
         let mut d = Pixmap::new(w as u16, h as u16);
         d.data_as_u8_slice_mut()
-            .copy_from_slice(&diff_map(&actual, &golden, &masked(doc)));
+            .copy_from_slice(&diff_map(&actual, &golden, &mask));
         std::fs::write(
             out.join(format!("{name}-actual.png")),
             actual.into_png().unwrap(),
@@ -220,4 +240,230 @@ fn hide_covers_the_marks_below() {
         d
     });
     assert_ne!(one, sharp);
+}
+
+/// ZK-33: the styles the reference scene shows only once, each next to its neighbours — dashes,
+/// corners, shadow and glow levels, opacity, a plate without outline, line and pen heads with
+/// their sizes, counter shapes, text weights, alignments and outline.
+#[test]
+fn styles() {
+    use znimok_core::{
+        Align, Corners, CounterShape, Dash, Effect, Head, Object, Raster, Rgb, Style,
+    };
+    let mut doc = Document::from_raster(
+        "styles",
+        Raster::solid(1200, 900, Rgb::new(0xF6, 0xF7, 0xF9)),
+    );
+    let s = |color: Rgb| Style {
+        color,
+        ..Style::default()
+    };
+    let blue = Rgb::new(0x3D, 0x7B, 0xF5);
+    let green = Rgb::new(0x34, 0xC4, 0x8A);
+    // Row 1: dash × corners × effects on rectangles.
+    let rects = [
+        (Dash::Solid, Corners::Sharp, Effect::None, Effect::None, 100),
+        (
+            Dash::Dashed,
+            Corners::Soft,
+            Effect::Light,
+            Effect::None,
+            100,
+        ),
+        (
+            Dash::DashDot,
+            Corners::Round,
+            Effect::Strong,
+            Effect::None,
+            100,
+        ),
+        (
+            Dash::Solid,
+            Corners::Round,
+            Effect::None,
+            Effect::Light,
+            100,
+        ),
+        (Dash::Solid, Corners::Soft, Effect::None, Effect::Strong, 40),
+    ];
+    for (i, (dash, corners, shadow, glow, alpha)) in rects.into_iter().enumerate() {
+        doc.push(
+            Object::new(IRect::new(40 + i as i32 * 230, 40, 180, 120), Data::Rect).with_style(
+                Style {
+                    dash,
+                    corners,
+                    corner_px: 24,
+                    shadow,
+                    glow,
+                    alpha,
+                    thick: 7,
+                    ..s(blue)
+                },
+            ),
+        );
+    }
+    // Row 2: a plate (fill, no outline), an ellipse with fill, thin and thick outlines.
+    doc.push(
+        Object::new(IRect::new(40, 210, 180, 120), Data::Rect).with_style(Style {
+            no_main: true,
+            color2: Some(Rgb::YELLOW),
+            alpha2: 80,
+            corners: Corners::Soft,
+            corner_px: 16,
+            ..s(Rgb::RED)
+        }),
+    );
+    doc.push(
+        Object::new(IRect::new(270, 210, 180, 120), Data::Ellipse).with_style(Style {
+            color2: Some(green),
+            alpha2: 30,
+            thick: 2,
+            ..s(green)
+        }),
+    );
+    doc.push(
+        Object::new(IRect::new(500, 210, 180, 120), Data::Ellipse).with_style(Style {
+            thick: 7,
+            dash: Dash::Dashed,
+            ..s(Rgb::RED)
+        }),
+    );
+    // Row 3: every head at every size, on lines; a pen with heads.
+    let heads = [Head::Triangle, Head::Chevron, Head::Dot, Head::None];
+    for (i, head) in heads.into_iter().enumerate() {
+        for size in 0..3u8 {
+            let y = 380 + size as i32 * 50;
+            let x = 40 + i as i32 * 170;
+            doc.push(
+                Object::new(
+                    IRect::new(x, y, 130, 20),
+                    Data::Line {
+                        head_front: head,
+                        head_back: if i == 3 { Head::Triangle } else { Head::None },
+                        head_size: size,
+                    },
+                )
+                .with_style(Style {
+                    thick: [2, 4, 7][size as usize],
+                    ..s(Rgb::RED)
+                }),
+            );
+        }
+    }
+    doc.push(
+        Object::new(
+            IRect::new(740, 380, 200, 120),
+            Data::Pen {
+                points: vec![(740, 480), (780, 400), (840, 460), (900, 390), (940, 470)],
+                head_front: Head::Triangle,
+                head_back: Head::Dot,
+            },
+        )
+        .with_style(Style {
+            thick: 4,
+            ..s(blue)
+        }),
+    );
+    // Row 4: counter shapes, two digits, a second colour for the digit.
+    let shapes = [
+        CounterShape::Circle,
+        CounterShape::RoundedBox,
+        CounterShape::Pin,
+    ];
+    for (i, shape) in shapes.into_iter().enumerate() {
+        doc.push(
+            Object::new(
+                IRect::new(40 + i as i32 * 90, 560, 56, 56),
+                Data::Counter {
+                    seq: i as u32,
+                    group: 1,
+                    start: 9,
+                    shape,
+                },
+            )
+            .with_style(Style {
+                thick: 56,
+                color2: (i == 2).then_some(Rgb::YELLOW),
+                ..s(Rgb::RED)
+            }),
+        );
+    }
+    // Row 5: text — weights, alignment in a block, outline.
+    let texts = [
+        ("Звичайний", false, false, Align::Left, 0, None),
+        ("Жирний", true, false, Align::Left, 0, None),
+        ("Курсив", false, true, Align::Left, 0, None),
+        ("Обведений", true, false, Align::Left, 0, Some(Rgb::WHITE)),
+    ];
+    for (i, (text, bold, italic, align, box_w, outline)) in texts.into_iter().enumerate() {
+        doc.push(
+            Object::new(
+                IRect::new(40 + i as i32 * 280, 660, 0, 0),
+                Data::Text {
+                    text: text.into(),
+                    size: 36,
+                    bold,
+                    italic,
+                    align,
+                    box_w,
+                },
+            )
+            .with_style(Style {
+                color2: outline,
+                ..s(if outline.is_some() {
+                    Rgb::RED
+                } else {
+                    Rgb::BLACK
+                })
+            }),
+        );
+    }
+    for (i, align) in [Align::Left, Align::Center, Align::Right]
+        .into_iter()
+        .enumerate()
+    {
+        doc.push(
+            Object::new(
+                IRect::new(40 + i as i32 * 380, 740, 320, 0),
+                Data::Text {
+                    text: "Блок 320 px: рядки переносяться й вирівнюються".into(),
+                    size: 22,
+                    bold: false,
+                    italic: false,
+                    align,
+                    box_w: 320,
+                },
+            )
+            .with_style(s(Rgb::BLACK)),
+        );
+    }
+    check("styles", &doc);
+}
+
+/// ZK-33: the canvas shows the document zoomed — 200 % over a detail, 50 % over the whole —
+/// the views a GPU path (ZK-130) has to match too.
+#[test]
+fn zoomed_views() {
+    use znimok_render::vello_cpu::kurbo::Point;
+    let doc = reference::reference_document(1600, 1000);
+    check_view(
+        "zoom-200",
+        &doc,
+        View {
+            scale: 2.0,
+            origin: Point::new(500.0, 150.0),
+            width: 900,
+            height: 700,
+        },
+    );
+    check_view(
+        "zoom-50",
+        &doc,
+        View {
+            scale: 0.5,
+            origin: Point::new(0.0, 0.0),
+            width: 800,
+            height: 500,
+        },
+    );
 }
