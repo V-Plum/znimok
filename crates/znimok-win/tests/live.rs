@@ -56,24 +56,35 @@ fn region_is_an_exact_crop_of_the_display() {
         return; // FP16 values can differ by rounding between two captures; the SDR case is exact.
     }
     let opts = CaptureOptions::default();
-    // Two captures of a live screen can differ (clock, caret): compare a region taken right after.
-    let full = c
-        .capture(&CaptureTarget::Display { id: d.id.clone() }, &opts)
-        .unwrap();
+    let display = CaptureTarget::Display { id: d.id.clone() };
     let r = Rect::new(d.bounds.x + 40, d.bounds.y + 30, 120, 90);
-    let part = c
-        .capture(&CaptureTarget::Region { rect: r }, &opts)
-        .unwrap();
-    assert_eq!(
-        (part.width, part.height, part.format),
-        (120, 90, PixelFormat::Bgra8)
-    );
-    let same = (0..90)
-        .filter(|&y| part.row(y) == &full.row(30 + y)[40 * 4..160 * 4])
-        .count();
+    // A live screen changes between captures (clock, caret, a runner's own windows — ZK-134):
+    // compare the region with a display frame taken just before AND just after it, and try up to
+    // three times. The check itself stays strict: at least 80 of 90 rows byte-for-byte.
+    let mut best = 0;
+    for _ in 0..3 {
+        let before = c.capture(&display, &opts).unwrap();
+        let part = c
+            .capture(&CaptureTarget::Region { rect: r }, &opts)
+            .unwrap();
+        let after = c.capture(&display, &opts).unwrap();
+        assert_eq!(
+            (part.width, part.height, part.format),
+            (120, 90, PixelFormat::Bgra8)
+        );
+        let same = |full: &znimok_platform::Frame| {
+            (0..90)
+                .filter(|&y| part.row(y) == &full.row(30 + y)[40 * 4..160 * 4])
+                .count()
+        };
+        best = best.max(same(&before)).max(same(&after));
+        if best >= 80 {
+            break;
+        }
+    }
     assert!(
-        same >= 80,
-        "лише {same}/90 рядків ділянки збіглися з кадром дисплея"
+        best >= 80,
+        "лише {best}/90 рядків ділянки збіглися з кадром дисплея (3 спроби)"
     );
 }
 
