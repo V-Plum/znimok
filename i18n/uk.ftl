@@ -744,6 +744,11 @@ colour-save = Зберегти в палітру
 # @max: 160
 colour-eyedropper-note = Піпетка бере колір зі знімка, а з живого екрана — через захоплення (Windows) або системний семплер (macOS).
 
+# @where: Toast while the eyedropper is armed: the next click on the picture picks its colour
+# @kind: hint
+# @max: 80
+colour-eyedropper-hint = Клацніть на знімку, щоб узяти колір · Esc — скасувати
+
 # @where: Palette swatch (accessible name only)
 # @kind: a11y
 # @max: 16

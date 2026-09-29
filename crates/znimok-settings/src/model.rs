@@ -279,6 +279,8 @@ pub struct Editor {
     pub save_dir: Option<PathBuf>,
     /// Exported files carry the title, description, author, rights, tags and date (ZK-61).
     pub write_metadata: bool,
+    /// Colours picked in the colour picker, newest first, `#RRGGBB` (ZK-160).
+    pub recent_colours: Vec<String>,
 }
 
 impl Default for Editor {
@@ -290,6 +292,7 @@ impl Default for Editor {
             last_action: SaveAction::Clipboard,
             save_dir: None,
             write_metadata: true,
+            recent_colours: Vec::new(),
         }
     }
 }

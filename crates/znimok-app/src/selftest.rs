@@ -9,7 +9,7 @@ use std::path::PathBuf;
 use std::rc::Rc;
 use std::time::Duration;
 
-use slint::ComponentHandle;
+use slint::{ComponentHandle, Model};
 
 use crate::AppWindow;
 use crate::app::App;
@@ -697,6 +697,70 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
             ui.invoke_set_prop("color".into(), 0);
             ui.invoke_set_prop("fill".into(), 4);
             r.snapshot(ui, "14-props-rect");
+            // ZK-160: the colour picker — any colour, a hex code, the eyedropper, recent colours.
+            {
+                use slint::platform::{PointerEventButton, WindowEvent};
+                let g = ui.global::<crate::ColourPick>();
+                let own = znimok_core::Rgb::new(0x12, 0x34, 0x56);
+                g.invoke_pick("fill".into(), slint::Color::from_rgb_u8(own.r, own.g, own.b));
+                let fill = get(app, id).and_then(|o| o.style.color2);
+                let shown = (ui.get_fill_index(), ui.get_fill_rgb());
+                g.invoke_hex_entered("color".into(), " #abc ".into());
+                let stroke = get(app, id).map(|o| o.style.color);
+                g.invoke_hex_entered("color".into(), "#12zz45".into());
+                let kept = get(app, id).map(|o| o.style.color);
+                let recent = app.borrow().recent_colours();
+                r.check(
+                    "colour picker: any fill, a hex code, bad hex ignored, recent colours kept",
+                    fill == Some(own)
+                        && shown == (-2, slint::Color::from_rgb_u8(0x12, 0x34, 0x56))
+                        && stroke == Some(znimok_core::Rgb::new(0xAA, 0xBB, 0xCC))
+                        && kept == stroke
+                        && recent.first() == Some(&znimok_core::Rgb::new(0xAA, 0xBB, 0xCC))
+                        && recent.get(1) == Some(&own)
+                        && g.get_recent().row_count() == recent.len(),
+                    format!("fill {fill:?} shown {shown:?} · stroke {stroke:?} · kept {kept:?} · recent {recent:?}"),
+                );
+                // The eyedropper: the next canvas click takes the colour there, nothing else.
+                let n = count(app);
+                let (ex, ey) = (40.0, 40.0);
+                let want = app.borrow().colour_probe(ex, ey);
+                g.invoke_eyedrop("fill".into());
+                let cursor = ui.get_canvas_cursor();
+                let at = app.borrow().doc_to_logical(ex, ey);
+                click(app, ui, at);
+                let took = get(app, id).and_then(|o| o.style.color2);
+                r.check(
+                    "eyedropper: a click on the picture takes its colour, draws nothing",
+                    want.is_some() && took == want && count(app) == n && cursor == 1
+                        && ui.get_selection_count() == 1,
+                    format!("want {want:?} took {took:?} · {} marks · cursor {cursor}", count(app)),
+                );
+                // The popover itself, opened by a real click on the fill row's picker chip.
+                let win = ui.window();
+                let w = win.size().width as f32 / win.scale_factor();
+                let chip = slint::LogicalPosition::new(w - 37.0, 183.0);
+                win.dispatch_event(WindowEvent::PointerMoved { position: chip });
+                win.dispatch_event(WindowEvent::PointerPressed {
+                    position: chip,
+                    button: PointerEventButton::Left,
+                });
+                win.dispatch_event(WindowEvent::PointerReleased {
+                    position: chip,
+                    button: PointerEventButton::Left,
+                });
+                r.snapshot(ui, "14b-colour-picker");
+                let away = slint::LogicalPosition::new(w - 200.0, 820.0);
+                win.dispatch_event(WindowEvent::PointerPressed {
+                    position: away,
+                    button: PointerEventButton::Left,
+                });
+                win.dispatch_event(WindowEvent::PointerReleased {
+                    position: away,
+                    button: PointerEventButton::Left,
+                });
+                ui.invoke_set_prop("fill".into(), 4);
+            }
             ui.invoke_set_prop("corners".into(), 2);
             let c = get(app, id).map(|o| o.style.corners);
             r.check(

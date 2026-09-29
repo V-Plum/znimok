@@ -742,6 +742,11 @@ colour-save = Save to palette
 # @max: 160
 colour-eyedropper-note = The eyedropper samples the screenshot; for the live screen it uses capture (Windows) or the system sampler (macOS).
 
+# @where: Toast while the eyedropper is armed: the next click on the picture picks its colour
+# @kind: hint
+# @max: 80
+colour-eyedropper-hint = Click the picture to take its colour · Esc cancels
+
 # @where: Palette swatch (accessible name only)
 # @kind: a11y
 # @max: 16
