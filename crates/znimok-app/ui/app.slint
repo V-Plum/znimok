@@ -524,6 +524,45 @@ component MenuItemRow inherits Rectangle {
     }
 }
 
+// Check box: a rounded square that fills with the accent and draws its tick (tactile press).
+component CheckBox inherits HorizontalLayout {
+    in property <string> text;
+    in-out property <bool> checked;
+    callback toggled;
+    spacing: 8px;
+    Rectangle {
+        width: 18px;
+        height: 18px;
+        y: (parent.height - self.height) / 2;
+        border-radius: 5px;
+        background: root.checked ? Theme.accent : transparent;
+        border-width: root.checked ? 0 : 1.5px;
+        border-color: Theme.text3;
+        animate background { duration: 140ms; easing: ease-out; }
+        transform-origin: { x: self.width / 2, y: self.height / 2 };
+        transform-scale: ta.pressed ? 0.88 : 1.0;
+        animate transform-scale { duration: 140ms; easing: cubic-bezier(0.2, 0.8, 0.2, 1); }
+        if root.checked: Path {
+            width: parent.width;
+            height: parent.height;
+            viewbox-width: 24;
+            viewbox-height: 24;
+            commands: "M6 12.5 l4 4 L18 8";
+            stroke: white;
+            stroke-width: 2.4px;
+            fill: transparent;
+        }
+    }
+    Text { text: root.text; color: Theme.text2; font-size: 12px; vertical-alignment: center; }
+    ta := TouchArea {
+        mouse-cursor: MouseCursor.pointer;
+        clicked => {
+            root.checked = !root.checked;
+            root.toggled();
+        }
+    }
+}
+
 component Switch inherits Rectangle {
     in-out property <bool> checked;
     callback toggled;
@@ -1371,6 +1410,8 @@ export component AppWindow inherits Window {
     in property <string> pref-autostart-note;
     in property <bool> onb-screen-ok: true;
     in property <string> onb-keys;
+    // One line for the guide: which combinations are taken, what works instead.
+    in property <string> onb-keys-warn;
     // Hotkeys page (ZK-44): region, screen, clipboard, empty editor.
     in property <[string]> key-texts;
     in property <[string]> key-warns;
@@ -1534,31 +1575,45 @@ export component AppWindow inherits Window {
         animate opacity { duration: 200ms; easing: ease-in-out; }
         background: Theme.app;
         TouchArea { }
-        DragArea { height: 52px; drag => { root.window-drag(); } toggle => { root.window-toggle(); } }
-        if root.custom-frame: WindowControls {
-            x: parent.width - self.width;
+        // Title bar: drags the window like the other pages' bars.
+        Rectangle {
+            x: 0;
             y: 0;
+            width: parent.width;
             height: 52px;
-            maximized: root.win-maximized;
-            minimize => { root.window-minimize(); }
-            toggle => { root.window-toggle(); }
-            close => { root.window-close(); }
+            background: Theme.panel;
+            DragArea { x: 0; y: 0; width: parent.width; height: parent.height; drag => { root.window-drag(); } toggle => { root.window-toggle(); } }
+            HorizontalLayout {
+                padding-left: 16px + root.lights-inset;
+                spacing: 12px;
+                alignment: start;
+                Path {
+                    y: (parent.height - self.height) / 2;
+                    width: 24px; height: 24px;
+                    viewbox-width: 24; viewbox-height: 24;
+                    commands: "M3.5 13.5 h8 L3.5 21 h8";
+                    stroke: #3D7BF5; stroke-width: 2.4px; fill: transparent;
+                }
+                Text { text: "Znimok"; color: Theme.text; font-size: 15px; font-weight: 700; vertical-alignment: center; }
+            }
+            if root.custom-frame: WindowControls {
+                x: parent.width - self.width;
+                y: 0;
+                height: parent.height;
+                maximized: root.win-maximized;
+                minimize => { root.window-minimize(); }
+                toggle => { root.window-toggle(); }
+                close => { root.window-close(); }
+            }
         }
+        Rectangle { x: 0; y: 52px; width: parent.width; height: 1px; background: Theme.line; }
         VerticalLayout {
             x: (parent.width - self.width) / 2;
+            y: 53px;
             width: min(parent.width - 48px, 620px);
+            height: parent.height - 53px;
             alignment: center;
             spacing: 14px;
-            Path {
-                width: 44px;
-                height: 44px;
-                viewbox-width: 24;
-                viewbox-height: 24;
-                commands: "M3.5 13.5 h8 L3.5 21 h8";
-                stroke: #3D7BF5;
-                stroke-width: 2.4px;
-                fill: transparent;
-            }
             Text { text: root.mac ? @tr("onb-title-mac" => "Three permissions — and Znimok is ready") : @tr("onb-title-win" => "Two steps — and Znimok is ready"); color: Theme.text; font-size: 22px; font-weight: 700; wrap: word-wrap; }
             Text { text: root.mac ? @tr("onb-intro-mac" => "macOS asks for permission for everything that sees the screen. Znimok works only on your Mac and sends nothing anywhere without your action.") : @tr("onb-intro-win" => "Znimok needs no administrator rights and sends nothing anywhere without your action. Check the hotkeys and choose where screenshots live."); color: Theme.text2; font-size: 13px; wrap: word-wrap; }
             // Screen recording (macOS only)
@@ -1598,7 +1653,7 @@ export component AppWindow inherits Window {
                         horizontal-stretch: 1;
                         Text { text: @tr("onb-keys" => "Hotkeys"); color: Theme.text; font-size: 14px; font-weight: 600; }
                         Text { text: root.onb-keys; color: Theme.text3; font-size: 12px; wrap: word-wrap; }
-                        for w in root.key-warns: Text { visible: w != ""; height: w != "" ? self.preferred-height : 0; text: w; color: Theme.attention; font-size: 11px; wrap: word-wrap; }
+                        if root.onb-keys-warn != "": Text { text: root.onb-keys-warn; color: Theme.attention; font-size: 11px; wrap: word-wrap; }
                     }
                     VerticalLayout {
                         alignment: center;
@@ -1645,9 +1700,10 @@ export component AppWindow inherits Window {
             }
             HorizontalLayout {
                 spacing: 8px;
-                alignment: end;
-                TextButton { text: @tr("onb-skip-all" => "Skip all"); clicked => { root.setting("onb-done", 0); } }
-                TextButton { text: @tr("common-done" => "Done"); primary: true; clicked => { root.setting("onb-done", 0); } }
+                onb-hide := CheckBox { text: @tr("onb-dont-show" => "Don't show next time"); checked: true; }
+                Rectangle { horizontal-stretch: 1; }
+                TextButton { text: @tr("onb-skip-all" => "Skip all"); clicked => { root.setting("onb-done", onb-hide.checked ? 1 : 0); } }
+                TextButton { text: @tr("common-done" => "Done"); primary: true; clicked => { root.setting("onb-done", onb-hide.checked ? 1 : 0); } }
             }
         }
     }

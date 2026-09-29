@@ -3107,6 +3107,16 @@ onb-keys-mac = No permission needed. Defaults: { $region } region, { $screen } s
 # @max: 240
 onb-keys-win = Defaults: { $region } region, { $screen } screen, { $record } recording. If a combination is taken by another program, pick another one here.
 
+# @where: First-run guide, hotkeys card: the default combinations another program holds
+# @kind: hint
+# @max: 90
+onb-keys-taken = Taken by another program: { $keys }.
+
+# @where: First-run guide, after onb-keys-taken: the region key that works instead
+# @kind: hint
+# @max: 60
+onb-keys-fallback = Region shots work on { $key } for now.
+
 # @where: Step action (macOS)
 # @kind: button
 # @max: 24
@@ -3151,6 +3161,11 @@ onb-agents-hint = Off. You can turn it on on the Agents page when you need it.
 # @kind: button
 # @max: 20
 onb-skip-all = Skip all
+
+# @where: First-run guide, bottom left: check box, ticked by default
+# @kind: option
+# @max: 36
+onb-dont-show = Don't show next time
 
 # @where: Settings and the first-run guide
 # @kind: hint

@@ -531,9 +531,10 @@ impl App {
         );
     }
 
-    fn onboarding_done(&mut self, ui: &AppWindow) {
+    /// Leaves the guide; `remember` = "Don't show next time" (ticked by default).
+    fn onboarding_done(&mut self, ui: &AppWindow, remember: bool) {
         self.recheck_timer.stop();
-        self.save_prefs(ui, |p| p.general.onboarding_done = true);
+        self.save_prefs(ui, |p| p.general.onboarding_done = remember);
         ui.set_page(if self.s.is_some() { 1 } else { 0 });
         ui.invoke_focus_library();
     }
@@ -599,6 +600,32 @@ impl App {
                     _ => String::new(),
                 }));
             }
+            // The guide says it once: "Taken by another program: A, B. Region shots work on C."
+            let mut taken = Vec::new();
+            let mut region_on = None;
+            for a in Action::ALL {
+                if let State::Taken { wanted, active } = crate::hotkeys::state(a) {
+                    taken.push(wanted.display(os));
+                    if a == Action::Region {
+                        region_on = active;
+                    }
+                }
+            }
+            let mut warn = String::new();
+            if !taken.is_empty() {
+                warn = self
+                    .tr
+                    .tr_args("onb-keys-taken", &args(&[("keys", taken.join(", "))]));
+                if let Some(k) = region_on {
+                    warn.push(' ');
+                    warn.push_str(
+                        &self
+                            .tr
+                            .tr_args("onb-keys-fallback", &args(&[("key", k.display(os))])),
+                    );
+                }
+            }
+            ui.set_onb_keys_warn(warn.into());
             ui.set_key_texts(std::rc::Rc::new(VecModel::from(texts)).into());
             ui.set_key_warns(std::rc::Rc::new(VecModel::from(warns)).into());
         }
@@ -730,7 +757,7 @@ impl App {
                 return;
             }
             "onb-done" => {
-                self.onboarding_done(ui);
+                self.onboarding_done(ui, on);
                 return;
             }
             "onb-screen" => crate::system::ask_screen(),

@@ -1264,11 +1264,16 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
     steps.push(Box::new(|app, ui, r| {
         r.snapshot(ui, "27-onboarding");
         let shown = ui.get_page() == 3;
+        // "Don't show next time" unticked: the guide comes back next start.
         ui.invoke_setting("onb-done".into(), 0);
+        let again = !app.borrow().prefs().general.onboarding_done;
+        ui.invoke_setting("onb-open".into(), 0);
+        // Ticked (the default): remembered.
+        ui.invoke_setting("onb-done".into(), 1);
         let done = app.borrow().prefs().general.onboarding_done;
         r.check(
             "first-run guide: shown, Done remembers it and returns",
-            shown && done && ui.get_page() == 1,
+            shown && again && done && ui.get_page() == 1,
             format!("shown {shown}, saved {done}, page {}", ui.get_page()),
         );
     }));
