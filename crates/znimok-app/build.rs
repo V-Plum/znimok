@@ -4,7 +4,10 @@
 
 use std::path::PathBuf;
 
+include!("icons/winres.rs");
+
 fn main() {
+    windows_resources("Znimok", "znimok-app.exe");
     let root = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap()).join("../../i18n");
     let en = std::fs::read_to_string(root.join("en.ftl")).expect("i18n/en.ftl");
     println!("cargo:rerun-if-changed={}", root.join("en.ftl").display());

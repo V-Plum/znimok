@@ -23,6 +23,10 @@
     <MajorUpgrade AllowSameVersionUpgrades="yes" DowngradeErrorMessage="A newer version of Znimok is already installed." />
     <MediaTemplate EmbedCab="yes" />
 
+    <!-- The icon in Settings → Apps / Programs and Features. The Start menu shortcut and the
+         .znimok type take the icon from znimok-app.exe itself. -->
+    <Icon Id="ZnimokIcon" SourceFile="crates\znimok-app\icons\znimok.ico" />
+    <Property Id="ARPPRODUCTICON" Value="ZnimokIcon" />
     <Property Id="ARPURLINFOABOUT" Value="https://github.com/V-Plum/znimok" />
     <Property Id="ARPHELPLINK" Value="https://github.com/V-Plum/znimok/issues" />
     <Property Id="ARPNOMODIFY" Value="1" />

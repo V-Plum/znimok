@@ -219,6 +219,7 @@ jobs:
           mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources" "$app/Contents/PlugIns"
           cp target/release/znimok-app target/release/znimok "$app/Contents/MacOS/"
           cp -R target/appex/ZnimokThumbnail.appex "$app/Contents/PlugIns/"
+          cp crates/znimok-app/icons/Znimok.icns "$app/Contents/Resources/"
           sed -e "s/@BUILD@/${GITHUB_SHA::7}/" \
               -e "s#<key>CFBundleShortVersionString</key><string>[^<]*</string>#<key>CFBundleShortVersionString</key><string>$v</string>#" \
               crates/znimok-app/mac/Info.plist > "$app/Contents/Info.plist"

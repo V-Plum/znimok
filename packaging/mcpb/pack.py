@@ -72,6 +72,8 @@ def main() -> None:
     a.out.parent.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(a.out, "w", zipfile.ZIP_DEFLATED) as z:
         z.writestr("manifest.json", json.dumps(manifest, ensure_ascii=False, indent=2))
+        # The app icon for Claude Desktop's extension list.
+        z.write(HERE.parent.parent / "crates/znimok-app/icons/app-512.png", "icon.png")
         if a.win:
             z.write(a.win, "server/znimok.exe")
         if a.mac:

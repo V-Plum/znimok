@@ -1774,12 +1774,11 @@ export component AppWindow inherits Window {
                 padding-left: 16px + root.lights-inset;
                 spacing: 12px;
                 alignment: start;
-                Path {
+                // The app icon (the designer's PNG, 29.09).
+                Image {
                     y: (parent.height - self.height) / 2;
-                    width: 24px; height: 24px;
-                    viewbox-width: 24; viewbox-height: 24;
-                    commands: "M3.5 13.5 h8 L3.5 21 h8";
-                    stroke: #3D7BF5; stroke-width: 2.4px; fill: transparent;
+                    width: 26px; height: 26px;
+                    source: @image-url("../icons/app-64.png");
                 }
                 Text { text: "Znimok"; color: Theme.text; font-family: "Unbounded"; font-size: 15px; font-weight: 600; vertical-alignment: center; }
             }
@@ -2210,7 +2209,17 @@ export component AppWindow inherits Window {
                             // ---- About
                             if root.settings-page == 6: VerticalLayout {
                                 spacing: 14px;
-                                Text { text: root.pref-version; color: Theme.text; font-size: 18px; font-weight: 700; }
+                                HorizontalLayout {
+                                    alignment: start;
+                                    spacing: 16px;
+                                    Image { width: 72px; height: 72px; source: @image-url("../icons/app-256.png"); }
+                                    VerticalLayout {
+                                        alignment: center;
+                                        spacing: 4px;
+                                        Text { text: "Znimok"; color: Theme.text; font-family: "Unbounded"; font-size: 20px; font-weight: 600; }
+                                        Text { text: root.pref-version; color: Theme.text2; font-size: 13px; }
+                                    }
+                                }
                                 Text { text: @tr("about-fonts" => "Fonts: Onest, JetBrains Mono, Unbounded — SIL Open Font License 1.1"); color: Theme.text3; font-size: 12px; wrap: word-wrap; }
                                 HorizontalLayout { alignment: start; AboutSlint { height: 160px; } }
                                 HorizontalLayout {
