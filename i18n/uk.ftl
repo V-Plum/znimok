@@ -2164,6 +2164,7 @@ export-quality = Якість
 # @kind: label
 # @max: 56
 export-metadata = Записати метадані (назва, опис, автор, дата)
+export-metadata-menu = Записати метадані
 
 # @where: Checkbox
 # @kind: label
