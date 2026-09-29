@@ -2013,9 +2013,9 @@ export component AppWindow inherits Window {
                                 ]: HorizontalLayout {
                                     spacing: 10px;
                                     Text { width: 130px; text: row.label; color: Theme.text; font-size: 13px; vertical-alignment: center; }
-                                    SegOption { text: @tr("shots-act-editor" => "Open in editor"); on: row.act == 0; clicked => { root.setting(row.key, 0); } }
-                                    SegOption { text: @tr("shots-act-overlay" => "Edit over the screen"); on: row.act == 1; clicked => { root.setting(row.key, 1); } }
-                                    SegOption { text: @tr("shots-act-clipboard" => "To clipboard"); on: row.act == 2; clicked => { root.setting(row.key, 2); } }
+                                    SegOption { text: @tr("shots-seg-editor" => "Editor"); on: row.act == 0; clicked => { root.setting(row.key, 0); } }
+                                    SegOption { text: @tr("shots-seg-over" => "Over the screen"); on: row.act == 1; clicked => { root.setting(row.key, 1); } }
+                                    SegOption { text: @tr("shots-seg-clipboard" => "Clipboard"); on: row.act == 2; clicked => { root.setting(row.key, 2); } }
                                 }
                                 SwitchRow { text: @tr("shots-show-hints" => "Show the hint strip while capturing"); checked: root.pref-show-hints; toggled => { root.setting("show-hints", self.checked ? 1 : 0); } }
                                 SwitchRow { text: @tr("shots-quick-library" => "Quick captures go to the library too"); checked: root.pref-quick-library; toggled => { root.setting("quick-library", self.checked ? 1 : 0); } }
