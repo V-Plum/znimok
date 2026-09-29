@@ -1584,6 +1584,10 @@ export component AppWindow inherits Window {
     // Updates page.
     in property <string> upd-version;
     in property <string> upd-last;
+    in property <string> upd-status;
+    in property <bool> upd-busy;
+    in property <bool> upd-can-install;
+    in property <bool> upd-can-open;
     in property <int> pref-lang;
     in property <bool> pref-ret-size;
     in-out property <string> pref-ret-count;
@@ -2184,9 +2188,15 @@ export component AppWindow inherits Window {
                                 HorizontalLayout {
                                     spacing: 12px;
                                     Text { text: root.upd-last; color: Theme.text2; font-size: 12px; vertical-alignment: center; horizontal-stretch: 1; }
-                                    TextButton { text: @tr("upd-check-now" => "Check now"); enabled: false; }
+                                    TextButton { text: @tr("upd-check-now" => "Check now"); enabled: !root.upd-busy; clicked => { root.setting("upd-check", 0); } }
                                 }
-                                Text { text: @tr("common-in-development" => "Coming soon"); color: Theme.text3; font-size: 11px; }
+                                if root.upd-status != "": Text { text: root.upd-status; color: Theme.text2; font-size: 12px; wrap: word-wrap; }
+                                if root.upd-can-install || root.upd-can-open: HorizontalLayout {
+                                    alignment: start;
+                                    spacing: 8px;
+                                    if root.upd-can-install: TextButton { primary: true; text: @tr("update-now" => "Update now"); enabled: !root.upd-busy; clicked => { root.setting("upd-install", 0); } }
+                                    if root.upd-can-open: TextButton { text: @tr("upd-release-page" => "Release page"); clicked => { root.setting("upd-page", 0); } }
+                                }
                             }
                             // ---- For developers (temporary, owner 29.09): reset and replay things
                             if root.settings-page == 7: VerticalLayout {

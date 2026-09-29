@@ -2204,12 +2204,22 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
     }));
     steps.push(Box::new(|_, ui, r| {
         r.snapshot(ui, "33-updates");
-        ui.set_settings_page(6);
+        // «Перевірити зараз»: without the release key (ZK-111) the answer comes at once, no network.
+        ui.invoke_setting("upd-check".into(), 0);
         r.check(
             "updates page: version and last check shown",
             !ui.get_upd_version().is_empty() && !ui.get_upd_last().is_empty(),
             format!("{} · {}", ui.get_upd_version(), ui.get_upd_last()),
         );
+    }));
+    steps.push(Box::new(|app, ui, r| {
+        let want = app.borrow().tr.tr("upd-not-configured");
+        r.check(
+            "updates: «check now» answers (not set up without the release key), no install button",
+            ui.get_upd_status() == want && !ui.get_upd_busy() && !ui.get_upd_can_install(),
+            ui.get_upd_status().to_string(),
+        );
+        ui.set_settings_page(6);
     }));
     steps.push(Box::new(|_, ui, r| {
         r.snapshot(ui, "35-about");

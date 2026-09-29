@@ -282,6 +282,9 @@ pub struct App {
     undo_trash: Option<(PathBuf, PathBuf)>,
     /// The library index (ZK-131) and the folder it belongs to.
     index: Option<(PathBuf, library::Index)>,
+    /// Updates (ZK-142): a check or a download is running; what the last check found.
+    update_busy: bool,
+    update_found: Option<crate::update::Found>,
     /// The folder's fingerprint at the last look, and when that was (the watcher, ZK-131).
     lib_fp: u64,
     lib_polled: Option<Instant>,
@@ -409,6 +412,8 @@ impl App {
             settings_from: 0,
             undo_trash: None,
             index: None,
+            update_busy: false,
+            update_found: None,
             lib_fp: 0,
             lib_polled: None,
             recheck_timer: slint::Timer::default(),
@@ -490,6 +495,83 @@ impl App {
         }
     }
 
+    /// Once a day, when the person turned daily checks on (ZK-142). Cheap until it is due.
+    pub fn update_tick(&mut self, ui: &AppWindow) {
+        if self.update_busy {
+            return;
+        }
+        let p = self.prefs();
+        let now = chrono::Local::now().timestamp().max(0) as u64;
+        if !p.updates.check_daily || now.saturating_sub(p.updates.last_check) < 24 * 3600 {
+            return;
+        }
+        self.update_check(ui);
+    }
+
+    /// «Перевірити зараз», and the daily check.
+    pub fn update_check(&mut self, ui: &AppWindow) {
+        if self.update_busy {
+            return;
+        }
+        self.update_busy = true;
+        ui.set_upd_status(self.tr.tr("upd-checking").into());
+        ui.set_upd_busy(true);
+        crate::update::check(|found| {
+            crate::with_ctx(|a, ui| a.update_checked(ui, found));
+        });
+    }
+
+    fn update_checked(&mut self, ui: &AppWindow, found: crate::update::Found) {
+        use crate::update::Found;
+        self.update_busy = false;
+        let now = chrono::Local::now().timestamp().max(0) as u64;
+        let tag = match &found {
+            Found::Available(a) => Some(a.tag.clone()),
+            _ => None,
+        };
+        let told = self.prefs().updates.notified_tag;
+        self.save_prefs(ui, |p| {
+            p.updates.last_check = now;
+            p.updates.available_tag = tag.clone();
+        });
+        // A new release is told once (a toast); the Updates page always shows it.
+        if let Found::Available(a) = &found
+            && told.as_deref() != Some(a.tag.as_str())
+        {
+            let msg = self
+                .tr
+                .tr_args("update-available", &args(&[("version", a.version.clone())]));
+            self.toast(ui, msg);
+            let t = a.tag.clone();
+            self.save_prefs(ui, |p| p.updates.notified_tag = Some(t));
+        }
+        self.update_found = Some(found);
+        let p = self.prefs();
+        self.agents_sync(ui, &p);
+    }
+
+    /// «Встановити» (Windows): download, verify, hand over to the installer and exit.
+    pub fn update_install(&mut self, ui: &AppWindow) {
+        let Some(crate::update::Found::Available(a)) = self.update_found.clone() else {
+            return;
+        };
+        if self.update_busy {
+            return;
+        }
+        self.update_busy = true;
+        self.save_now(ui);
+        ui.set_upd_busy(true);
+        ui.set_upd_status(self.tr.tr("upd-downloading").into());
+        crate::update::install(a, |reason| {
+            crate::with_ctx(|a, ui| {
+                a.update_busy = false;
+                a.update_found = Some(crate::update::Found::Failed(reason));
+                let p = a.prefs();
+                a.agents_sync(ui, &p);
+            });
+        });
+    }
+
     /// The Agents and Updates pages: clients with lasting permissions, the last actions, the
     /// version and the last update check.
     fn agents_sync(&self, ui: &AppWindow, p: &znimok_settings::Settings) {
@@ -568,6 +650,32 @@ impl App {
             self.tr.tr_args("upd-last-check", &args(&[("when", when)]))
         };
         ui.set_upd_last(last.into());
+        // What the last check (this run) found, and what can be done about it.
+        use crate::update::Found;
+        let status = match &self.update_found {
+            None => String::new(),
+            Some(Found::UpToDate) => self.tr.tr("upd-up-to-date"),
+            Some(Found::NotConfigured) => self.tr.tr("upd-not-configured"),
+            Some(Found::Failed(e)) => self
+                .tr
+                .tr_args("upd-failed", &args(&[("reason", e.clone())])),
+            Some(Found::Available(a)) => {
+                let size = format!("{:.0} MB", a.installer_size() as f64 / (1 << 20) as f64);
+                format!(
+                    "{} · {}",
+                    self.tr
+                        .tr_args("update-available", &args(&[("version", a.version.clone())])),
+                    size
+                )
+            }
+        };
+        if !self.update_busy {
+            ui.set_upd_status(status.into());
+        }
+        ui.set_upd_busy(self.update_busy);
+        let available = matches!(self.update_found, Some(Found::Available(_)));
+        ui.set_upd_can_install(available && cfg!(windows));
+        ui.set_upd_can_open(available && !cfg!(windows));
     }
 
     pub fn settings_open(&mut self, ui: &AppWindow) {
@@ -894,6 +1002,20 @@ impl App {
                 }
                 let p = self.prefs();
                 self.agents_sync(ui, &p);
+            }
+            "upd-check" => {
+                self.update_check(ui);
+                return;
+            }
+            "upd-install" => {
+                self.update_install(ui);
+                return;
+            }
+            "upd-page" => {
+                if let Some(crate::update::Found::Available(a)) = &self.update_found {
+                    crate::update::open_page(&a.page);
+                }
+                return;
             }
             "agents-log" => {
                 if let Some(a) = znimok_agents::audit::Audit::open_default() {

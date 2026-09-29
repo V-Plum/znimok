@@ -3649,6 +3649,41 @@ upd-never-checked = Перевірок ще не було
 # @max: 24
 upd-check-now = Перевірити зараз
 
+# @where: Updates page: a check is running
+# @kind: status
+# @max: 32
+upd-checking = Перевіряю…
+
+# @where: Updates page: the installer is being downloaded and verified
+# @kind: status
+# @max: 60
+upd-downloading = Завантажую й перевіряю оновлення…
+
+# @where: Updates page: no newer release
+# @kind: status
+# @max: 40
+upd-up-to-date = У вас остання версія
+
+# @where: Updates page: this build has no release key yet
+# @kind: status
+# @max: 80
+upd-not-configured = У цій збірці оновлення ще не налаштовані
+
+# @where: Updates page: the check or the download failed; $reason is technical
+# @kind: status
+# @max: 160
+upd-failed = Не вдалося оновити: { $reason }
+
+# @where: Updates page (macOS until Sparkle): open the release on GitHub
+# @kind: button
+# @max: 24
+upd-release-page = Сторінка релізу
+
+# @where: Title of the note about the last update, shown once after it
+# @kind: title
+# @max: 40
+upd-outcome-title = Оновлення
+
 # @where: Updates page: where updates come from
 # @kind: body
 # @max: 160

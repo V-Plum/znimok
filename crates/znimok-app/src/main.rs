@@ -29,6 +29,7 @@ mod scroll;
 mod selftest;
 mod system;
 mod tray;
+mod update;
 
 use std::cell::RefCell;
 use std::path::PathBuf;
@@ -267,6 +268,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         app.borrow_mut().open_path(&ui, f);
     }
 
+    // ZK-142: this version came up (a running update waits for that, or rolls back), and what
+    // the last update did, once.
+    if selftest_dir.is_none() {
+        slint::Timer::single_shot(Duration::from_millis(1500), || {
+            update::confirm_start();
+            if let Some(text) = update::take_outcome() {
+                with_ctx(|a, ui| {
+                    let (title, close) = (a.tr.tr("upd-outcome-title"), a.tr.tr("common-close"));
+                    dialog::ask(ui, title, text, vec![close], 0, Some(0), |_, _| {});
+                });
+            }
+        });
+    }
+
     // Autosave, background-save results and toasts.
     let timer = slint::Timer::default();
     {
@@ -283,6 +298,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let mut a = app.borrow_mut();
                 a.tick_toast(&ui);
                 a.lib_poll(&ui, false);
+                a.update_tick(&ui);
                 if let Some((path, doc, opts, video)) = a.autosave_job(&ui) {
                     std::thread::spawn(move || {
                         if let Some(dir) = path.parent() {

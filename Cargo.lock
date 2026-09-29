@@ -6781,10 +6781,12 @@ dependencies = [
  "znimok-i18n",
  "znimok-log",
  "znimok-mac",
+ "znimok-models",
  "znimok-platform",
  "znimok-render",
  "znimok-settings",
  "znimok-stitch",
+ "znimok-update",
  "znimok-win",
 ]
 

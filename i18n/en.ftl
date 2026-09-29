@@ -3629,6 +3629,41 @@ upd-never-checked = Not checked yet
 # @max: 24
 upd-check-now = Check now
 
+# @where: Updates page: a check is running
+# @kind: status
+# @max: 32
+upd-checking = Checking…
+
+# @where: Updates page: the installer is being downloaded and verified
+# @kind: status
+# @max: 60
+upd-downloading = Downloading and verifying the update…
+
+# @where: Updates page: no newer release
+# @kind: status
+# @max: 40
+upd-up-to-date = You have the latest version
+
+# @where: Updates page: this build has no release key yet
+# @kind: status
+# @max: 80
+upd-not-configured = Updates are not set up in this build yet
+
+# @where: Updates page: the check or the download failed; $reason is technical
+# @kind: status
+# @max: 160
+upd-failed = Could not update: { $reason }
+
+# @where: Updates page (macOS until Sparkle): open the release on GitHub
+# @kind: button
+# @max: 24
+upd-release-page = Release page
+
+# @where: Title of the note about the last update, shown once after it
+# @kind: title
+# @max: 40
+upd-outcome-title = Update
+
 # @where: Updates page: where updates come from
 # @kind: body
 # @max: 160
