@@ -107,6 +107,17 @@ jobs:
           $path = [Environment]::GetEnvironmentVariable("PATH", "User")
           if ($path -like "*$dir*") { throw "PATH entry left after uninstall" }
           "install → check → uninstall: clean"
+      - name: winget manifest (ZK-81) is valid
+        shell: pwsh
+        run: |
+          $v = "${{ needs.version.outputs.version }}"
+          python packaging/stores/make_manifests.py --version $v --files dist --dest stores --only winget
+          if (Get-Command winget -ErrorAction SilentlyContinue) {
+            winget validate --manifest "stores/winget/manifests/v/VPlum/Znimok/$v"
+            if ($LASTEXITCODE -ne 0) { throw "winget validate failed" }
+          } else {
+            "::notice::winget is not on this runner — the manifest was generated, not validated"
+          }
       - uses: actions/upload-artifact@v4
         with:
           name: windows
@@ -167,6 +178,27 @@ jobs:
           mkdir -p dmg && cp -R dist/Znimok.app dmg/ && ln -s /Applications dmg/Applications
           hdiutil create -volname "Znimok $v" -srcfolder dmg -ov -format UDZO "dist/Znimok-$v-macos-arm64.dmg"
           hdiutil verify "dist/Znimok-$v-macos-arm64.dmg"
+      - name: Homebrew cask (ZK-81) — style, audit, install, uninstall
+        run: |
+          v="${{ needs.version.outputs.version }}"
+          mkdir -p stores-in && cp "dist/Znimok-$v-macos-arm64.dmg" stores-in/
+          python3 packaging/stores/make_manifests.py --version "$v" --files stores-in --dest stores --only homebrew
+          export HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_INSTALL_CLEANUP=1
+          brew tap-new --no-git local/znimok
+          tap="$(brew --repository)/Library/Taps/local/homebrew-znimok"
+          mkdir -p "$tap/Casks" && cp stores/homebrew/Casks/znimok.rb "$tap/Casks/"
+          brew style "$tap/Casks/znimok.rb"
+          brew audit --cask --strict local/znimok/znimok
+          # The release URL does not exist yet: install the same cask from the DMG built above.
+          sed -i '' "s#^  url .*#  url \"file://$PWD/stores-in/Znimok-$v-macos-arm64.dmg\"#" "$tap/Casks/znimok.rb"
+          brew install --cask --appdir="$RUNNER_TEMP/Apps" local/znimok/znimok
+          # Ad-hoc signed until ZK-80: take the download quarantine off before running the CLI.
+          xattr -dr com.apple.quarantine "$RUNNER_TEMP/Apps/Znimok.app" || true
+          "$(brew --prefix)/bin/znimok" --version
+          brew uninstall --cask --zap local/znimok/znimok
+          [[ ! -e "$RUNNER_TEMP/Apps/Znimok.app" && ! -e "$(brew --prefix)/bin/znimok" ]]
+          brew untap local/znimok
+          echo "cask: style → audit → install → uninstall: clean"
       - uses: actions/upload-artifact@v4
         with:
           name: macos
@@ -262,6 +294,13 @@ jobs:
             fi
           } > notes.md
           cat notes.md
+      - name: winget manifests and Homebrew cask (ZK-81; submitted by hand, docs/RELEASE.md)
+        run: python3 packaging/stores/make_manifests.py --version "${{ needs.version.outputs.version }}" --files out --dest stores
+      - uses: actions/upload-artifact@v4
+        with:
+          name: store-manifests
+          path: stores/
+          retention-days: 90
       - uses: actions/upload-artifact@v4
         with:
           name: release-preview
