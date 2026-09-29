@@ -1,0 +1,58 @@
+# Releasing Znimok
+
+A release is built by `.github/workflows/release.yml` from a tag and published by hand after a
+look at the draft. Nothing here is automatic past the draft.
+
+## Before the tag
+
+- [ ] `main` is green (ci, supply-chain, ipc-security).
+- [ ] `version` in `Cargo.toml` (`[workspace.package]`) is the new version — the workflow refuses
+      a tag that does not match it.
+- [ ] README.md **and** README.en.md describe every change in behaviour of this release.
+- [ ] `docs/AGENTS.md`, `docs/CLI.md` are up to date (their consistency tests pass).
+- [ ] Jira: every ticket of the release is Done and has the release in its comment.
+
+## Tag and draft
+
+```sh
+git tag v0.1.0 && git push origin v0.1.0
+```
+
+The workflow builds, then creates a **draft** release with:
+
+| Asset | What |
+|---|---|
+| `Znimok-<v>-windows-x64.zip` | `znimok-app.exe`, `znimok.exe` (CLI), static CRT |
+| `Znimok-<v>-macos-arm64.zip` | `Znimok.app` with the CLI inside; ad-hoc signed until ZK-80 |
+| `znimok-<v>.mcpb` | MCP bundle for Claude Desktop (tool list read from the binary) |
+| `znimok-<v>-sbom-cyclonedx.zip` | CycloneDX SBOM of every crate, every target |
+| `SHA256SUMS` (+ `SHA256SUMS.sig`) | checksums; signed with ECDSA P-256 when `ZNIMOK_SIGNING_KEY` is set |
+
+Binaries are built with `cargo auditable` (their dependency list is inside) and checked with
+`cargo audit bin` before packaging. `workflow_dispatch` runs the same without a release; the
+result is the `release-preview` artifact.
+
+## Check the draft — independently
+
+```sh
+python tools/verify_release.py v0.1.0      # downloads the draft (gh), checks sums and signature
+```
+
+- [ ] «checksums: all match», and «signature: valid» once signing is set up.
+- [ ] Windows: unzip on a clean user account, start `znimok-app.exe`, take a screenshot, save,
+      `znimok.exe info` on the saved file.
+- [ ] macOS: unzip, right-click → Open (ad-hoc signed), take a screenshot (Screen Recording
+      prompt), `Znimok.app/Contents/MacOS/znimok --version`.
+- [ ] Claude Desktop: install the `.mcpb`, `znimok agents enable`, ask for a screenshot.
+
+Then publish the draft (remove «pre-release» once past 0.x).
+
+## Signing key (ZK-111)
+
+- The private key (ECDSA P-256, PEM) lives only in the GitHub secret `ZNIMOK_SIGNING_KEY` and in
+  the owner's backup (`C:\AIHome\keys\`, mirrored to the NAS) — never in git.
+- The public key is committed as `keys/znimok-release-p256.pub.pem`; the workflow verifies every
+  signature with it before the release is created.
+- Rotation: a release signed with the **old** key ships the new public key; only after that do
+  releases switch to the new key (the same procedure as Little Helpers, `keys/README.md`).
+- Developer ID (macOS) and Authenticode (Windows) come with ZK-80; the MSI installer with ZK-78.
