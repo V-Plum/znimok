@@ -27,7 +27,15 @@ fn explorer_shows_the_stored_thumbnail() {
         .map(|d| d.join("znimok_thumbnail.dll"))
         .find(|p| p.exists())
         .unwrap_or_else(|| panic!("znimok_thumbnail.dll not built next to {}", exe.display()));
-    znimok_thumbnail::register(&dll.display().to_string(), r"Software\Classes").unwrap();
+    // COM ignores per-user class registrations in an elevated process (CI runners are): there
+    // the test registers for the machine; a normal Explorer reads the per-user one.
+    // SAFETY: plain query.
+    let scope = if unsafe { windows::Win32::UI::Shell::IsUserAnAdmin() }.as_bool() {
+        znimok_thumbnail::Scope::Machine
+    } else {
+        znimok_thumbnail::Scope::User
+    };
+    znimok_thumbnail::register_in(scope, &dll.display().to_string(), r"Software\Classes").unwrap();
     // SAFETY: documented broadcast.
     unsafe { SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, None, None) };
 
@@ -76,7 +84,7 @@ fn explorer_shows_the_stored_thumbnail() {
                 (w, h, px)
             })
     };
-    let _ = znimok_thumbnail::unregister(r"Software\Classes");
+    let _ = znimok_thumbnail::unregister_in(scope, r"Software\Classes");
     // SAFETY: documented broadcast.
     unsafe { SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, None, None) };
     let _ = std::fs::remove_dir_all(&dir);

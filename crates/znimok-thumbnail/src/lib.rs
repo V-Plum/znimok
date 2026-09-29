@@ -87,7 +87,7 @@ pub unsafe extern "C" fn znimok_thumbnail_free(p: *mut u8, len: usize) {
 mod win;
 
 #[cfg(windows)]
-pub use win::{register, unregister};
+pub use win::{Scope, register, register_in, unregister, unregister_in};
 
 #[cfg(test)]
 mod tests {
