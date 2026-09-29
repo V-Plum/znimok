@@ -1939,6 +1939,102 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
         r.snapshot(ui, "copy-title");
     }));
 
+    // ZK-128: a second click takes the shot after a countdown; Esc cancels the countdown.
+    steps.push(Box::new(|_, _, _| {
+        let open = || -> Option<(crate::Overlay, f32, f32)> {
+            let raster = OVER_SRC.with(|o| o.borrow().clone())?;
+            let frozen = crate::capture::Frozen {
+                bounds: znimok_platform::Rect {
+                    x: 0,
+                    y: 0,
+                    width: raster.width,
+                    height: raster.height,
+                },
+                windows: vec![crate::capture::FrozenWindow {
+                    rect: crate::capture::PxRect {
+                        x: 100,
+                        y: 100,
+                        w: 400,
+                        h: 300,
+                    },
+                    title: "test window".into(),
+                    id: 0,
+                }],
+                raster,
+            };
+            let (fw, fh) = (frozen.raster.width as f32, frozen.raster.height as f32);
+            crate::overlay::open(frozen, false).ok()?;
+            let ov = crate::overlay::handle()?;
+            let sf = ov.window().scale_factor();
+            let lw = ov.window().size().width as f32 / sf;
+            let lh = ov.window().size().height as f32 / sf;
+            Some((ov, fw / lw.max(1.0), fh / lh.max(1.0)))
+        };
+        // Double click on the test window.
+        let double = open().map(|(ov, kx, ky)| {
+            let (x, y) = (300.0 / kx, 250.0 / ky);
+            ov.invoke_pointer(1, x, y, false, false);
+            for kind in [0, 2, 0, 2] {
+                ov.invoke_pointer(kind, x, y, false, false);
+            }
+            !crate::overlay::is_open() && crate::overlay::countdown_open()
+        });
+        DOUBLE_OK.with(|d| d.set(double == Some(true)));
+    }));
+    // The countdown window has drawn by now: its picture, then Esc.
+    steps.push(Box::new(|_, _, r| {
+        if let Some(c) = crate::overlay::countdown_window() {
+            r.snapshot_window(c.window(), "31-countdown");
+        }
+        crate::overlay::escape();
+        let double = Some(DOUBLE_OK.with(|d| d.get()) && !crate::overlay::countdown_open());
+        let open = || -> Option<(crate::Overlay, f32, f32)> {
+            let raster = OVER_SRC.with(|o| o.borrow().clone())?;
+            let frozen = crate::capture::Frozen {
+                bounds: znimok_platform::Rect {
+                    x: 0,
+                    y: 0,
+                    width: raster.width,
+                    height: raster.height,
+                },
+                windows: Vec::new(),
+                raster,
+            };
+            let (fw, fh) = (frozen.raster.width as f32, frozen.raster.height as f32);
+            crate::overlay::open(frozen, false).ok()?;
+            let ov = crate::overlay::handle()?;
+            let sf = ov.window().scale_factor();
+            let lw = ov.window().size().width as f32 / sf;
+            let lh = ov.window().size().height as f32 / sf;
+            Some((ov, fw / lw.max(1.0), fh / lh.max(1.0)))
+        };
+        // A click, then at once a drag: the region, after the countdown.
+        let drag = open().map(|(ov, kx, ky)| {
+            ov.invoke_pointer(0, 600.0 / kx, 500.0 / ky, false, false);
+            ov.invoke_pointer(2, 600.0 / kx, 500.0 / ky, false, false);
+            ov.invoke_pointer(0, 600.0 / kx, 500.0 / ky, false, false);
+            for i in 1..=6 {
+                let t = i as f32 / 6.0;
+                ov.invoke_pointer(
+                    1,
+                    (600.0 + 300.0 * t) / kx,
+                    (500.0 + 200.0 * t) / ky,
+                    false,
+                    false,
+                );
+            }
+            ov.invoke_pointer(2, 900.0 / kx, 700.0 / ky, false, false);
+            let started = !crate::overlay::is_open() && crate::overlay::countdown_open();
+            crate::overlay::escape();
+            started && !crate::overlay::countdown_open()
+        });
+        r.check(
+            "overlay: double click / click-then-drag start the countdown, Esc cancels it",
+            double == Some(true) && drag == Some(true),
+            format!("double {double:?} · click+drag {drag:?}"),
+        );
+    }));
+
     // ZK-117 / ZK-46: the main screens once more in the light theme, and text contrast in both
     // (WCAG: main text at least 7:1 on panels, secondary at least 4.5:1).
     steps.push(Box::new(|_, ui, r| {
@@ -2083,4 +2179,8 @@ thread_local! {
     /// The sample frozen for the over-the-screen test (ZK-58), and its copy as first shown.
     static OVER_SRC: std::cell::RefCell<Option<znimok_core::Raster>> = const { std::cell::RefCell::new(None) };
     static OVER_FLAT: std::cell::RefCell<Option<(u32, u32, Vec<u8>)>> = const { std::cell::RefCell::new(None) };
+}
+
+thread_local! {
+    static DOUBLE_OK: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }

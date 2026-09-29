@@ -95,7 +95,7 @@ pub fn start(keys: &znimok_settings::Hotkeys, enabled: bool) {
                     .is_some_and(|hk| hk.id() == id)
             });
             if esc {
-                crate::overlay::cancel();
+                crate::overlay::escape();
                 return;
             }
             let action = SVC.with(|s| {

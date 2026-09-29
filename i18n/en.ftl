@@ -1944,6 +1944,16 @@ capture-wheel = wheel
 # @max: 20
 capture-magnifier = magnifier
 
+# @where: Hint chip: a second click (a double click, or a click and then a drag)
+# @kind: badge
+# @max: 16
+capture-double = double click
+
+# @where: Hint after that chip: the shot is taken after a 3-2-1 countdown
+# @kind: hint
+# @max: 20
+capture-delayed = after 3 s
+
 # @where: Hint after "Esc"
 # @kind: hint
 # @max: 20

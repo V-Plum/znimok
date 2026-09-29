@@ -99,15 +99,26 @@ impl Frozen {
 }
 
 #[cfg_attr(not(any(windows, target_os = "macos")), allow(dead_code))]
-fn freeze_with(cap: &(impl Capture + Cursor + WindowList)) -> Result<Frozen, PlatformError> {
+fn freeze_with(
+    cap: &(impl Capture + Cursor + WindowList),
+    same: Option<Rect>,
+) -> Result<Frozen, PlatformError> {
     let at = cap.position()?;
-    let display = match cap.display_at(at)? {
+    // After a countdown: the display that was chosen, wherever the pointer went since.
+    let chosen = match same {
+        Some(b) => cap.displays()?.into_iter().find(|d| d.bounds == b),
+        None => None,
+    };
+    let display = match chosen {
         Some(d) => d,
-        None => cap
-            .displays()?
-            .into_iter()
-            .find(|d| d.primary)
-            .ok_or_else(|| PlatformError::NotFound("дисплей".into()))?,
+        None => match cap.display_at(at)? {
+            Some(d) => d,
+            None => cap
+                .displays()?
+                .into_iter()
+                .find(|d| d.primary)
+                .ok_or_else(|| PlatformError::NotFound("дисплей".into()))?,
+        },
     };
     let frame = cap.capture(
         &CaptureTarget::Display {
@@ -147,16 +158,21 @@ fn freeze_with(cap: &(impl Capture + Cursor + WindowList)) -> Result<Frozen, Pla
     })
 }
 
-#[cfg(windows)]
 pub fn freeze() -> Result<Frozen, Fail> {
-    freeze_with(&znimok_win::WinCapture::new()).map_err(|e| Fail::Other(e.to_string()))
+    freeze_display(None)
+}
+
+/// A fresh frame of the display with these bounds (`None`: the one under the pointer).
+#[cfg(windows)]
+pub fn freeze_display(same: Option<Rect>) -> Result<Frozen, Fail> {
+    freeze_with(&znimok_win::WinCapture::new(), same).map_err(|e| Fail::Other(e.to_string()))
 }
 
 #[cfg(target_os = "macos")]
-pub fn freeze() -> Result<Frozen, Fail> {
+pub fn freeze_display(same: Option<Rect>) -> Result<Frozen, Fail> {
     use znimok_platform::{Permission, PermissionState, Permissions};
     let cap = znimok_mac::MacCapture::new();
-    match freeze_with(&cap) {
+    match freeze_with(&cap, same) {
         Ok(f) => Ok(f),
         Err(PlatformError::PermissionDenied(_)) => {
             if cap.request(Permission::ScreenRecording) != PermissionState::Granted {
@@ -203,7 +219,7 @@ fn window_with(cap: &impl Capture, id: u64) -> Result<Raster, Fail> {
 }
 
 #[cfg(not(any(windows, target_os = "macos")))]
-pub fn freeze() -> Result<Frozen, Fail> {
+pub fn freeze_display(_same: Option<Rect>) -> Result<Frozen, Fail> {
     Err(Fail::Other(
         "screen capture is not available on this system".into(),
     ))

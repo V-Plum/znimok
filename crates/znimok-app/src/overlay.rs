@@ -9,7 +9,10 @@
 //! it is drawn here pixel by pixel (nearest neighbour, grid from ×8, the centre pixel boxed).
 //! Regions and the whole screen are cut from the frozen frame (instant, identical on both OSes);
 //! a clicked window is captured alone (without what overlaps it), falling back to the cut.
-//! Not yet: countdown, regions spanning several displays.
+//! A second click (a double click, or a click followed at once by a drag) takes the shot after a
+//! 3-2-1 countdown (ZK-128, LH CAPS-85), from a fresh frame of the same display — time to open a
+//! menu that closes on a hotkey. Losing the focus (switching programs) cancels.
+//! Not yet: regions spanning several displays.
 
 use std::cell::RefCell;
 
@@ -36,6 +39,135 @@ struct Session {
     last_pointer: (f32, f32),
     /// The editor window was visible before the capture (show it again on cancel).
     editor_was_visible: bool,
+    /// A click waiting to see whether a second one follows (then: with the countdown).
+    pending: Option<(f32, f32, Gesture)>,
+    /// The button went down again while a click was pending.
+    second: bool,
+}
+
+/// How long a click waits for a second one (LH: the system's double-click time, at most 400 ms).
+const DOUBLE_CLICK: std::time::Duration = std::time::Duration::from_millis(400);
+
+pub const COUNTDOWN_TITLE: &str = "Znimok countdown";
+
+struct Count {
+    ui: crate::Countdown,
+    timer: slint::Timer,
+    editor_was_visible: bool,
+    then: Option<Box<dyn FnOnce()>>,
+}
+
+thread_local! {
+    static COUNT: RefCell<Option<Count>> = const { RefCell::new(None) };
+}
+
+/// Esc from anywhere (a global hotkey while the overlay or the countdown is up).
+pub fn escape() {
+    if is_open() {
+        cancel();
+    } else {
+        cancel_countdown();
+    }
+}
+
+/// The countdown window, for the self-test.
+pub fn countdown_open() -> bool {
+    COUNT.with(|c| c.borrow().is_some())
+}
+
+pub fn countdown_window() -> Option<crate::Countdown> {
+    COUNT.with(|c| c.borrow().as_ref().map(|c| c.ui.clone_strong()))
+}
+
+fn countdown_ms() -> u64 {
+    std::env::var("ZNIMOK_COUNTDOWN_MS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(3000)
+}
+
+/// 3-2-1 in the bottom-right corner of `display`, then `then` (not called if Esc cancels).
+fn countdown(
+    display: znimok_platform::Rect,
+    editor_was_visible: bool,
+    then: impl FnOnce() + 'static,
+) {
+    let Ok(ui) = crate::Countdown::new() else {
+        then();
+        return;
+    };
+    let total = countdown_ms();
+    ui.set_left(total.div_ceil(1000) as i32);
+    let _ = ui.show();
+    {
+        use slint::winit_030::WinitWindowAccessor;
+        // The mouse goes through to what is under it.
+        ui.window().with_winit_window(|w| {
+            let _ = w.set_cursor_hittest(false);
+        });
+    }
+    crate::frame::round_window(ui.window());
+    // Bottom-right, 32 px from the edges; desktop units are pixels on Windows, points on macOS.
+    if cfg!(target_os = "macos") {
+        ui.window().set_position(slint::LogicalPosition::new(
+            (display.x + display.width as i32 - 32 - 120) as f32,
+            (display.y + display.height as i32 - 32 - 120) as f32,
+        ));
+    } else {
+        let k = ui.window().scale_factor();
+        let side = (152.0 * k).round() as i32;
+        ui.window().set_position(slint::PhysicalPosition::new(
+            display.x + display.width as i32 - side,
+            display.y + display.height as i32 - side,
+        ));
+    }
+    crate::hotkeys::grab_escape(true);
+    let start = std::time::Instant::now();
+    let timer = slint::Timer::default();
+    let weak = ui.as_weak();
+    timer.start(
+        slint::TimerMode::Repeated,
+        std::time::Duration::from_millis(50),
+        move || {
+            let elapsed = start.elapsed().as_millis() as u64;
+            if elapsed < total {
+                if let Some(ui) = weak.upgrade() {
+                    ui.set_left((total - elapsed).div_ceil(1000) as i32);
+                }
+                return;
+            }
+            let Some(mut c) = COUNT.with(|c| c.borrow_mut().take()) else {
+                return;
+            };
+            c.timer.stop();
+            let _ = c.ui.hide();
+            crate::hotkeys::grab_escape(false);
+            if let Some(then) = c.then.take() {
+                // The compositor takes the countdown off the screen before the frame.
+                slint::Timer::single_shot(std::time::Duration::from_millis(80), then);
+            }
+        },
+    );
+    COUNT.with(|c| {
+        *c.borrow_mut() = Some(Count {
+            ui,
+            timer,
+            editor_was_visible,
+            then: Some(Box::new(then)),
+        })
+    });
+}
+
+fn cancel_countdown() {
+    let Some(c) = COUNT.with(|c| c.borrow_mut().take()) else {
+        return;
+    };
+    c.timer.stop();
+    let _ = c.ui.hide();
+    crate::hotkeys::grab_escape(false);
+    if c.editor_was_visible {
+        crate::with_ctx(|_, ui| crate::show_window(ui));
+    }
 }
 
 thread_local! {
@@ -290,10 +422,49 @@ pub fn open(frozen: Frozen, editor_was_visible: bool) -> Result<(), slint::Platf
             .set_size(slint::PhysicalSize::new(b.width, b.height));
     }
     ui.set_mac(cfg!(target_os = "macos"));
+    // Switching to another program (Cmd+Tab, Alt+Tab) cancels — once the overlay has had the
+    // focus (it may never get it when a global hotkey leaves another program in front).
+    {
+        use slint::winit_030::{EventResult, WinitWindowAccessor, winit};
+        let had = std::rc::Rc::new(std::cell::Cell::new(false));
+        let selftest = std::env::var_os("ZNIMOK_SELFTEST").is_some();
+        ui.window().on_winit_window_event(move |_, ev| {
+            if let winit::event::WindowEvent::Focused(f) = ev {
+                if *f {
+                    had.set(true);
+                } else if had.get() && !selftest {
+                    let _ = slint::invoke_from_event_loop(cancel);
+                }
+            }
+            EventResult::Propagate
+        });
+    }
     ui.on_pointer(|kind, x, y, shift, alt| {
-        with_session(|s| s.pointer(kind, x, y, Gesture { shift, alt }))
+        with_session(|s| {
+            s.pointer(
+                kind,
+                x,
+                y,
+                Gesture {
+                    shift,
+                    alt,
+                    delayed: false,
+                },
+            )
+        })
     });
-    ui.on_key(|text, shift, alt| with_session(|s| s.key(&text, Gesture { shift, alt })));
+    ui.on_key(|text, shift, alt| {
+        with_session(|s| {
+            s.key(
+                &text,
+                Gesture {
+                    shift,
+                    alt,
+                    delayed: false,
+                },
+            )
+        })
+    });
     ui.on_wheel(|dy| {
         with_session(|s| {
             // A trackpad sends a stream of small deltas (and keeps going with momentum): add
@@ -374,6 +545,8 @@ pub fn open(frozen: Frozen, editor_was_visible: bool) -> Result<(), slint::Platf
         wheel_pause: None,
         last_pointer: (-100.0, -100.0),
         editor_was_visible,
+        pending: None,
+        second: false,
     };
     SESSION.with(|s| *s.borrow_mut() = Some(session));
     crate::hotkeys::grab_escape(true);
@@ -386,6 +559,8 @@ pub fn open(frozen: Frozen, editor_was_visible: bool) -> Result<(), slint::Platf
 struct Gesture {
     shift: bool,
     alt: bool,
+    /// A second click: take the shot after the countdown.
+    delayed: bool,
 }
 
 enum Outcome {
@@ -408,6 +583,43 @@ fn with_session(f: impl FnOnce(&mut Session) -> Option<Outcome>) {
         editor_was_visible,
         ..
     } = session;
+    let display = frozen.bounds;
+    match outcome {
+        // ZK-128: the countdown, then a fresh frame of the same display, cut the same way.
+        Outcome::Keep(rect, source, id, g) if g.delayed => {
+            drop(frozen);
+            countdown(display, editor_was_visible, move || {
+                std::thread::spawn(move || {
+                    let fresh = crate::capture::freeze_display(Some(display));
+                    let _ = slint::invoke_from_event_loop(move || match fresh {
+                        Ok(f) => finish(
+                            f,
+                            Outcome::Keep(
+                                rect,
+                                source,
+                                id,
+                                Gesture {
+                                    delayed: false,
+                                    ..g
+                                },
+                            ),
+                            editor_was_visible,
+                        ),
+                        Err(_) => {
+                            if editor_was_visible {
+                                crate::with_ctx(|_, ui| crate::show_window(ui));
+                            }
+                        }
+                    });
+                });
+            });
+        }
+        other => finish(frozen, other, editor_was_visible),
+    }
+}
+
+/// What the choice becomes: the editor, the clipboard, over the screen — or nothing.
+fn finish(frozen: Frozen, outcome: Outcome, editor_was_visible: bool) {
     let display = frozen.bounds;
     match outcome {
         Outcome::Cancel => {
@@ -728,6 +940,9 @@ impl Session {
         match kind {
             // left down
             0 => {
+                if self.pending.is_some() {
+                    self.second = true;
+                }
                 self.drag_start = Some((x, y));
                 self.dragging = false;
                 None
@@ -765,18 +980,54 @@ impl Session {
                 let was_drag = self.dragging && self.drag_start.is_some();
                 self.drag_start = None;
                 self.dragging = false;
+                let second = std::mem::take(&mut self.second);
                 if was_drag {
+                    // A click and then at once a drag: the region, after the countdown.
+                    self.pending = None;
                     let r = self.sel?;
+                    let g = Gesture {
+                        delayed: second,
+                        ..g
+                    };
                     return (r.w >= 3 && r.h >= 3).then_some(Outcome::Keep(r, "region", None, g));
                 }
-                Some(match self.window_at(px, py) {
-                    Some((r, id)) => Outcome::Keep(r, "window", Some(id), g),
-                    None => Outcome::Keep(self.frozen.whole(), "screen", None, g),
-                })
+                if second && let Some((x0, y0, g0)) = self.pending.take() {
+                    // A double click: what the first click chose, after the countdown.
+                    return Some(self.click_outcome(
+                        x0,
+                        y0,
+                        Gesture {
+                            delayed: true,
+                            ..g0
+                        },
+                    ));
+                }
+                // A single click is kept for a moment: a second one may follow.
+                self.pending = Some((x, y, g));
+                slint::Timer::single_shot(DOUBLE_CLICK, || {
+                    with_session(|s| {
+                        if s.second {
+                            return None;
+                        }
+                        let (x, y, g) = s.pending.take()?;
+                        Some(s.click_outcome(x, y, g))
+                    })
+                });
+                let _ = (px, py);
+                None
             }
             // right button: cancel
             3 | 4 => Some(Outcome::Cancel),
             _ => None,
+        }
+    }
+
+    /// A click at (x, y): the window under it, or the whole screen over the desktop.
+    fn click_outcome(&mut self, x: f32, y: f32, g: Gesture) -> Outcome {
+        let (px, py) = self.px(x, y);
+        match self.window_at(px, py) {
+            Some((r, id)) => Outcome::Keep(r, "window", Some(id), g),
+            None => Outcome::Keep(self.frozen.whole(), "screen", None, g),
         }
     }
 

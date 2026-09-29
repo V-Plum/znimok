@@ -1005,6 +1005,48 @@ export component Pill inherits Window {
     }
 }
 
+// Countdown before a delayed capture (ZK-128, LH CAPS-85): a small square in the bottom-right
+// corner of the display. It takes no focus and lets the mouse through (Rust sets that up), so
+// a menu that closes on a hotkey can be opened while it counts; it is gone before the capture.
+export component Countdown inherits Window {
+    init => { Theme.mode = 2; }
+    default-font-family: "Onest";
+    // Matched by the window-attributes hook in main.rs: no activation, no taskbar button.
+    title: "Znimok countdown";
+    no-frame: true;
+    always-on-top: true;
+    width: 120px;
+    height: 120px;
+    // Opaque: the corners are rounded by the system (Windows 11) / left square.
+    background: #141418;
+    in property <int> left: 3;
+    Rectangle {
+        Text {
+            y: 10px;
+            height: 76px;
+            width: parent.width;
+            text: root.left;
+            color: white;
+            font-size: 64px;
+            font-weight: 600;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            // Each second arrives with a small "breath".
+            animate font-size { duration: 160ms; easing: ease-out; }
+        }
+        Text {
+            y: 84px;
+            height: 22px;
+            width: parent.width;
+            text: @tr("capture-countdown-cancel" => "Esc — cancel");
+            color: #AAAAB2;
+            font-size: 12px;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+    }
+}
+
 export component Overlay inherits Window {
     init => { Theme.mode = 2; }
     default-font-family: "Onest";
@@ -1105,6 +1147,7 @@ export component Overlay inherits Window {
             HintChip { key: "Space"; text: @tr("capture-whole-screen" => "whole screen"); }
             HintChip { key: @tr("capture-click" => "click"); text: @tr("capture-window" => "window"); }
             HintChip { key: @tr("capture-wheel" => "wheel"); text: @tr("capture-magnifier" => "magnifier"); }
+            HintChip { key: @tr("capture-double" => "double click"); text: @tr("capture-delayed" => "after 3 s"); }
             HintChip { key: "Esc"; text: @tr("capture-cancel" => "cancel"); }
         }
     }

@@ -109,7 +109,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .require_wgpu_30(slint::wgpu_30::WGPUConfiguration::Automatic(settings))
         // The card after a capture (ZK-41) must not take the focus or show in the taskbar.
         .with_winit_window_attributes_hook(|attrs| {
-            if attrs.title != pill::TITLE {
+            if attrs.title != pill::TITLE && attrs.title != overlay::COUNTDOWN_TITLE {
                 return attrs;
             }
             let attrs = attrs.with_active(false);
