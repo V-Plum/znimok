@@ -206,11 +206,35 @@ pub fn new_path(dir: &Path, id: &str) -> PathBuf {
     dir.join(format!("Znimok-{t}-{}.znimok", &id[..id.len().min(8)]))
 }
 
+/// A card's picture from the thumbnail stored in the file, decoded within the same limits as
+/// the system thumbnail handlers: a small file with a "PNG bomb" inside is refused (ZK-121).
 pub fn thumb_image(png: &[u8]) -> Option<slint::Image> {
-    let img = image::load_from_memory_with_format(png, image::ImageFormat::Png)
-        .ok()?
-        .to_rgba8();
-    let (w, h) = img.dimensions();
-    let buf = slint::SharedPixelBuffer::<slint::Rgba8Pixel>::clone_from_slice(img.as_raw(), w, h);
+    let r = znimok_format::decode_png(png, &znimok_format::Limits::thumbnail()).ok()?;
+    if r.rgba.len() != r.width as usize * r.height as usize * 4 {
+        return None;
+    }
+    let buf =
+        slint::SharedPixelBuffer::<slint::Rgba8Pixel>::clone_from_slice(&r.rgba, r.width, r.height);
     Some(slint::Image::from_rgba8(buf))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn png(w: u32, h: u32) -> Vec<u8> {
+        let mut out = Vec::new();
+        image::RgbaImage::new(w, h)
+            .write_to(&mut std::io::Cursor::new(&mut out), image::ImageFormat::Png)
+            .unwrap();
+        out
+    }
+
+    #[test]
+    fn thumbnails_within_limits_only() {
+        assert!(thumb_image(&png(320, 240)).is_some());
+        // Compresses to a few kilobytes, would unpack to 256 MB.
+        assert!(thumb_image(&png(8192, 8192)).is_none());
+        assert!(thumb_image(b"not a png").is_none());
+    }
 }

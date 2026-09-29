@@ -174,12 +174,24 @@ pub struct Session {
     save_failed: bool,
 }
 
+/// "Over the screen" (ZK-58): the editor window covers the frozen display without chrome; the
+/// document is that display 1:1 and its crop is the frame. Nothing is written to the library
+/// until the picture is copied or saved (Esc leaves no trace); "to the window" keeps the same
+/// document, marks and undo, so the pixels are the same either way.
+pub struct Over {
+    pub display: znimok_platform::Rect,
+    restore: Option<crate::over::Restore>,
+    editor_was_visible: bool,
+    source: &'static str,
+}
+
 pub struct App {
     pub tr: Localizer,
     pub lib_dir: PathBuf,
     entries: Vec<Entry>,
     filter: String,
     pub s: Option<Session>,
+    pub over: Option<Over>,
     renderer: Renderer,
     view: View,
     pixmap: Pixmap,
@@ -313,6 +325,7 @@ impl App {
             entries: Vec::new(),
             filter: String::new(),
             s: None,
+            over: None,
             renderer: Renderer::new(),
             view: View {
                 scale: 1.0,
@@ -1126,6 +1139,108 @@ impl App {
         self.apply_retention(ui);
     }
 
+    /// Alt at the end of a capture (ZK-58): edit right over the frozen display.
+    pub fn over_open(
+        &mut self,
+        ui: &AppWindow,
+        raster: Raster,
+        frame: IRect,
+        source: &'static str,
+        display: znimok_platform::Rect,
+        editor_was_visible: bool,
+    ) {
+        let (mut doc, path) = self.build_document(raster, source, None);
+        let (w, h) = doc.image_size();
+        let img = IRect::new(0, 0, w as i32, h as i32);
+        let x0 = frame.x.clamp(0, img.w);
+        let y0 = frame.y.clamp(0, img.h);
+        let x1 = frame.right().clamp(0, img.w);
+        let y1 = frame.bottom().clamp(0, img.h);
+        let f = IRect::new(x0, y0, (x1 - x0).max(1), (y1 - y0).max(1));
+        doc.crop = (f != img).then_some(f);
+        self.open_session(ui, Editor::new(doc), path, true);
+        let restore = crate::over::enter(ui, display);
+        self.over = Some(Over {
+            display,
+            restore: Some(restore),
+            editor_was_visible,
+            source,
+        });
+        ui.set_over_screen(true);
+        self.fit_pending = true;
+        self.dirty = true;
+        self.sync(ui);
+        ui.window().request_redraw();
+    }
+
+    /// "Open in the editor window": the same document, marks and undo; the window comes back
+    /// where it was, and from now on it is saved to the library like any other.
+    pub fn over_to_window(&mut self, ui: &AppWindow) {
+        self.finish_text(ui);
+        let Some(mut o) = self.over.take() else {
+            return;
+        };
+        ui.set_over_screen(false);
+        if let Some(r) = o.restore.take() {
+            crate::over::leave(ui, r);
+        }
+        if let Some(s) = self.s.as_mut() {
+            s.changed_at = Instant::now();
+        }
+        self.fit_pending = true;
+        self.dirty = true;
+        self.sync(ui);
+        ui.window().request_redraw();
+    }
+
+    /// Leaves "over the screen": `copy` = to the clipboard, `save` = to the library (copying
+    /// saves too, as the quick Shift capture does); neither = Esc, nothing is kept.
+    pub fn over_finish(&mut self, ui: &AppWindow, copy: bool, save: bool) {
+        self.finish_text(ui);
+        let Some(mut o) = self.over.take() else {
+            return;
+        };
+        self.commit_crop(ui);
+        let flat = if copy || save { self.flatten() } else { None };
+        let copied = match (&flat, copy) {
+            (Some((w, h, rgba)), true) => Some(io::copy_image(*w, *h, rgba.clone())),
+            _ => None,
+        };
+        let saved = (copy || save) && self.save_now(ui);
+        let file = self
+            .s
+            .as_ref()
+            .map(|s| (s.path.clone(), s.ed.doc.name.clone()));
+        ui.set_over_screen(false);
+        // Out of sight first, so the window does not flash back at its old place.
+        if !o.editor_was_visible {
+            let _ = ui.hide();
+        }
+        if let Some(r) = o.restore.take() {
+            crate::over::leave(ui, r);
+        }
+        self.close_document(ui);
+        if let (Some((w, h, rgba)), true, Some((path, name))) = (flat, saved, file) {
+            let heading = match copied {
+                Some(Ok(())) => self.tr.tr(match o.source {
+                    "window" => "pill-window-copied",
+                    "screen" => "pill-screen-copied",
+                    _ => "pill-region-copied",
+                }),
+                _ => self.tr.tr("pill-saved"),
+            };
+            let sub = self.tr.tr_args(
+                "pill-where",
+                &args(&[("width", w.to_string()), ("height", h.to_string())]),
+            );
+            crate::pill::show(Raster::new(w, h, rgba), path, name, heading, sub, o.display);
+        }
+        if let Some(Err(e)) = copied {
+            let msg = format!("{} ({e})", self.tr.tr("clipboard-error"));
+            self.toast(ui, msg);
+        }
+    }
+
     /// Straight to the library without opening the editor (Shift in the capture overlay).
     /// Returns the file and the document's name.
     pub fn store_quietly(
@@ -1335,7 +1450,12 @@ impl App {
         &mut self,
         ui: &AppWindow,
     ) -> Option<(PathBuf, Document, znimok_format::WriteOptions)> {
-        if !self.autosave || self.saving || self.drag.is_some() || self.editing.is_some() {
+        if !self.autosave
+            || self.saving
+            || self.over.is_some()
+            || self.drag.is_some()
+            || self.editing.is_some()
+        {
             return None;
         }
         let s = self.s.as_ref()?;
@@ -1588,7 +1708,7 @@ impl App {
         shift: bool,
         ctrl: bool,
     ) {
-        if button == 2 {
+        if button == 2 && self.over.is_none() {
             self.drag = Some(Drag::Pan {
                 start_out: out,
                 orig: self.view.origin,
@@ -1604,6 +1724,20 @@ impl App {
         self.finish_text(ui);
         if self.tool == tool::CROP {
             self.crop_down(out, p);
+            return;
+        }
+        // Over the screen the frame's corners and edges are always there to drag (the crop).
+        if self.over.is_some()
+            && !ctrl
+            && let Some(c) = self.s.as_ref().map(|s| s.ed.doc.frame())
+            && let Some(h) = self.frame_handle_at(c, out)
+        {
+            self.crop = Some(c);
+            self.drag = Some(Drag::CropEdit {
+                handle: h,
+                orig: c,
+                start: p,
+            });
             return;
         }
         let px = self.view.scale / self.dpr;
@@ -1963,6 +2097,10 @@ impl App {
     }
 
     fn pointer_up(&mut self, ui: &AppWindow) {
+        if self.over.is_some() && matches!(self.drag, Some(Drag::CropEdit { .. })) {
+            self.drag = None;
+            self.commit_crop(ui);
+        }
         if matches!(self.drag, Some(Drag::Create { .. } | Drag::Pen { .. }))
             && !self.prefs().editor.keep_tool
         {
@@ -2078,6 +2216,12 @@ impl App {
             Some(Drag::Marquee { .. }) => return ARROW,
             Some(_) => return CROSS,
             None => {}
+        }
+        if self.over.is_some()
+            && !ctrl
+            && let Some(h) = self.frame_handle_at(doc.frame(), out)
+        {
+            return BOX[h];
         }
         if self.tool == tool::CROP {
             let c = self.crop.unwrap_or_else(|| doc.frame());
@@ -2679,6 +2823,15 @@ impl App {
                 Some('y') => self.redo(ui),
                 Some('c') => return KeyAction::Copy,
                 Some('v') => self.paste_as_mark(ui),
+                // Over the screen: Ctrl+S = to the library; no file dialogs above the frame.
+                Some('s') if self.over.is_some() => {
+                    return if shift {
+                        KeyAction::None
+                    } else {
+                        KeyAction::Save
+                    };
+                }
+                Some('o') if self.over.is_some() => return KeyAction::None,
                 Some('s') if shift => return KeyAction::Export,
                 Some('s') => {
                     self.save_now(ui);
@@ -2706,7 +2859,11 @@ impl App {
             return KeyAction::None;
         }
         let tools = ['v', 'r', 'e', 'l', 'p', 't', 'b', 'h', 'n', 's', 'c'];
-        if let Some(i) = latin.and_then(|c| tools.iter().position(|t| *t == c)) {
+        // Over the screen the frame itself is the crop: no Crop tool there.
+        if let Some(i) = latin
+            .and_then(|c| tools.iter().position(|t| *t == c))
+            .filter(|i| !(self.over.is_some() && *i == tool::CROP))
+        {
             self.set_tool(ui, i);
             return KeyAction::None;
         }
@@ -2747,6 +2904,7 @@ impl App {
                         self.apply(ui, Command::DeleteObjects { ids });
                     }
                 }
+                "\n" | "\r" if self.over.is_some() => return KeyAction::Copy,
                 "\n" | "\r" if self.tool == tool::CROP => {
                     self.set_tool(ui, tool::SELECT);
                 }
@@ -2769,7 +2927,7 @@ impl App {
                     if self.drag.take().is_none() {
                         if !self.selection().is_empty() {
                             self.apply(ui, Command::ClearSelection);
-                        } else if self.tool != tool::SELECT {
+                        } else if self.tool != tool::SELECT && self.over.is_none() {
                             self.set_tool(ui, tool::SELECT);
                         } else {
                             return KeyAction::Back;
@@ -3874,6 +4032,18 @@ impl App {
         .map(|(x, y)| self.view.to_out(Point::new(x, y)))
     }
 
+    /// A handle of the frame under the pointer (over the screen).
+    fn frame_handle_at(&self, c: IRect, out: Point) -> Option<usize> {
+        let reach = 10.0 * self.dpr;
+        self.crop_handles(c)
+            .iter()
+            .enumerate()
+            .map(|(i, h)| (i, (*h - out).hypot()))
+            .filter(|(_, d)| *d <= reach)
+            .min_by(|a, b| a.1.total_cmp(&b.1))
+            .map(|(i, _)| i)
+    }
+
     fn crop_down(&mut self, out: Point, p: (i32, i32)) {
         let img = self.image_rect();
         let c = self.crop.unwrap_or(img);
@@ -4268,7 +4438,7 @@ impl App {
     /// What the view fits and keeps in sight: the frame, or the whole picture while cropping.
     fn view_frame(&self) -> Option<IRect> {
         let s = self.s.as_ref()?;
-        Some(if self.crop.is_some() {
+        Some(if self.crop.is_some() || self.over.is_some() {
             let (w, h) = s.ed.doc.image_size();
             IRect::new(0, 0, w as i32, h as i32)
         } else {
@@ -4283,6 +4453,9 @@ impl App {
     }
 
     fn set_zoom(&mut self, scale: f64, around_out: Option<Point>) {
+        if self.over.is_some() {
+            return;
+        }
         let Some(f) = self.view_frame() else { return };
         let scale = scale.clamp(0.05, 16.0);
         match around_out {
@@ -4307,6 +4480,12 @@ impl App {
     /// Keeps the picture in view (owner, 28.09): smaller than the canvas → centred on that
     /// axis; bigger → it may not be pulled away from an edge further than a small margin.
     fn constrain(&mut self) {
+        // Over the screen a document pixel is a screen pixel, in place.
+        if self.over.is_some() {
+            self.view.scale = 1.0;
+            self.view.origin = Point::ZERO;
+            return;
+        }
         let Some(f) = self.view_frame() else { return };
         let sc = self.view.scale.max(1e-6);
         let (vw, vh) = (self.view.width as f64 / sc, self.view.height as f64 / sc);
@@ -4334,6 +4513,11 @@ impl App {
     }
 
     fn fit(&mut self) {
+        if self.over.is_some() {
+            self.constrain();
+            self.dirty = true;
+            return;
+        }
         let k = self.fit_scale();
         self.set_zoom(k, None);
     }
@@ -4403,6 +4587,11 @@ impl App {
 
     /// For the self-test: scale, and where the picture's centre sits on the canvas relative to
     /// the canvas centre (output pixels).
+    /// The fitted scale for the current canvas (self-test, ZK-127).
+    pub fn fit_probe(&self) -> f64 {
+        self.fit_scale()
+    }
+
     pub fn view_probe(&self) -> (f64, f64, f64, f64) {
         let Some(s) = self.s.as_ref() else {
             return (0.0, 0.0, 0.0, 0.0);
@@ -4593,6 +4782,18 @@ impl App {
     pub fn sync(&mut self, ui: &AppWindow) {
         let Some(s) = self.s.as_ref() else { return };
         let doc = &s.ed.doc;
+        if self.over.is_some() {
+            let f = self.crop.unwrap_or_else(|| doc.frame());
+            let a = self.view.to_out(Point::new(f.x as f64, f.y as f64));
+            let b = self
+                .view
+                .to_out(Point::new(f.right() as f64, f.bottom() as f64));
+            let k = self.dpr.max(0.1);
+            ui.set_ov_x((a.x / k) as f32);
+            ui.set_ov_y((a.y / k) as f32);
+            ui.set_ov_w(((b.x - a.x) / k) as f32);
+            ui.set_ov_h(((b.y - a.y) / k) as f32);
+        }
         ui.set_doc_name(doc.name.as_str().into());
         if let QueryResult::State { state } = s.ed.query(&Query::GetState) {
             ui.set_can_undo(state.can_undo);
@@ -4910,6 +5111,9 @@ impl App {
             // Keep the doc point at the centre of the canvas where it was, then re-centre /
             // clamp for the new size (owner, 28.09: a picture smaller than the window stays
             // centred while the window is resized).
+            // A fitted picture follows the window: it grows with it up to 100 % and shrinks
+            // with it (owner, 29.09, ZK-127); a zoom the person chose is left alone.
+            let fitted = (self.view.scale - self.fit_scale()).abs() < 1e-3;
             let c = self
                 .view
                 .to_doc(self.view.width as f64 / 2.0, self.view.height as f64 / 2.0);
@@ -4917,7 +5121,10 @@ impl App {
             self.view.height = h.min(65535) as u16;
             let sc = self.view.scale.max(1e-6);
             self.view.origin = Point::new(c.x - w as f64 / 2.0 / sc, c.y - h as f64 / 2.0 / sc);
-            if !self.fit_pending {
+            if fitted && !self.fit_pending {
+                self.fit();
+                self.sync(ui);
+            } else if !self.fit_pending {
                 self.constrain();
             }
             self.dirty = true;
@@ -4932,9 +5139,12 @@ impl App {
         }
         let s = self.s.as_ref().unwrap();
         // Cropping shows the whole picture; "Compare" shows the tone as captured.
-        let doc: std::borrow::Cow<Document> = if self.crop.is_some() || self.compare {
+        let shown_crop = self
+            .crop
+            .or_else(|| self.over.as_ref().map(|_| s.ed.doc.frame()));
+        let doc: std::borrow::Cow<Document> = if shown_crop.is_some() || self.compare {
             let mut d = s.ed.doc.clone();
-            if self.crop.is_some() {
+            if shown_crop.is_some() {
                 d.crop = None;
             }
             if self.compare {
@@ -4947,8 +5157,14 @@ impl App {
             std::borrow::Cow::Borrowed(&s.ed.doc)
         };
         self.renderer.render(&doc, self.view, &mut self.pixmap);
-        if let Some(c) = self.crop {
-            draw_crop(&mut self.pixmap, &self.view, c, self.dpr);
+        if let Some(c) = shown_crop {
+            draw_crop(
+                &mut self.pixmap,
+                &self.view,
+                c,
+                self.dpr,
+                self.over.is_none(),
+            );
         }
         let frame_rect = if self.crop.is_some() {
             let (w, h) = s.ed.doc.image_size();
@@ -4956,13 +5172,15 @@ impl App {
         } else {
             s.ed.doc.frame()
         };
-        draw_frame_edge(
-            &mut self.pixmap,
-            &self.view,
-            frame_rect,
-            self.dpr,
-            ui.global::<crate::Theme>().get_dark(),
-        );
+        if self.over.is_none() {
+            draw_frame_edge(
+                &mut self.pixmap,
+                &self.view,
+                frame_rect,
+                self.dpr,
+                ui.global::<crate::Theme>().get_dark(),
+            );
+        }
         let typing = self.editing.as_ref().and_then(|e| e.id);
         if let Some(ed) = self.editing.as_ref() {
             let caret = match ed.id.and_then(|id| s.ed.doc.get(id)) {
@@ -5093,6 +5311,8 @@ pub enum KeyAction {
     Open,
     /// The last Esc: back to the library (after the unsaved-changes question, if any).
     Back,
+    /// Ctrl+S over the screen: to the library and close.
+    Save,
 }
 
 /// The rubber band: a dashed white rectangle in screen pixels.
@@ -5297,7 +5517,7 @@ fn draw_text_caret(
 
 /// Crop frame over the whole picture (ZK-53): outside dimmed, the rule of thirds inside, and
 /// corner brackets / edge bars as handles — white with a dark rim, readable on any picture.
-fn draw_crop(pix: &mut Pixmap, view: &View, c: IRect, dpr: f64) {
+fn draw_crop(pix: &mut Pixmap, view: &View, c: IRect, dpr: f64, thirds: bool) {
     use znimok_render::vello_cpu::color::PremulRgba8;
     let (w, h) = (pix.width() as i64, pix.height() as i64);
     let p0 = view.to_out(Point::new(c.x as f64, c.y as f64));
@@ -5332,8 +5552,8 @@ fn draw_crop(pix: &mut Pixmap, view: &View, c: IRect, dpr: f64) {
             };
         }
     };
-    // Thirds: faint white lines.
-    for i in 1..3 {
+    // Thirds: faint white lines (while cropping in the window).
+    for i in (1..3).filter(|_| thirds) {
         let gx = x0 + (x1 - x0) * i / 3;
         let gy = y0 + (y1 - y0) * i / 3;
         for y in y0..y1 {

@@ -13,8 +13,17 @@ security unlock-keychain -p "$(cat "$HOME/.znimok-sign/pass")" "$KC"
 APP="target/app/Znimok.app"
 rm -rf "$APP"; mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp target/release/znimok-app "$APP/Contents/MacOS/znimok-app"
-sed "s/@BUILD@/$BUILD/" crates/znimok-app/mac/Info.plist > "$APP/Contents/Info.plist"
-codesign --force --sign "$SHA1" --keychain "$KC" --identifier ua.plum.znimok.app --timestamp=none "$APP"
+# The working build has its own identifier and name (ZK-125): with the release's
+# ua.plum.znimok.app and version 0.0.0 (newer than any -preview by semver) Launch Services
+# preferred it over /Applications/Znimok.app, which declares the .znimok type and carries the
+# thumbnail extension — Finder then showed blank sheets. It declares no document types itself.
+ID="ua.plum.znimok.app.dev"
+sed -e "s/@BUILD@/$BUILD/" \
+    -e "s|<string>ua.plum.znimok.app</string>|<string>$ID</string>|" \
+    -e "s|<string>Znimok</string>|<string>Znimok Dev</string>|g" \
+    crates/znimok-app/mac/Info.plist > "$APP/Contents/Info.plist"
+grep -q "<string>$ID</string>" "$APP/Contents/Info.plist"
+codesign --force --sign "$SHA1" --keychain "$KC" --identifier "$ID" --timestamp=none "$APP"
 codesign --verify --strict "$APP"
 DEST="/Users/Shared/znimok-builds"
 rm -rf "$DEST/Znimok.app"

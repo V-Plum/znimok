@@ -21,6 +21,7 @@ mod frame;
 mod hotkeys;
 mod io;
 mod library;
+mod over;
 mod overlay;
 mod pill;
 mod selftest;
@@ -465,7 +466,11 @@ fn start_shot(app: &Shared, ui: &AppWindow) {
 
 /// Freezes the display under the pointer; `whole` = straight into the editor (the whole-screen
 /// hotkey), otherwise the overlay to choose what to keep.
-fn start_capture(_app: &Shared, ui: &AppWindow, whole: bool) {
+fn start_capture(app: &Shared, ui: &AppWindow, whole: bool) {
+    // Already editing over the screen (ZK-58): finish that first.
+    if app.try_borrow().map(|a| a.over.is_some()).unwrap_or(true) {
+        return;
+    }
     // The editor steps aside so the frozen screen does not contain it (on macOS the capture
     // filter would drop it anyway, but the overlay should not sit on top of it either).
     let was_visible = ui.window().is_visible();
@@ -786,7 +791,13 @@ fn wire(ui: &AppWindow, app: &Shared) {
         ui.on_key(move |text, ctrl, shift, _alt| {
             let Some(ui) = weak.upgrade() else { return };
             let action = app.borrow_mut().key(&ui, &text, ctrl, shift);
+            let over = app.borrow().over.is_some();
             match action {
+                // Over the screen (ZK-58): Enter / Ctrl+C copy and close, Ctrl+S keeps it in
+                // the library, the last Esc closes without a trace.
+                KeyAction::Copy if over => app.borrow_mut().over_finish(&ui, true, true),
+                KeyAction::Save => app.borrow_mut().over_finish(&ui, false, true),
+                KeyAction::Back if over => app.borrow_mut().over_finish(&ui, false, false),
                 KeyAction::Copy => app.borrow_mut().copy(&ui),
                 KeyAction::Export => export_with_dialog(&app, &ui),
                 KeyAction::Open => open_with_dialog(&app, &ui),
@@ -819,6 +830,15 @@ fn wire(ui: &AppWindow, app: &Shared) {
             }
         });
     }
+    on!(ui, app, on_over_to_window, |a, w| {
+        a.over_to_window(&w);
+    });
+    on!(ui, app, on_over_copy, |a, w| {
+        a.over_finish(&w, true, true);
+    });
+    on!(ui, app, on_over_close, |a, w| {
+        a.over_finish(&w, false, false);
+    });
     on!(ui, app, on_canvas_double, |a, w, x, y| {
         a.canvas_double(&w, x, y);
     });

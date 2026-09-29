@@ -200,6 +200,40 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
             format!("scale {sc:.3}, off-centre {dx:.1}, {dy:.1}"),
         );
     }));
+    // ZK-127: a fitted picture follows the window — smaller window, smaller picture; back to
+    // the old size, back to the old scale (never past 100 %).
+    let before = Rc::new(std::cell::Cell::new((0.0f64, 0.0f32, 0.0f32)));
+    let b = before.clone();
+    steps.push(Box::new(move |app, ui, _r| {
+        let sf = ui.window().scale_factor();
+        let size = ui.window().size();
+        let (w, h) = (size.width as f32 / sf, size.height as f32 / sf);
+        b.set((app.borrow().view_probe().0, w, h));
+        ui.window()
+            .set_size(slint::LogicalSize::new(w * 0.6, h * 0.6));
+    }));
+    let b = before.clone();
+    steps.push(Box::new(move |app, ui, r| {
+        let (sc0, w, h) = b.get();
+        let (sc, ..) = app.borrow().view_probe();
+        let fit = app.borrow().fit_probe();
+        r.check(
+            "smaller window: fitted picture shrinks with it",
+            (sc - fit).abs() < 1e-3 && sc <= sc0 + 1e-6,
+            format!("scale {sc0:.3} → {sc:.3} (fit {fit:.3})"),
+        );
+        ui.window().set_size(slint::LogicalSize::new(w, h));
+    }));
+    let b = before;
+    steps.push(Box::new(move |app, _ui, r| {
+        let (sc0, ..) = b.get();
+        let (sc, ..) = app.borrow().view_probe();
+        r.check(
+            "window back: fitted picture grows back (≤ 100 %)",
+            (sc - sc0).abs() < 1e-3 && sc <= 1.0,
+            format!("scale {sc:.3}, was {sc0:.3}"),
+        );
+    }));
     steps.push(Box::new(|app, ui, r| {
         let (cx, cy) = centre(ui);
         app.borrow_mut().set_tool(ui, crate::app::tool::RECT);
@@ -1363,6 +1397,7 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
             .s
             .as_ref()
             .map(|s| (*s.ed.doc.banks[0]).clone());
+        OVER_SRC.with(|o| *o.borrow_mut() = raster.clone());
         let Some(raster) = raster else {
             r.check("overlay opened", false, "no document".into());
             return;
@@ -1405,7 +1440,7 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
         // Frame pixels per logical pixel, per axis (the synthetic frame need not have the
         // screen's aspect — on the Mac it does not).
         let (kx, ky) = (1600.0 / lw.max(1.0), 1000.0 / lh.max(1.0));
-        ov.invoke_pointer(1, 300.0 / kx, 250.0 / ky, false);
+        ov.invoke_pointer(1, 300.0 / kx, 250.0 / ky, false, false);
         let (has, win) = (ov.get_has_sel(), ov.get_is_window());
         r.check(
             "overlay hover highlights the window",
@@ -1457,10 +1492,16 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
         );
         r.snapshot_window(ov.window(), "07-overlay-hover");
         // Drag frame pixels (600, 500) → (900, 700): a 300 × 200 region.
-        ov.invoke_pointer(0, 600.0 / kx, 500.0 / ky, false);
+        ov.invoke_pointer(0, 600.0 / kx, 500.0 / ky, false, false);
         for i in 1..=10 {
             let t = i as f32 / 10.0;
-            ov.invoke_pointer(1, (600.0 + 300.0 * t) / kx, (500.0 + 200.0 * t) / ky, false);
+            ov.invoke_pointer(
+                1,
+                (600.0 + 300.0 * t) / kx,
+                (500.0 + 200.0 * t) / ky,
+                false,
+                false,
+            );
         }
         r.check(
             "overlay drag",
@@ -1468,7 +1509,7 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
             format!("label {}", ov.get_sel_label()),
         );
         r.snapshot_window(ov.window(), "08-overlay-drag");
-        ov.invoke_pointer(2, 900.0 / kx, 700.0 / ky, false);
+        ov.invoke_pointer(2, 900.0 / kx, 700.0 / ky, false, false);
     }));
     steps.push(Box::new(|app, ui, r| {
         let size = app.borrow().s.as_ref().map(|s| s.ed.doc.image_size());
@@ -1482,6 +1523,239 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
             format!("{size:?}"),
         );
         r.snapshot(ui, "09-region-editor");
+    }));
+
+    // ZK-58: Alt on release = edit over the screen. The whole frozen display is the document,
+    // the region its crop; the window covers the display without bars; "to the window" keeps
+    // the document, marks and undo, and the pixels stay the same.
+    steps.push(Box::new(|app, ui, r| {
+        let raster = app
+            .borrow()
+            .s
+            .as_ref()
+            .map(|s| (*s.ed.doc.banks[0]).clone());
+        app.borrow_mut().close_document(ui);
+        let Some(raster) = raster else {
+            r.check("over the screen: opened", false, "no document".into());
+            return;
+        };
+        let raster = OVER_SRC.with(|o| {
+            // The original sample (the region document is only a piece of it).
+            o.borrow().clone().unwrap_or(raster)
+        });
+        let sf = ui.window().scale_factor();
+        // Desktop units: points on macOS, pixels on Windows.
+        let (bw, bh) = if cfg!(target_os = "macos") {
+            (
+                (raster.width as f32 / sf).round() as u32,
+                (raster.height as f32 / sf).round() as u32,
+            )
+        } else {
+            (raster.width, raster.height)
+        };
+        let frozen = crate::capture::Frozen {
+            bounds: znimok_platform::Rect {
+                x: 0,
+                y: 0,
+                width: bw,
+                height: bh,
+            },
+            windows: Vec::new(),
+            raster,
+        };
+        let _ = crate::overlay::open(frozen, true);
+        let Some(ov) = crate::overlay::handle() else {
+            r.check("over the screen: opened", false, "overlay closed".into());
+            return;
+        };
+        let osf = ov.window().scale_factor();
+        let lw = ov.window().size().width as f32 / osf;
+        let lh = ov.window().size().height as f32 / osf;
+        let (kx, ky) = (1600.0 / lw.max(1.0), 1000.0 / lh.max(1.0));
+        ov.invoke_pointer(0, 600.0 / kx, 500.0 / ky, false, false);
+        for i in 1..=10 {
+            let t = i as f32 / 10.0;
+            ov.invoke_pointer(
+                1,
+                (600.0 + 300.0 * t) / kx,
+                (500.0 + 200.0 * t) / ky,
+                false,
+                true,
+            );
+        }
+        ov.invoke_pointer(2, 900.0 / kx, 700.0 / ky, false, true);
+    }));
+    steps.push(Box::new(|app, ui, r| {
+        let a = app.borrow();
+        let over = a.over.is_some();
+        let info =
+            a.s.as_ref()
+                .map(|s| (s.ed.doc.image_size(), s.ed.doc.crop, s.path.exists()));
+        drop(a);
+        r.check(
+            "over the screen: Alt on release opens the frozen display with the region as the frame",
+            over && ui.get_over_screen()
+                && info.is_some_and(|((w, h), c, _)| {
+                    w == 1600
+                        && h == 1000
+                        && c.is_some_and(|c| {
+                            (c.x - 600).abs() <= 2
+                                && (c.y - 500).abs() <= 2
+                                && (c.w - 300).abs() <= 3
+                                && (c.h - 200).abs() <= 3
+                        })
+                }),
+            format!("{info:?}"),
+        );
+        r.check(
+            "over the screen: nothing in the library yet",
+            info.is_some_and(|(_, _, on_disk)| !on_disk),
+            String::new(),
+        );
+        let (cw, ww) = (
+            ui.get_canvas_width(),
+            ui.window().size().width as f32 / ui.window().scale_factor(),
+        );
+        r.check(
+            "over the screen: the canvas is the whole window (no bars, no inspector)",
+            (cw - ww).abs() <= 2.0,
+            format!("canvas {cw:.0} · window {ww:.0}"),
+        );
+        // The copy is the frozen pixels under the frame, byte for byte.
+        let mut a = app.borrow_mut();
+        let flat = a.flatten();
+        let want = a.s.as_ref().and_then(|s| {
+            let c = s.ed.doc.crop?;
+            let b = &s.ed.doc.banks[0];
+            let mut v = Vec::with_capacity((c.w * c.h * 4) as usize);
+            for y in c.y..c.bottom() {
+                let i = ((y as u32 * b.width + c.x as u32) * 4) as usize;
+                v.extend_from_slice(&b.rgba[i..i + (c.w * 4) as usize]);
+            }
+            Some((c.w as u32, c.h as u32, v))
+        });
+        let same = matches!((&flat, &want), (Some(f), Some(w)) if f == w);
+        r.check(
+            "over the screen: the picture is the frozen pixels under the frame, byte for byte",
+            same,
+            format!(
+                "{:?} vs {:?}",
+                flat.as_ref().map(|f| (f.0, f.1)),
+                want.as_ref().map(|w| (w.0, w.1))
+            ),
+        );
+        OVER_FLAT.with(|o| *o.borrow_mut() = flat);
+        drop(a);
+        ui.set_tool(1);
+        ui.invoke_tool_chosen(1);
+        r.snapshot(ui, "28-over-screen");
+    }));
+    steps.push(Box::new(|app, ui, r| {
+        // Draw a rectangle inside the frame, then pull the frame's bottom-right corner.
+        let (fx, fy, fw, fh) = (ui.get_ov_x(), ui.get_ov_y(), ui.get_ov_w(), ui.get_ov_h());
+        ui.invoke_pointer(0, fx + 30.0, fy + 30.0, 0, false, false);
+        for i in 1..=6 {
+            ui.invoke_pointer(1, fx + 30.0 + 15.0 * i as f32, fy + 30.0 + 10.0 * i as f32, 0, false, false);
+        }
+        ui.invoke_pointer(2, fx + 120.0, fy + 90.0, 0, false, false);
+        let marks = app.borrow().s.as_ref().map(|s| s.ed.doc.objects.len());
+        r.check("over the screen: drawing works", marks == Some(1), format!("{marks:?}"));
+        let before = app.borrow().s.as_ref().and_then(|s| s.ed.doc.crop);
+        ui.invoke_pointer(0, fx + fw, fy + fh, 0, false, false);
+        for i in 1..=5 {
+            ui.invoke_pointer(1, fx + fw + 8.0 * i as f32, fy + fh + 6.0 * i as f32, 0, false, false);
+        }
+        ui.invoke_pointer(2, fx + fw + 40.0, fy + fh + 30.0, 0, false, false);
+        let after = app.borrow().s.as_ref().and_then(|s| s.ed.doc.crop);
+        r.check(
+            "over the screen: the frame's corner drags (the crop grows)",
+            matches!((before, after), (Some(b), Some(a)) if a.w > b.w && a.h > b.h && a.x == b.x && a.y == b.y),
+            format!("{before:?} → {after:?}"),
+        );
+        ui.invoke_undo();
+        let undone = app.borrow().s.as_ref().and_then(|s| s.ed.doc.crop);
+        r.check(
+            "over the screen: the frame change is one undo step",
+            undone == before,
+            format!("{undone:?}"),
+        );
+        r.snapshot(ui, "29-over-screen-marks");
+        app.borrow_mut().over_to_window(ui);
+    }));
+    steps.push(Box::new(|app, ui, r| {
+        let mut a = app.borrow_mut();
+        let st =
+            a.s.as_ref()
+                .map(|s| (s.ed.doc.objects.len(), s.ed.doc.crop, ui.get_can_undo()));
+        let flat = a.flatten();
+        drop(a);
+        let before = OVER_FLAT.with(|o| o.borrow().clone());
+        r.check(
+            "over the screen → window: same document, marks and undo",
+            !ui.get_over_screen()
+                && app.borrow().over.is_none()
+                && ui.get_page() == 1
+                && st.is_some_and(|(n, c, undo)| n == 1 && c.is_some() && undo),
+            format!("{st:?}"),
+        );
+        // The marks were added after `before` was taken: compare the frame's size, and the
+        // pixels once the mark is undone.
+        ui.invoke_undo();
+        let plain = app.borrow_mut().flatten();
+        r.check(
+            "over the screen → window: the pixels are the same",
+            plain.is_some() && plain == before && flat.is_some(),
+            format!(
+                "{:?} vs {:?}",
+                plain.as_ref().map(|f| (f.0, f.1)),
+                before.as_ref().map(|f| (f.0, f.1))
+            ),
+        );
+        r.snapshot(ui, "30-over-to-window");
+        // Esc over the screen leaves nothing behind; Ctrl+S keeps it in the library.
+        let count = |dir: &std::path::Path| {
+            std::fs::read_dir(dir)
+                .map(|d| {
+                    d.filter_map(|e| e.ok())
+                        .filter(|e| e.path().extension().is_some_and(|x| x == "znimok"))
+                        .count()
+                })
+                .unwrap_or(0)
+        };
+        let raster = app
+            .borrow()
+            .s
+            .as_ref()
+            .map(|s| (*s.ed.doc.banks[0]).clone());
+        let mut a = app.borrow_mut();
+        a.save_now(ui);
+        let dir = a.lib_dir.clone();
+        a.close_document(ui);
+        let Some(raster) = raster else { return };
+        let display = znimok_platform::Rect {
+            x: 0,
+            y: 0,
+            width: raster.width,
+            height: raster.height,
+        };
+        let n0 = count(&dir);
+        let frame = znimok_core::IRect::new(10, 10, 200, 100);
+        a.over_open(ui, raster.clone(), frame, "region", display, true);
+        a.over_finish(ui, false, false);
+        let n1 = count(&dir);
+        a.over_open(ui, raster.clone(), frame, "region", display, true);
+        a.over_finish(ui, false, true);
+        let n2 = count(&dir);
+        let back = !ui.get_over_screen() && ui.get_page() == 0;
+        // What follows expects a document in the editor.
+        a.new_document(ui, raster, "region", None);
+        drop(a);
+        r.check(
+            "over the screen: Esc keeps nothing, Ctrl+S saves to the library",
+            n1 == n0 && n2 == n0 + 1 && back,
+            format!("{n0} → {n1} → {n2} · back to the library {back}"),
+        );
+        crate::pill::close();
     }));
 
     // ZK-126: after Copy the button shows a tick for a second, then the title comes back.
@@ -1503,6 +1777,7 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
         );
         r.snapshot(ui, "copy-title");
     }));
+
     // ZK-117 / ZK-46: the main screens once more in the light theme, and text contrast in both
     // (WCAG: main text at least 7:1 on panels, secondary at least 4.5:1).
     steps.push(Box::new(|_, ui, r| {
@@ -1641,4 +1916,10 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
     );
     // The timer lives as long as the closure it owns a handle to.
     std::mem::forget(timer);
+}
+
+thread_local! {
+    /// The sample frozen for the over-the-screen test (ZK-58), and its copy as first shown.
+    static OVER_SRC: std::cell::RefCell<Option<znimok_core::Raster>> = const { std::cell::RefCell::new(None) };
+    static OVER_FLAT: std::cell::RefCell<Option<(u32, u32, Vec<u8>)>> = const { std::cell::RefCell::new(None) };
 }
