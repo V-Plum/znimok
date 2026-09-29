@@ -33,20 +33,21 @@
     <StandardDirectory Id="ProgramMenuFolder" />
 
     <!-- Per-user components keep an HKCU value as their key path (ICE38). -->
+    <!-- Per-user files keyed by an HKCU value need fixed component GUIDs: never change them. -->
     <ComponentGroup Id="Program" Directory="INSTALLFOLDER">
-      <Component Id="App">
+      <Component Id="App" Guid="{06CC4D80-FEDA-4EBD-9B69-8869403EE477}">
         <File Id="AppExe" Source="$(var.Bin)\znimok-app.exe" />
         <RegistryValue Root="HKCU" Key="Software\Znimok\Installed" Name="app" Type="integer" Value="1" KeyPath="yes" />
         <RemoveFolder Id="RemoveInstallFolder" On="uninstall" />
         <RemoveFolder Id="RemoveProgramsDir" Directory="ProgramsDir" On="uninstall" />
       </Component>
-      <Component Id="Cli">
+      <Component Id="Cli" Guid="{C0CE9BCB-2FE2-4FFC-8341-FFC81292CF6E}">
         <File Id="CliExe" Source="$(var.Bin)\znimok.exe" />
         <RegistryValue Root="HKCU" Key="Software\Znimok\Installed" Name="cli" Type="integer" Value="1" KeyPath="yes" />
         <!-- `znimok` on the user's PATH: the CLI and `claude mcp add znimok` (then `znimok mcp`). -->
         <Environment Id="UserPath" Name="PATH" Value="[INSTALLFOLDER]" Part="last" Action="set" System="no" Permanent="no" />
       </Component>
-      <Component Id="Thumbnails">
+      <Component Id="Thumbnails" Guid="{16D6D7F6-C481-45C6-A322-C37DD78D6E25}">
         <File Id="ThumbDll" Source="$(var.Bin)\znimok_thumbnail.dll" />
         <RegistryValue Root="HKCU" Key="Software\Znimok\Installed" Name="thumbnails" Type="integer" Value="1" KeyPath="yes" />
         <!-- Explorer thumbnails of .znimok (ZK-76): the same keys as znimok_thumbnail::register. -->
@@ -59,7 +60,7 @@
         </RegistryKey>
         <RegistryValue Root="HKCU" Key="Software\Classes\.znimok\ShellEx\{e357fccd-a995-4576-b01f-234630154e96}" Type="string" Value="{787777D8-E076-4FDC-8065-F7282E5D3F86}" />
       </Component>
-      <Component Id="License">
+      <Component Id="License" Guid="{A63EC25C-3911-4DC9-8450-A17B6788BAF9}">
         <File Id="LicenseFile" Source="$(var.Bin)\LICENSE" Name="LICENSE.txt" />
         <RegistryValue Root="HKCU" Key="Software\Znimok\Installed" Name="license" Type="integer" Value="1" KeyPath="yes" />
       </Component>
@@ -68,7 +69,7 @@
     <!-- .znimok opens in Znimok (ZK-75): the keys of znimok_win::WinFileAssoc. The installer owns
          the type, so it is the default here; the user's own choice (UserChoice) still wins. -->
     <ComponentGroup Id="Association" Directory="INSTALLFOLDER">
-      <Component Id="FileType">
+      <Component Id="FileType" Guid="{B62C6D5A-F5DC-40C1-84D7-8C13FD635865}">
         <RegistryValue Root="HKCU" Key="Software\Znimok\Installed" Name="association" Type="integer" Value="1" KeyPath="yes" />
         <RegistryKey Root="HKCU" Key="Software\Classes\Znimok.Document">
           <RegistryValue Type="string" Value="Znimok document" />
@@ -90,7 +91,7 @@
     </ComponentGroup>
 
     <ComponentGroup Id="Menu" Directory="ProgramMenuFolder">
-      <Component Id="StartMenu">
+      <Component Id="StartMenu" Guid="{777B37D7-0D1A-4F8B-AD45-9BD81299E4EB}">
         <Shortcut Id="StartMenuShortcut" Name="Znimok" Target="[INSTALLFOLDER]znimok-app.exe" WorkingDirectory="INSTALLFOLDER" Description="Screenshots and annotations" />
         <RegistryValue Root="HKCU" Key="Software\Znimok\Installed" Name="menu" Type="integer" Value="1" KeyPath="yes" />
       </Component>
