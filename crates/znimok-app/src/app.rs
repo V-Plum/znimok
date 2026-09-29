@@ -14,7 +14,7 @@ use znimok_core::*;
 use znimok_i18n::{FluentArgs, Localizer};
 use znimok_render::vello_cpu::Pixmap;
 use znimok_render::vello_cpu::kurbo::Point;
-use znimok_render::{Renderer, View};
+use znimok_render::{Renderer, Repaint, Tracker, View};
 
 use crate::library::{self, Entry};
 use crate::{AppWindow, CardData, LayerRow, io};
@@ -197,7 +197,13 @@ pub struct App {
     pub over: Option<Over>,
     renderer: Renderer,
     view: View,
+    /// The canvas as shown: `base` plus the selection, caret and marquee.
     pixmap: Pixmap,
+    /// The picture with its marks and the frame edge, repainted only where it changed (ZK-130).
+    base: Pixmap,
+    tracker: Tracker,
+    /// Where the selection, caret and marquee were drawn last frame (canvas pixels).
+    overlay_prev: Vec<IRect>,
     pub gpu: Option<Gpu>,
     pub dpr: f64,
     dirty: bool,
@@ -357,6 +363,9 @@ impl App {
                 height: 1,
             },
             pixmap: Pixmap::new(1, 1),
+            base: Pixmap::new(1, 1),
+            tracker: Tracker::default(),
+            overlay_prev: Vec::new(),
             gpu: None,
             dpr: 1.0,
             dirty: true,
@@ -4956,6 +4965,25 @@ impl App {
         self.fit_scale()
     }
 
+    /// Self-test (ZK-130): brings the canvas up to date the way a frame does (partially), then
+    /// repaints it in full and counts the pixels that differ.
+    pub fn canvas_vs_full(&mut self, ui: &AppWindow) -> usize {
+        self.dirty = true;
+        self.before_rendering(ui);
+        let shown = self.pixmap.data_as_u8_slice().to_vec();
+        self.tracker.reset();
+        self.dirty = true;
+        self.before_rendering(ui);
+        let full = self.pixmap.data_as_u8_slice();
+        if full.len() != shown.len() {
+            return usize::MAX;
+        }
+        full.chunks(4)
+            .zip(shown.chunks(4))
+            .filter(|(a, b)| a.iter().zip(b.iter()).any(|(x, y)| x.abs_diff(*y) > 1))
+            .count()
+    }
+
     pub fn view_probe(&self) -> (f64, f64, f64, f64) {
         let Some(s) = self.s.as_ref() else {
             return (0.0, 0.0, 0.0, 0.0);
@@ -5542,64 +5570,149 @@ impl App {
         } else {
             std::borrow::Cow::Borrowed(&s.ed.doc)
         };
-        self.renderer.render(&doc, self.view, &mut self.pixmap);
-        if let Some(c) = shown_crop {
-            draw_crop(
-                &mut self.pixmap,
-                &self.view,
-                c,
-                self.dpr,
-                self.over.is_none(),
-            );
-        }
         let frame_rect = if self.crop.is_some() {
             let (w, h) = s.ed.doc.image_size();
             IRect::new(0, 0, w as i32, h as i32)
         } else {
             s.ed.doc.frame()
         };
-        if self.over.is_none() {
-            draw_frame_edge(
-                &mut self.pixmap,
-                &self.view,
-                frame_rect,
-                self.dpr,
-                ui.global::<crate::Theme>().get_dark(),
-            );
+        let dark = ui.global::<crate::Theme>().get_dark();
+        // ZK-130: only what changed is rendered and uploaded. A new texture, the crop frame
+        // (it dims the whole canvas) and any change of view repaint everything.
+        let fresh = size_changed || self.gpu.as_ref().is_none_or(|g| g.texture.is_none());
+        let repaint = if fresh || shown_crop.is_some() {
+            self.tracker.reset();
+            Repaint::All
+        } else {
+            let extra = {
+                use std::hash::{Hash, Hasher};
+                let mut h = std::hash::DefaultHasher::new();
+                (dark, self.dpr.to_bits(), self.over.is_some()).hash(&mut h);
+                h.finish()
+            };
+            self.renderer
+                .changes(&doc, self.view, extra, &mut self.tracker)
+        };
+        match &repaint {
+            Repaint::All => {
+                self.renderer.render(&doc, self.view, &mut self.base);
+                if let Some(c) = shown_crop {
+                    draw_crop(&mut self.base, &self.view, c, self.dpr, self.over.is_none());
+                }
+                if self.over.is_none() {
+                    draw_frame_edge(&mut self.base, &self.view, frame_rect, self.dpr, dark, None);
+                }
+            }
+            Repaint::Rects(rs) => {
+                self.renderer
+                    .render_rects(&doc, self.view, rs, &mut self.base);
+                if self.over.is_none() {
+                    draw_frame_edge(
+                        &mut self.base,
+                        &self.view,
+                        frame_rect,
+                        self.dpr,
+                        dark,
+                        Some(rs),
+                    );
+                }
+            }
+            Repaint::Nothing => {}
         }
+
+        // The selection, caret and marquee: where they go this frame.
         let typing = self.editing.as_ref().and_then(|e| e.id);
-        if let Some(ed) = self.editing.as_ref() {
-            let caret = match ed.id.and_then(|id| s.ed.doc.get(id)) {
+        let line = self.text_size() as f64 * 1.25;
+        let caret = match self.editing.as_ref() {
+            None => None,
+            Some(ed) => match ed.id.and_then(|id| s.ed.doc.get(id)) {
                 Some(o) => self.renderer.text_caret(o, ed.cursor, ed.anchor),
+                // Nothing typed yet: a caret one line high where the text will start.
                 None => {
-                    // Nothing typed yet: a caret one line high where the text will start.
-                    let h = self.text_size() as f64 * 1.25;
                     let (x, y) = (ed.at.0 as f64, ed.at.1 as f64);
                     Some((
-                        znimok_render::vello_cpu::kurbo::Rect::new(x, y, x + 1.0, y + h),
+                        znimok_render::vello_cpu::kurbo::Rect::new(x, y, x + 1.0, y + line),
                         Vec::new(),
                     ))
                 }
-            };
-            if let Some((c, sel)) = caret {
-                draw_text_caret(
-                    &mut self.pixmap,
-                    &self.view,
-                    c,
-                    &sel,
-                    self.caret_on,
-                    self.dpr,
-                );
+            },
+        };
+        let selected: Vec<&Object> =
+            s.ed.selection()
+                .iter()
+                .filter(|id| Some(**id) != typing)
+                .filter_map(|id| s.ed.doc.get(*id))
+                .collect();
+        let mut overlay: Vec<IRect> = Vec::new();
+        if let Some((c, sel)) = &caret {
+            for r in sel.iter().chain(std::iter::once(c)) {
+                overlay.push(out_box(&self.view, *r, (4.0 * self.dpr).ceil() as i32 + 2));
             }
         }
-        for id in s.ed.selection().iter().filter(|id| Some(**id) != typing) {
-            if let Some(o) = s.ed.doc.get(*id) {
-                draw_selection(&mut self.pixmap, &self.view, o, self.dpr);
+        for o in &selected {
+            overlay.push(selection_box(&self.view, o, self.dpr));
+        }
+        if let Some(m) = self.marquee {
+            let r = znimok_render::vello_cpu::kurbo::Rect::new(
+                m.x as f64,
+                m.y as f64,
+                m.right() as f64,
+                m.bottom() as f64,
+            );
+            overlay.push(out_box(&self.view, r, 2));
+        }
+
+        // `pixmap` = `base` again where the picture changed or an overlay was or will be.
+        let canvas = IRect::new(0, 0, w as i32, h as i32);
+        let restore: Option<Vec<IRect>> = match &repaint {
+            Repaint::All => None,
+            Repaint::Rects(rs) => Some(rs.clone()),
+            Repaint::Nothing => Some(Vec::new()),
+        }
+        .map(|mut v| {
+            v.extend(self.overlay_prev.iter().chain(&overlay).copied());
+            znimok_render::merge_rects(v.into_iter().filter_map(|r| clip_rect(r, canvas)).collect())
+        });
+        match &restore {
+            None => {
+                if self.pixmap.width() != self.base.width()
+                    || self.pixmap.height() != self.base.height()
+                {
+                    self.pixmap = self.base.clone();
+                } else {
+                    self.pixmap.data_mut().copy_from_slice(self.base.data());
+                }
             }
+            Some(rs) => {
+                let pw = self.base.width() as usize;
+                let (src, dst) = (self.base.data(), self.pixmap.data_mut());
+                for r in rs {
+                    for y in r.y as usize..r.bottom() as usize {
+                        let o = y * pw;
+                        dst[o + r.x as usize..o + r.right() as usize]
+                            .copy_from_slice(&src[o + r.x as usize..o + r.right() as usize]);
+                    }
+                }
+            }
+        }
+        if let Some((c, sel)) = &caret {
+            draw_text_caret(
+                &mut self.pixmap,
+                &self.view,
+                *c,
+                sel,
+                self.caret_on,
+                self.dpr,
+            );
+        }
+        for o in &selected {
+            draw_selection(&mut self.pixmap, &self.view, o, self.dpr);
         }
         if let Some(m) = self.marquee {
             draw_marquee(&mut self.pixmap, &self.view, m);
         }
+        self.overlay_prev = overlay;
+
         let Some(gpu) = self.gpu.as_mut() else { return };
         if size_changed || gpu.texture.is_none() {
             let tex = gpu.device.create_texture(&wgpu::TextureDescriptor {
@@ -5625,25 +5738,33 @@ impl App {
             gpu.texture = Some((tex, w, h));
         }
         let (tex, _, _) = gpu.texture.as_ref().unwrap();
-        gpu.queue.write_texture(
-            wgpu::TexelCopyTextureInfo {
-                texture: tex,
-                mip_level: 0,
-                origin: wgpu::Origin3d::ZERO,
-                aspect: wgpu::TextureAspect::All,
-            },
-            self.pixmap.data_as_u8_slice(),
-            wgpu::TexelCopyBufferLayout {
-                offset: 0,
-                bytes_per_row: Some(w * 4),
-                rows_per_image: Some(h),
-            },
-            wgpu::Extent3d {
-                width: w,
-                height: h,
-                depth_or_array_layers: 1,
-            },
-        );
+        let whole = [canvas];
+        let upload: &[IRect] = restore.as_deref().unwrap_or(&whole);
+        for r in upload {
+            gpu.queue.write_texture(
+                wgpu::TexelCopyTextureInfo {
+                    texture: tex,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d {
+                        x: r.x as u32,
+                        y: r.y as u32,
+                        z: 0,
+                    },
+                    aspect: wgpu::TextureAspect::All,
+                },
+                self.pixmap.data_as_u8_slice(),
+                wgpu::TexelCopyBufferLayout {
+                    offset: (r.y as u64 * w as u64 + r.x as u64) * 4,
+                    bytes_per_row: Some(w * 4),
+                    rows_per_image: Some(r.h as u32),
+                },
+                wgpu::Extent3d {
+                    width: r.w as u32,
+                    height: r.h as u32,
+                    depth_or_array_layers: 1,
+                },
+            );
+        }
         self.dirty = false;
     }
 
@@ -5772,7 +5893,14 @@ pub fn release_pointer(w: &slint::Window) {
 
 /// The picture's edge on the canvas (owner, 29.09: a white or transparent picture melted into
 /// the canvas): a checkerboard under transparent parts, a hairline rim and a soft shadow around.
-fn draw_frame_edge(pix: &mut Pixmap, view: &View, f: IRect, dpr: f64, dark: bool) {
+fn draw_frame_edge(
+    pix: &mut Pixmap,
+    view: &View,
+    f: IRect,
+    dpr: f64,
+    dark: bool,
+    clip: Option<&[IRect]>,
+) {
     use znimok_render::vello_cpu::color::PremulRgba8;
     let (w, h) = (pix.width() as i64, pix.height() as i64);
     let a = view.to_out(Point::new(f.x as f64, f.y as f64));
@@ -5784,6 +5912,13 @@ fn draw_frame_edge(pix: &mut Pixmap, view: &View, f: IRect, dpr: f64, dark: bool
         b.y.round() as i64,
     );
     let data = pix.data_mut();
+    let whole = [IRect::new(0, 0, w as i32, h as i32)];
+    let clip = clip.unwrap_or(&whole);
+    let inside = |x: i64, y: i64| {
+        clip.iter().any(|r| {
+            x >= r.x as i64 && x < r.right() as i64 && y >= r.y as i64 && y < r.bottom() as i64
+        })
+    };
     // Transparent parts over a checkerboard of 8-point squares.
     let sq = (8.0 * dpr).round().max(4.0) as i64;
     let (c1, c2) = if dark {
@@ -5791,32 +5926,40 @@ fn draw_frame_edge(pix: &mut Pixmap, view: &View, f: IRect, dpr: f64, dark: bool
     } else {
         (255u16, 226u16)
     };
-    for y in y0.max(0)..y1.min(h) {
-        for x in x0.max(0)..x1.min(w) {
-            let p = &mut data[(y * w + x) as usize];
-            if p.a == 255 {
-                continue;
+    for r in clip {
+        for y in y0.max(0).max(r.y as i64)..y1.min(h).min(r.bottom() as i64) {
+            for x in x0.max(0).max(r.x as i64)..x1.min(w).min(r.right() as i64) {
+                let p = &mut data[(y * w + x) as usize];
+                if p.a == 255 {
+                    continue;
+                }
+                let c = if ((x - x0) / sq + (y - y0) / sq) % 2 == 0 {
+                    c1
+                } else {
+                    c2
+                };
+                let k = 255 - p.a as u16;
+                // premultiplied: result = src + checker·(1 − αsrc)
+                let mix = |v: u8| (v as u16 + c * k / 255).min(255) as u8;
+                *p = PremulRgba8 {
+                    r: mix(p.r),
+                    g: mix(p.g),
+                    b: mix(p.b),
+                    a: 255,
+                };
             }
-            let c = if ((x - x0) / sq + (y - y0) / sq) % 2 == 0 {
-                c1
-            } else {
-                c2
-            };
-            let k = 255 - p.a as u16;
-            // premultiplied: result = src + checker·(1 − αsrc)
-            let mix = |v: u8| (v as u16 + c * k / 255).min(255) as u8;
-            *p = PremulRgba8 {
-                r: mix(p.r),
-                g: mix(p.g),
-                b: mix(p.b),
-                a: 255,
-            };
         }
     }
     // Shadow: a few pixels fading out around the frame; the rim: one pixel.
     let blur = (6.0 * dpr).round() as i64;
     let mut dim = |x: i64, y: i64, k: u16| {
-        if x >= 0 && y >= 0 && x < w && y < h && !(x >= x0 && x < x1 && y >= y0 && y < y1) {
+        if x >= 0
+            && y >= 0
+            && x < w
+            && y < h
+            && !(x >= x0 && x < x1 && y >= y0 && y < y1)
+            && inside(x, y)
+        {
             let p = &mut data[(y * w + x) as usize];
             let m = |v: u8| (v as u16 * (255 - k) / 255) as u8;
             *p = PremulRgba8 {
@@ -5996,6 +6139,40 @@ fn draw_crop(pix: &mut Pixmap, view: &View, c: IRect, dpr: f64, thirds: bool) {
     bar(mx - len / 2, y1, len, t);
     bar(x0 - t, my - len / 2, t, len);
     bar(x1, my - len / 2, t, len);
+}
+
+/// A document-space rectangle on the canvas, padded by `pad` pixels (ZK-130).
+fn out_box(view: &View, r: znimok_render::vello_cpu::kurbo::Rect, pad: i32) -> IRect {
+    let a = view.to_out(Point::new(r.x0.min(r.x1), r.y0.min(r.y1)));
+    let b = view.to_out(Point::new(r.x0.max(r.x1), r.y0.max(r.y1)));
+    let lim = |v: f64| v.clamp(-1e7, 1e7) as i32;
+    let (x0, y0) = (lim(a.x.floor()) - pad, lim(a.y.floor()) - pad);
+    let (x1, y1) = (lim(b.x.ceil()) + pad, lim(b.y.ceil()) + pad);
+    IRect::new(x0, y0, x1 - x0, y1 - y0)
+}
+
+/// Where [`draw_selection`] draws: the dashed outline and every handle.
+fn selection_box(view: &View, o: &Object, dpr: f64) -> IRect {
+    let hs = (4.0 * dpr).round() as i32 + 2;
+    let b = o.bounds();
+    let mut r = znimok_render::vello_cpu::kurbo::Rect::new(
+        b.x as f64,
+        b.y as f64,
+        b.right() as f64,
+        b.bottom() as f64,
+    );
+    for (hx, hy) in hit::handles(o) {
+        r = r.union_pt(Point::new(hx, hy));
+    }
+    out_box(view, r, hs)
+}
+
+fn clip_rect(r: IRect, to: IRect) -> Option<IRect> {
+    let x0 = r.x.max(to.x);
+    let y0 = r.y.max(to.y);
+    let x1 = r.right().min(to.right());
+    let y1 = r.bottom().min(to.bottom());
+    (x1 > x0 && y1 > y0).then(|| IRect::new(x0, y0, x1 - x0, y1 - y0))
 }
 
 /// Selection outline and handles drawn straight into the pixmap, in screen pixels.

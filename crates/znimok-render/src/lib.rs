@@ -27,10 +27,13 @@ use znimok_core::{
     Object, Raster, Rgb, Style,
 };
 
+mod damage;
 pub mod develop;
 pub mod hide;
 pub mod reference;
 mod text;
+
+pub use damage::{Repaint, Tracker, merge as merge_rects};
 
 pub use vello_cpu;
 
@@ -156,6 +159,8 @@ pub struct Renderer {
     /// Shadow/glow layers in output resolution: key = (mark hash, scale ×1000, sub-pixel
     /// offset in quarters).
     fx_cache: HashMap<(u64, i64, u8, u8), Arc<Pixmap>>,
+    /// A tile for partial repaints (ZK-130), kept between frames.
+    scratch: Pixmap,
     threads: u16,
 }
 
@@ -194,6 +199,7 @@ impl Renderer {
             fx_cache: HashMap::new(),
             below: None,
             settings,
+            scratch: Pixmap::new(1, 1),
             threads,
         }
     }
@@ -386,8 +392,14 @@ impl Renderer {
         }
         let fx = ((x0 - ox) * 4.0).round() as u8;
         let fy = ((y0 - oy) * 4.0).round() as u8;
+        // The tile does not depend on where the mark is: moved to the origin for the key, so
+        // dragging a mark with a shadow reuses its tile (ZK-130) — the sub-pixel offset below
+        // tells the placements apart.
         let mut hasher = std::hash::DefaultHasher::new();
-        obj.hash(&mut hasher);
+        let mut at_origin = obj.clone();
+        at_origin.id = 0;
+        at_origin.translate(-b.x, -b.y);
+        at_origin.hash(&mut hasher);
         doc.counter_number(index).hash(&mut hasher);
         (bw, bh).hash(&mut hasher);
         let key = (hasher.finish(), (scale * 1000.0).round() as i64, fx, fy);

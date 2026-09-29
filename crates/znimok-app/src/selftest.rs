@@ -74,6 +74,16 @@ fn drag(app: &Shared, ui: &AppWindow, from: (f32, f32), to: (f32, f32)) {
     a.pointer(ui, 2, to.0, to.1, 0, false, false);
 }
 
+/// ZK-130: what the canvas shows after partial repaints equals a full repaint.
+fn same_as_full(app: &Shared, ui: &AppWindow, r: &mut Report, when: &str) {
+    let bad = app.borrow_mut().canvas_vs_full(ui);
+    r.check(
+        &format!("canvas: partial repaint = full repaint ({when})"),
+        bad == 0,
+        format!("{bad} pixels differ"),
+    );
+}
+
 fn click(app: &Shared, ui: &AppWindow, at: (f32, f32)) {
     let mut a = app.borrow_mut();
     a.pointer(ui, 0, at.0, at.1, 0, false, false);
@@ -253,6 +263,7 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
             count(app) == 1,
             format!("{} marks", count(app)),
         );
+        same_as_full(app, ui, r, "drawn");
     }));
     steps.push(Box::new(|app, ui, r| {
         let (cx, cy) = centre(ui);
@@ -287,6 +298,7 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
             count(app) == 6,
             format!("{} marks", count(app)),
         );
+        same_as_full(app, ui, r, "every kind");
         let seqs: Vec<u32> = app
             .borrow()
             .s
@@ -324,6 +336,7 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
             live == 7,
             format!("{live} marks while typing"),
         );
+        same_as_full(app, ui, r, "typing");
         app.borrow_mut().commit_text(ui, "Привіт, Znimok");
         let w = app
             .borrow()
@@ -606,6 +619,7 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
                 x1 > x0 && count(app) == n1 && ui.get_tool() == 1,
                 format!("x {x0} → {x1}, {} marks", count(app)),
             );
+            same_as_full(app, ui, r, "dragged");
             key(app, ui, "z", true, false);
         }
     }));
@@ -894,6 +908,7 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
                 after.iter().map(|e| e.0).collect::<Vec<_>>()
             ),
         );
+        same_as_full(app, ui, r, "reordered");
         ui.invoke_undo();
         r.check(
             "layers: undo restores the order",
