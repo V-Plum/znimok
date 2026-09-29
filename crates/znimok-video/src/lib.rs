@@ -31,6 +31,7 @@
 
 pub mod audio;
 pub mod cfr;
+pub mod check;
 pub mod clock;
 pub mod edit;
 pub mod events;
