@@ -161,7 +161,7 @@ def cask(version: str, dmg: pathlib.Path, dest: pathlib.Path) -> None:
   end
 
   depends_on arch: :arm64
-  depends_on macos: ">= :sequoia"
+  depends_on macos: :sequoia
 
   app "Znimok.app"
   binary "#{{appdir}}/Znimok.app/Contents/MacOS/znimok"
