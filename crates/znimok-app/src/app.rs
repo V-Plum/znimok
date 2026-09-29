@@ -4691,7 +4691,12 @@ impl App {
             return;
         };
         let msg = match io::copy_image(w, h, rgba) {
-            Ok(()) => self.tr.tr("clipboard-copied"),
+            Ok(()) => {
+                // The Copy button turns into a tick for a second (ZK-126); a repeat restarts it.
+                ui.set_copied(false);
+                ui.set_copied(true);
+                self.tr.tr("clipboard-copied")
+            }
             Err(e) => format!("{} ({e})", self.tr.tr("clipboard-error")),
         };
         self.toast(ui, msg);

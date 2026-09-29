@@ -6820,6 +6820,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "znimok-video"
+version = "0.0.0"
+
+[[package]]
 name = "znimok-win"
 version = "0.0.0"
 dependencies = [
