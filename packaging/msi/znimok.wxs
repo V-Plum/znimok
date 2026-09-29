@@ -18,7 +18,9 @@
            Compressed="yes"
            Language="1033">
     <SummaryInformation Description="Znimok — screenshots, annotations, agents" />
-    <MajorUpgrade DowngradeErrorMessage="A newer version of Znimok is already installed." />
+    <!-- Working builds all carry the workspace version (0.0.0-preview.<sha> → 0.0.0): without
+         AllowSameVersionUpgrades a newer one would install beside the old instead of replacing it. -->
+    <MajorUpgrade AllowSameVersionUpgrades="yes" DowngradeErrorMessage="A newer version of Znimok is already installed." />
     <MediaTemplate EmbedCab="yes" />
 
     <Property Id="ARPURLINFOABOUT" Value="https://github.com/V-Plum/znimok" />
