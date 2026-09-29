@@ -32,7 +32,12 @@ thumbnails and search, an editor with ten tools, undo, autosave to the library, 
 to PNG/JPEG/WebP, opening files, pasting from the clipboard and dropping an image onto the
 window. New screenshot, Ctrl+Shift+4 (Windows) or ⌃⇧4 (macOS) freeze the screen under the
 pointer: drag for a region, click for a window, Space for the whole screen, Shift on release
-to go straight to the clipboard and the library, Esc to cancel. Znimok lives in the tray /
+to go straight to the clipboard and the library, Alt (⌥) on release to edit right over the
+screen, Esc to cancel. Over the screen the editor window becomes a frame over the whole display:
+the tools stand beside the frame, colours and actions below it, the frame's corners and edges
+drag (that is the crop); Enter or Copy puts it on the clipboard and in the library, Ctrl+S in
+the library only, Esc closes without a trace, and "Open in the editor window" carries on with the
+same document, marks and undo. Znimok lives in the tray /
 menu bar; closing the window hides it there, and Quit is in the icon's menu. Selection: a
 rubber band over empty space, Shift/Ctrl-click, holding Ctrl makes any tool Select for the
 moment; Ctrl+D duplicates, Ctrl+]/[ changes the order, Ctrl+G groups; align and distribute

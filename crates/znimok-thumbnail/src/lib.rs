@@ -23,12 +23,7 @@ const HEAD_LIMIT: usize = 64 << 20;
 /// A stored thumbnail is at most 320×240 (the app writes it); a file claiming more is not ours —
 /// decoding it unbounded in Explorer's or Finder's process would be a memory bomb (ZK-113).
 pub fn thumb_limits() -> znimok_format::Limits {
-    znimok_format::Limits {
-        max_image_side: 1024,
-        max_image_pixels: 1 << 20,
-        max_image_bytes: 16 << 20,
-        ..Default::default()
-    }
+    znimok_format::Limits::thumbnail()
 }
 
 /// The stored thumbnail of a `.znimok` file, scaled to fit `size`×`size`, as straight RGBA.

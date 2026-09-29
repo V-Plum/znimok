@@ -1002,6 +1002,7 @@ export component Overlay inherits Window {
     // Windows: top-most. macOS: Rust sets a window level above the menu bar instead (Slint's
     // top-most = NSFloatingWindowLevel 3, below the menu bar; it would also override ours).
     in property <bool> on-top: true;
+    in property <bool> mac;
     always-on-top: root.on-top;
     background: black;
     title: "Znimok";
@@ -1028,8 +1029,8 @@ export component Overlay inherits Window {
     in property <string> lens-hex;
     in property <color> lens-color;
 
-    callback pointer(int, length, length, bool);
-    callback key(string, bool);
+    callback pointer(int, length, length, bool, bool);
+    callback key(string, bool, bool);
     callback wheel(length);
 
     // The frame glides from window to window while hovering (like the system screenshot tool);
@@ -1090,6 +1091,7 @@ export component Overlay inherits Window {
             spacing: 18px;
             HintChip { key: @tr("capture-release" => "release"); text: @tr("capture-to-editor" => "to editor"); }
             HintChip { key: "Shift"; text: @tr("capture-to-clipboard" => "to clipboard"); }
+            HintChip { key: root.mac ? "⌥" : "Alt"; text: @tr("capture-over-screen" => "over the screen"); }
             HintChip { key: "Space"; text: @tr("capture-whole-screen" => "whole screen"); }
             HintChip { key: @tr("capture-click" => "click"); text: @tr("capture-window" => "window"); }
             HintChip { key: "Esc"; text: @tr("capture-cancel" => "cancel"); }
@@ -1158,7 +1160,7 @@ export component Overlay inherits Window {
     }
     fs := FocusScope {
         key-pressed(e) => {
-            root.key(e.text, e.modifiers.shift);
+            root.key(e.text, e.modifiers.shift, e.modifiers.alt);
             return accept;
         }
         TouchArea {
@@ -1166,11 +1168,11 @@ export component Overlay inherits Window {
             mouse-cursor: none;
             pointer-event(e) => {
                 if (e.kind == PointerEventKind.down) {
-                    root.pointer(e.button == PointerEventButton.left ? 0 : 3, self.mouse-x, self.mouse-y, e.modifiers.shift);
+                    root.pointer(e.button == PointerEventButton.left ? 0 : 3, self.mouse-x, self.mouse-y, e.modifiers.shift, e.modifiers.alt);
                 } else if (e.kind == PointerEventKind.up) {
-                    root.pointer(e.button == PointerEventButton.left ? 2 : 4, self.mouse-x, self.mouse-y, e.modifiers.shift);
+                    root.pointer(e.button == PointerEventButton.left ? 2 : 4, self.mouse-x, self.mouse-y, e.modifiers.shift, e.modifiers.alt);
                 } else if (e.kind == PointerEventKind.move) {
-                    root.pointer(1, self.mouse-x, self.mouse-y, e.modifiers.shift);
+                    root.pointer(1, self.mouse-x, self.mouse-y, e.modifiers.shift, e.modifiers.alt);
                 }
             }
             scroll-event(e) => {
@@ -1221,6 +1223,33 @@ export component AppTray inherits SystemTrayIcon {
             activated => { root.quit(); }
         }
     }
+}
+
+// The tool rail: docked at the left of the editor, or floating by the frame over the screen
+// (ZK-58, without Crop there: the frame itself is the crop).
+component ToolRail inherits VerticalLayout {
+    in property <int> tool;
+    in property <bool> ctrl-held;
+    in property <bool> with-crop: true;
+    callback chosen(int);
+    padding: 8px;
+    spacing: 4px;
+    alignment: start;
+        IconButton { width: 40px; height: 36px; tip-side: 1; label: @tr("tool-select" => "Select (V)"); icon: "M5 3 l14 8 -6 2 -3 6 -5 -16 z"; active: root.tool == 0 || root.ctrl-held; clicked => { root.chosen(0); } }
+        IconButton { width: 40px; height: 36px; tip-side: 1; label: @tr("tool-rect" => "Rectangle (R)"); icon: "M6 5 h12 a2 2 0 0 1 2 2 v10 a2 2 0 0 1 -2 2 H6 a2 2 0 0 1 -2 -2 V7 a2 2 0 0 1 2 -2 z"; active: root.tool == 1 && !root.ctrl-held; clicked => { root.chosen(1); } }
+        IconButton { width: 40px; height: 36px; tip-side: 1; label: @tr("tool-ellipse" => "Ellipse (E)"); icon: "M4 12 a8 6 0 1 0 16 0 a8 6 0 1 0 -16 0 z"; active: root.tool == 2 && !root.ctrl-held; clicked => { root.chosen(2); } }
+        IconButton { width: 40px; height: 36px; tip-side: 1; label: @tr("tool-line" => "Line (L)"); icon: "M4 20 L20 4 M11 4 h9 v9"; active: root.tool == 3 && !root.ctrl-held; clicked => { root.chosen(3); } }
+        IconButton { width: 40px; height: 36px; tip-side: 1; label: @tr("tool-pen" => "Pen (P)"); icon: "M15.5 4.5 a2.1 2.1 0 0 1 3 3 L8 18 l-4 1 1 -4 z M13.5 6.5 l3 3 M12 20 q2 -3 4 0 t4 0"; active: root.tool == 4 && !root.ctrl-held; clicked => { root.chosen(4); } }
+        IconButton { width: 40px; height: 36px; tip-side: 1; label: @tr("tool-text" => "Text (T)"); icon: "M5 6 h14 M12 6 v14"; active: root.tool == 5 && !root.ctrl-held; clicked => { root.chosen(5); } }
+        Rectangle { height: 9px; Rectangle { y: 4px; height: 1px; x: 8px; width: parent.width - 16px; background: Theme.line; } }
+        IconButton { width: 40px; height: 36px; tip-side: 1; label: @tr("tool-hide" => "Hide (B)"); icon: "M3 3 l18 18 M10.6 10.6 a2 2 0 0 0 2.8 2.8 M9.9 5.1 A10 10 0 0 1 21 12 a17 17 0 0 1 -2.8 3.6 M6.6 6.6 A17 17 0 0 0 3 12 s3.5 6 9 6 a9 9 0 0 0 3.6 -0.7"; active: root.tool == 6 && !root.ctrl-held; clicked => { root.chosen(6); } }
+        IconButton { width: 40px; height: 36px; tip-side: 1; label: @tr("tool-highlighter" => "Highlighter (H)"); icon: "M14 3.5 L20.5 10 L13 17.5 L6.5 11 Z M6.5 11 L4 16.5 L7.5 20 L13 17.5 M16.5 6 L10 12.5 M3 22.3 h9"; active: root.tool == 7 && !root.ctrl-held; clicked => { root.chosen(7); } }
+        IconButton { width: 40px; height: 36px; tip-side: 1; label: @tr("tool-counter" => "Counter (N)"); icon: "M3 12 a9 9 0 1 0 18 0 a9 9 0 1 0 -18 0 z M10.5 9 l2 -1.2 V16"; active: root.tool == 8 && !root.ctrl-held; clicked => { root.chosen(8); } }
+        IconButton { width: 40px; height: 36px; tip-side: 1; label: @tr("tool-stamp" => "Stamp (S)"); icon: "M8 12 V7 a4 4 0 0 1 8 0 v5 M5 12 h14 v4 H5 z M7 16 v4 h10 v-4"; active: root.tool == 9 && !root.ctrl-held; clicked => { root.chosen(9); } }
+        // Stable layout from v1: tools not implemented yet stay in place, disabled.
+        IconButton { width: 40px; height: 36px; tip-side: 1; label: @tr("tool-image" => "Image (I)"); tip: self.label + " — " + @tr("common-in-development" => "Coming soon"); icon: "M5 5 h14 a2 2 0 0 1 2 2 v10 a2 2 0 0 1 -2 2 H5 a2 2 0 0 1 -2 -2 V7 a2 2 0 0 1 2 -2 z M7 10 a1.5 1.5 0 1 0 3 0 a1.5 1.5 0 1 0 -3 0 M4 17 l5 -5 4 4 3 -3 4 4"; enabled: false; }
+        if root.with-crop: Rectangle { height: 9px; Rectangle { y: 4px; height: 1px; x: 8px; width: parent.width - 16px; background: Theme.line; } }
+        if root.with-crop: IconButton { width: 40px; height: 36px; tip-side: 1; label: @tr("tool-crop" => "Crop (C)"); icon: "M6 2 v14 a2 2 0 0 0 2 2 h14 M2 6 h14 a2 2 0 0 1 2 2 v14"; active: root.tool == 10; clicked => { root.chosen(10); } }
 }
 
 export component AppWindow inherits Window {
@@ -1340,6 +1369,16 @@ export component AppWindow inherits Window {
     in-out property <length> edit-y;
     in-out property <string> edit-text;
 
+    // ---- over the screen (ZK-58): the window covers the frozen display, no bars and no
+    // inspector; the frame (in window pixels) carries a floating rail and an action bar.
+    in property <bool> over-screen;
+    in property <length> ov-x;
+    in property <length> ov-y;
+    in property <length> ov-w;
+    in property <length> ov-h;
+    callback over-to-window();
+    callback over-copy();
+    callback over-close();
     out property <length> canvas-width: canvas-area.width;
     out property <length> canvas-height: canvas-area.height;
 
@@ -2018,7 +2057,8 @@ export component AppWindow inherits Window {
         VerticalLayout {
             // ---- top bar: every item 32 px high, centred on one line (no hand-placed y)
             Rectangle {
-                height: 52px;
+                height: root.over-screen ? 0px : 52px;
+                visible: !root.over-screen;
                 background: Theme.panel;
                 DragArea { drag => { root.window-drag(); } toggle => { root.window-toggle(); } }
                 if root.custom-frame: WindowControls {
@@ -2192,35 +2232,17 @@ export component AppWindow inherits Window {
                     }
                 }
             }
-            Rectangle { height: 1px; background: Theme.line; }
+            Rectangle { height: root.over-screen ? 0px : 1px; background: Theme.line; }
             HorizontalLayout {
                 vertical-stretch: 1;
                 // ---- tool rail (tooltips to the right)
                 Rectangle {
-                    width: 56px;
+                    width: root.over-screen ? 0px : 56px;
+                    visible: !root.over-screen;
                     background: Theme.panel;
-                    VerticalLayout {
-                        padding: 8px;
-                        spacing: 4px;
-                        alignment: start;
-                        IconButton { width: 40px; height: 36px; tip-side: 1; label: @tr("tool-select" => "Select (V)"); icon: "M5 3 l14 8 -6 2 -3 6 -5 -16 z"; active: root.tool == 0 || root.ctrl-held; clicked => { root.tool-chosen(0); } }
-                        IconButton { width: 40px; height: 36px; tip-side: 1; label: @tr("tool-rect" => "Rectangle (R)"); icon: "M6 5 h12 a2 2 0 0 1 2 2 v10 a2 2 0 0 1 -2 2 H6 a2 2 0 0 1 -2 -2 V7 a2 2 0 0 1 2 -2 z"; active: root.tool == 1 && !root.ctrl-held; clicked => { root.tool-chosen(1); } }
-                        IconButton { width: 40px; height: 36px; tip-side: 1; label: @tr("tool-ellipse" => "Ellipse (E)"); icon: "M4 12 a8 6 0 1 0 16 0 a8 6 0 1 0 -16 0 z"; active: root.tool == 2 && !root.ctrl-held; clicked => { root.tool-chosen(2); } }
-                        IconButton { width: 40px; height: 36px; tip-side: 1; label: @tr("tool-line" => "Line (L)"); icon: "M4 20 L20 4 M11 4 h9 v9"; active: root.tool == 3 && !root.ctrl-held; clicked => { root.tool-chosen(3); } }
-                        IconButton { width: 40px; height: 36px; tip-side: 1; label: @tr("tool-pen" => "Pen (P)"); icon: "M15.5 4.5 a2.1 2.1 0 0 1 3 3 L8 18 l-4 1 1 -4 z M13.5 6.5 l3 3 M12 20 q2 -3 4 0 t4 0"; active: root.tool == 4 && !root.ctrl-held; clicked => { root.tool-chosen(4); } }
-                        IconButton { width: 40px; height: 36px; tip-side: 1; label: @tr("tool-text" => "Text (T)"); icon: "M5 6 h14 M12 6 v14"; active: root.tool == 5 && !root.ctrl-held; clicked => { root.tool-chosen(5); } }
-                        Rectangle { height: 9px; Rectangle { y: 4px; height: 1px; x: 8px; width: parent.width - 16px; background: Theme.line; } }
-                        IconButton { width: 40px; height: 36px; tip-side: 1; label: @tr("tool-hide" => "Hide (B)"); icon: "M3 3 l18 18 M10.6 10.6 a2 2 0 0 0 2.8 2.8 M9.9 5.1 A10 10 0 0 1 21 12 a17 17 0 0 1 -2.8 3.6 M6.6 6.6 A17 17 0 0 0 3 12 s3.5 6 9 6 a9 9 0 0 0 3.6 -0.7"; active: root.tool == 6 && !root.ctrl-held; clicked => { root.tool-chosen(6); } }
-                        IconButton { width: 40px; height: 36px; tip-side: 1; label: @tr("tool-highlighter" => "Highlighter (H)"); icon: "M14 3.5 L20.5 10 L13 17.5 L6.5 11 Z M6.5 11 L4 16.5 L7.5 20 L13 17.5 M16.5 6 L10 12.5 M3 22.3 h9"; active: root.tool == 7 && !root.ctrl-held; clicked => { root.tool-chosen(7); } }
-                        IconButton { width: 40px; height: 36px; tip-side: 1; label: @tr("tool-counter" => "Counter (N)"); icon: "M3 12 a9 9 0 1 0 18 0 a9 9 0 1 0 -18 0 z M10.5 9 l2 -1.2 V16"; active: root.tool == 8 && !root.ctrl-held; clicked => { root.tool-chosen(8); } }
-                        IconButton { width: 40px; height: 36px; tip-side: 1; label: @tr("tool-stamp" => "Stamp (S)"); icon: "M8 12 V7 a4 4 0 0 1 8 0 v5 M5 12 h14 v4 H5 z M7 16 v4 h10 v-4"; active: root.tool == 9 && !root.ctrl-held; clicked => { root.tool-chosen(9); } }
-                        // Stable layout from v1: tools not implemented yet stay in place, disabled.
-                        IconButton { width: 40px; height: 36px; tip-side: 1; label: @tr("tool-image" => "Image (I)"); tip: self.label + " — " + @tr("common-in-development" => "Coming soon"); icon: "M5 5 h14 a2 2 0 0 1 2 2 v10 a2 2 0 0 1 -2 2 H5 a2 2 0 0 1 -2 -2 V7 a2 2 0 0 1 2 -2 z M7 10 a1.5 1.5 0 1 0 3 0 a1.5 1.5 0 1 0 -3 0 M4 17 l5 -5 4 4 3 -3 4 4"; enabled: false; }
-                        Rectangle { height: 9px; Rectangle { y: 4px; height: 1px; x: 8px; width: parent.width - 16px; background: Theme.line; } }
-                        IconButton { width: 40px; height: 36px; tip-side: 1; label: @tr("tool-crop" => "Crop (C)"); icon: "M6 2 v14 a2 2 0 0 0 2 2 h14 M2 6 h14 a2 2 0 0 1 2 2 v14"; active: root.tool == 10; clicked => { root.tool-chosen(10); } }
-                    }
+                    ToolRail { tool: root.tool; ctrl-held: root.ctrl-held; chosen(i) => { root.tool-chosen(i); } }
                 }
-                Rectangle { width: 1px; background: Theme.line; }
+                Rectangle { width: root.over-screen ? 0px : 1px; background: Theme.line; }
                 // ---- canvas
                 canvas-area := Rectangle {
                     horizontal-stretch: 1;
@@ -2314,11 +2336,71 @@ export component AppWindow inherits Window {
                             if (self.enabled) { self.focus(); }
                         }
                     }
+                    // ---- over the screen (ZK-58): the rail at the left of the frame and the bar below
+                    // it; where there is no room — on the other side, else inside the frame.
+                    if root.over-screen: Rectangle {
+                        property <length> lx: root.ov-x - self.width - 12px;
+                        property <length> rx: root.ov-x + root.ov-w + 12px;
+                        width: 56px;
+                        height: ov-rail.preferred-height;
+                        x: self.lx >= 8px ? self.lx : (self.rx + self.width <= parent.width - 8px ? self.rx : root.ov-x + 8px);
+                        y: max(8px, min(root.ov-y, parent.height - self.height - 8px));
+                        border-radius: 12px;
+                        background: Theme.panel;
+                        drop-shadow-blur: 18px;
+                        drop-shadow-color: #00000080;
+                        ov-rail := ToolRail {
+                            tool: root.tool;
+                            ctrl-held: root.ctrl-held;
+                            with-crop: false;
+                            chosen(i) => { root.tool-chosen(i); }
+                        }
+                    }
+                    if root.over-screen: Rectangle {
+                        property <length> below: root.ov-y + root.ov-h + 12px;
+                        property <length> above: root.ov-y - self.height - 12px;
+                        width: ov-bar.preferred-width;
+                        height: 48px;
+                        // From the frame's left edge: the rail stands left of the frame, so the bar
+                        // under a narrow frame runs to the right instead of into the rail.
+                        x: max(8px, min(root.ov-x, parent.width - self.width - 8px));
+                        y: self.below + self.height <= parent.height - 8px ? self.below : (self.above >= 8px ? self.above : root.ov-y + root.ov-h - self.height - 8px);
+                        border-radius: 12px;
+                        background: Theme.panel;
+                        drop-shadow-blur: 18px;
+                        drop-shadow-color: #00000080;
+                        ov-bar := HorizontalLayout {
+                            padding: 8px;
+                            spacing: 8px;
+                            // what this is, and how the frame works
+                            Rectangle {
+                                width: chip-text.preferred-width + 20px;
+                                border-radius: 8px;
+                                background: Theme.elevated;
+                                chip-text := Text { text: @tr("overlay-chip" => "Over the screen"); color: Theme.text2; font-size: 12px; font-weight: 600; horizontal-alignment: center; vertical-alignment: center; width: parent.width; height: parent.height; }
+                                TipTouch {
+                                    mouse-cursor: MouseCursor.default;
+                                    tip-side: 2;
+                                    tip: @tr("overlay-hint-frame" => "drag the frame corners — that is the crop") + " · " + Keys.k("Ctrl+S", "⌘S") + " " + @tr("overlay-hint-save" => "to library") + " · Esc " + @tr("overlay-hint-close" => "close");
+                                }
+                            }
+                            VerticalLayout {
+                                alignment: center;
+                                ColourRow { width: 270px; selected: root.color-index; picked(i) => { root.set-prop("color", i); } }
+                            }
+                            IconButton { tip-side: 2; label: @tr("doc-undo" => "Undo"); tip: self.label + "  " + Keys.k("Ctrl+Z", "⌘Z"); icon: "M9 14 L4 9 l5 -5 M4 9 h11 a5 5 0 0 1 0 10 h-3"; enabled: root.can-undo; clicked => { root.undo(); } }
+                            IconButton { tip-side: 2; label: @tr("doc-redo" => "Redo"); tip: self.label + "  " + Keys.k("Ctrl+Shift+Z", "⇧⌘Z"); icon: "M15 14 l5 -5 -5 -5 M20 9 H9 a5 5 0 0 0 0 10 h3"; enabled: root.can-redo; clicked => { root.redo(); } }
+                            IconButton { tip-side: 2; label: @tr("overlay-open-window" => "Open in the editor window"); tip: @tr("overlay-open-window-tip" => "To the editor window — tone, size, library"); icon: "M4 6 a2 2 0 0 1 2 -2 h12 a2 2 0 0 1 2 2 v12 a2 2 0 0 1 -2 2 H6 a2 2 0 0 1 -2 -2 z M4 9 h16 M7 6.5 h.01 M9.5 6.5 h.01"; clicked => { root.over-to-window(); } }
+                            TextButton { primary: true; icon: "M11 9 h7 a2 2 0 0 1 2 2 v7 a2 2 0 0 1 -2 2 h-7 a2 2 0 0 1 -2 -2 v-7 a2 2 0 0 1 2 -2 z M5 15 V5 a2 2 0 0 1 2 -2 h10"; text: @tr("doc-copy" => "Copy"); clicked => { root.over-copy(); } }
+                            IconButton { tip-side: 2; label: @tr("common-close" => "Close"); tip: self.label + "  Esc"; icon: "M6 6 L18 18 M18 6 L6 18"; clicked => { root.over-close(); } }
+                        }
+                    }
                 }
-                Rectangle { width: 1px; background: Theme.line; }
+                Rectangle { width: root.over-screen ? 0px : 1px; background: Theme.line; }
                 // ---- inspector (ZK-54): Object · Layers · Image · Meta
                 Rectangle {
-                    width: 284px;
+                    width: root.over-screen ? 0px : 284px;
+                    visible: !root.over-screen;
                     background: Theme.panel;
                     VerticalLayout {
                         padding: 14px;
@@ -2963,10 +3045,11 @@ export component AppWindow inherits Window {
                     }
                 }
             }
-            Rectangle { height: 1px; background: Theme.line; }
+            Rectangle { height: root.over-screen ? 0px : 1px; background: Theme.line; }
             // ---- status bar: size · hint · crop · zoom (fit, slider, %, 100%)
             Rectangle {
-                height: 30px;
+                height: root.over-screen ? 0px : 30px;
+                visible: !root.over-screen;
                 background: Theme.panel;
                 HorizontalLayout {
                     padding-left: 12px;
@@ -2996,7 +3079,7 @@ export component AppWindow inherits Window {
     }
 
     // ---- resize edges of the frameless window (Windows)
-    if root.custom-frame && !root.win-maximized: Rectangle {
+    if root.custom-frame && !root.win-maximized && !root.over-screen: Rectangle {
         property <length> e: 5px;
         ResizeEdge { x: 0; y: 0; width: parent.width; height: parent.e; dir: 1; mouse-cursor: ns-resize; resize(d) => { root.window-resize(d); } }
         ResizeEdge { x: 0; y: parent.height - parent.e; width: parent.width; height: parent.e; dir: 4; mouse-cursor: ns-resize; resize(d) => { root.window-resize(d); } }

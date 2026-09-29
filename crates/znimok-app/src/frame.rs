@@ -47,7 +47,23 @@ pub fn after_show(ui: &AppWindow) {
     }
 }
 
+thread_local! {
+    /// The window covers a display "over the screen" (ZK-58): no chrome to dress.
+    static OVER: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+pub fn set_over(on: bool) {
+    OVER.with(|o| o.set(on));
+}
+
+pub fn is_over() -> bool {
+    OVER.with(|o| o.get())
+}
+
 fn dress(ui: &AppWindow) {
+    if is_over() {
+        return;
+    }
     #[cfg(windows)]
     ui.window().with_winit_window(|w| {
         use winit::platform::windows::WindowExtWindows;
@@ -66,7 +82,7 @@ pub fn on_resized(ui: &AppWindow) {
         .unwrap_or(false);
     ui.set_win_maximized(max);
     #[cfg(target_os = "macos")]
-    {
+    if !is_over() {
         mac::dress(ui);
         mac::place_lights(ui);
         // AppKit lays the title bar out again after a size change finishes — notably after
@@ -196,6 +212,9 @@ mod mac {
     }
 
     pub fn dress(ui: &AppWindow) {
+        if super::is_over() {
+            return;
+        }
         let Some(win) = ns_window(ui) else { return };
         let r = objc2::exception::catch(std::panic::AssertUnwindSafe(|| {
             if !win.titlebarAppearsTransparent() {
@@ -229,6 +248,9 @@ mod mac {
 
     /// Centres the traffic lights on our 52 pt bar.
     pub fn place_lights(ui: &AppWindow) {
+        if super::is_over() {
+            return;
+        }
         let Some(win) = ns_window(ui) else { return };
         // In full screen the title bar is the system's own (it slides in from the top).
         if win.styleMask().contains(NSWindowStyleMask::FullScreen) {

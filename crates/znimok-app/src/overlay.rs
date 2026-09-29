@@ -2,13 +2,14 @@
 //! full-screen in a borderless top-most window, and the user picks what to keep:
 //! drag = region, click = the window under the pointer (or the whole screen over the desktop),
 //! Space = whole screen, Enter = what is highlighted, Shift on release = straight to the
-//! clipboard and the library, Esc / right click / the capture key again = cancel.
+//! clipboard and the library, Alt (⌥) on release = edit right over the screen (ZK-58),
+//! Esc / right click / the capture key again = cancel.
 //! Guides through the pointer across the whole screen are the cursor (Little Helpers).
 //! The magnifier is off until the wheel turns it on (×4 → ×8 → ×16 → off, as in LH CAPS-86);
 //! it is drawn here pixel by pixel (nearest neighbour, grid from ×8, the centre pixel boxed).
 //! Regions and the whole screen are cut from the frozen frame (instant, identical on both OSes);
 //! a clicked window is captured alone (without what overlaps it), falling back to the cut.
-//! Not yet: countdown, "over the screen" (Alt, ZK-58), regions spanning several displays.
+//! Not yet: countdown, regions spanning several displays.
 
 use std::cell::RefCell;
 
@@ -147,6 +148,12 @@ fn unconstrain() {
     });
 }
 
+/// The same frame override for the editor window covering a display (ZK-58).
+#[cfg(target_os = "macos")]
+pub(crate) fn unconstrain_windows() {
+    guarded("unconstrain", unconstrain);
+}
+
 #[cfg(target_os = "macos")]
 thread_local! {
     /// What the last `cover_display` asked for and got right away — for the self-test report.
@@ -282,8 +289,11 @@ pub fn open(frozen: Frozen, editor_was_visible: bool) -> Result<(), slint::Platf
         ui.window()
             .set_size(slint::PhysicalSize::new(b.width, b.height));
     }
-    ui.on_pointer(|kind, x, y, shift| with_session(|s| s.pointer(kind, x, y, shift)));
-    ui.on_key(|text, shift| with_session(|s| s.key(&text, shift)));
+    ui.set_mac(cfg!(target_os = "macos"));
+    ui.on_pointer(|kind, x, y, shift, alt| {
+        with_session(|s| s.pointer(kind, x, y, Gesture { shift, alt }))
+    });
+    ui.on_key(|text, shift, alt| with_session(|s| s.key(&text, Gesture { shift, alt })));
     ui.on_wheel(|dy| {
         with_session(|s| {
             // A trackpad sends a stream of small deltas (and keeps going with momentum): add
@@ -369,9 +379,17 @@ pub fn open(frozen: Frozen, editor_was_visible: bool) -> Result<(), slint::Platf
     Ok(())
 }
 
+/// Modifiers at the moment the choice is made: Shift = to the clipboard and the library,
+/// Alt (⌥) = edit over the screen.
+#[derive(Clone, Copy)]
+struct Gesture {
+    shift: bool,
+    alt: bool,
+}
+
 enum Outcome {
-    /// Rectangle in frame pixels, source label, window id (for an unoccluded capture), Shift.
-    Keep(PxRect, &'static str, Option<u64>, bool),
+    /// Rectangle in frame pixels, source label, window id (for an unoccluded capture), gesture.
+    Keep(PxRect, &'static str, Option<u64>, Gesture),
     Cancel,
 }
 
@@ -400,7 +418,25 @@ fn with_session(f: impl FnOnce(&mut Session) -> Option<Outcome>) {
                 })
             });
         }
-        Outcome::Keep(rect, source, Some(id), shift) => {
+        // Over the screen (ZK-58): the whole frozen display is the document, the choice its
+        // frame — a window too (what overlaps it stays visible around the frame anyway).
+        Outcome::Keep(rect, source, _, g) if g.alt => {
+            let raster = frozen.raster;
+            let _ = slint::invoke_from_event_loop(move || {
+                crate::with_ctx(|a, ui| {
+                    a.over_open(
+                        ui,
+                        raster,
+                        znimok_core::IRect::new(rect.x, rect.y, rect.w, rect.h),
+                        source,
+                        display,
+                        editor_was_visible,
+                    );
+                    crate::show_window(ui);
+                })
+            });
+        }
+        Outcome::Keep(rect, source, Some(id), Gesture { shift, .. }) => {
             // The window alone: capture it now that the overlay is gone; on failure keep the
             // cut from the frozen frame (it may include what overlapped the window).
             let fallback = frozen.crop(rect);
@@ -415,7 +451,7 @@ fn with_session(f: impl FnOnce(&mut Session) -> Option<Outcome>) {
                 });
             });
         }
-        Outcome::Keep(rect, source, None, shift) => {
+        Outcome::Keep(rect, source, None, Gesture { shift, .. }) => {
             let raster = frozen.crop(rect);
             let _ = slint::invoke_from_event_loop(move || {
                 if let Some(r) = raster {
@@ -683,7 +719,7 @@ impl Session {
         }
     }
 
-    fn pointer(&mut self, kind: i32, x: f32, y: f32, shift: bool) -> Option<Outcome> {
+    fn pointer(&mut self, kind: i32, x: f32, y: f32, g: Gesture) -> Option<Outcome> {
         self.update_k();
         self.last_pointer = (x, y);
         let (px, py) = self.px(x, y);
@@ -729,12 +765,11 @@ impl Session {
                 self.dragging = false;
                 if was_drag {
                     let r = self.sel?;
-                    return (r.w >= 3 && r.h >= 3)
-                        .then_some(Outcome::Keep(r, "region", None, shift));
+                    return (r.w >= 3 && r.h >= 3).then_some(Outcome::Keep(r, "region", None, g));
                 }
                 Some(match self.window_at(px, py) {
-                    Some((r, id)) => Outcome::Keep(r, "window", Some(id), shift),
-                    None => Outcome::Keep(self.frozen.whole(), "screen", None, shift),
+                    Some((r, id)) => Outcome::Keep(r, "window", Some(id), g),
+                    None => Outcome::Keep(self.frozen.whole(), "screen", None, g),
                 })
             }
             // right button: cancel
@@ -743,16 +778,16 @@ impl Session {
         }
     }
 
-    fn key(&mut self, text: &str, shift: bool) -> Option<Outcome> {
+    fn key(&mut self, text: &str, g: Gesture) -> Option<Outcome> {
         match text {
             "\u{1b}" => Some(Outcome::Cancel),
-            " " => Some(Outcome::Keep(self.frozen.whole(), "screen", None, shift)),
+            " " => Some(Outcome::Keep(self.frozen.whole(), "screen", None, g)),
             "\n" | "\r" => match self.sel {
                 Some(r) => Some(match self.window {
-                    Some(id) => Outcome::Keep(r, "window", Some(id), shift),
-                    None => Outcome::Keep(r, "region", None, shift),
+                    Some(id) => Outcome::Keep(r, "window", Some(id), g),
+                    None => Outcome::Keep(r, "region", None, g),
                 }),
-                None => Some(Outcome::Keep(self.frozen.whole(), "screen", None, shift)),
+                None => Some(Outcome::Keep(self.frozen.whole(), "screen", None, g)),
             },
             _ => None,
         }

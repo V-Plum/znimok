@@ -77,6 +77,20 @@ pub struct Limits {
     pub max_image_bytes: usize,
 }
 
+impl Limits {
+    /// For a document's stored thumbnail: the app writes at most 320×240, so a file claiming
+    /// more is not ours, and decoding it unbounded (in Explorer's, Finder's or the library's
+    /// process) would be a memory bomb (ZK-113, ZK-121).
+    pub fn thumbnail() -> Self {
+        Self {
+            max_image_side: 1024,
+            max_image_pixels: 1 << 20,
+            max_image_bytes: 16 << 20,
+            ..Default::default()
+        }
+    }
+}
+
 impl Default for Limits {
     fn default() -> Self {
         Self {
