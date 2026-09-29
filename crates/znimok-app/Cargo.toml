@@ -30,6 +30,7 @@ image = { version = "0.25", default-features = false, features = ["png", "jpeg",
 rfd = "0.17"
 arboard = "3"
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+redb = "4"
 
 [target.'cfg(windows)'.dependencies]
 znimok-win = { path = "../znimok-win" }

@@ -277,6 +277,11 @@ pub struct App {
     settings_from: i32,
     /// The last document moved to the trash: (where it is now, where it was) — for "Undo".
     undo_trash: Option<(PathBuf, PathBuf)>,
+    /// The library index (ZK-131) and the folder it belongs to.
+    index: Option<(PathBuf, library::Index)>,
+    /// The folder's fingerprint at the last look, and when that was (the watcher, ZK-131).
+    lib_fp: u64,
+    lib_polled: Option<Instant>,
     /// Re-reads the macOS permissions while the first-run guide is open.
     recheck_timer: slint::Timer,
     /// Watches the system's light / dark.
@@ -395,6 +400,9 @@ impl App {
             store: None,
             settings_from: 0,
             undo_trash: None,
+            index: None,
+            lib_fp: 0,
+            lib_polled: None,
             recheck_timer: slint::Timer::default(),
             theme_timer: slint::Timer::default(),
         }
@@ -952,8 +960,29 @@ impl App {
     // ------------------------------------------------------------------ library
 
     pub fn refresh_library(&mut self, ui: &AppWindow) {
-        self.entries = library::scan(&self.lib_dir);
+        if self.index.as_ref().is_none_or(|(d, _)| *d != self.lib_dir) {
+            self.index = library::Index::open(&self.lib_dir).map(|i| (self.lib_dir.clone(), i));
+        }
+        self.lib_fp = library::fingerprint(&self.lib_dir);
+        self.entries = library::scan(&self.lib_dir, self.index.as_ref().map(|(_, i)| i));
         self.show_cards(ui);
+    }
+
+    /// The watcher (ZK-131): while the library is on screen, a look at the folder every 2 s;
+    /// files added, removed, renamed or synced from outside show up by themselves.
+    pub fn lib_poll(&mut self, ui: &AppWindow, now: bool) {
+        if ui.get_page() != 0
+            || (!now
+                && self
+                    .lib_polled
+                    .is_some_and(|t| t.elapsed().as_millis() < 2000))
+        {
+            return;
+        }
+        self.lib_polled = Some(Instant::now());
+        if library::fingerprint(&self.lib_dir) != self.lib_fp {
+            self.refresh_library(ui);
+        }
     }
 
     /// Card: to the trash, with "Undo" in the status line (ZK-55).
@@ -1043,7 +1072,7 @@ impl App {
     pub fn apply_retention(&mut self, ui: &AppWindow) {
         let r = self.prefs().library.retention;
         let open = self.s.as_ref().map(|s| s.path.clone());
-        let entries = library::scan(&self.lib_dir);
+        let entries = library::scan(&self.lib_dir, self.index.as_ref().map(|(_, i)| i));
         let mut used: u64 = 0;
         let mut kept: u32 = 0;
         let mut gone = 0;

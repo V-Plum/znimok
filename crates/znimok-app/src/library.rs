@@ -5,6 +5,7 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use chrono::{Local, TimeZone};
+use redb::{ReadableDatabase, ReadableTable};
 
 /// Same default as `znimok library list` (docs/CLI.md).
 pub fn default_dir() -> PathBuf {
@@ -185,18 +186,248 @@ pub fn show_in_folder(p: &Path) {
 }
 
 /// Documents in `dir`, newest first. Recognised by content; `.part` leftovers are skipped.
-pub fn scan(dir: &Path) -> Vec<Entry> {
+/// With an index, a file whose time and size did not change is not read at all (ZK-131).
+pub fn scan(dir: &Path, index: Option<&Index>) -> Vec<Entry> {
     let Ok(rd) = std::fs::read_dir(dir) else {
         return Vec::new();
     };
-    let mut v: Vec<Entry> = rd
+    let files: Vec<(PathBuf, Stamp)> = rd
         .flatten()
-        .map(|e| e.path())
-        .filter(|p| p.is_file() && p.extension().is_none_or(|e| e != "part"))
-        .filter_map(|p| read_entry(&p))
+        .filter_map(|e| {
+            let p = e.path();
+            let m = e.metadata().ok()?;
+            (m.is_file() && p.extension().is_none_or(|x| x != "part")).then(|| (p, Stamp::of(&m)))
+        })
         .collect();
+    let mut v: Vec<Entry> = files
+        .iter()
+        .filter_map(|(p, st)| {
+            if let Some(e) = index.and_then(|i| i.get(p, *st)) {
+                return Some(e);
+            }
+            HEAD_READS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            let e = read_entry(p);
+            if let (Some(i), Some(e)) = (index, e.as_ref()) {
+                i.put(e, *st);
+            }
+            e
+        })
+        .collect();
+    if let Some(i) = index {
+        i.prune(files.iter().filter_map(|(p, _)| key(p)));
+    }
     v.sort_by_key(|e| std::cmp::Reverse(e.created_ms));
     v
+}
+
+/// How many file heads were read (for the self-test: an indexed rescan reads none).
+pub static HEAD_READS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+/// A file's modification time and size: when both are the same, so is the card.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct Stamp {
+    mtime_ms: i64,
+    size: u64,
+}
+
+impl Stamp {
+    fn of(m: &std::fs::Metadata) -> Self {
+        let mtime_ms = m
+            .modified()
+            .ok()
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_millis() as i64)
+            .unwrap_or(0);
+        Stamp {
+            mtime_ms,
+            size: m.len(),
+        }
+    }
+}
+
+fn key(p: &Path) -> Option<String> {
+    p.file_name().map(|n| n.to_string_lossy().into_owned())
+}
+
+/// What changed in the folder since last time, cheaply: names, times and sizes of the files
+/// (the watcher polls it — cloud and network folders do not report changes reliably).
+pub fn fingerprint(dir: &Path) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    let Ok(rd) = std::fs::read_dir(dir) else {
+        return 0;
+    };
+    let mut items: Vec<(String, i64, u64)> = rd
+        .flatten()
+        .filter_map(|e| {
+            let m = e.metadata().ok()?;
+            let st = Stamp::of(&m);
+            m.is_file().then(|| {
+                (
+                    e.file_name().to_string_lossy().into_owned(),
+                    st.mtime_ms,
+                    st.size,
+                )
+            })
+        })
+        .collect();
+    items.sort();
+    items.hash(&mut h);
+    h.finish()
+}
+
+/// The library index (ZK-131): cards by file name, with the time and size they were read at.
+/// It lives in the local cache, not in the library — a library on a cloud drive would sync and
+/// lock a database file. Losing it costs one full read; a broken one is rebuilt.
+pub struct Index {
+    db: redb::Database,
+}
+
+const CARDS: redb::TableDefinition<&str, &[u8]> = redb::TableDefinition::new("cards");
+
+impl Index {
+    /// The index of the library at `lib`, in the cache folder (one file per library).
+    pub fn open(lib: &Path) -> Option<Index> {
+        use std::hash::{Hash, Hasher};
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        lib.hash(&mut h);
+        let dir = cache_dir();
+        std::fs::create_dir_all(&dir).ok()?;
+        let path = dir.join(format!("library-{:016x}.redb", h.finish()));
+        let db = match redb::Database::create(&path) {
+            Ok(db) => db,
+            Err(_) => {
+                // Broken or from an incompatible version: start again.
+                let _ = std::fs::remove_file(&path);
+                redb::Database::create(&path).ok()?
+            }
+        };
+        Some(Index { db })
+    }
+
+    fn get(&self, p: &Path, st: Stamp) -> Option<Entry> {
+        let k = key(p)?;
+        let tx = self.db.begin_read().ok()?;
+        let t = tx.open_table(CARDS).ok()?;
+        let v = t.get(k.as_str()).ok()??;
+        decode(v.value(), p, st)
+    }
+
+    fn put(&self, e: &Entry, st: Stamp) {
+        let Some(k) = key(&e.path) else { return };
+        let bytes = encode(e, st);
+        let Ok(tx) = self.db.begin_write() else {
+            return;
+        };
+        {
+            let Ok(mut t) = tx.open_table(CARDS) else {
+                return;
+            };
+            let _ = t.insert(k.as_str(), bytes.as_slice());
+        }
+        let _ = tx.commit();
+    }
+
+    /// Forgets files that are gone.
+    fn prune(&self, present: impl Iterator<Item = String>) {
+        let present: std::collections::HashSet<String> = present.collect();
+        let Ok(tx) = self.db.begin_write() else {
+            return;
+        };
+        {
+            let Ok(mut t) = tx.open_table(CARDS) else {
+                return;
+            };
+            let gone: Vec<String> = match t.iter() {
+                Ok(it) => it
+                    .flatten()
+                    .map(|(k, _)| k.value().to_string())
+                    .filter(|k| !present.contains(k))
+                    .collect(),
+                Err(_) => Vec::new(),
+            };
+            for k in gone {
+                let _ = t.remove(k.as_str());
+            }
+        }
+        let _ = tx.commit();
+    }
+}
+
+fn cache_dir() -> PathBuf {
+    if cfg!(target_os = "macos") {
+        let home = std::env::var_os("HOME").unwrap_or_default();
+        return PathBuf::from(home).join("Library/Caches/Znimok");
+    }
+    let base = std::env::var_os("LOCALAPPDATA")
+        .or_else(|| std::env::var_os("HOME"))
+        .unwrap_or_default();
+    PathBuf::from(base).join("Znimok").join("Cache")
+}
+
+// A card in the index: stamp, then length-prefixed fields (little endian). Version byte first,
+// so a future layout is simply read again from the file.
+const INDEX_VERSION: u8 = 1;
+
+fn encode(e: &Entry, st: Stamp) -> Vec<u8> {
+    let mut v = vec![INDEX_VERSION];
+    let bytes = |v: &mut Vec<u8>, b: &[u8]| {
+        v.extend_from_slice(&(b.len() as u32).to_le_bytes());
+        v.extend_from_slice(b);
+    };
+    v.extend_from_slice(&st.mtime_ms.to_le_bytes());
+    v.extend_from_slice(&st.size.to_le_bytes());
+    v.extend_from_slice(&e.created_ms.to_le_bytes());
+    v.extend_from_slice(&e.width.to_le_bytes());
+    v.extend_from_slice(&e.height.to_le_bytes());
+    bytes(&mut v, e.name.as_bytes());
+    bytes(&mut v, e.description.as_bytes());
+    bytes(&mut v, e.tags.join("\n").as_bytes());
+    bytes(&mut v, e.thumb_png.as_deref().unwrap_or(&[]));
+    v
+}
+
+fn decode(b: &[u8], p: &Path, st: Stamp) -> Option<Entry> {
+    let mut at = 0usize;
+    let mut take = |n: usize| -> Option<&[u8]> {
+        let s = b.get(at..at + n)?;
+        at += n;
+        Some(s)
+    };
+    if take(1)?[0] != INDEX_VERSION {
+        return None;
+    }
+    let i64_ = |s: &[u8]| i64::from_le_bytes(s.try_into().unwrap_or_default());
+    let mtime_ms = i64_(take(8)?);
+    let size = u64::from_le_bytes(take(8)?.try_into().ok()?);
+    if (Stamp { mtime_ms, size }) != st {
+        return None;
+    }
+    let created_ms = i64_(take(8)?);
+    let width = u32::from_le_bytes(take(4)?.try_into().ok()?);
+    let height = u32::from_le_bytes(take(4)?.try_into().ok()?);
+    let mut field = || -> Option<Vec<u8>> {
+        let n = u32::from_le_bytes(take(4)?.try_into().ok()?) as usize;
+        Some(take(n)?.to_vec())
+    };
+    let name = String::from_utf8(field()?).ok()?;
+    let description = String::from_utf8(field()?).ok()?;
+    let tags = String::from_utf8(field()?).ok()?;
+    let thumb = field()?;
+    Some(Entry {
+        path: p.to_path_buf(),
+        name,
+        created_ms,
+        width,
+        height,
+        tags: if tags.is_empty() {
+            Vec::new()
+        } else {
+            tags.split('\n').map(str::to_string).collect()
+        },
+        description,
+        thumb_png: (!thumb.is_empty()).then_some(thumb),
+    })
 }
 
 /// File name for a new document: sortable time plus a short part of its id (unique enough
@@ -228,6 +459,70 @@ mod tests {
             .write_to(&mut std::io::Cursor::new(&mut out), image::ImageFormat::Png)
             .unwrap();
         out
+    }
+
+    #[test]
+    fn index_card_round_trip() {
+        let e = Entry {
+            path: PathBuf::from("x.znimok"),
+            name: "Знімок".into(),
+            created_ms: 1_700_000_000_000,
+            width: 1600,
+            height: 1000,
+            tags: vec!["тест".into(), "znimok".into()],
+            description: "опис".into(),
+            thumb_png: Some(png(4, 3)),
+        };
+        let st = Stamp {
+            mtime_ms: 5,
+            size: 99,
+        };
+        let d = decode(&encode(&e, st), &e.path, st).expect("decodes");
+        assert_eq!(
+            (
+                d.name,
+                d.created_ms,
+                d.width,
+                d.height,
+                d.tags,
+                d.description,
+                d.thumb_png
+            ),
+            (
+                e.name,
+                e.created_ms,
+                e.width,
+                e.height,
+                e.tags,
+                e.description,
+                e.thumb_png
+            )
+        );
+        // A changed file is read again.
+        assert!(
+            decode(
+                &encode(&d_entry(), st),
+                Path::new("x"),
+                Stamp {
+                    mtime_ms: 6,
+                    size: 99
+                }
+            )
+            .is_none()
+        );
+    }
+
+    fn d_entry() -> Entry {
+        Entry {
+            path: PathBuf::from("y"),
+            name: String::new(),
+            created_ms: 0,
+            width: 1,
+            height: 1,
+            tags: Vec::new(),
+            description: String::new(),
+            thumb_png: None,
+        }
     }
 
     #[test]

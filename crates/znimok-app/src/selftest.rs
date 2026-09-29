@@ -1325,7 +1325,7 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
         );
         ui.invoke_back();
     }));
-    steps.push(Box::new(|_, ui, r| {
+    steps.push(Box::new(|app, ui, r| {
         let n = slint::Model::row_count(&ui.get_cards());
         r.check(
             "library shows the card",
@@ -1351,6 +1351,33 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
                 format!(
                     "{renamed:?}, {after_trash} after trash, action {action:?}, {back} after undo"
                 ),
+            );
+        }
+        // ZK-131: a second look at the library reads no file (the index), and a file that
+        // appears from outside shows up by itself (the watcher).
+        {
+            use std::sync::atomic::Ordering;
+            let before = crate::library::HEAD_READS.load(Ordering::Relaxed);
+            app.borrow_mut().refresh_library(ui);
+            let reads = crate::library::HEAD_READS.load(Ordering::Relaxed) - before;
+            let n0 = slint::Model::row_count(&ui.get_cards());
+            let copy = slint::Model::row_data(&ui.get_cards(), 0).map(|c| {
+                let src = std::path::PathBuf::from(c.path.as_str());
+                let to = src.with_file_name("Znimok-selftest-outside.znimok");
+                let _ = std::fs::copy(&src, &to);
+                to
+            });
+            app.borrow_mut().lib_poll(ui, true);
+            let n1 = slint::Model::row_count(&ui.get_cards());
+            if let Some(p) = &copy {
+                let _ = std::fs::remove_file(p);
+            }
+            app.borrow_mut().lib_poll(ui, true);
+            let n2 = slint::Model::row_count(&ui.get_cards());
+            r.check(
+                "library: the index spares re-reading files; files from outside appear and go",
+                reads == 0 && n1 == n0 + 1 && n2 == n0,
+                format!("{reads} files read again · cards {n0} → {n1} → {n2}"),
             );
         }
         // Shift+trash: one question, then deleted for good (not in the trash).

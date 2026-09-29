@@ -266,6 +266,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 let mut a = app.borrow_mut();
                 a.tick_toast(&ui);
+                a.lib_poll(&ui, false);
                 if let Some((path, doc, opts)) = a.autosave_job(&ui) {
                     std::thread::spawn(move || {
                         if let Some(dir) = path.parent() {
