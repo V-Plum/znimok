@@ -432,6 +432,7 @@ impl App {
         ui.set_autosave(self.autosave);
         crate::filemeta::set_enabled(p.editor.write_metadata);
         ui.set_export_meta(p.editor.write_metadata);
+        crate::overlay::set_prefs(&p.capture);
         self.apply_theme(ui, &p);
         self.settings_sync(ui);
     }
@@ -493,6 +494,8 @@ impl App {
             let msg = format!("{} ({e})", self.tr.tr("err-library-save"));
             self.toast(ui, msg);
         }
+        // The overlay reads its settings from a copy (it opens where the app is borrowed).
+        crate::overlay::set_prefs(&self.prefs().capture);
     }
 
     /// Once a day, when the person turned daily checks on (ZK-142). Cheap until it is due.
@@ -926,6 +929,17 @@ impl App {
         }
         ui.set_pref_capture(p.capture.enabled);
         ui.set_pref_quick_library(p.capture.quick_save_to_library);
+        // ZK-155/156: what each gesture does (0 editor, 1 over the screen, 2 clipboard), hints.
+        let code = |a: znimok_settings::CaptureAction| match a {
+            znimok_settings::CaptureAction::Editor => 0,
+            znimok_settings::CaptureAction::OverScreen => 1,
+            znimok_settings::CaptureAction::Clipboard => 2,
+        };
+        let g = p.capture.gestures.valid();
+        ui.set_pref_gesture_plain(code(g.plain));
+        ui.set_pref_gesture_shift(code(g.shift));
+        ui.set_pref_gesture_alt(code(g.alt));
+        ui.set_pref_show_hints(p.capture.show_hints);
         ui.set_pref_keep_tool(p.editor.keep_tool);
         ui.set_pref_autosave(p.editor.autosave);
         ui.set_pref_metadata(p.editor.write_metadata);
@@ -979,6 +993,23 @@ impl App {
                 self.show_capture_key(ui);
             }
             "quick-library" => self.save_prefs(ui, |p| p.capture.quick_save_to_library = on),
+            "show-hints" => self.save_prefs(ui, |p| p.capture.show_hints = on),
+            // A gesture gets an action; the gesture that had it takes the old one (ZK-155).
+            "gesture-plain" | "gesture-shift" | "gesture-alt" => {
+                use znimok_settings::{CaptureAction as A, Gesture as G};
+                let g = match key {
+                    "gesture-shift" => G::Shift,
+                    "gesture-alt" => G::Alt,
+                    _ => G::Plain,
+                };
+                let a = match value {
+                    1 => A::OverScreen,
+                    2 => A::Clipboard,
+                    _ => A::Editor,
+                };
+                self.save_prefs(ui, |p| p.capture.gestures.set(g, a));
+                self.settings_sync(ui);
+            }
             "keep-tool" => self.save_prefs(ui, |p| p.editor.keep_tool = on),
             "autosave" => {
                 self.autosave = on;

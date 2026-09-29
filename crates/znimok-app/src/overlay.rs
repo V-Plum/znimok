@@ -454,6 +454,13 @@ pub fn open(frozen: Frozen, editor_was_visible: bool) -> Result<(), slint::Platf
                 .set_size(slint::PhysicalSize::new(b.width, b.height));
         }
         ui.set_mac(cfg!(target_os = "macos"));
+        // The hint strip says what each gesture does, as set (ZK-155), or is hidden (ZK-156).
+        let (gestures, hints) = PREFS.with(|p| p.get());
+        let g = gestures.valid();
+        ui.set_act_plain(action_code(g.plain));
+        ui.set_act_shift(action_code(g.shift));
+        ui.set_act_alt(action_code(g.alt));
+        ui.set_show_hints(hints);
         // Switching to another program (Cmd+Tab, Alt+Tab) cancels — once the overlay has had
         // the focus (it may never get it when a global hotkey leaves another program in front).
         // Focus moving between our own windows (another display) is not a switch.
@@ -486,30 +493,12 @@ pub fn open(frozen: Frozen, editor_was_visible: bool) -> Result<(), slint::Platf
             };
             with_session(|s| {
                 s.active = i;
-                s.pointer(
-                    kind,
-                    x,
-                    y,
-                    Gesture {
-                        shift,
-                        alt,
-                        delayed: false,
-                    },
-                )
+                s.pointer(kind, x, y, chosen(shift, alt))
             })
         });
         ui.on_key(|text, shift, alt| {
             let (shift, alt) = held_modifiers().unwrap_or((shift, alt));
-            with_session(|s| {
-                s.key(
-                    &text,
-                    Gesture {
-                        shift,
-                        alt,
-                        delayed: false,
-                    },
-                )
-            })
+            with_session(|s| s.key(&text, chosen(shift, alt)))
         });
         ui.on_wheel(move |dy| {
             with_session(|s| {
@@ -650,8 +639,42 @@ fn held_modifiers() -> Option<(bool, bool)> {
     None
 }
 
-/// Modifiers at the moment the choice is made (the release of the button, or the key):
-/// Shift = to the clipboard and the library, Alt (⌥) = edit over the screen.
+thread_local! {
+    /// The capture settings the overlay needs (ZK-155/156). Kept up to date by the app: the
+    /// overlay opens from inside `with_ctx`, where the app cannot be borrowed again.
+    static PREFS: std::cell::Cell<(znimok_settings::Gestures, bool)> =
+        std::cell::Cell::new((znimok_settings::Gestures::default(), true));
+}
+
+/// The app's settings changed (or were loaded): gestures and whether hints show.
+pub fn set_prefs(c: &znimok_settings::Capture) {
+    PREFS.with(|p| p.set((c.gestures, c.show_hints)));
+}
+
+/// The modifiers held → the action they stand for in the settings (ZK-155), as a gesture:
+/// `alt` = edit over the screen, `shift` = to the clipboard, neither = the editor window.
+fn chosen(shift: bool, alt: bool) -> Gesture {
+    use znimok_settings::CaptureAction as A;
+    let a = PREFS.with(|p| p.get().0).action(shift, alt);
+    Gesture {
+        shift: a == A::Clipboard,
+        alt: a == A::OverScreen,
+        delayed: false,
+    }
+}
+
+/// What the overlay's hint strip says for each gesture: 0 editor, 1 over the screen, 2 clipboard.
+fn action_code(a: znimok_settings::CaptureAction) -> i32 {
+    match a {
+        znimok_settings::CaptureAction::Editor => 0,
+        znimok_settings::CaptureAction::OverScreen => 1,
+        znimok_settings::CaptureAction::Clipboard => 2,
+    }
+}
+
+/// The choice made (the release of the button, or the key), as the action the settings give
+/// the modifiers held then: `shift` = to the clipboard and the library, `alt` = edit over the
+/// screen, neither = the editor window.
 #[derive(Clone, Copy)]
 struct Gesture {
     shift: bool,

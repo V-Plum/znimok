@@ -1108,6 +1108,15 @@ export component Overlay inherits Window {
     in-out property <length> sel-h;
     in property <string> sel-label;
     in property <bool> is-window;
+    // What releasing does, by modifier (ZK-155): 0 editor, 1 over the screen, 2 clipboard.
+    in property <int> act-plain: 0;
+    in property <int> act-shift: 2;
+    in property <int> act-alt: 1;
+    // The hint strip at all (ZK-156).
+    in property <bool> show-hints: true;
+    pure function act-text(a: int) -> string {
+        return a == 1 ? @tr("capture-over-screen" => "over the screen") : (a == 2 ? @tr("capture-to-clipboard" => "to clipboard") : @tr("capture-to-editor" => "to editor"));
+    }
     // Pointer (for the guides, the lens and the hint strip).
     in property <length> pointer-x: -100px;
     in property <length> pointer-y: -100px;
@@ -1167,6 +1176,7 @@ export component Overlay inherits Window {
     // Hint strip: bottom centre, or top centre when the pointer comes near the bottom.
     hint-strip := Rectangle {
         property <bool> up: root.pointer-y > parent.height - self.height - 28px - 80px;
+        visible: root.show-hints;
         x: (parent.width - self.width) / 2;
         y: self.up ? 28px : parent.height - self.height - 28px;
         // Moves out of the pointer's way with a small overshoot — a physical "hop".
@@ -1181,9 +1191,9 @@ export component Overlay inherits Window {
             width: self.preferred-width;
             height: 20px;
             spacing: 18px;
-            HintChip { key: @tr("capture-release" => "release"); text: @tr("capture-to-editor" => "to editor"); }
-            HintChip { key: "Shift"; text: @tr("capture-to-clipboard" => "to clipboard"); }
-            HintChip { key: root.mac ? "⌥" : "Alt"; text: @tr("capture-over-screen" => "over the screen"); }
+            HintChip { key: @tr("capture-release" => "release"); text: root.act-text(root.act-plain); }
+            HintChip { key: "Shift"; text: root.act-text(root.act-shift); }
+            HintChip { key: root.mac ? "⌥" : "Alt"; text: root.act-text(root.act-alt); }
             HintChip { key: "Space"; text: @tr("capture-whole-screen" => "whole screen"); }
             HintChip { key: @tr("capture-click" => "click"); text: @tr("capture-window" => "window"); }
             HintChip { key: @tr("capture-wheel" => "wheel"); text: @tr("capture-magnifier" => "magnifier"); }
@@ -1572,6 +1582,11 @@ export component AppWindow inherits Window {
     in-out property <int> settings-page: 0;
     in property <bool> pref-capture;
     in property <bool> pref-quick-library;
+    // ZK-155: the action of each gesture (0 editor, 1 over the screen, 2 clipboard); ZK-156.
+    in property <int> pref-gesture-plain: 0;
+    in property <int> pref-gesture-shift: 2;
+    in property <int> pref-gesture-alt: 1;
+    in property <bool> pref-show-hints: true;
     in property <bool> pref-keep-tool;
     in property <bool> pref-autosave;
     in property <bool> pref-metadata;
@@ -1989,6 +2004,20 @@ export component AppWindow inherits Window {
                             if root.settings-page == 0: VerticalLayout {
                                 spacing: 14px;
                                 Text { text: @tr("shots-intro" => "What happens when you release the mouse in the overlay. Each action sits on exactly one gesture."); color: Theme.text3; font-size: 12px; wrap: word-wrap; }
+                                // ZK-155: a gesture per row; choosing an action another gesture has swaps the two.
+                                Text { text: @tr("shots-gestures" => "What a capture does on release"); color: Theme.text; font-size: 13px; font-weight: 600; }
+                                for row in [
+                                    { key: "gesture-plain", label: @tr("shots-gesture-plain" => "Release"), act: root.pref-gesture-plain },
+                                    { key: "gesture-shift", label: @tr("shots-gesture-shift" => "Shift + release"), act: root.pref-gesture-shift },
+                                    { key: "gesture-alt", label: root.mac ? @tr("shots-gesture-option" => "⌥ + release") : @tr("shots-gesture-alt" => "Alt + release"), act: root.pref-gesture-alt },
+                                ]: HorizontalLayout {
+                                    spacing: 10px;
+                                    Text { width: 130px; text: row.label; color: Theme.text; font-size: 13px; vertical-alignment: center; }
+                                    SegOption { text: @tr("shots-act-editor" => "Open in editor"); on: row.act == 0; clicked => { root.setting(row.key, 0); } }
+                                    SegOption { text: @tr("shots-act-overlay" => "Edit over the screen"); on: row.act == 1; clicked => { root.setting(row.key, 1); } }
+                                    SegOption { text: @tr("shots-act-clipboard" => "To clipboard"); on: row.act == 2; clicked => { root.setting(row.key, 2); } }
+                                }
+                                SwitchRow { text: @tr("shots-show-hints" => "Show the hint strip while capturing"); checked: root.pref-show-hints; toggled => { root.setting("show-hints", self.checked ? 1 : 0); } }
                                 SwitchRow { text: @tr("shots-quick-library" => "Quick captures go to the library too"); checked: root.pref-quick-library; toggled => { root.setting("quick-library", self.checked ? 1 : 0); } }
                                 SwitchRow { text: @tr("shots-tool-stays" => "The tool stays active after drawing"); checked: root.pref-keep-tool; toggled => { root.setting("keep-tool", self.checked ? 1 : 0); } }
                                 SwitchRow { text: @tr("shots-autosave" => "Save automatically (also in the editor title bar)"); checked: root.pref-autosave; toggled => { root.setting("autosave", self.checked ? 1 : 0); } }
