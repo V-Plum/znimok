@@ -625,6 +625,9 @@ component Switch inherits Rectangle {
 component InspScroll inherits ScrollView {
     in property <length> spacing: 14px;
     vertical-stretch: 1;
+    // Never sideways (owner, 29.09): the viewport would otherwise take the content's minimum
+    // width and show a horizontal bar even when everything fits the panel.
+    viewport-width: self.visible-width;
     VerticalLayout {
         x: 0;
         width: max(120px, root.visible-width - 12px);
