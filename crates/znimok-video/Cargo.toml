@@ -1,0 +1,14 @@
+[package]
+name = "znimok-video"
+description = "Platform-neutral core of Znimok video (ZK-86): capture/encode/decode traits, CFR through sample duration, pause by shifting t0, the audio timeline and mixer, export timing, synthetic sources and a memory sink for tests — std only, no OS types"
+version.workspace = true
+edition.workspace = true
+license-file.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
