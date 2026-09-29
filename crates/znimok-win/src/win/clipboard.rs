@@ -290,8 +290,15 @@ fn encode_png(w: u32, h: u32, rgba: &[u8]) -> Result<Vec<u8>> {
 }
 
 fn decode_png(png: &[u8]) -> Option<(u32, u32, Vec<u8>)> {
-    let img = image::load_from_memory_with_format(png, image::ImageFormat::Png).ok()?;
-    let rgba = img.into_rgba8();
+    // Any program can put a PNG on the clipboard: a small file that inflates to gigabytes must
+    // be refused before the pixels are allocated (ZK-113).
+    let mut r = image::ImageReader::with_format(std::io::Cursor::new(png), image::ImageFormat::Png);
+    let mut limits = image::Limits::default();
+    limits.max_image_width = Some(1 << 15);
+    limits.max_image_height = Some(1 << 15);
+    limits.max_alloc = Some(1 << 30);
+    r.limits(limits);
+    let rgba = r.decode().ok()?.into_rgba8();
     Some((rgba.width(), rgba.height(), rgba.into_raw()))
 }
 
@@ -496,6 +503,23 @@ mod tests {
         let mut pal = dib_from_rgba(1, 1, &[0, 0, 0, 255]);
         pal[14] = 8; // 8-bit palette: not supported
         assert_eq!(rgba_from_dib(&pal), None);
+    }
+
+    /// An oversized PNG of a few bytes is refused, not decoded (ZK-113).
+    #[test]
+    fn png_bomb_is_refused() {
+        let mut out = std::io::Cursor::new(Vec::new());
+        {
+            // Wider than any screen: refused from the header, nothing allocated.
+            let mut enc = png::Encoder::new(&mut out, 40_000, 2);
+            enc.set_color(png::ColorType::Grayscale);
+            enc.set_depth(png::BitDepth::One);
+            let mut w = enc.write_header().unwrap();
+            let _ = w.write_image_data(&vec![0u8; 40_000usize.div_ceil(8) * 2]);
+        }
+        let bomb = out.into_inner();
+        assert!(bomb.len() < 2_000_000, "{}", bomb.len());
+        assert!(decode_png(&bomb).is_none());
     }
 
     #[test]

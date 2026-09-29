@@ -195,8 +195,15 @@ fn encode_png(img: &ClipImage) -> Result<Vec<u8>> {
 }
 
 fn decode_png(png: &[u8]) -> Option<(u32, u32, Vec<u8>)> {
-    let img = image::load_from_memory_with_format(png, image::ImageFormat::Png).ok()?;
-    let rgba = img.into_rgba8();
+    // Any program can put a PNG on the clipboard: a small file that inflates to gigabytes must
+    // be refused before the pixels are allocated (ZK-113).
+    let mut r = image::ImageReader::with_format(std::io::Cursor::new(png), image::ImageFormat::Png);
+    let mut limits = image::Limits::default();
+    limits.max_image_width = Some(1 << 15);
+    limits.max_image_height = Some(1 << 15);
+    limits.max_alloc = Some(1 << 30);
+    r.limits(limits);
+    let rgba = r.decode().ok()?.into_rgba8();
     Some((rgba.width(), rgba.height(), rgba.into_raw()))
 }
 
