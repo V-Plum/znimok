@@ -148,8 +148,11 @@ pub struct Renderer {
     /// The source developed by the recipe (mirror, turns, tone), keyed by `develop::key`.
     developed: Option<(u64, Arc<znimok_core::Raster>, Arc<Pixmap>)>,
     /// Hide tiles are computed in screenshot resolution and reused while nothing under them
-    /// changes: key = (region, mode, strength, source generation).
-    hide_cache: HashMap<(IRect, HideMode, u8, usize), Arc<Pixmap>>,
+    /// changes: key = (region, mode, strength, source generation, the marks below).
+    hide_cache: HashMap<(IRect, HideMode, u8, usize, u64), Arc<Pixmap>>,
+    /// Renders what lies below a Hide (the picture and the marks under it), made on first use.
+    below: Option<Box<Renderer>>,
+    settings: RenderSettings,
     /// Shadow/glow layers in output resolution: key = (mark hash, scale ×1000, sub-pixel
     /// offset in quarters).
     fx_cache: HashMap<(u64, i64, u8, u8), Arc<Pixmap>>,
@@ -189,6 +192,8 @@ impl Renderer {
             developed: None,
             hide_cache: HashMap::new(),
             fx_cache: HashMap::new(),
+            below: None,
+            settings,
             threads,
         }
     }
@@ -632,6 +637,7 @@ impl Renderer {
                             *mode,
                             *strength,
                             develop::key(doc.source(), &doc.recipe) as usize,
+                            self.below_key(doc, index, region).1,
                         );
                         let tile = match self.hide_cache.get(&key) {
                             Some(p) => Some(p.clone()),
@@ -947,9 +953,83 @@ impl Renderer {
         self.ctx.set_transform(saved);
     }
 
-    /// Pixels of everything below object `index` inside `region`, as a straight-alpha raster.
-    /// Prototype: the source only, already rotated/cropped as the document shows it.
-    fn below_pixels(&mut self, doc: &Document, _index: usize, region: IRect) -> Option<Raster> {
+    /// Where a mark draws, for the question «is it under this Hide»: its bounds, or for a text
+    /// laid out by itself (no box) the measured text around its origin, generously.
+    fn covered_box(&mut self, o: &Object) -> IRect {
+        let b = o.bounds();
+        if let Data::Text {
+            text,
+            size,
+            bold,
+            italic,
+            box_w,
+            ..
+        } = &o.data
+            && (b.w == 0 || b.h == 0)
+        {
+            let (w, h) = self.measure_text(text, *size, *bold, *italic, *box_w);
+            let (w, h) = (w.ceil() as i32 + 2, h.ceil() as i32 + 2);
+            // The alignment may put it left of the origin too.
+            return IRect::new(b.x - w, b.y, 3 * w, h);
+        }
+        b
+    }
+
+    /// Whether any visible mark below object `index` lies in `region`, and what those marks
+    /// look like (for the Hide tile's key: a caption edited or a mark moved in or out under the
+    /// Hide makes a new tile).
+    fn below_key(&mut self, doc: &Document, index: usize, region: IRect) -> (bool, u64) {
+        let mut h = std::hash::DefaultHasher::new();
+        let mut any = false;
+        for (i, o) in doc.objects[..index.min(doc.objects.len())]
+            .iter()
+            .enumerate()
+        {
+            if !o.hidden && meets(self.covered_box(o), region) {
+                any = true;
+                i.hash(&mut h);
+                o.hash(&mut h);
+                doc.counter_number(i).hash(&mut h);
+            }
+        }
+        (any, h.finish())
+    }
+
+    /// Pixels of everything below object `index` inside `region`, as a straight-alpha raster, in
+    /// screenshot resolution (ZK-50): the developed picture, and the marks under the Hide drawn
+    /// on it — a caption under a blur is blurred too (LH: the effect works on «what is below»).
+    fn below_pixels(&mut self, doc: &Document, index: usize, region: IRect) -> Option<Raster> {
+        if self.below_key(doc, index, region).0 {
+            let (iw, ih) = doc.image_size();
+            let x0 = region.x.max(0);
+            let y0 = region.y.max(0);
+            let x1 = region.right().min(iw as i32);
+            let y1 = region.bottom().min(ih as i32);
+            if x1 <= x0 || y1 <= y0 || x1 - x0 > 16384 || y1 - y0 > 16384 {
+                return None;
+            }
+            let mut under = doc.clone();
+            under.objects.truncate(index);
+            // The whole picture: a Hide outside the crop still hides what it covers.
+            under.crop = None;
+            let view = View {
+                scale: 1.0,
+                origin: Point::new(x0 as f64, y0 as f64),
+                width: (x1 - x0) as u16,
+                height: (y1 - y0) as u16,
+            };
+            let settings = self.settings;
+            let sub = self
+                .below
+                .get_or_insert_with(|| Box::new(Renderer::with_settings(settings)));
+            let mut pix = Pixmap::new(1, 1);
+            sub.render(&under, view, &mut pix);
+            return Some(Raster::new(
+                pix.width() as u32,
+                pix.height() as u32,
+                pixmap_to_rgba(&pix),
+            ));
+        }
         let (src, _) = self.developed(doc);
         let src = &*src;
         let (iw, ih) = (src.width as i32, src.height as i32);
@@ -968,6 +1048,12 @@ impl Renderer {
         }
         Some(Raster::new(w, h, rgba))
     }
+}
+
+/// The rectangles overlap.
+fn meets(a: IRect, b: IRect) -> bool {
+    let (a, b) = (a.normalized(), b.normalized());
+    a.x < b.right() && b.x < a.right() && a.y < b.bottom() && b.y < a.bottom()
 }
 
 fn fx_on(o: &Object) -> bool {

@@ -163,3 +163,61 @@ fn a_moved_mark_fails() {
     let (bad, compared) = compare(&actual, &golden, &masked(&doc));
     assert!(bad as f64 / compared as f64 > SHARE, "{bad} of {compared}");
 }
+
+/// ZK-50: a Hide works on everything below it — a caption under a blur is blurred (not dropped,
+/// not left sharp), and editing the caption changes the blurred tile (the cache key sees it).
+#[test]
+fn hide_covers_the_marks_below() {
+    use znimok_core::{Align, HideMode, Object, Raster, Rgb, Style};
+    let base = Document::from_raster("t", Raster::solid(200, 80, Rgb::WHITE));
+    let caption = |text: &str| {
+        Object::new(
+            IRect::new(20, 20, 160, 40),
+            Data::Text {
+                text: text.into(),
+                size: 28,
+                bold: true,
+                italic: false,
+                align: Align::Left,
+                box_w: 0,
+            },
+        )
+        .with_style(Style {
+            color: Rgb::BLACK,
+            ..Style::default()
+        })
+    };
+    let hide = Object::new(
+        IRect::new(10, 10, 180, 60),
+        Data::Hide {
+            mode: HideMode::Pixelate,
+            strength: 40,
+        },
+    );
+    let with = |text: Option<&str>| {
+        let mut d = base.clone();
+        if let Some(t) = text {
+            d.push(caption(t));
+        }
+        d.push(hide.clone());
+        d
+    };
+    let mut r = Renderer::deterministic();
+    let mut shot = |d: &Document| {
+        let mut p = Pixmap::new(1, 1);
+        r.render(d, View::one_to_one(d), &mut p);
+        p.data_as_u8_slice().to_vec()
+    };
+    let empty = shot(&with(None));
+    let one = shot(&with(Some("СЕКРЕТ")));
+    let two = shot(&with(Some("ІНШЕ")));
+    assert_ne!(one, empty, "the caption under the Hide shows, pixelated");
+    assert_ne!(one, two, "a changed caption makes a new tile");
+    // Not sharp: the text's own pixels are not all there.
+    let sharp = shot(&{
+        let mut d = base.clone();
+        d.push(caption("СЕКРЕТ"));
+        d
+    });
+    assert_ne!(one, sharp);
+}
