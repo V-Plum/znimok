@@ -200,6 +200,39 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
             format!("scale {sc:.3}, off-centre {dx:.1}, {dy:.1}"),
         );
     }));
+    // ZK-127: a fitted picture follows the window — smaller window, smaller picture; back to
+    // the old size, back to the old scale (never past 100 %).
+    let before = Rc::new(std::cell::Cell::new((0.0f64, 0.0f32, 0.0f32)));
+    let b = before.clone();
+    steps.push(Box::new(move |app, ui, _r| {
+        let sf = ui.window().scale_factor();
+        let size = ui.window().size();
+        let (w, h) = (size.width as f32 / sf, size.height as f32 / sf);
+        b.set((app.borrow().view_probe().0, w, h));
+        ui.window().set_size(slint::LogicalSize::new(w * 0.6, h * 0.6));
+    }));
+    let b = before.clone();
+    steps.push(Box::new(move |app, ui, r| {
+        let (sc0, w, h) = b.get();
+        let (sc, ..) = app.borrow().view_probe();
+        let fit = app.borrow().fit_probe();
+        r.check(
+            "smaller window: fitted picture shrinks with it",
+            (sc - fit).abs() < 1e-3 && sc <= sc0 + 1e-6,
+            format!("scale {sc0:.3} → {sc:.3} (fit {fit:.3})"),
+        );
+        ui.window().set_size(slint::LogicalSize::new(w, h));
+    }));
+    let b = before;
+    steps.push(Box::new(move |app, _ui, r| {
+        let (sc0, ..) = b.get();
+        let (sc, ..) = app.borrow().view_probe();
+        r.check(
+            "window back: fitted picture grows back (≤ 100 %)",
+            (sc - sc0).abs() < 1e-3 && sc <= 1.0,
+            format!("scale {sc:.3}, was {sc0:.3}"),
+        );
+    }));
     steps.push(Box::new(|app, ui, r| {
         let (cx, cy) = centre(ui);
         app.borrow_mut().set_tool(ui, crate::app::tool::RECT);
