@@ -37,7 +37,10 @@ screen, Esc to cancel. Over the screen the editor window becomes a frame over th
 the tools stand beside the frame, colours and actions below it, the frame's corners and edges
 drag (that is the crop); Enter or Copy puts it on the clipboard and in the library, Ctrl+S in
 the library only, Esc closes without a trace, and "Open in the editor window" carries on with the
-same document, marks and undo. Znimok lives in the tray /
+same document, marks and undo. A second click (a double click, or a click and then at once a
+drag) takes the shot after 3 seconds: a 3-2-1 countdown in the corner leaves time to open a menu
+that closes on a hotkey; Esc cancels. The wheel turns the magnifier on; switching to another
+program closes the overlay. Znimok lives in the tray /
 menu bar; closing the window hides it there, and Quit is in the icon's menu. Selection: a
 rubber band over empty space, Shift/Ctrl-click, holding Ctrl makes any tool Select for the
 moment; Ctrl+D duplicates, Ctrl+]/[ changes the order, Ctrl+G groups; align and distribute
@@ -71,7 +74,11 @@ switch it off in the More menu), and the file's time is the time of the shot.
 Settings (the gear in the title bar) live inside the window, and every change applies and saves
 at once: the library folder, how many screenshots to keep, autosave, metadata, language, the
 hotkey switch. Hovering a library card shows rename, show in folder and move to trash (with Undo;
-the trash inside the library folder empties after 30 days). Save as… puts a copy of the document
+the trash inside the library folder empties after 30 days); Shift+trash deletes for good after
+one question. The library notices files added or removed from outside (a synced cloud folder too)
+and does not re-read unchanged files — cards come from an index in the local cache. The Agents
+and models page turns agent access (MCP) on, lists clients with their permissions and the log of
+what they did; Updates shows the version and the daily check. Save as… puts a copy of the document
 anywhere; HEIC, AVIF and TIFF open too (through the system's codecs; on Windows HEIC/AVIF need
 Microsoft's free extensions).
 
