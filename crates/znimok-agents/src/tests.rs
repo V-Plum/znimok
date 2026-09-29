@@ -515,11 +515,19 @@ fn read_codes_on_a_document_and_on_the_screen() {
         .grant("Claude Code", Scope::Capture, Grant::Always)
         .unwrap();
     let before = e.agent.lib.search("", None, 100).len();
-    let r = call(&mut s, 3, json!({"x": 0, "y": 0, "width": 50, "height": 40}));
+    let r = call(
+        &mut s,
+        3,
+        json!({"x": 0, "y": 0, "width": 50, "height": 40}),
+    );
     assert_eq!(r["isError"], false, "{r}");
     assert_eq!(r["structuredContent"]["codes"], json!([]));
     assert_eq!(r["structuredContent"]["screen"], true);
-    assert_eq!(e.agent.lib.search("", None, 100).len(), before, "no new document");
+    assert_eq!(
+        e.agent.lib.search("", None, 100).len(),
+        before,
+        "no new document"
+    );
 
     // Half a region, or a document and a place on the screen, are mistakes.
     assert_eq!(call(&mut s, 4, json!({"x": 0, "y": 0}))["isError"], true);
