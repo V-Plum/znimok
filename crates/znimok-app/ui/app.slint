@@ -2581,12 +2581,26 @@ export component AppWindow inherits Window {
                     }
                     // ---- over the screen (ZK-58): the rail at the left of the frame and the bar below
                     // it; where there is no room — on the other side, else inside the frame.
+                    // ZK-157: a panel the frame comes close to slides over to the other side. The
+                    // side is a state with hysteresis (it comes back only with room to spare, so it
+                    // never jitters at the edge); only the switch between the two places animates —
+                    // while the frame is dragged the panels follow it directly.
                     if root.over-screen: Rectangle {
                         property <length> lx: root.ov-x - self.width - 12px;
                         property <length> rx: root.ov-x + root.ov-w + 12px;
+                        property <bool> right: false;
+                        property <float> t: self.right ? 1 : 0;
+                        // While the editor opens the frame arrives in steps: the panels take their
+                        // place at once then, and glide only for the person's own changes.
+                        property <bool> settled: false;
+                        animate t { duration: self.settled ? 280ms : 0ms; easing: cubic-bezier(0.2, 0.8, 0.2, 1); }
+                        Timer { interval: 300ms; running: !parent.settled; triggered => { parent.settled = true; } }
+                        changed lx => {
+                            if (self.lx < 8px) { self.right = true; } else if (self.lx >= 48px) { self.right = false; }
+                        }
                         width: 56px;
                         height: ov-rail.preferred-height;
-                        x: self.lx >= 8px ? self.lx : (self.rx + self.width <= parent.width - 8px ? self.rx : root.ov-x + 8px);
+                        x: max(8px, min(self.lx + (self.rx - self.lx) * self.t, parent.width - self.width - 8px));
                         y: max(8px, min(root.ov-y, parent.height - self.height - 8px));
                         border-radius: 12px;
                         background: Theme.panel;
@@ -2602,12 +2616,26 @@ export component AppWindow inherits Window {
                     if root.over-screen: Rectangle {
                         property <length> below: root.ov-y + root.ov-h + 12px;
                         property <length> above: root.ov-y - self.height - 12px;
+                        // Above the frame when there is no room below (hysteresis as the rail's).
+                        property <bool> up: false;
+                        property <float> t: self.up ? 1 : 0;
+                        property <bool> settled: false;
+                        animate t { duration: self.settled ? 280ms : 0ms; easing: cubic-bezier(0.2, 0.8, 0.2, 1); }
+                        Timer { interval: 300ms; running: !parent.settled; triggered => { parent.settled = true; } }
+                        // Room left under the frame; recomputed as the frame moves and once the window
+                        // has its size (at creation the height is still zero).
+                        property <length> slack: parent.height - self.below - self.height;
+                        changed slack => {
+                            if (self.slack < 8px) { self.up = true; } else if (self.slack >= 48px) { self.up = false; }
+                        }
                         width: ov-bar.preferred-width;
                         height: 48px;
                         // From the frame's left edge: the rail stands left of the frame, so the bar
                         // under a narrow frame runs to the right instead of into the rail.
                         x: max(8px, min(root.ov-x, parent.width - self.width - 8px));
-                        y: self.below + self.height <= parent.height - 8px ? self.below : (self.above >= 8px ? self.above : root.ov-y + root.ov-h - self.height - 8px);
+                        // No room above either: inside the frame, at its bottom.
+                        property <length> top: self.above >= 8px ? self.above : root.ov-y + root.ov-h - self.height - 8px;
+                        y: max(8px, min(self.below + (self.top - self.below) * self.t, parent.height - self.height - 8px));
                         border-radius: 12px;
                         background: Theme.panel;
                         drop-shadow-blur: 18px;
