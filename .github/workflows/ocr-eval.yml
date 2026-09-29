@@ -1,0 +1,76 @@
+# ZK-120: which on-device OCR engine reads Ukrainian screenshots best. Runs the committed set
+# (tools/ocr-eval/set) through each candidate and scores them; the table lands in the job summary
+# and the «ocr-eval» artifact. Manual, or on changes to the evaluation itself.
+name: ocr-eval
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "tools/ocr-eval/**"
+      - ".github/workflows/ocr-eval.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Tesseract (ukr + eng)
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq tesseract-ocr tesseract-ocr-ukr tesseract-ocr-eng
+          tesseract --version | head -1
+          pip install -q pillow
+          python tools/ocr-eval/run_engine.py tesseract out/tesseract.json
+          python tools/ocr-eval/run_engine.py tesseract-2x out/tesseract-2x.json
+      - name: EasyOCR (uk + en, CPU)
+        continue-on-error: true
+        run: |
+          pip install -q easyocr
+          python tools/ocr-eval/run_engine.py easyocr out/easyocr.json
+      - name: PaddleOCR (PP-OCRv5, East Slavic)
+        continue-on-error: true
+        run: |
+          pip install -q paddlepaddle paddleocr
+          python tools/ocr-eval/run_engine.py paddle out/paddle.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ocr-linux
+          path: out/*.json
+
+  macos:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apple Vision (reference)
+        run: |
+          mkdir -p out
+          swift tools/ocr-eval/vision.swift tools/ocr-eval/set out/vision.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ocr-macos
+          path: out/*.json
+
+  score:
+    needs: [linux, macos]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: in
+      - name: score
+        run: |
+          python3 tools/ocr-eval/score.py in/*/*.json | tee report.md
+          cat report.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ocr-eval
+          path: |
+            report.md
+            in/*/*.json
