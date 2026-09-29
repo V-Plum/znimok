@@ -596,7 +596,6 @@ impl App {
                 }
                 ui.set_upd_busy(true);
             }
-            return;
         }
         #[cfg(not(target_os = "macos"))]
         {
