@@ -2262,7 +2262,7 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
     }));
     steps.push(Box::new(|_, ui, r| {
         r.snapshot(ui, "33-updates");
-        // «Перевірити зараз»: without the release key (ZK-111) the answer comes at once, no network.
+        // «Перевірити зараз»: the answer is checked in the steps below.
         ui.invoke_setting("upd-check".into(), 0);
         r.check(
             "updates page: version and last check shown",
@@ -2270,15 +2270,35 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
             format!("{} · {}", ui.get_upd_version(), ui.get_upd_last()),
         );
     }));
-    steps.push(Box::new(|app, ui, r| {
-        let want = app.borrow().tr.tr("upd-not-configured");
-        r.check(
-            "updates: «check now» answers (not set up without the release key), no install button",
-            ui.get_upd_status() == want && !ui.get_upd_busy() && !ui.get_upd_can_install(),
-            ui.get_upd_status().to_string(),
-        );
-        ui.set_settings_page(6);
-    }));
+    // The answer comes from a worker thread: without the release key at once, with it from
+    // GitHub (up to date, a release, or a network error offline) — wait up to ~20 s for it.
+    let answered = Rc::new(std::cell::Cell::new(false));
+    const WAIT_STEPS: usize = 60;
+    for n in 0..WAIT_STEPS {
+        let answered = answered.clone();
+        steps.push(Box::new(move |app, ui, r| {
+            if answered.get() {
+                return;
+            }
+            let a = app.borrow();
+            let checking = a.tr.tr("upd-checking");
+            let status = ui.get_upd_status().to_string();
+            let done = !ui.get_upd_busy() && !status.is_empty() && status != checking;
+            if !done && n + 1 < WAIT_STEPS {
+                return;
+            }
+            answered.set(true);
+            // A release on offer is the only case with an install button (Windows).
+            let offer = ui.get_upd_can_install() || ui.get_upd_can_open();
+            let not_set_up = status == a.tr.tr("upd-not-configured");
+            r.check(
+                "updates: «check now» answers (not set up / up to date / a release / offline); install only with a release",
+                done && (!ui.get_upd_can_install() || (offer && !not_set_up)),
+                status,
+            );
+            ui.set_settings_page(6);
+        }));
+    }
     steps.push(Box::new(|_, ui, r| {
         r.snapshot(ui, "35-about");
         ui.invoke_setting("close".into(), 0);

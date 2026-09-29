@@ -330,6 +330,21 @@ mod tests {
     const SUMS: &[u8] = include_bytes!("../tests/fixtures/SHA256SUMS");
     const SIG: &[u8] = include_bytes!("../tests/fixtures/SHA256SUMS.sig");
 
+    /// ZK-111: the committed release key verifies what CI signs with the private key
+    /// (`openssl dgst -sha256 -sign`, as release.yml does); a changed byte does not. On a key
+    /// rotation this fixture is signed again with the new key (docs/RELEASE.md).
+    #[test]
+    fn committed_release_key_verifies_a_ci_signature() {
+        let key = RELEASE_KEY.expect("keys/znimok-release-p256.pub.pem is committed");
+        let sums = include_bytes!("../tests/release-key/SHA256SUMS");
+        let sig = include_bytes!("../tests/release-key/SHA256SUMS.sig");
+        assert!(sig::verify(key, sums, sig).unwrap());
+        let mut bad = sums.to_vec();
+        bad[0] ^= 1;
+        assert!(!sig::verify(key, &bad, sig).unwrap());
+        assert!(configured());
+    }
+
     fn release(tag: &str, pre: bool, names: &[&str]) -> Vec<u8> {
         let assets: Vec<String> = names
             .iter()
