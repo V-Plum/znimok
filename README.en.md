@@ -70,6 +70,14 @@ the trash inside the library folder empties after 30 days). Save as… puts a co
 anywhere; HEIC, AVIF and TIFF open too (through the system's codecs; on Windows HEIC/AVIF need
 Microsoft's free extensions).
 
+Hotkeys are set in the settings: click a field and press the combination (physical keys, so any
+layout works); one another program holds is refused and the previous stays. Separate keys: region,
+whole screen (straight into the editor), clipboard image, blank editor; the tray has "Pause
+hotkeys". On first run a guide shows the hotkeys, the library folder, start at sign-in and (on a
+Mac) the screen-recording permission. Counters have a shape (circle, square, a pin with a
+direction), a digit colour and a new numbering group; stamps offer 6 signs and 24 emoji. A picture
+dropped on an open document becomes a mark.
+
 ```sh
 cargo run --release -p znimok-app              # the library
 cargo run --release -p znimok-app -- shot.png  # open an image right away
