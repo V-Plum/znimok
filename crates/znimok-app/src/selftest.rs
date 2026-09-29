@@ -1439,7 +1439,15 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
         let lh = ov.window().size().height as f32 / sf;
         // Frame pixels per logical pixel, per axis (the synthetic frame need not have the
         // screen's aspect — on the Mac it does not).
-        let (kx, ky) = (1600.0 / lw.max(1.0), 1000.0 / lh.max(1.0));
+        // The frozen frame is the sample given on the command line, whatever its size.
+        let (fw, fh) = OVER_SRC
+            .with(|o| {
+                o.borrow()
+                    .as_ref()
+                    .map(|r| (r.width as f32, r.height as f32))
+            })
+            .unwrap_or((1600.0, 1000.0));
+        let (kx, ky) = (fw / lw.max(1.0), fh / lh.max(1.0));
         ov.invoke_pointer(1, 300.0 / kx, 250.0 / ky, false, false);
         let (has, win) = (ov.get_has_sel(), ov.get_is_window());
         r.check(
@@ -1459,7 +1467,7 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
             px300.is_some_and(|p| p.r < 40 && p.a > 200)
                 && gh
                     .as_ref()
-                    .is_some_and(|b| b.width() == 1600 && b.height() == 1),
+                    .is_some_and(|b| b.width() == fw as u32 && b.height() == 1),
             format!("{px300:?}"),
         );
         r.check(
@@ -1571,7 +1579,15 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
         let osf = ov.window().scale_factor();
         let lw = ov.window().size().width as f32 / osf;
         let lh = ov.window().size().height as f32 / osf;
-        let (kx, ky) = (1600.0 / lw.max(1.0), 1000.0 / lh.max(1.0));
+        // The frozen frame is the sample given on the command line, whatever its size.
+        let (fw, fh) = OVER_SRC
+            .with(|o| {
+                o.borrow()
+                    .as_ref()
+                    .map(|r| (r.width as f32, r.height as f32))
+            })
+            .unwrap_or((1600.0, 1000.0));
+        let (kx, ky) = (fw / lw.max(1.0), fh / lh.max(1.0));
         ov.invoke_pointer(0, 600.0 / kx, 500.0 / ky, false, false);
         for i in 1..=10 {
             let t = i as f32 / 10.0;
@@ -1596,14 +1612,16 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
             "over the screen: Alt on release opens the frozen display with the region as the frame",
             over && ui.get_over_screen()
                 && info.is_some_and(|((w, h), c, _)| {
-                    w == 1600
-                        && h == 1000
-                        && c.is_some_and(|c| {
-                            (c.x - 600).abs() <= 2
-                                && (c.y - 500).abs() <= 2
-                                && (c.w - 300).abs() <= 3
-                                && (c.h - 200).abs() <= 3
-                        })
+                    OVER_SRC.with(|o| {
+                        o.borrow()
+                            .as_ref()
+                            .is_some_and(|r| r.width == w && r.height == h)
+                    }) && c.is_some_and(|c| {
+                        (c.x - 600).abs() <= 2
+                            && (c.y - 500).abs() <= 2
+                            && (c.w - 300).abs() <= 3
+                            && (c.h - 200).abs() <= 3
+                    })
                 }),
             format!("{info:?}"),
         );
