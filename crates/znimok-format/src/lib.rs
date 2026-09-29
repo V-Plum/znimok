@@ -261,7 +261,7 @@ fn write_doc(doc: &Document, opts: &WriteOptions, video: Option<&Video>) -> Writ
         w.u8(kind.code());
     });
     if let Some(v) = video {
-        video::write_vinf(&mut w, &v.info);
+        video::write_vinf(&mut w, &v.info, v.devlog.is_some());
     }
     if let Some(t) = &opts.thumbnail {
         w.record(b"THMB", |w| {
@@ -641,6 +641,8 @@ pub struct Peek {
     pub kind: DocKind,
     /// For a video: size, frame rate, frames and duration of the stream (`VINF`).
     pub video: Option<VideoInfo>,
+    /// A video that carries a browser log (`DEVT`): its own file icon (ZK-150).
+    pub devtools: bool,
 }
 
 /// Reads descriptive blocks up to the pixels (`SRC `), without decoding any image.
@@ -664,13 +666,17 @@ pub fn peek(data: &[u8]) -> Result<Peek, FormatError> {
                 p.object_count = b.u32()?;
                 p.kind = read_kind(&mut b)?;
             }
-            b"VINF" => p.video = Some(video::read_vinf(&mut b, &limits)?),
+            b"VINF" => {
+                p.video = Some(video::read_vinf(&mut b, &limits)?);
+                p.devtools = video::read_vinf_flags(&mut b)? & video::VINF_DEVTOOLS != 0;
+            }
             b"THMB" => p.thumbnail_png = Some(b.take(b.remaining())?.to_vec()),
             _ => {}
         }
     }
     if p.kind != DocKind::Video {
         p.video = None;
+        p.devtools = false;
     }
     Ok(p)
 }

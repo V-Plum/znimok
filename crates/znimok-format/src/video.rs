@@ -456,7 +456,11 @@ impl<R: Read + Seek> Seek for PayloadReader<R> {
 
 // ---- writing --------------------------------------------------------------------------------
 
-pub(crate) fn write_vinf(w: &mut Writer, i: &VideoInfo) {
+/// `VINF` flag: the file carries a browser log (`DEVT`) — for the icon of a «video with a
+/// DevTools log», read from the head of the file (ZK-150).
+pub(crate) const VINF_DEVTOOLS: u8 = 1;
+
+pub(crate) fn write_vinf(w: &mut Writer, i: &VideoInfo, devtools: bool) {
     w.record(b"VINF", |w| {
         w.u32(i.width);
         w.u32(i.height);
@@ -464,7 +468,13 @@ pub(crate) fn write_vinf(w: &mut Writer, i: &VideoInfo) {
         w.u32(i.frames);
         w.i64(i.duration_hns);
         w.bytes(&i.codec);
+        w.u8(if devtools { VINF_DEVTOOLS } else { 0 });
     });
+}
+
+/// The optional flags byte after the codec (absent in files written before it → none).
+pub(crate) fn read_vinf_flags(b: &mut Reader<'_>) -> Result<u8, FormatError> {
+    if b.is_empty() { Ok(0) } else { b.u8() }
 }
 
 /// The video blocks that follow the marks (everything but `VINF` and the payload).

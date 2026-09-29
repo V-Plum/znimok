@@ -176,6 +176,7 @@ editor changes sit before it and a future in-place edit (truncate after the last
 | 12 | `u32` | frames in the stream, N (1…2³¹−1); frame numbers run over `[0, N)` |
 | 16 | `i64` | duration, 100 ns (≥ 0) |
 | 24 | tag[4] | video codec: `avc1` H.264, `hvc1` HEVC, `av01` AV1; unknown tags are kept |
+| 28 | `u8` | flags, optional (absent = 0): bit 0 — the file carries a browser log (`DEVT`), so its icon can say so from the head of the file (ZK-150); other bits reserved, written 0, ignored |
 
 Out-of-range values make the document damaged.
 
