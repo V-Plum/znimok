@@ -28,6 +28,7 @@
 
 pub mod audio;
 pub mod cfr;
+pub mod check;
 pub mod clock;
 pub mod events;
 pub mod export;
