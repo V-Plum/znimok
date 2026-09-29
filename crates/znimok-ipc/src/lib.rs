@@ -516,7 +516,7 @@ impl From<std::io::Error> for CallError {
 }
 
 /// Opens a connection to a server endpoint by its name (pipe name / socket path) and closes it
-/// again, without a hello. For security checks from another account (`examples/probe.rs`):
+/// again, without a hello. For security checks from another account (`examples/ipc_probe.rs`):
 /// the OS must refuse it with «access denied».
 #[doc(hidden)]
 pub fn open_endpoint(endpoint: &str) -> std::io::Result<()> {

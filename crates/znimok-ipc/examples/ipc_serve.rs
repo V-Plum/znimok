@@ -1,6 +1,6 @@
-//! A throw-away IPC server for the other-account check (ZK-112, `.github/workflows/ipc-security.yml`).
+//! `ipc_serve`: a throw-away IPC server for the other-account check (ZK-112, `.github/workflows/ipc-security.yml`).
 //!
-//! `serve [--seconds N]` starts a server under the suffix `probe`, prints one JSON line
+//! `ipc_serve [--seconds N]` starts a server under the suffix `probe`, prints one JSON line
 //! `{"endpoint": …, "token_path": …}` and keeps running for N seconds (default 120).
 
 use std::time::Duration;
