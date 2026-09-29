@@ -3,8 +3,10 @@
 use super::{HttpError, Response, Transport, retry_after};
 use std::time::{Duration, Instant};
 use windows::Foundation::Uri;
-use windows::Storage::Streams::UnicodeEncoding;
-use windows::Web::Http::{HttpClient, HttpMethod, HttpRequestMessage, HttpStringContent};
+use windows::Storage::Streams::{DataReader, UnicodeEncoding};
+use windows::Web::Http::{
+    HttpClient, HttpCompletionOption, HttpMethod, HttpRequestMessage, HttpStringContent,
+};
 use windows::core::HSTRING;
 use windows_future::AsyncStatus;
 
@@ -72,6 +74,82 @@ impl Transport for WinHttp {
             status,
             body: text.to_string().into_bytes(),
             retry_after: retry_after(retry),
+        })
+    }
+
+    fn get(
+        &self,
+        url: &str,
+        headers: &[(&str, &str)],
+        timeout: Duration,
+        max_bytes: usize,
+    ) -> Result<Response, HttpError> {
+        crate::ocr::winrt_thread();
+        let client = HttpClient::new().map_err(net)?;
+        let req = HttpRequestMessage::Create(
+            &HttpMethod::Get().map_err(net)?,
+            &Uri::CreateUri(&HSTRING::from(url)).map_err(net)?,
+        )
+        .map_err(net)?;
+        let h = req.Headers().map_err(net)?;
+        for (k, v) in headers {
+            h.TryAppendWithoutValidation(&HSTRING::from(*k), &HSTRING::from(*v))
+                .map_err(net)?;
+        }
+        let t0 = Instant::now();
+        let wait = |status: &dyn Fn() -> windows::core::Result<AsyncStatus>,
+                    cancel: &dyn Fn()|
+         -> Result<(), HttpError> {
+            while status().map_err(net)? == AsyncStatus::Started {
+                if t0.elapsed() > timeout {
+                    cancel();
+                    return Err(HttpError::Timeout);
+                }
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            Ok(())
+        };
+        // Headers first: the length is checked before the body is read.
+        let op = client
+            .SendRequestWithOptionAsync(&req, HttpCompletionOption::ResponseHeadersRead)
+            .map_err(net)?;
+        wait(&|| op.Status(), &|| {
+            let _ = op.Cancel();
+        })?;
+        let resp = op.GetResults().map_err(net)?;
+        let status = resp.StatusCode().map_err(net)?.0 as u16;
+        let content = resp.Content().map_err(net)?;
+        let announced = content
+            .Headers()
+            .and_then(|h| h.ContentLength())
+            .and_then(|len| len.Value());
+        if let Ok(n) = announced
+            && n as usize > max_bytes
+        {
+            return Err(HttpError::Network(format!(
+                "{n} bytes is more than {max_bytes}"
+            )));
+        }
+        let read = content.ReadAsBufferAsync().map_err(net)?;
+        wait(&|| read.Status(), &|| {
+            let _ = read.Cancel();
+        })?;
+        let buf = read.GetResults().map_err(net)?;
+        let n = buf.Length().map_err(net)? as usize;
+        if n > max_bytes {
+            return Err(HttpError::Network(format!(
+                "{n} bytes is more than {max_bytes}"
+            )));
+        }
+        let mut body = vec![0u8; n];
+        DataReader::FromBuffer(&buf)
+            .map_err(net)?
+            .ReadBytes(&mut body)
+            .map_err(net)?;
+        Ok(Response {
+            status,
+            body,
+            retry_after: None,
         })
     }
 }

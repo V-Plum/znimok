@@ -6831,6 +6831,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "znimok-update"
+version = "0.0.0"
+dependencies = [
+ "base64",
+ "serde",
+ "serde_json",
+ "windows",
+ "znimok-models",
+]
+
+[[package]]
 name = "znimok-video"
 version = "0.0.0"
 

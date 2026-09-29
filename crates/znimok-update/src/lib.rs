@@ -1,0 +1,409 @@
+//! Znimok's update check (ZK-122), by the rules of the security review (docs/security-review-v1.md,
+//! «Вимоги до оновлювача»):
+//!
+//! 1. Only when the person turned daily checks on (`updates.check_daily`, off by default) — the
+//!    caller decides when; this crate never runs by itself.
+//! 2. Only `github.com/V-Plum/znimok` releases, over HTTPS through the OS stack
+//!    ([`znimok_models::http`]).
+//! 3. `SHA256SUMS` is verified with the **committed** ECDSA P-256 key ([`RELEASE_KEY`]) before
+//!    anything else is downloaded; then the installer's SHA-256 against that verified list.
+//! 4. Strictly newer than what runs; the installer goes into the person's own folder, not a
+//!    shared temporary one.
+//!
+//! Installing (Windows: `msiexec` after the app exits, with a way back) and macOS (Sparkle with our
+//! window) build on this.
+
+pub mod sha256;
+pub mod sig;
+pub mod version;
+
+use serde::Deserialize;
+use std::fmt;
+use std::path::{Path, PathBuf};
+use std::time::Duration;
+use version::Version;
+use znimok_models::http::Transport;
+
+include!(concat!(env!("OUT_DIR"), "/release_key.rs"));
+
+pub const REPO: &str = "V-Plum/znimok";
+const API: &str = "https://api.github.com/repos/V-Plum/znimok/releases/latest";
+const SMALL: usize = 1 << 20;
+/// Largest installer accepted (today ~50 MB).
+const INSTALLER_MAX: usize = 512 << 20;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum UpdateError {
+    /// No release key committed yet (ZK-111): updates are not set up in this build.
+    NotConfigured,
+    Network(String),
+    /// GitHub answered something unexpected (status, JSON, a missing file).
+    Release(String),
+    /// `SHA256SUMS.sig` does not verify with the release key — nothing was installed.
+    BadSignature,
+    /// The installer is not the file listed in the signed `SHA256SUMS`.
+    BadChecksum,
+    Io(String),
+}
+
+impl fmt::Display for UpdateError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::NotConfigured => write!(f, "updates are not set up in this build"),
+            Self::Network(m) => write!(f, "update check: {m}"),
+            Self::Release(m) => write!(f, "update: {m}"),
+            Self::BadSignature => write!(f, "update refused: the release signature is not valid"),
+            Self::BadChecksum => write!(
+                f,
+                "update refused: the installer does not match its checksum"
+            ),
+            Self::Io(m) => write!(f, "update: {m}"),
+        }
+    }
+}
+
+impl std::error::Error for UpdateError {}
+
+/// Which installer this machine takes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Platform {
+    WindowsX64,
+    MacArm64,
+}
+
+impl Platform {
+    pub fn current() -> Option<Self> {
+        if cfg!(all(windows, target_arch = "x86_64")) {
+            Some(Self::WindowsX64)
+        } else if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
+            Some(Self::MacArm64)
+        } else {
+            None
+        }
+    }
+
+    /// The installer's name in a release (release.yml).
+    pub fn installer(self, version: &str) -> String {
+        match self {
+            Self::WindowsX64 => format!("Znimok-{version}-windows-x64.msi"),
+            Self::MacArm64 => format!("Znimok-{version}-macos-arm64.dmg"),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Deserialize)]
+struct GhRelease {
+    tag_name: String,
+    #[serde(default)]
+    draft: bool,
+    #[serde(default)]
+    prerelease: bool,
+    html_url: String,
+    #[serde(default)]
+    assets: Vec<GhAsset>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+struct GhAsset {
+    name: String,
+    browser_download_url: String,
+    size: u64,
+}
+
+/// A newer release for this machine.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Available {
+    pub tag: String,
+    pub version: String,
+    /// The release page (notes).
+    pub page: String,
+    installer: (String, String, u64),
+    sums: String,
+    sig: String,
+}
+
+impl Available {
+    pub fn installer_name(&self) -> &str {
+        &self.installer.0
+    }
+    pub fn installer_size(&self) -> u64 {
+        self.installer.2
+    }
+}
+
+fn headers(current: &str) -> [(&'static str, String); 2] {
+    [
+        ("user-agent", format!("Znimok/{current}")),
+        ("accept", "application/vnd.github+json".into()),
+    ]
+}
+
+fn get(
+    t: &dyn Transport,
+    url: &str,
+    current: &str,
+    max: usize,
+    timeout: Duration,
+) -> Result<Vec<u8>, UpdateError> {
+    // Only our repository's release files, only HTTPS.
+    let ours = url.starts_with(API)
+        || url.starts_with(&format!("https://github.com/{REPO}/releases/download/"));
+    if !ours {
+        return Err(UpdateError::Release(format!(
+            "not a {REPO} release URL: {url}"
+        )));
+    }
+    let h = headers(current);
+    let h: Vec<(&str, &str)> = h.iter().map(|(k, v)| (*k, v.as_str())).collect();
+    let r = t
+        .get(url, &h, timeout, max)
+        .map_err(|e| UpdateError::Network(e.to_string()))?;
+    if r.status != 200 {
+        return Err(UpdateError::Release(format!("HTTP {} for {url}", r.status)));
+    }
+    Ok(r.body)
+}
+
+/// The latest release, if it is newer than `current` and has this platform's installer, the
+/// checksums and their signature. `Ok(None)` = up to date.
+pub fn check(
+    t: &dyn Transport,
+    current: &str,
+    platform: Platform,
+) -> Result<Option<Available>, UpdateError> {
+    if RELEASE_KEY.is_none() {
+        return Err(UpdateError::NotConfigured);
+    }
+    let body = get(t, API, current, SMALL, Duration::from_secs(20))?;
+    pick(&body, current, platform)
+}
+
+/// The decision part of [`check`], without the network.
+pub fn pick(
+    json: &[u8],
+    current: &str,
+    platform: Platform,
+) -> Result<Option<Available>, UpdateError> {
+    let rel: GhRelease = serde_json::from_slice(json)
+        .map_err(|e| UpdateError::Release(format!("release JSON: {e}")))?;
+    let (Some(latest), Some(now)) = (Version::parse(&rel.tag_name), Version::parse(current)) else {
+        return Err(UpdateError::Release(format!(
+            "version {} / {current}",
+            rel.tag_name
+        )));
+    };
+    // `releases/latest` never returns drafts or pre-releases; checked anyway.
+    if rel.draft || rel.prerelease || latest.is_prerelease() || latest <= now {
+        return Ok(None);
+    }
+    let version = rel.tag_name.trim_start_matches('v').to_string();
+    let find = |name: &str| rel.assets.iter().find(|a| a.name == name);
+    let want = platform.installer(&version);
+    let (Some(inst), Some(sums), Some(sig)) =
+        (find(&want), find("SHA256SUMS"), find("SHA256SUMS.sig"))
+    else {
+        return Err(UpdateError::Release(format!(
+            "{} lacks {want}, SHA256SUMS or its signature",
+            rel.tag_name
+        )));
+    };
+    Ok(Some(Available {
+        tag: rel.tag_name.clone(),
+        version,
+        page: rel.html_url,
+        installer: (
+            inst.name.clone(),
+            inst.browser_download_url.clone(),
+            inst.size,
+        ),
+        sums: sums.browser_download_url.clone(),
+        sig: sig.browser_download_url.clone(),
+    }))
+}
+
+/// The SHA-256 `SHA256SUMS` lists for `name`.
+pub fn listed_digest(sums: &str, name: &str) -> Option<String> {
+    sums.lines().find_map(|l| {
+        let (digest, file) = l.split_once(char::is_whitespace)?;
+        let file = file.trim_start().trim_start_matches('*');
+        (file == name && digest.len() == 64 && digest.bytes().all(|b| b.is_ascii_hexdigit()))
+            .then(|| digest.to_ascii_lowercase())
+    })
+}
+
+/// Checks the signed list, then the installer against it; the order matters (rule 3).
+pub fn verify_download(
+    key_pem: &str,
+    sums: &[u8],
+    sig: &[u8],
+    installer_name: &str,
+    installer: &[u8],
+) -> Result<(), UpdateError> {
+    match sig::verify(key_pem, sums, sig) {
+        Ok(true) => {}
+        Ok(false) => return Err(UpdateError::BadSignature),
+        Err(e) => return Err(UpdateError::Release(e)),
+    }
+    let sums = std::str::from_utf8(sums).map_err(|_| UpdateError::BadChecksum)?;
+    let want = listed_digest(sums, installer_name).ok_or(UpdateError::BadChecksum)?;
+    if sha256::hex(&sha256::digest(installer)) != want {
+        return Err(UpdateError::BadChecksum);
+    }
+    Ok(())
+}
+
+/// Downloads the signed list, verifies it, then the installer, verifies it and writes it into
+/// `dir` (the person's own folder, e.g. `%LOCALAPPDATA%\Znimok\updates`). Returns its path.
+pub fn download(
+    t: &dyn Transport,
+    a: &Available,
+    current: &str,
+    dir: &Path,
+) -> Result<PathBuf, UpdateError> {
+    let key = RELEASE_KEY.ok_or(UpdateError::NotConfigured)?;
+    let sums = get(t, &a.sums, current, SMALL, Duration::from_secs(30))?;
+    let sig = get(t, &a.sig, current, 4096, Duration::from_secs(30))?;
+    // The signature before the installer is even downloaded.
+    match sig::verify(key, &sums, &sig) {
+        Ok(true) => {}
+        Ok(false) => return Err(UpdateError::BadSignature),
+        Err(e) => return Err(UpdateError::Release(e)),
+    }
+    let (name, url, _) = &a.installer;
+    let bytes = get(t, url, current, INSTALLER_MAX, Duration::from_secs(600))?;
+    verify_download(key, &sums, &sig, name, &bytes)?;
+    std::fs::create_dir_all(dir).map_err(|e| UpdateError::Io(e.to_string()))?;
+    let path = dir.join(name);
+    let tmp = dir.join(format!("{name}.part"));
+    std::fs::write(&tmp, &bytes).map_err(|e| UpdateError::Io(e.to_string()))?;
+    std::fs::rename(&tmp, &path).map_err(|e| UpdateError::Io(e.to_string()))?;
+    Ok(path)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const KEY: &str = include_str!("../tests/fixtures/test-key.pub");
+    const SUMS: &[u8] = include_bytes!("../tests/fixtures/SHA256SUMS");
+    const SIG: &[u8] = include_bytes!("../tests/fixtures/SHA256SUMS.sig");
+
+    fn release(tag: &str, pre: bool, names: &[&str]) -> Vec<u8> {
+        let assets: Vec<String> = names
+            .iter()
+            .map(|n| {
+                format!(r#"{{"name":"{n}","browser_download_url":"https://github.com/V-Plum/znimok/releases/download/{tag}/{n}","size":10}}"#)
+            })
+            .collect();
+        format!(
+            r#"{{"tag_name":"{tag}","draft":false,"prerelease":{pre},"html_url":"https://github.com/V-Plum/znimok/releases/tag/{tag}","assets":[{}]}}"#,
+            assets.join(",")
+        )
+        .into_bytes()
+    }
+
+    #[test]
+    fn only_strictly_newer_full_releases() {
+        let all = [
+            "Znimok-1.2.0-windows-x64.msi",
+            "SHA256SUMS",
+            "SHA256SUMS.sig",
+        ];
+        let r = release("v1.2.0", false, &all);
+        let a = pick(&r, "1.1.9", Platform::WindowsX64).unwrap().unwrap();
+        assert_eq!(a.version, "1.2.0");
+        assert_eq!(a.installer_name(), "Znimok-1.2.0-windows-x64.msi");
+        assert_eq!(pick(&r, "1.2.0", Platform::WindowsX64).unwrap(), None);
+        assert_eq!(
+            pick(&r, "1.3.0", Platform::WindowsX64).unwrap(),
+            None,
+            "never older"
+        );
+        assert_eq!(
+            pick(
+                &release("v1.3.0", true, &all),
+                "1.2.0",
+                Platform::WindowsX64
+            )
+            .unwrap(),
+            None
+        );
+        assert_eq!(
+            pick(
+                &release("v1.3.0-rc.1", false, &all),
+                "1.2.0",
+                Platform::WindowsX64
+            )
+            .unwrap(),
+            None
+        );
+        // A release without this platform's installer or without the signature is not offered.
+        assert!(pick(&r, "1.0.0", Platform::MacArm64).is_err());
+        let unsigned = release(
+            "v1.2.0",
+            false,
+            &["Znimok-1.2.0-windows-x64.msi", "SHA256SUMS"],
+        );
+        assert!(pick(&unsigned, "1.0.0", Platform::WindowsX64).is_err());
+    }
+
+    #[test]
+    fn sums_lines() {
+        let s =
+            "aa  x\nd24ff570a26e4f466ce267ee848c785d7ad6b4bfefc6d5854bed7f5bb739b894 *Znimok.msi\n";
+        assert_eq!(listed_digest(s, "x"), None, "short digest");
+        assert_eq!(
+            listed_digest(s, "Znimok.msi").as_deref(),
+            Some("d24ff570a26e4f466ce267ee848c785d7ad6b4bfefc6d5854bed7f5bb739b894")
+        );
+        assert_eq!(listed_digest(s, "Znimok"), None);
+    }
+
+    /// The signature is checked first; then the installer against the signed list.
+    #[cfg(any(windows, target_os = "macos"))]
+    #[test]
+    fn signature_then_checksum() {
+        let name = "Znimok-1.2.0-windows-x64.msi";
+        // The fixture lists a digest we do not have the bytes of: a wrong file fails the checksum.
+        assert_eq!(
+            verify_download(KEY, SUMS, SIG, name, b"not it"),
+            Err(UpdateError::BadChecksum)
+        );
+        let mut forged = SUMS.to_vec();
+        forged[0] = if forged[0] == b'0' { b'1' } else { b'0' };
+        assert_eq!(
+            verify_download(KEY, &forged, SIG, name, b""),
+            Err(UpdateError::BadSignature)
+        );
+        assert_eq!(
+            verify_download(KEY, SUMS, SIG, "other.msi", b""),
+            Err(UpdateError::BadChecksum)
+        );
+    }
+
+    #[test]
+    fn foreign_urls_are_refused() {
+        struct Never;
+        impl Transport for Never {
+            fn post_json(
+                &self,
+                _: &str,
+                _: &[(&str, &str)],
+                _: &[u8],
+                _: Duration,
+            ) -> Result<znimok_models::http::Response, znimok_models::http::HttpError> {
+                unreachable!()
+            }
+        }
+        for url in [
+            "http://github.com/V-Plum/znimok/releases/download/v1/x",
+            "https://github.com/evil/znimok/releases/download/v1/x",
+            "https://example.com/V-Plum/znimok/releases/download/v1/x",
+        ] {
+            assert!(matches!(
+                get(&Never, url, "1.0.0", 10, Duration::from_secs(1)),
+                Err(UpdateError::Release(_))
+            ));
+        }
+    }
+}
