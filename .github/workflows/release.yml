@@ -13,6 +13,7 @@ on:
       - ".github/workflows/release.yml"
       - "packaging/**"
       - "crates/znimok-thumbnail/mac/**"
+      - "tools/ocr-helper/**"
       - "crates/znimok-update/**"
       - "tools/verify_release.py"
   workflow_dispatch:
@@ -59,6 +60,12 @@ jobs:
           tool: cargo-auditable,cargo-audit
       - name: build (dependency list embedded)
         run: cargo auditable build --release --locked -p znimok-app -p znimok-cli -p znimok-thumbnail
+      - uses: actions/cache@v4
+        with:
+          path: target/ocr-helper-work
+          key: ocr-helper-${{ hashFiles('tools/ocr-helper/build.py') }}
+      - name: text recognition helper (ZK-120; Tesseract from pinned sources, integer models)
+        run: python tools/ocr-helper/build.py
       - name: audit the binaries
         run: |
           cargo audit bin target/release/znimok-app.exe
@@ -70,6 +77,9 @@ jobs:
           $dir = "dist/Znimok-$v-windows-x64"
           New-Item -ItemType Directory -Force $dir | Out-Null
           Copy-Item target/release/znimok-app.exe, target/release/znimok.exe, target/release/znimok_thumbnail.dll, LICENSE, README.md, README.en.md $dir
+          Copy-Item target/ocr-helper/znimok-ocr.exe $dir
+          Copy-Item target/ocr-helper/NOTICE.txt "$dir/NOTICE-ocr.txt"
+          Copy-Item -Recurse target/ocr-helper/tessdata $dir
           Compress-Archive -Path "$dir/*" -DestinationPath "dist/Znimok-$v-windows-x64.zip"
           Copy-Item target/release/znimok.exe dist/znimok.exe
       - name: MSI (WiX, per-user)
@@ -82,6 +92,9 @@ jobs:
           $bin = "msi-bin"
           New-Item -ItemType Directory -Force $bin | Out-Null
           Copy-Item target/release/znimok-app.exe, target/release/znimok.exe, target/release/znimok_thumbnail.dll, LICENSE $bin
+          Copy-Item target/ocr-helper/znimok-ocr.exe $bin
+          Copy-Item target/ocr-helper/NOTICE.txt "$bin/NOTICE-ocr.txt"
+          Copy-Item -Recurse target/ocr-helper/tessdata $bin
           wix build packaging/msi/znimok.wxs -arch x64 -d Version=$msiVersion -d Bin=$bin -o "dist/Znimok-$v-windows-x64.msi"
           if ($LASTEXITCODE -ne 0) { throw "wix build failed" }
       - name: MSI installs, registers and uninstalls cleanly
@@ -91,7 +104,7 @@ jobs:
           $dir = Join-Path $env:LOCALAPPDATA "Programs\Znimok"
           $p = Start-Process msiexec -ArgumentList "/i `"$msi`" /qn /l*v install.log" -Wait -PassThru
           if ($p.ExitCode -ne 0) { Get-Content install.log -Tail 40; throw "install failed: $($p.ExitCode)" }
-          foreach ($f in "znimok-app.exe", "znimok.exe", "znimok_thumbnail.dll", "LICENSE.txt") {
+          foreach ($f in "znimok-app.exe", "znimok.exe", "znimok_thumbnail.dll", "LICENSE.txt", "znimok-ocr.exe", "NOTICE-ocr.txt", "tessdata\ukr.traineddata", "tessdata\eng.traineddata") {
             if (-not (Test-Path (Join-Path $dir $f))) { throw "missing after install: $f" }
           }
           $assoc = (Get-ItemProperty "HKCU:\Software\Classes\.znimok").'(default)'
@@ -101,6 +114,7 @@ jobs:
           $path = [Environment]::GetEnvironmentVariable("PATH", "User")
           if ($path -notlike "*$dir*") { throw "the install folder is not on the user PATH" }
           & (Join-Path $dir "znimok.exe") --version
+          & (Join-Path $dir "znimok-ocr.exe") --version
           $p = Start-Process msiexec -ArgumentList "/x `"$msi`" /qn /l*v uninstall.log" -Wait -PassThru
           if ($p.ExitCode -ne 0) { Get-Content uninstall.log -Tail 40; throw "uninstall failed: $($p.ExitCode)" }
           if (Test-Path (Join-Path $dir "znimok-app.exe")) { throw "files left after uninstall" }

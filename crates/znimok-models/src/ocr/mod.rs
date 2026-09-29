@@ -2,12 +2,13 @@
 //!
 //! | | engine | Ukrainian |
 //! |---|---|---|
-//! | Windows | Windows.Media.Ocr — works in an unpackaged desktop app; languages come with the OS language packs | **no**: Microsoft ships 25 OCR languages without it |
+//! | Windows | `znimok-ocr.exe` next to the app (Tesseract, [`helper`], ZK-120); without it Windows.Media.Ocr — languages come with the OS language packs | helper: **yes**; Windows.Media.Ocr: **no** (25 languages without it) |
 //! | macOS | Apple Vision `VNRecognizeTextRequest` (accurate) | yes (`uk-UA`) |
 //!
 //! [`OcrResult::missing`] says which asked-for languages the engine could not use, so the app can
 //! offer the cloud (with consent) instead of showing garbled text.
 
+pub mod helper;
 #[cfg(target_os = "macos")]
 mod mac;
 #[cfg(windows)]
@@ -113,11 +114,33 @@ pub trait Ocr: Send + Sync {
     fn languages(&self) -> Vec<String>;
     /// `languages` in order of preference (`["uk", "en"]`); empty = the user's languages.
     fn recognize(&self, img: &Rgba, languages: &[&str]) -> Result<OcrResult, OcrError>;
+    /// A second reading for finding secrets (e-mail, keys, cards): engines that read Latin better
+    /// with other settings do so here (the helper: English first). Default: the same reading.
+    fn recognize_for_masking(&self, img: &Rgba, languages: &[&str]) -> Result<OcrResult, OcrError> {
+        self.recognize(img, languages)
+    }
+}
+
+/// Both readings for masking: the text one and, when it differs, the masking one — secrets are
+/// looked for in each (duplicates are dropped by the masker).
+pub fn read_for_masking(engine: &dyn Ocr, img: &Rgba) -> Option<OcrResult> {
+    let mut text = engine.recognize(img, &[]).ok();
+    if let Ok(more) = engine.recognize_for_masking(img, &[]) {
+        match &mut text {
+            Some(t) if t.lines != more.lines => t.lines.extend(more.lines),
+            Some(_) => {}
+            None => text = Some(more),
+        }
+    }
+    text
 }
 
 pub fn system() -> Option<Box<dyn Ocr>> {
     #[cfg(windows)]
-    return Some(Box::new(win::WinOcr));
+    return Some(match helper::find() {
+        Some(exe) => Box::new(helper::TessHelper::new(exe)),
+        None => Box::new(win::WinOcr),
+    });
     #[cfg(target_os = "macos")]
     return Some(Box::new(mac::VisionOcr));
     #[cfg(not(any(windows, target_os = "macos")))]

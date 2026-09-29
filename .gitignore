@@ -22,3 +22,6 @@ desktop.ini
 
 # Originals of the bundled fonts (assets/fonts/subset.py downloads them)
 /crates/znimok-render/fonts/src/
+
+# Python
+__pycache__/
