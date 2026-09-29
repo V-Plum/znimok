@@ -56,7 +56,8 @@ def tesseract(scale: int, tessdata: str | None = None):
 def tsv_words(src: Path, langs: str, tessdata: str | None):
     """Words with boxes and confidence: [(line key, (x0, y0, x1, y1), conf, text)]."""
     r = subprocess.run(["tesseract", str(src), "stdout", *tess_args(tessdata), "-l", langs,
-                        "--psm", "6", "tsv"], capture_output=True, text=True, encoding="utf-8")
+                        "--psm", "6", "-c", "tessedit_create_tsv=1"],
+                       capture_output=True, text=True, encoding="utf-8")
     words = []
     for row in r.stdout.splitlines()[1:]:
         f = row.split("\t")
@@ -80,10 +81,11 @@ def wants_english(ua: str, ua_conf: float, en: str, en_conf: float) -> bool:
     if not en:
         return False
     mixed = any(map(is_cyr, ua)) and any(map(is_lat, ua))
-    technical = any(ch in ua for ch in "@/\\_=:") or "." in ua.strip(".,;:!?")
+    technical = any(ch in en for ch in "@/\\_=") or "." in en.strip(".,;:!?")
     if mixed or technical:
         return en_conf >= ua_conf - 15
-    return False
+    # A Latin word read as Cyrillic look-alikes: English is clearly surer.
+    return en_conf >= ua_conf + 12
 
 
 def iou(a, b) -> float:
@@ -94,12 +96,12 @@ def iou(a, b) -> float:
     return inter / union if union else 0.0
 
 
-def dual(scale: int, tessdata: str | None = None):
+def dual(scale: int, tessdata: str | None = None, merge: bool = True, langs: str = "ukr+eng"):
     out = {}
     for p in pictures():
         src = scaled(p, scale)
-        ua = tsv_words(src, "ukr+eng", tessdata)
-        en = tsv_words(src, "eng", tessdata)
+        ua = tsv_words(src, langs, tessdata)
+        en = tsv_words(src, "eng", tessdata) if merge else []
         lines: dict = {}
         for key, box, conf, text in ua:
             best = max(en, key=lambda w: iou(box, w[1]), default=None)
@@ -158,6 +160,10 @@ def main():
         "tesseract-fast-2x-dual": lambda: dual(2, fast),
         "tesseract-best-2x": lambda: tesseract(2, best),
         "tesseract-best-2x-dual": lambda: dual(2, best),
+        # Controls: the word list without merging (does the TSV layout alone change the score?)
+        # and English as the first language.
+        "tesseract-best-2x-words": lambda: dual(2, best, merge=False),
+        "tesseract-best-2x-engfirst": lambda: dual(2, best, merge=False, langs="eng+ukr"),
         "easyocr": easyocr_run,
         "paddle": paddle,
     }
