@@ -474,3 +474,57 @@ fn export_does_not_clobber_files() {
     assert_eq!(call(&mut s, 4, &fresh, "png")["isError"], false);
     assert!(fresh.exists());
 }
+
+/// ZK-146: `read_codes` reads a library document with library_read only, the screen with
+/// capture only, and reading the screen adds no document.
+#[test]
+fn read_codes_on_a_document_and_on_the_screen() {
+    let e = env("codes", true);
+    let call = |s: &mut Server, id: u64, args: Value| {
+        s.handle_line(&req(
+            id,
+            "tools/call",
+            modern(json!({"name": "read_codes", "arguments": args})),
+        ))
+        .unwrap()["result"]
+            .clone()
+    };
+    let (w, h, rgba) = znimok_codes::qr_rgba("https://example.org/znimok", 6).unwrap();
+    let doc = znimok_core::Document::from_raster("qr", Raster::new(w, h, rgba));
+    let path = e.agent.lib.new_path(&doc);
+    crate::library::save(&path, &doc).unwrap();
+    let id = doc.id.to_string();
+
+    e.agent
+        .perms
+        .grant("Claude Code", Scope::LibraryRead, Grant::Always)
+        .unwrap();
+    let mut s = Server::new(&e.agent);
+    let r = call(&mut s, 1, json!({"document": id}));
+    assert_eq!(r["isError"], false, "{r}");
+    let c = &r["structuredContent"]["codes"][0];
+    assert_eq!(c["kind"], "link");
+    assert_eq!(c["url"], "https://example.org/znimok");
+    assert_eq!(r["structuredContent"]["document"], id.as_str());
+
+    // The screen needs capture, not granted yet (and no app to ask): refused.
+    let r = call(&mut s, 2, json!({}));
+    assert_eq!(r["isError"], true, "{r}");
+    e.agent
+        .perms
+        .grant("Claude Code", Scope::Capture, Grant::Always)
+        .unwrap();
+    let before = e.agent.lib.search("", None, 100).len();
+    let r = call(&mut s, 3, json!({"x": 0, "y": 0, "width": 50, "height": 40}));
+    assert_eq!(r["isError"], false, "{r}");
+    assert_eq!(r["structuredContent"]["codes"], json!([]));
+    assert_eq!(r["structuredContent"]["screen"], true);
+    assert_eq!(e.agent.lib.search("", None, 100).len(), before, "no new document");
+
+    // Half a region, or a document and a place on the screen, are mistakes.
+    assert_eq!(call(&mut s, 4, json!({"x": 0, "y": 0}))["isError"], true);
+    assert_eq!(
+        call(&mut s, 5, json!({"document": id, "display": "d1"}))["isError"],
+        true
+    );
+}

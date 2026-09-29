@@ -416,6 +416,12 @@ fn hotkey_pressed(a: hotkeys::Action) {
             show_window(&ui);
             confirm_leave(&app, &ui, |app, ui| app.borrow_mut().open_blank(ui));
         }
+        // As the tray's «Зчитати коди»: the screen under the pointer, the answer in the window.
+        hotkeys::Action::ReadCodes => {
+            if !overlay::is_open() && capture::available() {
+                codes::from_screen();
+            }
+        }
     }
 }
 

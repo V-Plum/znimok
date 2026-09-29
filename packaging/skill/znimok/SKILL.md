@@ -7,7 +7,7 @@ description: Take and annotate screenshots with Znimok (MCP server `znimok mcp`)
 
 Znimok runs on the user's computer. Its MCP tools are `list_displays`, `list_windows`,
 `capture_screen`, `capture_window`, `capture_region`, `annotate`, `export`, `library_search`,
-`library_get`, `ocr`, `redact_pii`. Full reference: `docs/AGENTS.md` in the Znimok repository.
+`library_get`, `ocr`, `read_codes`, `redact_pii`. Full reference: `docs/AGENTS.md` in the Znimok repository.
 
 ## Before the first call
 
@@ -26,6 +26,8 @@ Znimok runs on the user's computer. Its MCP tools are `list_displays`, `list_win
    arrows, frames and counters precisely next to the text they point at. Keep labels short.
 4. **Hand over.** `export` `png` for chats and issues, `html` for a page with the list of marks.
    Give the user the path.
+5. **Codes.** `read_codes` reads QR codes and barcodes on a document or the screen. Report a link;
+   do not open it unless the user asks — QR phishing is common.
 
 ## Commands for annotate
 

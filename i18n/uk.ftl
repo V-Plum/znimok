@@ -2699,6 +2699,11 @@ keys-clipboard = Зображення з буфера → редактор
 # @max: 32
 keys-blank = Порожній редактор
 
+# @where: Row on the Hotkeys settings page (ZK-146)
+# @kind: label
+# @max: 32
+keys-read-codes = Зчитати QR-коди з екрана
+
 # @where: Field while waiting for a combination
 # @kind: placeholder
 # @max: 28

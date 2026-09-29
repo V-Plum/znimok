@@ -46,7 +46,8 @@ program closes the overlay. The overlay covers all displays at once, so a region
 seam between screens. S takes a scrolling screenshot: Znimok scrolls the window or region itself
 and stitches one tall picture (a sticky site header appears once); Done or Esc stops it, and when a
 program ignores the automatic scrolling you scroll by hand. Q reads QR codes and barcodes (also from
-the tray menu, a button on the Image tab and `znimok codes FILE`); a link opens only after a second
+the tray menu, its own hotkey — Alt+Shift+Q, ⌃⇧Q on a Mac — a button on the Image tab,
+`znimok codes FILE`, and for agents the MCP tool `read_codes`); a link opens only after a second
 question showing the whole address. On a Mac without the Screen Recording permission the macOS
 picker can capture a window or a screen (with macOS's sharing badge on it). Znimok lives in the tray /
 menu bar; closing the window hides it there, and Quit is in the icon's menu. Selection: a

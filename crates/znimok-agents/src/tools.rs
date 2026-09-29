@@ -218,6 +218,25 @@ const TOOLS: &[Tool] = &[
         },
     },
     Tool {
+        name: "read_codes",
+        title: "Read QR codes and barcodes",
+        description: "QR codes, Data Matrix, Aztec, PDF417 and 1-D barcodes on a library document or on the screen (a display, or a region in desktop units), read on this computer. Each: the text, its kind (link, wifi, contact, event, email, phone, text) with the parsed fields, and its box in pixels. Reading the screen does not add a document (on macOS the app takes the shot and keeps it in the library). Links are only reported — open one only if the person asks.",
+        // Library documents: library_read; the screen: capture (see `scope_for`).
+        scope: Some(Scope::Capture),
+        read_only: true,
+        schema: || {
+            obj(
+                json!({
+                    "document": doc_arg(),
+                    "display": {"type": "string", "description": "Display id from list_displays (the primary one when neither document nor region is given)"},
+                    "x": {"type": "integer"}, "y": {"type": "integer"},
+                    "width": {"type": "integer", "minimum": 1}, "height": {"type": "integer", "minimum": 1}
+                }),
+                &[],
+            )
+        },
+    },
+    Tool {
         name: "redact_pii",
         title: "Hide secrets and personal data",
         description: "Finds keys, passwords, e-mails, phones, cards, IBANs and faces on the document (on this computer) and, unless apply=false, covers them with Hide marks and saves.",
@@ -293,6 +312,48 @@ fn arg_str<'a>(a: &'a Value, k: &str) -> Option<&'a str> {
 
 /// A required whole-number argument. Missing and wrong-typed are told apart, and a number sent
 /// as a string ("197496") is accepted — agents do that (ZK-123).
+/// The permission a call needs: the tool's, except `read_codes` on a library document, which only
+/// reads the library.
+fn scope_for(tool: &Tool, args: &Value) -> Option<Scope> {
+    if tool.name == "read_codes" && arg_str(args, "document").is_some() {
+        return Some(Scope::LibraryRead);
+    }
+    tool.scope
+}
+
+/// One code for the agent: the text, the kind with its fields, the box.
+fn code_json(c: &znimok_codes::Code) -> Value {
+    use znimok_codes::Kind;
+    let (x, y, w, h) = c.bounds;
+    let mut v = json!({
+        "format": c.format,
+        "text": c.text,
+        "bounds": {"x": x, "y": y, "w": w, "h": h},
+    });
+    let (kind, extra) = match &c.kind {
+        Kind::Link(url) => ("link", json!({"url": url})),
+        Kind::Wifi {
+            ssid,
+            password,
+            security,
+            hidden,
+        } => (
+            "wifi",
+            json!({"ssid": ssid, "password": password, "security": security, "hidden": hidden}),
+        ),
+        Kind::Contact => ("contact", json!({})),
+        Kind::Event => ("event", json!({})),
+        Kind::Email(a) => ("email", json!({"address": a})),
+        Kind::Phone(n) => ("phone", json!({"number": n})),
+        Kind::Text => ("text", json!({})),
+    };
+    v["kind"] = json!(kind);
+    if let (Some(o), Some(e)) = (v.as_object_mut(), extra.as_object()) {
+        o.extend(e.clone());
+    }
+    v
+}
+
 fn arg_int(a: &Value, k: &str) -> Result<i64, String> {
     match a.get(k) {
         None | Some(Value::Null) => Err(format!("«{k}» is required")),
@@ -329,13 +390,14 @@ impl Agent {
         let Some(tool) = TOOLS.iter().find(|t| t.name == name) else {
             return Output::error(format!("unknown tool «{name}»"));
         };
+        let scope = scope_for(tool, args);
         let mut entry = Entry {
             ts: chrono::Utc::now().timestamp_millis(),
             client: client.into(),
             tool: name.into(),
-            scope: tool.scope,
+            scope,
             grant: None,
-            capture: name.starts_with("capture_"),
+            capture: scope == Some(Scope::Capture) && name != "list_windows",
             document: arg_str(args, "document").map(str::to_string),
             ok: false,
             error: None,
@@ -346,11 +408,7 @@ impl Agent {
                  (or `znimok agents enable`).",
             )
         } else {
-            match tool
-                .scope
-                .map(|s| self.authorize(client, s, name))
-                .transpose()
-            {
+            match scope.map(|s| self.authorize(client, s, name)).transpose() {
                 Err(e) => Output::error(e),
                 Ok(g) => {
                     entry.grant = g.or(Some(Grant::Once));
@@ -574,6 +632,66 @@ impl Agent {
                     json!({"text": res.text(), "lines": lines, "languages": res.languages, "missing_languages": res.missing}),
                     vec![],
                 ))
+            }
+            "read_codes" => {
+                let region = ["x", "y", "width", "height"]
+                    .map(|k| args.get(k).is_some_and(|v| !v.is_null()));
+                let (raster, from) = if arg_str(args, "document").is_some() {
+                    if region.contains(&true) || arg_str(args, "display").is_some() {
+                        return Err(
+                            "give either «document» or a place on the screen, not both".into()
+                        );
+                    }
+                    let (doc, _) = self.doc(args)?;
+                    let from = json!({"document": doc.id.to_string()});
+                    (library::render(&doc, 1.0), from)
+                } else {
+                    let target = if region.iter().all(|r| *r) {
+                        let n = |k: &str| arg_int(args, k);
+                        let (w, h) = (n("width")?, n("height")?);
+                        if w < 1 || h < 1 {
+                            return Err("width and height must be positive".into());
+                        }
+                        CaptureTarget::Region {
+                            rect: Rect {
+                                x: n("x")? as i32,
+                                y: n("y")? as i32,
+                                width: w as u32,
+                                height: h as u32,
+                            },
+                        }
+                    } else if region.contains(&true) {
+                        return Err("a region needs all of «x», «y», «width» and «height»".into());
+                    } else {
+                        let id = match arg_str(args, "display") {
+                            Some(id) => DisplayId(id.into()),
+                            None => {
+                                self.capture
+                                    .displays()?
+                                    .into_iter()
+                                    .find(|d| d.primary)
+                                    .ok_or("no display")?
+                                    .id
+                            }
+                        };
+                        CaptureTarget::Display { id }
+                    };
+                    match self.capture.take(&target)? {
+                        Shot::Pixels(r) => (r, json!({"screen": true})),
+                        // macOS: the app took the shot and keeps it in the library.
+                        Shot::Saved(p) => {
+                            let doc = library::load(&p)?;
+                            let from = json!({"screen": true, "saved_as": doc.id.to_string()});
+                            (library::render(&doc, 1.0), from)
+                        }
+                    }
+                };
+                let codes = znimok_codes::read(raster.width, raster.height, &raster.rgba);
+                let mut v = json!({"codes": codes.iter().map(code_json).collect::<Vec<_>>()});
+                if let (Some(o), Some(f)) = (v.as_object_mut(), from.as_object()) {
+                    o.extend(f.clone());
+                }
+                Ok(Output::ok(v, vec![]))
             }
             "redact_pii" => {
                 let (doc, path) = self.doc(args)?;

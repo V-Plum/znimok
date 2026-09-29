@@ -33,8 +33,8 @@ always**. Scopes:
 
 | Scope | Tools |
 |---|---|
-| `capture` | `list_windows`, `capture_screen`, `capture_window`, `capture_region` |
-| `library_read` | `library_search`, `library_get`, `ocr`, `export`, resources |
+| `capture` | `list_windows`, `capture_screen`, `capture_window`, `capture_region`, `read_codes` on the screen |
+| `library_read` | `library_search`, `library_get`, `ocr`, `export`, `read_codes` on a document, resources |
 | `library_write` | `annotate`, `redact_pii` |
 
 `list_displays` needs no permission. If Znimok is not running, nobody can be asked and the call is
@@ -68,6 +68,7 @@ PNG, plus a `resource_link` `znimok://library/<id>` to the original.
 | `library_search` | `query?`, `tag?`, `limit?` (≤ 200) | documents, newest first |
 | `library_get` | `document` | picture + metadata |
 | `ocr` | `document`, `languages?` (e.g. `["uk","en"]`) | text and line boxes, on the device |
+| `read_codes` | `document`, or `display?`, or `x`, `y`, `width`, `height` (desktop units) | QR codes and barcodes, on the device: `text`, `kind` (`link` + `url`, `wifi` + `ssid`/`password`/`security`/`hidden`, `contact`, `event`, `email` + `address`, `phone` + `number`, `text`), `format`, `bounds`; the screen is read without adding a document (macOS: the app keeps its shot, `saved_as`) |
 | `redact_pii` | `document`, `apply?` (true), `faces?` (true) | what was found; with `apply` covered by Hide marks and saved |
 
 Resources: `resources/list` lists the library, `resources/read` gives a document as PNG.

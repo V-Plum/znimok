@@ -2685,6 +2685,11 @@ keys-clipboard = Clipboard image → editor
 # @max: 32
 keys-blank = Blank editor
 
+# @where: Row on the Hotkeys settings page (ZK-146)
+# @kind: label
+# @max: 32
+keys-read-codes = Read QR codes on the screen
+
 # @where: Field while waiting for a combination
 # @kind: placeholder
 # @max: 28
