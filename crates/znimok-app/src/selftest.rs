@@ -1473,6 +1473,70 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
         r.snapshot(ui, "09-region-editor");
     }));
 
+    // ZK-117 / ZK-46: the main screens once more in the light theme, and text contrast in both
+    // (WCAG: main text at least 7:1 on panels, secondary at least 4.5:1).
+    steps.push(Box::new(|_, ui, r| {
+        let theme = ui.global::<crate::Theme>();
+        let contrast = |a: slint::Color, b: slint::Color| -> f64 {
+            let lum = |c: slint::Color| {
+                let f = |v: u8| {
+                    let v = v as f64 / 255.0;
+                    if v <= 0.03928 {
+                        v / 12.92
+                    } else {
+                        ((v + 0.055) / 1.055).powf(2.4)
+                    }
+                };
+                0.2126 * f(c.red()) + 0.7152 * f(c.green()) + 0.0722 * f(c.blue())
+            };
+            let (x, y) = (lum(a), lum(b));
+            (x.max(y) + 0.05) / (x.min(y) + 0.05)
+        };
+        let mut worst = Vec::new();
+        for mode in [2, 1] {
+            theme.set_mode(mode);
+            let (p, t1, t2) = (theme.get_panel(), theme.get_text(), theme.get_text2());
+            worst.push((mode, contrast(t1, p), contrast(t2, p)));
+        }
+        r.check(
+            "text contrast, dark and light: ≥ 7:1 main, ≥ 4.5:1 secondary",
+            worst.iter().all(|(_, a, b)| *a >= 7.0 && *b >= 4.5),
+            format!("{worst:.2?}"),
+        );
+        theme.set_mode(0);
+        ui.invoke_setting("theme".into(), 1);
+        ui.set_insp_tab(0);
+        r.check("light theme on", !theme.get_dark(), String::new());
+    }));
+    steps.push(Box::new(|_, ui, r| {
+        r.snapshot(ui, "L1-editor-light");
+        ui.set_insp_tab(2);
+    }));
+    steps.push(Box::new(|_, ui, r| {
+        r.snapshot(ui, "L2-image-light");
+        ui.set_insp_tab(1);
+    }));
+    steps.push(Box::new(|_, ui, r| {
+        r.snapshot(ui, "L3-layers-light");
+        ui.set_insp_tab(0);
+        ui.invoke_settings_open();
+        ui.set_settings_page(4);
+    }));
+    steps.push(Box::new(|_, ui, r| {
+        r.snapshot(ui, "L4-settings-light");
+        ui.invoke_setting("onb-open".into(), 0);
+    }));
+    steps.push(Box::new(|app, ui, r| {
+        r.snapshot(ui, "L5-onboarding-light");
+        ui.invoke_setting("onb-done".into(), 1);
+        app.borrow_mut().close_document(ui);
+    }));
+    steps.push(Box::new(|_, ui, r| {
+        r.snapshot(ui, "L6-library-light");
+        // Back to "as the system" for whatever runs after.
+        ui.invoke_setting("theme".into(), 0);
+    }));
+
     // Needs a live desktop: opt in with ZNIMOK_SELFTEST_CAPTURE=1.
     if std::env::var_os("ZNIMOK_SELFTEST_CAPTURE").is_some() {
         steps.push(Box::new(|app, ui, r| {
