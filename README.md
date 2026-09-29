@@ -1,3 +1,5 @@
+<p><img src="crates/znimok-app/icons/app-128.png" width="96" height="96" alt="Znimok"></p>
+
 # Znimok
 
 **Українська** · [English](README.en.md)
