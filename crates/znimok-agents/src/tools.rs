@@ -86,7 +86,7 @@ const TOOLS: &[Tool] = &[
     Tool {
         name: "list_windows",
         title: "List windows",
-        description: "Visible top-level windows: id, title, application, bounds. Use an id with capture_window.",
+        description: "Visible top-level windows: id, title, app (executable or bundle name), bounds. Use an id with capture_window.",
         scope: Some(Scope::Capture),
         read_only: true,
         schema: || obj(json!({}), &[]),
@@ -291,6 +291,19 @@ fn arg_str<'a>(a: &'a Value, k: &str) -> Option<&'a str> {
     a.get(k).and_then(Value::as_str)
 }
 
+/// A required whole-number argument. Missing and wrong-typed are told apart, and a number sent
+/// as a string ("197496") is accepted — agents do that (ZK-123).
+fn arg_int(a: &Value, k: &str) -> Result<i64, String> {
+    match a.get(k) {
+        None | Some(Value::Null) => Err(format!("«{k}» is required")),
+        Some(v) => v
+            .as_i64()
+            .or_else(|| v.as_f64().filter(|f| f.fract() == 0.0).map(|f| f as i64))
+            .or_else(|| v.as_str().and_then(|s| s.trim().parse().ok()))
+            .ok_or_else(|| format!("«{k}» must be a whole number, got {v}")),
+    }
+}
+
 impl Agent {
     fn authorize(&self, client: &str, scope: Scope, tool: &str) -> Result<Grant, String> {
         match self.perms.check(client, scope) {
@@ -438,11 +451,12 @@ impl Agent {
                 self.shot(CaptureTarget::Display { id }, "screen")
             }
             "capture_window" => {
-                let id = args["window"].as_u64().ok_or("«window» is required")?;
+                let id = u64::try_from(arg_int(args, "window")?)
+                    .map_err(|_| "«window» must be an id from list_windows".to_string())?;
                 self.shot(CaptureTarget::Window { id: WindowId(id) }, "window")
             }
             "capture_region" => {
-                let n = |k: &str| args[k].as_i64().ok_or(format!("«{k}» is required"));
+                let n = |k: &str| arg_int(args, k);
                 let (w, h) = (n("width")?, n("height")?);
                 if w < 1 || h < 1 {
                     return Err("width and height must be positive".into());
@@ -624,5 +638,24 @@ impl Agent {
         use base64::Engine;
         Ok(json!({"uri": uri, "mimeType": "image/png",
                   "blob": base64::engine::general_purpose::STANDARD.encode(png)}))
+    }
+}
+
+#[cfg(test)]
+mod arg_tests {
+    use super::arg_int;
+    use serde_json::json;
+
+    /// Missing, wrong type and a number sent as a string are told apart (ZK-123).
+    #[test]
+    fn whole_numbers_and_their_errors() {
+        assert_eq!(arg_int(&json!({"window": 197496}), "window"), Ok(197496));
+        assert_eq!(arg_int(&json!({"window": "197496"}), "window"), Ok(197496));
+        assert_eq!(arg_int(&json!({"x": -40.0}), "x"), Ok(-40));
+        assert_eq!(arg_int(&json!({}), "window"), Err("«window» is required".into()));
+        assert_eq!(arg_int(&json!({"window": null}), "window"), Err("«window» is required".into()));
+        let e = arg_int(&json!({"window": "Explorer"}), "window").unwrap_err();
+        assert!(e.contains("must be a whole number"), "{e}");
+        assert!(arg_int(&json!({"x": 1.5}), "x").is_err());
     }
 }
