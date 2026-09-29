@@ -353,3 +353,36 @@ fn fuzz_regressions() {
     }
     assert!(n >= 1);
 }
+
+/// ZK-145: a video opened for editing and saved again stays a video — twice to the same path
+/// (the stream is read from the file being replaced, and its offsets move), stream intact.
+#[test]
+fn a_video_saved_again_stays_a_video() {
+    let dir = std::env::temp_dir().join(format!("znimok-resave-{}", std::process::id()));
+    let _ = std::fs::create_dir_all(&dir);
+    let path = dir.join("video.znimok");
+    let bytes = video_sample();
+    std::fs::write(&path, &bytes).unwrap();
+    let mp4_before = match znimok_format::read_any(&bytes).unwrap() {
+        znimok_format::Loaded::Video(v) => v.payload.bytes(&bytes).unwrap(),
+        _ => panic!("sample is a video"),
+    };
+    let (mut doc, mut part) = znimok_format::open_parts(&path).unwrap();
+    assert!(part.is_some());
+    for name in ["Перша назва", "Друга, довша назва відео, щоб зсунути потік"]
+    {
+        doc.name = name.into();
+        doc.objects.truncate(doc.objects.len().saturating_sub(1));
+        part = znimok_format::save_same_kind(&path, &doc, part.as_ref(), &WriteOptions::default())
+            .unwrap();
+    }
+    let after = std::fs::read(&path).unwrap();
+    match znimok_format::read_any(&after).unwrap() {
+        znimok_format::Loaded::Video(v) => {
+            assert_eq!(v.doc.name, "Друга, довша назва відео, щоб зсунути потік");
+            assert_eq!(v.payload.bytes(&after).unwrap(), mp4_before);
+        }
+        _ => panic!("the video became a screenshot"),
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+}

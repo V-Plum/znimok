@@ -283,14 +283,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let mut a = app.borrow_mut();
                 a.tick_toast(&ui);
                 a.lib_poll(&ui, false);
-                if let Some((path, doc, opts)) = a.autosave_job(&ui) {
+                if let Some((path, doc, opts, video)) = a.autosave_job(&ui) {
                     std::thread::spawn(move || {
                         if let Some(dir) = path.parent() {
                             let _ = std::fs::create_dir_all(dir);
                         }
                         let r = {
                             let _guard = app::SAVE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-                            znimok_format::save(&path, &doc, &opts).map_err(|e| e.to_string())
+                            znimok_format::save_same_kind(&path, &doc, video.as_ref(), &opts)
+                                .map_err(|e| e.to_string())
                         };
                         let _ = slint::invoke_from_event_loop(move || {
                             with_ctx(|a, ui| a.save_finished(ui, &path, r));

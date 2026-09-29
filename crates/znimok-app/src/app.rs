@@ -172,6 +172,9 @@ pub struct Session {
     changed_at: Instant,
     /// A background save failed: keep trying even though the editor thinks it is saved.
     save_failed: bool,
+    /// A video document opened for its marks (ZK-145): written back as a video, never as a
+    /// screenshot of its poster.
+    pub video: Option<znimok_format::VideoPart>,
 }
 
 /// "Over the screen" (ZK-58): the editor window covers the frozen display without chrome; the
@@ -1161,14 +1164,15 @@ impl App {
             self.refresh_library(ui);
             return;
         }
-        let r = std::fs::read(path)
+        let r = znimok_format::open_parts(path)
             .map_err(|e| e.to_string())
-            .and_then(|d| znimok_format::read(&d).map_err(|e| e.to_string()))
-            .and_then(|mut doc| {
+            .and_then(|(mut doc, video)| {
                 doc.name = name.to_string();
                 let opts = self.options_for(&doc);
                 let _guard = SAVE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-                znimok_format::save(path, &doc, &opts).map_err(|e| e.to_string())
+                znimok_format::save_same_kind(path, &doc, video.as_ref(), &opts)
+                    .map(|_| ())
+                    .map_err(|e| e.to_string())
             });
         if let Err(e) = r {
             let msg = format!("{} ({e})", self.tr.tr("lib-error-rename"));
@@ -1434,6 +1438,7 @@ impl App {
             path,
             changed_at: Instant::now(),
             save_failed: fresh,
+            video: None,
         });
         self.drag = None;
         self.editing = None;
@@ -1508,8 +1513,13 @@ impl App {
             }
         };
         if znimok_format::is_znimok(&data) {
-            match znimok_format::read(&data) {
-                Ok(doc) => self.open_session(ui, Editor::new(doc), path.to_path_buf(), false),
+            match znimok_format::open_parts(path) {
+                Ok((doc, video)) => {
+                    self.open_session(ui, Editor::new(doc), path.to_path_buf(), false);
+                    if let Some(s) = self.s.as_mut() {
+                        s.video = video;
+                    }
+                }
                 Err(e) => self.toast(ui, format!("{name}: {e}")),
             }
             return;
@@ -1592,8 +1602,11 @@ impl App {
         if let Some(dir) = s.path.parent() {
             let _ = std::fs::create_dir_all(dir);
         }
-        match znimok_format::save(&s.path, &s.ed.doc, &opts) {
-            Ok(()) => {
+        match znimok_format::save_same_kind(&s.path, &s.ed.doc, s.video.as_ref(), &opts) {
+            Ok(video) => {
+                if s.video.is_some() {
+                    s.video = video;
+                }
                 s.ed.mark_saved();
                 s.save_failed = false;
                 self.sync(ui);
@@ -1612,7 +1625,12 @@ impl App {
     pub fn autosave_job(
         &mut self,
         ui: &AppWindow,
-    ) -> Option<(PathBuf, Document, znimok_format::WriteOptions)> {
+    ) -> Option<(
+        PathBuf,
+        Document,
+        znimok_format::WriteOptions,
+        Option<znimok_format::VideoPart>,
+    )> {
         if !self.autosave
             || self.saving
             || self.over.is_some()
@@ -1627,7 +1645,7 @@ impl App {
         }
         let opts = self.write_options()?;
         let s = self.s.as_mut()?;
-        let job = (s.path.clone(), s.ed.doc.clone(), opts);
+        let job = (s.path.clone(), s.ed.doc.clone(), opts, s.video.clone());
         s.ed.mark_saved();
         s.save_failed = false;
         self.saving = true;
@@ -1635,8 +1653,21 @@ impl App {
         Some(job)
     }
 
-    pub fn save_finished(&mut self, ui: &AppWindow, path: &Path, result: Result<(), String>) {
+    pub fn save_finished(
+        &mut self,
+        ui: &AppWindow,
+        path: &Path,
+        result: Result<Option<znimok_format::VideoPart>, String>,
+    ) {
         self.saving = false;
+        // A video's stream moved inside the rewritten file: the next save reads it from there.
+        if let Ok(Some(v)) = &result
+            && let Some(s) = self.s.as_mut()
+            && s.path == path
+        {
+            s.video = Some(v.clone());
+        }
+        let result = result.map(|_| ());
         if let Err(e) = result
             && let Some(s) = self.s.as_mut()
             && s.path == path
@@ -4903,7 +4934,8 @@ impl App {
             path.set_extension("znimok");
         }
         let opts = self.options_for(&doc);
-        let r = znimok_format::save(&path, &doc, &opts);
+        let video = self.s.as_ref().and_then(|s| s.video.clone());
+        let r = znimok_format::save_same_kind(&path, &doc, video.as_ref(), &opts).map(|_| ());
         let name = path
             .file_name()
             .map(|n| n.to_string_lossy().into_owned())

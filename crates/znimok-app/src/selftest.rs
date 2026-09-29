@@ -2132,6 +2132,56 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
         );
     }));
 
+    // ZK-145: a video document opened in the app and saved again stays a video (its stream
+    // intact); the library shows it with ▶ and its length.
+    steps.push(Box::new(|app, ui, r| {
+        let dir = app.borrow().lib_dir.clone();
+        let path = dir.join("Znimok-selftest-video.znimok");
+        let doc = znimok_core::Document::from_raster(
+            String::from("Відео"),
+            znimok_core::Raster::solid(160, 100, znimok_core::Rgb::BLUE),
+        );
+        let info = znimok_format::VideoInfo {
+            width: 160,
+            height: 100,
+            fps_milli: 30_000,
+            frames: 90,
+            duration_hns: 30_000_000,
+            codec: znimok_format::video::CODEC_H264,
+        };
+        let mp4: Vec<u8> = (0..4096u32).map(|i| (i * 13) as u8).collect();
+        let bytes = znimok_format::write_video(
+            &doc,
+            &znimok_format::Video::new(info),
+            &mp4,
+            &znimok_format::WriteOptions::default(),
+        );
+        let written = std::fs::write(&path, bytes).is_ok();
+        app.borrow_mut().open_path(ui, &path);
+        let opened_as_video = app.borrow().s.as_ref().is_some_and(|s| s.video.is_some());
+        ui.invoke_meta_edited("title".into(), "Відео, перейменоване".into());
+        let saved = app.borrow_mut().save_now(ui);
+        let after = std::fs::read(&path).unwrap_or_default();
+        let still = match znimok_format::read_any(&after) {
+            Ok(znimok_format::Loaded::Video(v)) => {
+                v.doc.name == "Відео, перейменоване" && v.payload.bytes(&after) == Some(mp4)
+            }
+            _ => false,
+        };
+        let card = crate::library::read_entry(&path).map(|e| e.meta_line());
+        r.check(
+            "video document: opened, renamed and saved — still a video, stream intact; ▶ on the card",
+            written
+                && opened_as_video
+                && saved
+                && still
+                && card.as_deref().is_some_and(|m| m.starts_with("▶ 0:03")),
+            format!("written {written} · video {opened_as_video} · saved {saved} · still {still} · {card:?}"),
+        );
+        app.borrow_mut().close_document(ui);
+        let _ = std::fs::remove_file(&path);
+    }));
+
     // ZK-132: the Agents and Updates pages; the MCP switch is the one the server checks.
     steps.push(Box::new(|_, ui, _| {
         ui.invoke_settings_open();

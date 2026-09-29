@@ -774,6 +774,62 @@ pub fn open(path: &Path) -> Result<Loaded, FormatError> {
     read_from(&mut std::io::BufReader::new(f), &Limits::default())
 }
 
+/// What a video document adds to its poster document, to write it back as a video: the video
+/// blocks, where the encoded stream lies, and the file it lies in.
+#[derive(Clone, Debug)]
+pub struct VideoPart {
+    pub video: Video,
+    pub payload: Payload,
+    pub source: std::path::PathBuf,
+}
+
+/// Opens a document of either kind for editing (ZK-145): the document with the marks, plus the
+/// video part when it is a video. Programs that edit marks keep the part and write the document
+/// back with [`save_same_kind`] — with plain [`save`] a video would become a screenshot.
+pub fn open_parts(path: &Path) -> Result<(Document, Option<VideoPart>), FormatError> {
+    Ok(match open(path)? {
+        Loaded::Image(doc) => (doc, None),
+        Loaded::Video(v) => (
+            v.doc,
+            Some(VideoPart {
+                video: v.video,
+                payload: v.payload,
+                source: path.to_path_buf(),
+            }),
+        ),
+    })
+}
+
+/// Writes `doc` as the kind it was opened as: a screenshot with [`save`]; a video with
+/// [`save_video`], the stream read from `video.source` (it may be `path` itself — the stream is
+/// read to the end before the new file replaces the old one). Returns the video part of the
+/// file now at `path` (the stream's offsets move when the blocks before it change), to use for
+/// the next save.
+pub fn save_same_kind(
+    path: &Path,
+    doc: &Document,
+    video: Option<&VideoPart>,
+    opts: &WriteOptions,
+) -> Result<Option<VideoPart>, FormatError> {
+    let Some(v) = video else {
+        save(path, doc, opts)?;
+        return Ok(None);
+    };
+    let f = std::fs::File::open(&v.source)
+        .map_err(|e| FormatError::Io(format!("{}: {e}", v.source.display())))?;
+    let reader = PayloadReader::new(std::io::BufReader::new(f), &v.payload);
+    let len = reader.len();
+    save_video(path, doc, &v.video, reader, len, opts)?;
+    match open(path)? {
+        Loaded::Video(n) => Ok(Some(VideoPart {
+            video: n.video,
+            payload: n.payload,
+            source: path.to_path_buf(),
+        })),
+        Loaded::Image(_) => Err(FormatError::Corrupt("a video saved as an image".into())),
+    }
+}
+
 /// Like [`open`], from any seekable source. Everything but the `MP4 ` chunks is read into memory
 /// (at most `limits.max_file` bytes) and parsed as usual; the chunks are only located.
 pub fn read_from<R: std::io::Read + std::io::Seek>(

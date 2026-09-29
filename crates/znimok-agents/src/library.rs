@@ -109,9 +109,11 @@ fn peek_item(p: &Path) -> Option<Item> {
     })
 }
 
+/// The document with its marks (for a video, its poster document — see [`save`]).
 pub fn load(path: &Path) -> Result<Document, String> {
-    let bytes = std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
-    znimok_format::read(&bytes).map_err(|e| format!("{}: {e}", path.display()))
+    znimok_format::open_parts(path)
+        .map(|(doc, _)| doc)
+        .map_err(|e| format!("{}: {e}", path.display()))
 }
 
 /// The document with its marks, 1:1 (or scaled).
@@ -143,7 +145,16 @@ pub fn save(path: &Path, doc: &Document) -> Result<(), String> {
     if let Some(d) = path.parent() {
         std::fs::create_dir_all(d).map_err(|e| e.to_string())?;
     }
-    znimok_format::save(path, doc, &opts).map_err(|e| e.to_string())
+    // A video in the library stays a video when an agent changes its marks (ZK-145): its video
+    // blocks and stream are taken from the file being replaced.
+    let video = if path.exists() {
+        znimok_format::open_parts(path).ok().and_then(|(_, v)| v)
+    } else {
+        None
+    };
+    znimok_format::save_same_kind(path, doc, video.as_ref(), &opts)
+        .map(|_| ())
+        .map_err(|e| e.to_string())
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

@@ -31,6 +31,8 @@ pub struct Entry {
     pub tags: Vec<String>,
     pub description: String,
     pub thumb_png: Option<Vec<u8>>,
+    /// A video document: its length (ZK-145).
+    pub video_ms: Option<u64>,
 }
 
 impl Entry {
@@ -40,7 +42,14 @@ impl Entry {
             .single()
             .map(|t| t.format("%d.%m.%Y %H:%M").to_string())
             .unwrap_or_default();
-        format!("{} × {} · {when}", self.width, self.height)
+        let video = self
+            .video_ms
+            .map(|ms| {
+                let s = ms / 1000;
+                format!("▶ {}:{:02} · ", s / 60, s % 60)
+            })
+            .unwrap_or_default();
+        format!("{video}{} × {} · {when}", self.width, self.height)
     }
 
     pub fn matches(&self, filter: &str) -> bool {
@@ -87,6 +96,11 @@ pub fn read_entry(path: &Path) -> Option<Entry> {
         tags: p.meta.tags,
         description: p.meta.description,
         thumb_png: p.thumbnail_png,
+        video_ms: (p.kind == znimok_format::DocKind::Video).then(|| {
+            p.video
+                .map(|v| (v.duration_hns / 10_000).max(0) as u64)
+                .unwrap_or(0)
+        }),
     })
 }
 
@@ -367,7 +381,7 @@ fn cache_dir() -> PathBuf {
 
 // A card in the index: stamp, then length-prefixed fields (little endian). Version byte first,
 // so a future layout is simply read again from the file.
-const INDEX_VERSION: u8 = 1;
+const INDEX_VERSION: u8 = 2;
 
 fn encode(e: &Entry, st: Stamp) -> Vec<u8> {
     let mut v = vec![INDEX_VERSION];
@@ -384,6 +398,7 @@ fn encode(e: &Entry, st: Stamp) -> Vec<u8> {
     bytes(&mut v, e.description.as_bytes());
     bytes(&mut v, e.tags.join("\n").as_bytes());
     bytes(&mut v, e.thumb_png.as_deref().unwrap_or(&[]));
+    v.extend_from_slice(&e.video_ms.map_or(-1i64, |m| m as i64).to_le_bytes());
     v
 }
 
@@ -414,6 +429,7 @@ fn decode(b: &[u8], p: &Path, st: Stamp) -> Option<Entry> {
     let description = String::from_utf8(field()?).ok()?;
     let tags = String::from_utf8(field()?).ok()?;
     let thumb = field()?;
+    let video = i64_(take(8)?);
     Some(Entry {
         path: p.to_path_buf(),
         name,
@@ -427,6 +443,7 @@ fn decode(b: &[u8], p: &Path, st: Stamp) -> Option<Entry> {
         },
         description,
         thumb_png: (!thumb.is_empty()).then_some(thumb),
+        video_ms: (video >= 0).then_some(video as u64),
     })
 }
 
@@ -472,6 +489,7 @@ mod tests {
             tags: vec!["тест".into(), "znimok".into()],
             description: "опис".into(),
             thumb_png: Some(png(4, 3)),
+            video_ms: Some(12_345),
         };
         let st = Stamp {
             mtime_ms: 5,
@@ -522,6 +540,7 @@ mod tests {
             tags: Vec::new(),
             description: String::new(),
             thumb_png: None,
+            video_ms: None,
         }
     }
 

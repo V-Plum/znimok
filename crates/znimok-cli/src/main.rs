@@ -223,8 +223,15 @@ fn io(path: &Path) -> impl Fn(std::io::Error) -> Fail + '_ {
 }
 
 fn load(path: &Path) -> Result<Document, Fail> {
-    let bytes = std::fs::read(path).map_err(io(path))?;
-    Ok(znimok_format::read(&bytes)?)
+    Ok(load_parts(path)?.0)
+}
+
+/// The document and, for a video, what it takes to write it back as a video (ZK-145).
+fn load_parts(path: &Path) -> Result<(Document, Option<znimok_format::VideoPart>), Fail> {
+    if !path.exists() {
+        return Err(Fail(3, format!("{}: no such file", path.display())));
+    }
+    Ok(znimok_format::open_parts(path)?)
 }
 
 fn render(doc: &Document, scale: f64) -> Pixmap {
@@ -252,13 +259,15 @@ fn thumbnail(doc: &Document) -> Raster {
     )
 }
 
-fn save(path: &Path, doc: &Document) -> Result<(), Fail> {
+/// Writes the document as the kind it was opened as (a video stays a video, ZK-145).
+fn save(path: &Path, doc: &Document, video: Option<&znimok_format::VideoPart>) -> Result<(), Fail> {
     let opts = WriteOptions {
         app_version: format!("znimok CLI {}", env!("CARGO_PKG_VERSION")),
         thumbnail: Some(thumbnail(doc)),
         ..Default::default()
     };
-    Ok(znimok_format::save(path, doc, &opts)?)
+    znimok_format::save_same_kind(path, doc, video, &opts)?;
+    Ok(())
 }
 
 fn write_image(
@@ -424,7 +433,7 @@ fn run(cli: Cli) -> Result<(), Fail> {
                 .duration_since(std::time::UNIX_EPOCH)
                 .map(|d| d.as_millis() as i64)
                 .unwrap_or(0);
-            save(&output, &doc)?;
+            save(&output, &doc, None)?;
             out(
                 json!({ "output": output.display().to_string(), "id": doc.id.to_string(), "width": w, "height": h }),
                 format!("created {} ({w}×{h})", output.display()),
@@ -550,7 +559,8 @@ fn run(cli: Cli) -> Result<(), Fail> {
             if commands.is_empty() {
                 return Err(Fail(2, "no commands: use --cmd '<json>' or --stdin".into()));
             }
-            let mut editor = Editor::new(load(&file)?);
+            let (doc, video) = load_parts(&file)?;
+            let mut editor = Editor::new(doc);
             let mut results = Vec::new();
             for (i, c) in commands.iter().enumerate() {
                 match editor.apply_json(c) {
@@ -560,7 +570,7 @@ fn run(cli: Cli) -> Result<(), Fail> {
                 }
             }
             let target = output.unwrap_or(file);
-            save(&target, &editor.doc)?;
+            save(&target, &editor.doc, video.as_ref())?;
             out(
                 json!({ "output": target.display().to_string(), "results": results }),
                 format!(
