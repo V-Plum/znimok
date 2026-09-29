@@ -134,9 +134,7 @@ jobs:
           $dir = Join-Path $env:LOCALAPPDATA "Programs\Znimok"
           $updates = Join-Path $env:LOCALAPPDATA "Znimok\Updates"
           function Installed-Version {
-            $k = Get-ChildItem HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall |
-              Get-ItemProperty | Where-Object { $_.DisplayName -eq "Znimok" } | Select-Object -First 1
-            if ($k) { $k.DisplayVersion } else { "" }
+            (Get-ItemProperty "HKCU:\Software\Znimok\Installed" -ErrorAction SilentlyContinue).version
           }
           function Wait-Outcome([string]$want) {
             $f = Join-Path $updates "last-outcome.txt"

@@ -42,6 +42,8 @@
       <Component Id="App" Guid="{06CC4D80-FEDA-4EBD-9B69-8869403EE477}">
         <File Id="AppExe" Source="$(var.Bin)\znimok-app.exe" />
         <RegistryValue Root="HKCU" Key="Software\Znimok\Installed" Name="app" Type="integer" Value="1" KeyPath="yes" />
+        <!-- The installed version, for the updater's own check (ZK-122) and the app. -->
+        <RegistryValue Root="HKCU" Key="Software\Znimok\Installed" Name="version" Type="string" Value="[ProductVersion]" />
         <RemoveFolder Id="RemoveInstallFolder" On="uninstall" />
         <RemoveFolder Id="RemoveProgramsDir" Directory="ProgramsDir" On="uninstall" />
       </Component>
