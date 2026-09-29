@@ -162,6 +162,11 @@ pub fn freeze() -> Result<Frozen, Fail> {
     freeze_display(None)
 }
 
+/// A fresh frame of the display with these bounds (the scrolling capture, ZK-141).
+pub fn display_frame(same: Rect) -> Result<Raster, Fail> {
+    freeze_display(Some(same)).map(|f| f.raster)
+}
+
 /// A fresh frame of the display with these bounds (`None`: the one under the pointer).
 #[cfg(windows)]
 pub fn freeze_display(same: Option<Rect>) -> Result<Frozen, Fail> {

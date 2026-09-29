@@ -45,7 +45,9 @@ pub fn read(width: u32, height: u32, rgba: &[u8]) -> Vec<Code> {
         return Vec::new();
     }
     let luma: Vec<u8> = rgba
-        .chunks_exact(4)
+        .as_chunks::<4>()
+        .0
+        .iter()
         .take(width as usize * height as usize)
         .map(|p| ((p[0] as u32 * 299 + p[1] as u32 * 587 + p[2] as u32 * 114) / 1000) as u8)
         .collect();
@@ -237,7 +239,7 @@ mod tests {
     fn scene(w: u32, h: u32, codes: &[(&str, u32, u32, u32)], dark: bool) -> Vec<u8> {
         let (bg, fg) = if dark { (30u8, 230u8) } else { (245u8, 20u8) };
         let mut img = vec![0u8; (w * h * 4) as usize];
-        for (i, p) in img.chunks_exact_mut(4).enumerate() {
+        for (i, p) in img.as_chunks_mut::<4>().0.iter_mut().enumerate() {
             let y = i as u32 / w;
             // Stripes of "text lines" to make the background less clean.
             let v = if y % 40 < 6 {

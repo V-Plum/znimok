@@ -627,7 +627,7 @@ component InspScroll inherits ScrollView {
     vertical-stretch: 1;
     // Never sideways (owner, 29.09): the viewport would otherwise take the content's minimum
     // width and show a horizontal bar even when everything fits the panel.
-    viewport-width: self.visible-width;
+    content-width: self.visible-width;
     VerticalLayout {
         x: 0;
         width: max(120px, root.visible-width - 12px);
@@ -1013,6 +1013,41 @@ export struct AgentClient {
     scopes: string,
 }
 
+// Scrolling capture (ZK-141): the height so far and the two ways out; it sits outside the area.
+export component ScrollPanel inherits Window {
+    init => { Theme.mode = 2; }
+    default-font-family: "Onest";
+    // Matched by the window-attributes hook in main.rs: no activation, no taskbar button.
+    title: "Znimok scroll";
+    no-frame: true;
+    always-on-top: true;
+    width: 330px;
+    height: 64px;
+    background: #141418;
+    in property <int> stitched: 0;
+    in property <bool> manual;
+    callback done();
+    callback cancel();
+    HorizontalLayout {
+        padding: 12px;
+        spacing: 10px;
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            Text { text: @tr("scroll-progress" => "Scrolling… {0} px", root.stitched); color: white; font-size: 14px; font-weight: 600; }
+            Text { text: root.manual ? @tr("scroll-manual" => "Scroll it yourself — Znimok keeps up") : @tr("scroll-auto" => "Esc — cancel"); color: #AAAAB2; font-size: 11px; }
+        }
+        VerticalLayout {
+            alignment: center;
+            TextButton { text: @tr("common-done" => "Done"); primary: true; clicked => { root.done(); } }
+        }
+        VerticalLayout {
+            alignment: center;
+            TextButton { text: @tr("common-cancel" => "Cancel"); clicked => { root.cancel(); } }
+        }
+    }
+}
+
 export component Countdown inherits Window {
     init => { Theme.mode = 2; }
     default-font-family: "Onest";
@@ -1154,6 +1189,7 @@ export component Overlay inherits Window {
             HintChip { key: @tr("capture-wheel" => "wheel"); text: @tr("capture-magnifier" => "magnifier"); }
             HintChip { key: @tr("capture-double" => "double click"); text: @tr("capture-delayed" => "after 3 s"); }
             HintChip { key: "Q"; text: @tr("capture-qr" => "QR code"); }
+            HintChip { key: "S"; text: @tr("capture-scroll" => "with scrolling"); }
             HintChip { key: "Esc"; text: @tr("capture-cancel" => "cancel"); }
         }
     }

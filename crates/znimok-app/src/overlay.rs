@@ -65,6 +65,8 @@ thread_local! {
 pub fn escape() {
     if is_open() {
         cancel();
+    } else if crate::scroll::active() {
+        crate::scroll::cancel();
     } else {
         cancel_countdown();
     }
@@ -568,6 +570,8 @@ enum Outcome {
     Keep(PxRect, &'static str, Option<u64>, Gesture),
     /// Q: read QR codes and barcodes in this part of the frame (ZK-119).
     Codes(PxRect),
+    /// S: a scrolling capture of this part of the display (ZK-141).
+    Scroll(PxRect),
     Cancel,
 }
 
@@ -628,6 +632,14 @@ fn finish(frozen: Frozen, outcome: Outcome, editor_was_visible: bool) {
             if let Some(r) = frozen.crop(rect) {
                 crate::codes::read_and_show(r);
             }
+        }
+        Outcome::Scroll(rect) => {
+            let size = (frozen.raster.width, frozen.raster.height);
+            drop(frozen);
+            // The overlay is gone from the screen before the first frame.
+            slint::Timer::single_shot(std::time::Duration::from_millis(120), move || {
+                crate::scroll::start(display, size, rect, editor_was_visible);
+            });
         }
         Outcome::Cancel => {
             // (`invoke_from_event_loop` wakes the loop; a zero timer waits for the next event.)
@@ -1043,6 +1055,10 @@ impl Session {
             "\u{1b}" => Some(Outcome::Cancel),
             // Q (Й in the Ukrainian layout): codes in the highlighted part, or on the whole screen.
             "q" | "Q" | "й" | "Й" => Some(Outcome::Codes(
+                self.sel.unwrap_or_else(|| self.frozen.whole()),
+            )),
+            // S (І in the Ukrainian layout): the highlighted window or region, with scrolling.
+            "s" | "S" | "і" | "І" => Some(Outcome::Scroll(
                 self.sel.unwrap_or_else(|| self.frozen.whole()),
             )),
             " " => Some(Outcome::Keep(self.frozen.whole(), "screen", None, g)),

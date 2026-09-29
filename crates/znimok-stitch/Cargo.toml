@@ -1,0 +1,14 @@
+[package]
+name = "znimok-stitch"
+description = "Znimok scrolling capture (ZK-141) — stitches frames of a scrolled area into one tall picture: finds each frame's shift from row signatures, keeps sticky headers and footers once"
+version.workspace = true
+edition.workspace = true
+license-file.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]

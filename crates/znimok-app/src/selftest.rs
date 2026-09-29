@@ -2052,6 +2052,76 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
         }
     }));
 
+    // ZK-141: a scrolling capture over a synthetic page (a fake screen and a fake wheel): the
+    // stitched document has the whole page, with the sticky header and footer once.
+    steps.push(Box::new(|_, _, _| {
+        let (w, page_h, view, head, foot) = (360u32, 1500u32, 420u32, 36u32, 28u32);
+        let mut page = vec![250u8; (w * page_h * 4) as usize];
+        let mut y = 6;
+        let mut k = 1u32;
+        while y + 12 < page_h {
+            let len = 40 + (k * 97) % (w - 60);
+            let shade = ((k * 53) % 140) as u8;
+            for yy in y..y + 10 {
+                for x in 8..8 + len {
+                    if !(x + k).is_multiple_of(6) {
+                        let i = ((yy * w + x) * 4) as usize;
+                        page[i..i + 3].copy_from_slice(&[shade, shade, 200]);
+                    }
+                }
+            }
+            y += 18 + (k * 7) % 11;
+            k += 1;
+        }
+        let band = |h: u32, c: u8| {
+            let mut v = vec![0u8; (w * h * 4) as usize];
+            for (i, p) in v.chunks_mut(4).enumerate() {
+                let x = i as u32 % w;
+                let g = if x % 40 < 12 { 255 } else { c };
+                p.copy_from_slice(&[g, c, c / 2, 255]);
+            }
+            v
+        };
+        let (hb, fb) = (band(head, 60), band(foot, 120));
+        let body = view - head - foot;
+        let off = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
+        let (o1, o2) = (off.clone(), off);
+        let row = w as usize * 4;
+        let grab = move || {
+            let o = o1.load(std::sync::atomic::Ordering::SeqCst) as usize;
+            let mut f = hb.clone();
+            f.extend_from_slice(&page[o * row..(o + body as usize) * row]);
+            f.extend_from_slice(&fb);
+            Some(znimok_core::Raster::new(w, view, f))
+        };
+        let wheel = move || {
+            let o = o2.load(std::sync::atomic::Ordering::SeqCst);
+            o2.store(
+                (o + 110).min(page_h - body),
+                std::sync::atomic::Ordering::SeqCst,
+            );
+        };
+        SCROLL_WANT.with(|s| s.set(head + page_h + foot));
+        crate::scroll::start_with(
+            grab,
+            wheel,
+            (40, 40),
+            true,
+            std::time::Duration::from_millis(15),
+        );
+    }));
+    steps.push(Box::new(|_, _, _| {}));
+    steps.push(Box::new(|_, _, _| {}));
+    steps.push(Box::new(|app, _, r| {
+        let size = app.borrow().s.as_ref().map(|s| s.ed.doc.image_size());
+        let want = SCROLL_WANT.with(|s| s.get());
+        r.check(
+            "scrolling capture: the stitched page is one document, header and footer once",
+            !crate::scroll::active() && size == Some((360, want)),
+            format!("{size:?}, want 360×{want}"),
+        );
+    }));
+
     // ZK-132: the Agents and Updates pages; the MCP switch is the one the server checks.
     steps.push(Box::new(|_, ui, _| {
         ui.invoke_settings_open();
@@ -2330,4 +2400,8 @@ thread_local! {
 
 thread_local! {
     static QR_SCENE: std::cell::RefCell<Option<znimok_core::Raster>> = const { std::cell::RefCell::new(None) };
+}
+
+thread_local! {
+    static SCROLL_WANT: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
 }

@@ -1969,6 +1969,11 @@ capture-delayed = через 3 с
 # @max: 20
 capture-qr = QR-код
 
+# @where: Hint after the "S" chip: a scrolling capture of the highlighted window or region
+# @kind: hint
+# @max: 20
+capture-scroll = з прокруткою
+
 # @where: Hint after "Esc"
 # @kind: hint
 # @max: 20
@@ -1988,6 +1993,21 @@ capture-mode-record = Запис
 # @kind: hint
 # @max: 24
 capture-countdown-cancel = Esc — скасувати
+
+# @where: Scrolling capture panel: the height stitched so far; $height is in pixels
+# @kind: status
+# @max: 40
+scroll-progress = Прокрутка… { $height } px
+
+# @where: Scrolling capture panel, when automatic scrolling does not move the content
+# @kind: hint
+# @max: 48
+scroll-manual = Прокручуйте самі — Znimok встигає
+
+# @where: Scrolling capture panel, under the height while Znimok scrolls
+# @kind: hint
+# @max: 48
+scroll-auto = Esc — скасувати
 
 ## Overlay editor
 ## Editing right over the frozen screen (Alt on release).

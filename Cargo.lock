@@ -6739,6 +6739,7 @@ dependencies = [
  "znimok-platform",
  "znimok-render",
  "znimok-settings",
+ "znimok-stitch",
  "znimok-win",
 ]
 
@@ -6979,6 +6980,10 @@ dependencies = [
  "windows",
  "znimok-platform",
 ]
+
+[[package]]
+name = "znimok-stitch"
+version = "0.0.0"
 
 [[package]]
 name = "znimok-thumbnail"

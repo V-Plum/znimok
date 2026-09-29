@@ -1959,6 +1959,11 @@ capture-delayed = after 3 s
 # @max: 20
 capture-qr = QR code
 
+# @where: Hint after the "S" chip: a scrolling capture of the highlighted window or region
+# @kind: hint
+# @max: 20
+capture-scroll = with scrolling
+
 # @where: Hint after "Esc"
 # @kind: hint
 # @max: 20
@@ -1978,6 +1983,21 @@ capture-mode-record = Record
 # @kind: hint
 # @max: 24
 capture-countdown-cancel = Esc — cancel
+
+# @where: Scrolling capture panel: the height stitched so far; $height is in pixels
+# @kind: status
+# @max: 40
+scroll-progress = Scrolling… { $height } px
+
+# @where: Scrolling capture panel, when automatic scrolling does not move the content
+# @kind: hint
+# @max: 48
+scroll-manual = Scroll it yourself — Znimok keeps up
+
+# @where: Scrolling capture panel, under the height while Znimok scrolls
+# @kind: hint
+# @max: 48
+scroll-auto = Esc — cancel
 
 ## Overlay editor
 ## Editing right over the frozen screen (Alt on release).
