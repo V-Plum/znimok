@@ -5,6 +5,11 @@
 // Not yet here: tabs, overlay editor, full inspector, settings (see the tickets of Phase 4).
 
 import { AboutSlint, LineEdit, ScrollView, TextEdit } from "std-widgets.slint";
+// Bundled faces (ZK-34, SIL OFL 1.1): Onest for the interface and the marks, JetBrains Mono for
+// numbers and key combinations, Unbounded for the Znimok wordmark only.
+import "../../znimok-render/fonts/Onest.ttf";
+import "../../znimok-render/fonts/JetBrainsMono.ttf";
+import "../../znimok-render/fonts/Unbounded.ttf";
 
 export global Theme {
     out property <color> canvas: #0B0D11;
@@ -320,6 +325,7 @@ component NumField inherits HorizontalLayout {
             color: Theme.text;
             font-size: 12px;
             input-type: number;
+            font-family: "JetBrains Mono";
             text <=> root.value;
             accepted => { root.committed(self.text); }
             changed has-focus => { if (!self.has-focus) { root.committed(self.text); } }
@@ -867,6 +873,7 @@ component PillButton inherits Rectangle {
 }
 
 export component Pill inherits Window {
+    default-font-family: "Onest";
     // Matched by the window-attributes hook in main.rs: no activation, no taskbar button.
     title: "Znimok pill";
     no-frame: true;
@@ -965,6 +972,7 @@ export component Pill inherits Window {
 }
 
 export component Overlay inherits Window {
+    default-font-family: "Onest";
     no-frame: true;
     // Windows: top-most. macOS: Rust sets a window level above the menu bar instead (Slint's
     // top-most = NSFloatingWindowLevel 3, below the menu bar; it would also override ours).
@@ -1191,6 +1199,7 @@ export component AppTray inherits SystemTrayIcon {
 }
 
 export component AppWindow inherits Window {
+    default-font-family: "Onest";
     title: @tr("app-name" => "Znimok");
     // Own title bar: Windows draws window buttons; macOS keeps the traffic lights (inset).
     in property <bool> custom-frame: false;
@@ -1594,7 +1603,7 @@ export component AppWindow inherits Window {
                     commands: "M3.5 13.5 h8 L3.5 21 h8";
                     stroke: #3D7BF5; stroke-width: 2.4px; fill: transparent;
                 }
-                Text { text: "Znimok"; color: Theme.text; font-size: 15px; font-weight: 700; vertical-alignment: center; }
+                Text { text: "Znimok"; color: Theme.text; font-family: "Unbounded"; font-size: 15px; font-weight: 600; vertical-alignment: center; }
             }
             if root.custom-frame: WindowControls {
                 x: parent.width - self.width;
@@ -1820,6 +1829,7 @@ export component AppWindow inherits Window {
                                             animate background, border-color { duration: 120ms; }
                                             Text {
                                                 text: root.key-recording == i ? @tr("keys-press" => "press a combination…") : root.key-texts[i];
+                                                font-family: root.key-recording == i ? "Onest" : "JetBrains Mono";
                                                 color: root.key-recording == i ? Theme.accent-text : (root.pref-capture ? Theme.text : Theme.disabled);
                                                 font-size: 12px;
                                                 font-weight: 600;
@@ -1945,6 +1955,7 @@ export component AppWindow inherits Window {
                             if root.settings-page == 6: VerticalLayout {
                                 spacing: 14px;
                                 Text { text: root.pref-version; color: Theme.text; font-size: 18px; font-weight: 700; }
+                                Text { text: @tr("about-fonts" => "Fonts: Onest, JetBrains Mono, Unbounded — SIL Open Font License 1.1"); color: Theme.text3; font-size: 12px; wrap: word-wrap; }
                                 HorizontalLayout { alignment: start; AboutSlint { height: 160px; } }
                             }
                         }

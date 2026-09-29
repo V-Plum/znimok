@@ -3023,6 +3023,11 @@ about-signed = release signature verified
 # @max: 200
 about-made-with = Made with Slint · fonts Onest, JetBrains Mono, Unbounded (OFL) · library licences
 
+# @where: About page: the bundled fonts and their licence (keep the font names)
+# @kind: body
+# @max: 90
+about-fonts = Fonts: Onest, JetBrains Mono, Unbounded — SIL Open Font License 1.1
+
 # @where: About: donation link
 # @kind: button
 # @max: 16

@@ -3043,6 +3043,11 @@ about-signed = підпис релізу перевірено
 # @max: 200
 about-made-with = Зроблено з Slint · шрифти Onest, JetBrains Mono, Unbounded (OFL) · ліцензії бібліотек
 
+# @where: About page: the bundled fonts and their licence (keep the font names)
+# @kind: body
+# @max: 90
+about-fonts = Шрифти: Onest, JetBrains Mono, Unbounded — SIL Open Font License 1.1
+
 # @where: About: donation link
 # @kind: button
 # @max: 16

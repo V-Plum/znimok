@@ -17,8 +17,22 @@ use znimok_core::Align;
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Brush;
 
-/// Family used for text marks until bundled fonts arrive (Phase 2): the platform UI face.
-pub const FAMILY: &str = "Segoe UI, Helvetica Neue, sans-serif";
+/// Text marks are set in the bundled Onest (ZK-34): the same letters on every system and in
+/// every file. The system faces after it only fill in what Onest does not have (emoji, CJK…).
+pub const FAMILY: &str = "Onest, Segoe UI, Helvetica Neue, sans-serif";
+
+/// The bundled faces (SIL OFL 1.1, subsets — fonts/subset.py).
+pub const ONEST: &[u8] = include_bytes!("../fonts/Onest.ttf");
+pub const JETBRAINS_MONO: &[u8] = include_bytes!("../fonts/JetBrainsMono.ttf");
+
+/// Adds the bundled faces to a font context (before any layout).
+pub fn register_bundled(fonts: &mut FontContext) {
+    for data in [ONEST, JETBRAINS_MONO] {
+        fonts
+            .collection
+            .register_fonts(parley::fontique::Blob::new(std::sync::Arc::new(data)), None);
+    }
+}
 
 pub struct TextSpec<'a> {
     pub text: &'a str,

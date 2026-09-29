@@ -177,11 +177,13 @@ impl Renderer {
 
     fn with_settings(settings: RenderSettings) -> Self {
         let threads = settings.num_threads;
+        let mut fonts = FontContext::new();
+        text::register_bundled(&mut fonts);
         Self {
             ctx: RenderContext::new_with(1, 1, settings),
             fx_ctx: RenderContext::new_with(1, 1, settings),
             res: Resources::default(),
-            fonts: FontContext::new(),
+            fonts,
             layouts: LayoutContext::new(),
             bank_cache: Vec::new(),
             developed: None,

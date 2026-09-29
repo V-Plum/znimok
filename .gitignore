@@ -17,3 +17,6 @@ desktop.ini
 *.p12
 *.pfx
 .env
+
+# Originals of the bundled fonts (assets/fonts/subset.py downloads them)
+/crates/znimok-render/fonts/src/
