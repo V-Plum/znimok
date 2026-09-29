@@ -1353,6 +1353,8 @@ export component AppWindow inherits Window {
     callback undo();
     callback redo();
     callback copy();
+    // True for a second after a successful copy: the Copy button shows a tick (LH behaviour, ZK-126).
+    in-out property <bool> copied;
     callback export();
     callback autosave-toggled(bool);
     callback tool-chosen(int);
@@ -2130,11 +2132,30 @@ export component AppWindow inherits Window {
                                     padding-left: 12px;
                                     padding-right: 14px;
                                     spacing: 6px;
+                                    opacity: root.copied ? 0 : 1;
+                                    animate opacity { duration: 160ms; easing: ease-out; }
                                     VerticalLayout {
                                         alignment: center;
                                         Icon { width: 18px; height: 18px; tint: white; d: "M11 9 h7 a2 2 0 0 1 2 2 v7 a2 2 0 0 1 -2 2 h-7 a2 2 0 0 1 -2 -2 v-7 a2 2 0 0 1 2 -2 z M5 15 V5 a2 2 0 0 1 2 -2 h10"; }
                                     }
                                     Text { text: @tr("doc-copy" => "Copy"); color: white; font-size: 13px; font-weight: 600; vertical-alignment: center; wrap: no-wrap; }
+                                }
+                                // After a copy the title gives way to a tick for a second; the button keeps its width.
+                                Icon {
+                                    x: (parent.width - self.width) / 2;
+                                    y: (parent.height - self.height) / 2;
+                                    width: 20px;
+                                    height: 20px;
+                                    tint: white;
+                                    stroke-width: 2.25px;
+                                    d: "M5 12.5 L10 17.5 L19.5 7";
+                                    opacity: root.copied ? 1 : 0;
+                                    animate opacity { duration: 160ms; easing: ease-out; }
+                                }
+                                Timer {
+                                    interval: 1s;
+                                    running: root.copied;
+                                    triggered => { root.copied = false; }
                                 }
                                 // Click copies; pulling it a few pixels starts a drag of the picture as a
                                 // PNG file into a messenger or a folder (ZK-64).

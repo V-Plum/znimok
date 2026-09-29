@@ -1484,6 +1484,21 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
         r.snapshot(ui, "09-region-editor");
     }));
 
+    // ZK-126: after Copy the button shows a tick for a second, then the title comes back.
+    steps.push(Box::new(|_app, ui, r| {
+        ui.set_page(1);
+        ui.invoke_copy();
+        r.check("copy: tick shown", ui.get_copied(), String::new());
+    }));
+    steps.push(Box::new(|_app, ui, r| {
+        r.check("copy: tick still there", ui.get_copied(), String::new());
+        r.snapshot(ui, "copy-tick");
+    }));
+    steps.push(Box::new(|_, _, _| {}));
+    steps.push(Box::new(|_app, ui, r| {
+        r.check("copy: title back after a second", !ui.get_copied(), String::new());
+        r.snapshot(ui, "copy-title");
+    }));
     // ZK-117 / ZK-46: the main screens once more in the light theme, and text contrast in both
     // (WCAG: main text at least 7:1 on panels, secondary at least 4.5:1).
     steps.push(Box::new(|_, ui, r| {
