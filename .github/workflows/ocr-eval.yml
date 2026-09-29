@@ -8,6 +8,7 @@ on:
   pull_request:
     paths:
       - "tools/ocr-eval/**"
+      - "tools/ocr-helper/**"
       - ".github/workflows/ocr-eval.yml"
 
 permissions:
@@ -89,6 +90,44 @@ jobs:
           name: ocr-memory
           path: memory.md
 
+  helper:
+    # ZK-120: our own helper (tools/ocr-helper) — Tesseract 5.5.3 + Leptonica 1.87 from pinned
+    # sources, integer models converted from tessdata_best (byte-identical to lstmtraining), run
+    # over the set through its stdin protocol, plus memory and time on full screens.
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/cache@v4
+        with:
+          path: target/ocr-helper-work
+          key: ocr-helper-${{ hashFiles('tools/ocr-helper/build.py') }}
+      - name: build znimok-ocr.exe
+        run: python tools/ocr-helper/build.py
+      - name: run over the set and on full screens
+        shell: pwsh
+        run: |
+          pip install -q pillow
+          $exe = (Resolve-Path target/ocr-helper/znimok-ocr.exe).Path
+          & $exe --version
+          python tools/ocr-eval/run_helper.py $exe out/znimok-ocr.json
+          python tools/ocr-eval/run_helper.py $exe out/znimok-ocr-mask.json --mode 1
+          python tools/ocr-eval/run_helper.py $exe --screens | Tee-Object helper-memory.md
+          Get-Content helper-memory.md | Add-Content $env:GITHUB_STEP_SUMMARY
+      - name: the Rust client against the helper
+        shell: pwsh
+        run: |
+          $env:ZNIMOK_OCR_HELPER = (Resolve-Path target/ocr-helper/znimok-ocr.exe).Path
+          cargo test -p znimok-models --test ocr_helper
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ocr-helper
+          path: |
+            out/*.json
+            helper-memory.md
+
   macos:
     runs-on: macos-26
     steps:
@@ -103,7 +142,7 @@ jobs:
           path: out/*.json
 
   score:
-    needs: [linux, macos]
+    needs: [linux, macos, helper]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

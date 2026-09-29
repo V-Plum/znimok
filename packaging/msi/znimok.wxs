@@ -29,7 +29,9 @@
 
     <StandardDirectory Id="LocalAppDataFolder">
       <Directory Id="ProgramsDir" Name="Programs">
-        <Directory Id="INSTALLFOLDER" Name="Znimok" />
+        <Directory Id="INSTALLFOLDER" Name="Znimok">
+          <Directory Id="TESSDATA" Name="tessdata" />
+        </Directory>
       </Directory>
     </StandardDirectory>
     <StandardDirectory Id="ProgramMenuFolder" />
@@ -65,6 +67,19 @@
       <Component Id="License" Guid="{A63EC25C-3911-4DC9-8450-A17B6788BAF9}">
         <File Id="LicenseFile" Source="$(var.Bin)\LICENSE" Name="LICENSE.txt" />
         <RegistryValue Root="HKCU" Key="Software\Znimok\Installed" Name="license" Type="integer" Value="1" KeyPath="yes" />
+      </Component>
+      <!-- Text recognition in Ukrainian and English (ZK-120): the Tesseract helper, its models and
+           their licenses. -->
+      <Component Id="Ocr" Guid="{38B50DB7-F1F8-4021-8B20-6F292E61A891}">
+        <File Id="OcrExe" Source="$(var.Bin)\znimok-ocr.exe" />
+        <File Id="OcrNotice" Source="$(var.Bin)\NOTICE-ocr.txt" />
+        <RegistryValue Root="HKCU" Key="Software\Znimok\Installed" Name="ocr" Type="integer" Value="1" KeyPath="yes" />
+      </Component>
+      <Component Id="OcrModels" Directory="TESSDATA" Guid="{ECF62A12-0E8E-42A1-BF20-E3760024E24E}">
+        <File Id="OcrUkr" Source="$(var.Bin)\tessdata\ukr.traineddata" />
+        <File Id="OcrEng" Source="$(var.Bin)\tessdata\eng.traineddata" />
+        <RegistryValue Root="HKCU" Key="Software\Znimok\Installed" Name="ocr-models" Type="integer" Value="1" KeyPath="yes" />
+        <RemoveFolder Id="RemoveTessdata" On="uninstall" />
       </Component>
     </ComponentGroup>
 
