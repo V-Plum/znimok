@@ -151,7 +151,7 @@ jobs:
           path: in
       - name: score
         run: |
-          python3 tools/ocr-eval/score.py in/*/*.json | tee report.md
+          python3 tools/ocr-eval/score.py in/*/*.json in/*/out/*.json | tee report.md
           cat report.md >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
         with:
