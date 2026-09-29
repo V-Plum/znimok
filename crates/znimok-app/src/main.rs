@@ -108,7 +108,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             wgpu::Backends::DX12
         };
     }
-    slint::BackendSelector::new()
+    let selector = slint::BackendSelector::new();
+    // macOS: a start at login stays in the menu bar only — no Dock icon until the editor window
+    // is shown (tray::dock follows the window from then on).
+    #[cfg(target_os = "macos")]
+    let selector = {
+        use slint::winit_030::winit::platform::macos::{
+            ActivationPolicy, EventLoopBuilderExtMacOS,
+        };
+        let mut b = slint::winit_030::winit::event_loop::EventLoop::with_user_event();
+        if std::env::args_os().any(|a| a == "--background") {
+            b.with_activation_policy(ActivationPolicy::Accessory);
+        }
+        selector.with_winit_event_loop_builder(b)
+    };
+    selector
         .require_wgpu_30(slint::wgpu_30::WGPUConfiguration::Automatic(settings))
         // The card after a capture (ZK-41) must not take the focus or show in the taskbar.
         .with_winit_window_attributes_hook(|attrs| {
@@ -194,11 +208,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let tray_ui = if selftest_dir.is_none() {
         let t = AppTray::new()?;
         t.set_tray_icon(tray::tray_icon());
-        // macOS: the menu bar glyph as a template image (the status item exists once shown).
-        #[cfg(target_os = "macos")]
-        for ms in [0u64, 300, 1500] {
-            slint::Timer::single_shot(Duration::from_millis(ms), tray::template_menu_icon);
-        }
+        // macOS: the 400 ms timer makes the menu bar glyph a template once the item exists.
         t.set_capture_key(ui.get_capture_key());
         t.set_capture_available(capture::available());
         t.set_mac(cfg!(target_os = "macos"));
@@ -295,6 +305,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 if instance.as_ref().is_some_and(|i| i.take_wake()) {
                     show_window(&ui);
                 }
+                // macOS: the Dock icon only while the editor window is open; the menu bar glyph
+                // stays a template (a no-op once it is one; heals an image replaced by Slint).
+                #[cfg(target_os = "macos")]
+                if TRAY.with(|c| c.get()) {
+                    tray::dock(ui.window().is_visible());
+                    tray::template_menu_icon();
+                }
                 let mut a = app.borrow_mut();
                 a.tick_toast(&ui);
                 a.lib_poll(&ui, false);
@@ -358,6 +375,8 @@ thread_local! {
 fn show_window(ui: &AppWindow) {
     use slint::winit_030::WinitWindowAccessor;
     let first = !ui.window().is_visible();
+    #[cfg(target_os = "macos")]
+    tray::dock(true);
     let _ = ui.show();
     // The first show after a silent start: our frame (rounded corners, macOS title bar).
     if first {

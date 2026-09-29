@@ -88,34 +88,91 @@ pub fn tray_icon() -> slint::Image {
 
 /// Slint gives the status item a plain image; a template image is what lets macOS draw it
 /// white on a dark menu bar and dimmed when inactive. The status item lives in a window of our
-/// own process (NSStatusBarWindow) — its button's image is marked as a template.
+/// own process (NSStatusBarWindow); its button (NSStatusBarButton) may be the content view or
+/// sit deeper in it, so the whole view tree is searched. Returns how many images were marked.
 #[cfg(target_os = "macos")]
-pub fn template_menu_icon() {
-    use objc2::{ClassType, MainThreadMarker};
-    use objc2_app_kit::{NSApplication, NSButton};
+pub fn template_menu_icon() -> usize {
+    use objc2_app_kit::NSApplication;
+    let Some(mtm) = objc2::MainThreadMarker::new() else {
+        return 0;
+    };
+    let debug = std::env::var_os("ZNIMOK_TRAY_DEBUG").is_some();
+    let mut marked = 0;
+    for w in NSApplication::sharedApplication(mtm).windows().iter() {
+        let class = w.class().name().to_string_lossy().into_owned();
+        if debug {
+            eprintln!("tray: window {class}");
+        }
+        if !class.contains("StatusBar") {
+            continue;
+        }
+        if let Some(view) = w.contentView() {
+            marked += template_buttons(&view, debug);
+        }
+    }
+    if debug {
+        eprintln!("tray: {marked} status item image(s) made templates");
+    }
+    marked
+}
+
+#[cfg(target_os = "macos")]
+fn template_buttons(view: &objc2_app_kit::NSView, debug: bool) -> usize {
+    use objc2::ClassType;
+    use objc2_app_kit::NSButton;
     use objc2_foundation::NSObjectProtocol;
-    let Some(mtm) = MainThreadMarker::new() else {
+    let mut marked = 0;
+    if debug {
+        eprintln!("tray:   view {}", view.class().name().to_string_lossy());
+    }
+    if view.isKindOfClass(NSButton::class()) {
+        // SAFETY: checked just above that the view is an NSButton.
+        let button: &NSButton = unsafe { &*(view as *const _ as *const NSButton) };
+        if let Some(img) = button.image() {
+            if !img.isTemplate() {
+                img.setTemplate(true);
+                button.setImage(Some(&img));
+            }
+            marked += 1;
+        }
+    }
+    for sub in view.subviews().iter() {
+        marked += template_buttons(&sub, debug);
+    }
+    marked
+}
+
+/// macOS: Znimok lives in the menu bar; the Dock icon (and the app menu) only while the editor
+/// window is open. Cheap to call on a timer: it acts only on a change.
+#[cfg(target_os = "macos")]
+pub fn dock(shown: bool) {
+    use objc2_app_kit::{NSApplication, NSApplicationActivationPolicy};
+    thread_local! {
+        static SHOWN: std::cell::Cell<Option<bool>> = const { std::cell::Cell::new(None) };
+    }
+    if SHOWN.with(|c| c.replace(Some(shown))) == Some(shown) {
+        return;
+    }
+    let Some(mtm) = objc2::MainThreadMarker::new() else {
         return;
     };
     let app = NSApplication::sharedApplication(mtm);
-    for w in app.windows().iter() {
-        let class = w.class().name().to_string_lossy().into_owned();
-        if !class.contains("StatusBarWindow") {
-            continue;
-        }
-        let Some(view) = w.contentView() else {
-            continue;
-        };
-        if !view.isKindOfClass(NSButton::class()) {
-            continue;
-        }
-        // SAFETY: checked above that the content view is an NSButton (NSStatusBarButton).
-        let button: &NSButton = unsafe { &*(&*view as *const _ as *const NSButton) };
-        if let Some(img) = button.image() {
-            img.setTemplate(true);
-            button.setImage(Some(&img));
-        }
+    let policy = if shown {
+        NSApplicationActivationPolicy::Regular
+    } else {
+        NSApplicationActivationPolicy::Accessory
+    };
+    if app.activationPolicy() == policy {
+        return;
     }
+    app.setActivationPolicy(policy);
+    if shown {
+        // Back from the menu bar only: bring the window to the front with the app.
+        #[allow(deprecated)]
+        app.activateIgnoringOtherApps(true);
+    }
+    // A policy change may give the status item a new button image.
+    template_menu_icon();
 }
 
 pub struct Instance {
