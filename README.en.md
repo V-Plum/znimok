@@ -40,7 +40,13 @@ the library only, Esc closes without a trace, and "Open in the editor window" ca
 same document, marks and undo. A second click (a double click, or a click and then at once a
 drag) takes the shot after 3 seconds: a 3-2-1 countdown in the corner leaves time to open a menu
 that closes on a hotkey; Esc cancels. The wheel turns the magnifier on; switching to another
-program closes the overlay. Znimok lives in the tray /
+program closes the overlay. The overlay covers all displays at once, so a region can cross the
+seam between screens. S takes a scrolling screenshot: Znimok scrolls the window or region itself
+and stitches one tall picture (a sticky site header appears once); Done or Esc stops it, and when a
+program ignores the automatic scrolling you scroll by hand. Q reads QR codes and barcodes (also from
+the tray menu, a button on the Image tab and `znimok codes FILE`); a link opens only after a second
+question showing the whole address. On a Mac without the Screen Recording permission the macOS
+picker can capture a window or a screen (with macOS's sharing badge on it). Znimok lives in the tray /
 menu bar; closing the window hides it there, and Quit is in the icon's menu. Selection: a
 rubber band over empty space, Shift/Ctrl-click, holding Ctrl makes any tool Select for the
 moment; Ctrl+D duplicates, Ctrl+]/[ changes the order, Ctrl+G groups; align and distribute
