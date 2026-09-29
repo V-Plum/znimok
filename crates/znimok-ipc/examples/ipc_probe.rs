@@ -2,7 +2,7 @@
 //! read the token file. Run as the same user it must reach both; run as another (ordinary) user
 //! the OS must refuse both.
 //!
-//! `probe <endpoint> <token-path> --expect ok|denied` prints one JSON line and exits with 0 when
+//! `ipc_probe <endpoint> <token-path> --expect ok|denied` prints one JSON line and exits with 0 when
 //! both outcomes match the expectation, 1 otherwise.
 
 use std::io::ErrorKind;
@@ -38,7 +38,7 @@ fn account() -> String {
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     let (Some(endpoint), Some(token_path)) = (args.get(1), args.get(2)) else {
-        eprintln!("usage: probe <endpoint> <token-path> --expect ok|denied");
+        eprintln!("usage: ipc_probe <endpoint> <token-path> --expect ok|denied");
         std::process::exit(2);
     };
     let expect = args
