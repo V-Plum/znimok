@@ -547,6 +547,13 @@ fn wire(ui: &AppWindow, app: &Shared) {
                     frame::on_resized(&ui);
                 }
             }
+            // The system switched light / dark (ZK-46): "as the system" follows at once.
+            if let winit::event::WindowEvent::ThemeChanged(t) = ev {
+                let dark = *t == winit::window::Theme::Dark;
+                let _ = slint::invoke_from_event_loop(move || {
+                    with_ctx(|a, ui| a.system_theme(ui, dark));
+                });
+            }
             // Settings → hotkeys: the next combination pressed, as physical keys (ZK-44).
             match ev {
                 winit::event::WindowEvent::ModifiersChanged(m) => {

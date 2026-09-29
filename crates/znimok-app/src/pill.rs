@@ -58,6 +58,10 @@ pub fn show(
             Err(_) => return,
         },
     };
+    ui.global::<crate::Theme>()
+        .set_mode(crate::app::THEME_MODE.with(|m| m.get()));
+    ui.global::<crate::Theme>()
+        .set_system_dark(crate::app::SYSTEM_DARK.with(|d| d.get()));
     ui.set_thumb(thumbnail(&raster));
     ui.set_heading(heading.into());
     ui.set_sub(sub.into());

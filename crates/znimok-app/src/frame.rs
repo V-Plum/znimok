@@ -125,6 +125,20 @@ pub fn round_window(w: &slint::Window) {
     let _ = w;
 }
 
+/// The window chrome follows the theme (macOS: Aqua / DarkAqua for the traffic lights and menus;
+/// Windows draws no system chrome here).
+pub fn set_dark(ui: &AppWindow, dark: bool) {
+    DARK.with(|d| d.set(dark));
+    #[cfg(target_os = "macos")]
+    mac::dress(ui);
+    #[cfg(not(target_os = "macos"))]
+    let _ = ui;
+}
+
+thread_local! {
+    static DARK: std::cell::Cell<bool> = const { std::cell::Cell::new(true) };
+}
+
 pub fn drag(ui: &AppWindow) {
     ui.window().with_winit_window(|w| {
         let _ = w.drag_window();
@@ -162,8 +176,8 @@ mod mac {
     use objc2::msg_send;
     use objc2::rc::Retained;
     use objc2_app_kit::{
-        NSAppearance, NSAppearanceNameDarkAqua, NSView, NSWindow, NSWindowButton,
-        NSWindowStyleMask, NSWindowTitleVisibility,
+        NSAppearance, NSAppearanceNameAqua, NSAppearanceNameDarkAqua, NSView, NSWindow,
+        NSWindowButton, NSWindowStyleMask, NSWindowTitleVisibility,
     };
     use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
 
@@ -197,7 +211,13 @@ mod mac {
                 win.setStyleMask(win.styleMask() | NSWindowStyleMask::FullSizeContentView);
             }
             // SAFETY: a constant AppKit appearance name.
-            if let Some(dark) = NSAppearance::appearanceNamed(unsafe { NSAppearanceNameDarkAqua }) {
+            // SAFETY: the appearance names are AppKit's constants.
+            let name = if super::DARK.with(|d| d.get()) {
+                unsafe { NSAppearanceNameDarkAqua }
+            } else {
+                unsafe { NSAppearanceNameAqua }
+            };
+            if let Some(dark) = NSAppearance::appearanceNamed(name) {
                 // SAFETY: NSWindow conforms to NSAppearanceCustomization.
                 let _: () = unsafe { msg_send![&*win, setAppearance: &*dark] };
             }

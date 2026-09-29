@@ -276,6 +276,21 @@ pub fn library_dir(prefs: &znimok_settings::Settings) -> PathBuf {
         .unwrap_or_else(library::default_dir)
 }
 
+thread_local! {
+    /// The theme mode for windows made later (the card after a capture).
+    pub static THEME_MODE: std::cell::Cell<i32> = const { std::cell::Cell::new(0) };
+    /// The system's own light / dark, as winit last told it.
+    pub static SYSTEM_DARK: std::cell::Cell<bool> = const { std::cell::Cell::new(true) };
+}
+
+fn theme_mode(t: znimok_settings::Theme) -> i32 {
+    match t {
+        znimok_settings::Theme::Auto => 0,
+        znimok_settings::Theme::Light => 1,
+        znimok_settings::Theme::Dark => 2,
+    }
+}
+
 fn args(pairs: &[(&'static str, String)]) -> FluentArgs<'static> {
     let mut a = FluentArgs::new();
     for (k, v) in pairs {
@@ -370,7 +385,38 @@ impl App {
         ui.set_autosave(self.autosave);
         crate::filemeta::set_enabled(p.editor.write_metadata);
         ui.set_export_meta(p.editor.write_metadata);
+        self.apply_theme(ui, &p);
         self.settings_sync(ui);
+    }
+
+    /// Light / dark / as the system for the main window, the card after a capture and the
+    /// macOS window chrome (the overlay stays dark by itself).
+    pub fn apply_theme(&self, ui: &AppWindow, p: &znimok_settings::Settings) {
+        let mode = theme_mode(p.general.theme);
+        {
+            use slint::winit_030::WinitWindowAccessor;
+            if let Some(dark) = ui
+                .window()
+                .with_winit_window(|w| {
+                    w.theme()
+                        .map(|t| t == slint::winit_030::winit::window::Theme::Dark)
+                })
+                .flatten()
+            {
+                ui.global::<crate::Theme>().set_system_dark(dark);
+                SYSTEM_DARK.with(|d| d.set(dark));
+            }
+        }
+        ui.global::<crate::Theme>().set_mode(mode);
+        THEME_MODE.with(|m| m.set(mode));
+        crate::frame::set_dark(ui, ui.global::<crate::Theme>().get_dark());
+    }
+
+    /// The system switched light / dark (winit's ThemeChanged).
+    pub fn system_theme(&self, ui: &AppWindow, dark: bool) {
+        SYSTEM_DARK.with(|d| d.set(dark));
+        ui.global::<crate::Theme>().set_system_dark(dark);
+        crate::frame::set_dark(ui, ui.global::<crate::Theme>().get_dark());
     }
 
     pub fn prefs(&self) -> znimok_settings::Settings {
@@ -694,6 +740,18 @@ impl App {
                 self.save_prefs(ui, |p| p.editor.write_metadata = on);
             }
             "updates" => self.save_prefs(ui, |p| p.updates.check_daily = on),
+            "theme" => {
+                use znimok_settings::Theme as T;
+                let t = match value {
+                    1 => T::Light,
+                    2 => T::Dark,
+                    _ => T::Auto,
+                };
+                self.save_prefs(ui, |p| p.general.theme = t);
+                let p = self.prefs();
+                self.apply_theme(ui, &p);
+                self.dirty = true;
+            }
             "lang" => {
                 let lang = match value {
                     1 => Some("uk".to_string()),

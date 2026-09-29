@@ -11,21 +11,33 @@ import "../../znimok-render/fonts/Onest.ttf";
 import "../../znimok-render/fonts/JetBrainsMono.ttf";
 import "../../znimok-render/fonts/Unbounded.ttf";
 
+// Light and dark (ZK-46): "as the system" by default, or chosen in the settings. The capture
+// overlay is always dark (decision of 28.09: it sits over any screen), so it sets mode 2.
+// Neutrals lean a little blue, like the accent; the light theme keeps text at ≥ 7:1 on panels.
 export global Theme {
-    out property <color> canvas: #0B0D11;
-    out property <color> app: #0F1115;
-    out property <color> panel: #171A20;
-    out property <color> elevated: #1E2229;
-    out property <color> control-on: #2A2F38;
-    out property <color> line: #22262E;
-    out property <color> text: #E8EAEE;
-    out property <color> text2: #A7ADB8;
-    out property <color> text3: #6F7682;
+    // 0 as the system, 1 light, 2 dark.
+    in-out property <int> mode: 0;
+    // What the system uses now (from winit: at start and on every change).
+    in-out property <bool> system-dark: true;
+    out property <bool> dark: root.mode == 2 || (root.mode == 0 && root.system-dark);
+    out property <color> canvas: root.dark ? #0B0D11 : #E3E6EB;
+    out property <color> app: root.dark ? #0F1115 : #F4F5F7;
+    out property <color> panel: root.dark ? #171A20 : #FFFFFF;
+    out property <color> elevated: root.dark ? #1E2229 : #EEF0F3;
+    out property <color> control-on: root.dark ? #2A2F38 : #DCE0E6;
+    out property <color> line: root.dark ? #22262E : #E3E6EA;
+    out property <color> text: root.dark ? #E8EAEE : #15181D;
+    out property <color> text2: root.dark ? #A7ADB8 : #4A515C;
+    out property <color> text3: root.dark ? #6F7682 : #7A818C;
     out property <color> accent: #3D7BF5;
-    out property <color> accent-text: #8FB6FF;
-    out property <color> attention: #FFD23F;
-    out property <color> ok: #34C48A;
-    out property <color> disabled: #4A505A;
+    out property <color> accent-text: root.dark ? #8FB6FF : #2458C6;
+    out property <color> attention: root.dark ? #FFD23F : #A36A00;
+    out property <color> ok: root.dark ? #34C48A : #178A5B;
+    out property <color> disabled: root.dark ? #4A505A : #B4B9C1;
+    // A hovered control, a swatch's rim, the tooltip bubble.
+    out property <color> hover: root.dark ? #FFFFFF0D : #0000000A;
+    out property <color> swatch-rim: root.dark ? #FFFFFF22 : #00000029;
+    out property <color> tip-bg: root.dark ? #0B0D11F2 : #FFFFFFF7;
 }
 
 export struct CardData {
@@ -199,7 +211,7 @@ component SegOption inherits Rectangle {
     height: 28px;
     horizontal-stretch: 1;
     border-radius: 7px;
-    background: root.on ? Theme.control-on : (ta.has-hover && root.enabled ? #FFFFFF0D : Theme.elevated);
+    background: root.on ? Theme.control-on : (ta.has-hover && root.enabled ? Theme.hover : Theme.elevated);
     animate background { duration: 140ms; easing: ease-out; }
     transform-origin: { x: self.width / 2, y: self.height / 2 };
     transform-scale: ta.pressed ? 0.94 : 1.0;
@@ -240,7 +252,7 @@ component Swatch inherits Rectangle {
     border-radius: 7px;
     background: root.none ? Theme.elevated : root.c;
     border-width: root.on ? 2px : 1px;
-    border-color: root.on ? Theme.text : #FFFFFF22;
+    border-color: root.on ? Theme.text : Theme.swatch-rim;
     animate border-width { duration: 140ms; easing: ease-out; }
     transform-origin: { x: self.width / 2, y: self.height / 2 };
     transform-scale: ta.pressed ? 0.88 : (ta.has-hover ? 1.08 : 1.0);
@@ -670,7 +682,7 @@ component HoldButton inherits Rectangle {
     callback held(bool);
     height: 28px;
     border-radius: 7px;
-    background: ta.pressed ? Theme.control-on : (ta.has-hover ? #FFFFFF0D : Theme.elevated);
+    background: ta.pressed ? Theme.control-on : (ta.has-hover ? Theme.hover : Theme.elevated);
     animate background { duration: 120ms; easing: ease-out; }
     transform-origin: { x: self.width / 2, y: self.height / 2 };
     transform-scale: ta.pressed ? 0.96 : 1.0;
@@ -723,7 +735,7 @@ component CardHover inherits Rectangle {
     transform-origin: { x: self.width / 2, y: self.height / 2 };
     transform-scale: ta.pressed ? 0.9 : 1.0;
     animate transform-scale { duration: 140ms; easing: cubic-bezier(0.2, 0.8, 0.2, 1); }
-    Icon { width: 16px; height: 16px; d: root.icon; tint: ta.has-hover ? Theme.text : Theme.text2; }
+    Icon { width: 16px; height: 16px; d: root.icon; tint: ta.has-hover ? #FFFFFF : #FFFFFFD0; }
     ta := TipTouch { tip: root.tip; clicked => { root.clicked(); } }
 }
 
@@ -972,6 +984,7 @@ export component Pill inherits Window {
 }
 
 export component Overlay inherits Window {
+    init => { Theme.mode = 2; }
     default-font-family: "Onest";
     no-frame: true;
     // Windows: top-most. macOS: Rust sets a window level above the menu bar instead (Slint's
@@ -1923,9 +1936,9 @@ export component AppWindow inherits Window {
                                     HorizontalLayout {
                                         padding: 2px;
                                         spacing: 2px;
-                                        SegOption { text: @tr("look-theme-system" => "As in the system"); enabled: false; tip: @tr("common-in-development" => "Coming soon"); }
-                                        SegOption { text: @tr("look-theme-light" => "Light"); enabled: false; tip: @tr("common-in-development" => "Coming soon"); }
-                                        SegOption { text: @tr("look-theme-dark" => "Dark"); on: true; }
+                                        SegOption { text: @tr("look-theme-system" => "As in the system"); on: Theme.mode == 0; clicked => { root.setting("theme", 0); } }
+                                        SegOption { text: @tr("look-theme-light" => "Light"); on: Theme.mode == 1; clicked => { root.setting("theme", 1); } }
+                                        SegOption { text: @tr("look-theme-dark" => "Dark"); on: Theme.mode == 2; clicked => { root.setting("theme", 2); } }
                                     }
                                 }
                             }
@@ -3055,7 +3068,7 @@ export component AppWindow inherits Window {
         x: clamp(Tip.side == 1 ? Tip.ax + 8px : Tip.ax - self.width / 2, 4px, max(4px, root.width - self.width - 4px));
         y: clamp(Tip.side == 0 ? Tip.ay + 6px : (Tip.side == 2 ? Tip.ay - self.height - 6px : Tip.ay - self.height / 2), 4px, max(4px, root.height - self.height - 4px));
         border-radius: 7px;
-        background: #0B0D11F2;
+        background: Theme.tip-bg;
         border-width: 1px;
         border-color: Theme.control-on;
         drop-shadow-blur: 10px;
