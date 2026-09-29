@@ -68,6 +68,8 @@ struct Service {
     active: HashMap<Action, (KeyCombo, HotKey)>,
     state: HashMap<Action, State>,
     paused: bool,
+    /// Esc, held globally while the capture overlay is open (see [`grab_escape`]).
+    esc: Option<HotKey>,
 }
 
 thread_local! {
@@ -86,6 +88,16 @@ pub fn start(keys: &znimok_settings::Hotkeys, enabled: bool) {
         }
         let id = e.id();
         let _ = slint::invoke_from_event_loop(move || {
+            let esc = SVC.with(|s| {
+                s.borrow()
+                    .as_ref()
+                    .and_then(|s| s.esc)
+                    .is_some_and(|hk| hk.id() == id)
+            });
+            if esc {
+                crate::overlay::cancel();
+                return;
+            }
             let action = SVC.with(|s| {
                 s.borrow().as_ref().and_then(|s| {
                     s.active
@@ -105,6 +117,7 @@ pub fn start(keys: &znimok_settings::Hotkeys, enabled: bool) {
             active: HashMap::new(),
             state: HashMap::new(),
             paused: !enabled,
+            esc: None,
         })
     });
     apply(keys, enabled);
@@ -140,6 +153,25 @@ pub fn apply(keys: &znimok_settings::Hotkeys, enabled: bool) {
                 },
             };
             svc.state.insert(a, st);
+        }
+    });
+}
+
+/// Esc cancels the capture overlay even when the keyboard is still with another program: the
+/// overlay comes up from a global hotkey, and the system may leave the focus where it was
+/// (owner 29.09: Esc did nothing). Held only while the overlay is open.
+pub fn grab_escape(on: bool) {
+    SVC.with(|s| {
+        let mut s = s.borrow_mut();
+        let Some(svc) = s.as_mut() else { return };
+        if let Some(hk) = svc.esc.take() {
+            let _ = svc.manager.unregister(hk);
+        }
+        if on {
+            let hk = HotKey::new(None, Code::Escape);
+            if svc.manager.register(hk).is_ok() {
+                svc.esc = Some(hk);
+            }
         }
     });
 }

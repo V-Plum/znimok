@@ -920,6 +920,110 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
         ui.set_layer_drag_from(-1);
         let _ = app;
     }));
+    // The same with real pointer events (owner 29.09: dragging layers did nothing — pressing a
+    // row selected it, the list was rebuilt and the pressed row lost the press). Find a row by
+    // pressing and moving until a drag starts, then carry it two rows down and let go.
+    steps.push(Box::new(|app, ui, r| {
+        use slint::platform::{PointerEventButton, WindowEvent};
+        let order = |app: &Shared| -> Vec<u32> {
+            app.borrow()
+                .s
+                .as_ref()
+                .map(|s| s.ed.doc.objects.iter().map(|o| o.id).collect())
+                .unwrap_or_default()
+        };
+        let win = ui.window();
+        let w = win.size().width as f32 / win.scale_factor();
+        let x = w - 284.0 + 110.0;
+        let at = |x: f32, y: f32| slint::LogicalPosition::new(x, y);
+        let before = order(app);
+        let mut found = None;
+        let mut y = 100.0;
+        while y < 420.0 && found.is_none() {
+            win.dispatch_event(WindowEvent::PointerMoved { position: at(x, y) });
+            win.dispatch_event(WindowEvent::PointerPressed {
+                position: at(x, y),
+                button: PointerEventButton::Left,
+            });
+            for k in 1..=4 {
+                win.dispatch_event(WindowEvent::PointerMoved {
+                    position: at(x, y + 3.0 * k as f32),
+                });
+            }
+            let from = ui.get_layer_drag_from();
+            if from >= 0 {
+                found = Some((from, y));
+            } else {
+                win.dispatch_event(WindowEvent::PointerReleased {
+                    position: at(x, y + 12.0),
+                    button: PointerEventButton::Left,
+                });
+                y += 6.0;
+            }
+        }
+        let moved = if let Some((_, y0)) = found {
+            // Past the dragged row's own group (row 0 may be a group header with its members).
+            let rows = slint::Model::row_count(&ui.get_layers()) as f32;
+            let end = y0 + 34.0 * (rows - 1.0) + 10.0;
+            let steps = 20;
+            for k in 1..=steps {
+                let t = k as f32 / steps as f32;
+                win.dispatch_event(WindowEvent::PointerMoved {
+                    position: at(x, y0 + 12.0 + (end - y0 - 12.0) * t),
+                });
+            }
+            win.dispatch_event(WindowEvent::PointerReleased {
+                position: at(x, end),
+                button: PointerEventButton::Left,
+            });
+            order(app) != before
+        } else {
+            false
+        };
+        r.check(
+            "layers: a real mouse drag of a row reorders the layers",
+            moved && ui.get_layer_drag_from() < 0,
+            format!("drag started at {found:?}"),
+        );
+        if moved {
+            ui.invoke_undo();
+        }
+        // The outline row of a text (owner 29.09: it did nothing).
+        let text_id = app.borrow().s.as_ref().and_then(|s| {
+            s.ed.doc
+                .objects
+                .iter()
+                .find(|o| o.kind() == znimok_core::Kind::Text)
+                .map(|o| o.id)
+        });
+        let outline = |app: &Shared| {
+            app.borrow().s.as_ref().and_then(|s| {
+                s.ed.doc
+                    .objects
+                    .iter()
+                    .find(|o| Some(o.id) == text_id)
+                    .map(|o| o.style.color2)
+            })
+        };
+        if let Some(id) = text_id {
+            ui.invoke_layer_click(id as i32, false);
+            ui.invoke_set_prop("outline".into(), 3);
+            let on = outline(app);
+            ui.invoke_set_prop("outline".into(), -1);
+            let off = outline(app);
+            r.check(
+                "text: the outline colour row sets and clears the outline",
+                matches!(on, Some(Some(_))) && off == Some(None) && ui.get_fill_index() < 0,
+                format!("{on:?} → {off:?}"),
+            );
+        } else {
+            r.check(
+                "text: the outline colour row sets and clears the outline",
+                false,
+                "no text".into(),
+            );
+        }
+    }));
     steps.push(Box::new(|app, ui, r| {
         r.snapshot(ui, "10-layers");
         ui.invoke_meta_edited("title".into(), "Тестова назва".into());
@@ -1233,7 +1337,7 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
         if let Some(c) = slint::Model::row_data(&ui.get_cards(), 0) {
             ui.invoke_card_rename(c.path.clone(), "Перейменований".into());
             let renamed = slint::Model::row_data(&ui.get_cards(), 0).map(|c| c.name.to_string());
-            ui.invoke_card_trash(c.path.clone());
+            ui.invoke_card_trash(c.path.clone(), false);
             let after_trash = slint::Model::row_count(&ui.get_cards());
             let action = ui.get_toast_action().to_string();
             ui.invoke_toast_action_clicked();
@@ -1246,6 +1350,30 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
                     && back == 1,
                 format!(
                     "{renamed:?}, {after_trash} after trash, action {action:?}, {back} after undo"
+                ),
+            );
+        }
+        // Shift+trash: one question, then deleted for good (not in the trash).
+        if let Some(c) = slint::Model::row_data(&ui.get_cards(), 0) {
+            let src = std::path::PathBuf::from(c.path.as_str());
+            let copy = src.with_file_name("Znimok-selftest-forever.znimok");
+            let _ = std::fs::copy(&src, &copy);
+            ui.invoke_card_trash(copy.to_string_lossy().to_string().into(), true);
+            let asked = ui.get_dialog_open();
+            ui.invoke_dialog_answer(0);
+            let lib = src.parent().map(|p| p.to_path_buf()).unwrap_or_default();
+            let in_trash = crate::library::trash_dir(&lib)
+                .join("Znimok-selftest-forever.znimok")
+                .exists();
+            r.check(
+                "library: Shift+trash asks, then deletes for good",
+                asked
+                    && !copy.exists()
+                    && !in_trash
+                    && slint::Model::row_count(&ui.get_cards()) == 1,
+                format!(
+                    "asked {asked}, file left {}, in trash {in_trash}",
+                    copy.exists()
                 ),
             );
         }

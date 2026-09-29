@@ -629,6 +629,11 @@ ctx-text-colour = Колір тексту
 # @max: 32
 ctx-text-outline = Колір обводки
 
+# @where: Tooltip of the "none" swatch in a text's outline colours
+# @kind: tooltip
+# @max: 32
+ctx-outline-none = Без обводки
+
 # @where: Line width option
 # @kind: a11y
 # @max: 16
@@ -1939,6 +1944,16 @@ capture-click = клік
 # @max: 20
 capture-window = вікно
 
+# @where: Hint chip: the mouse wheel / two-finger scroll
+# @kind: badge
+# @max: 12
+capture-wheel = коліщатко
+
+# @where: Hint after the wheel chip: it turns the magnifier on and zooms it
+# @kind: hint
+# @max: 20
+capture-magnifier = лупа
+
 # @where: Hint after "Esc"
 # @kind: hint
 # @max: 20
@@ -2328,6 +2343,26 @@ lib-trash = У кошик
 # @kind: button
 # @max: 24
 lib-trash-long = Видалити в кошик
+
+# @where: Tooltip of the card's trash button, after "Shift —": Shift+click skips the trash
+# @kind: tooltip
+# @max: 24
+lib-delete-forever = видалити назавжди
+
+# @where: Question before Shift+click deletes a document without the trash
+# @kind: title
+# @max: 40
+lib-delete-forever-title = Видалити назавжди?
+
+# @where: Body of that question; $name is the document's name
+# @kind: body
+# @max: 160
+lib-delete-forever-body = «{ $name }» буде видалено, минаючи кошик. Скасувати це неможливо.
+
+# @where: Status line after a document was deleted for good
+# @kind: toast
+# @max: 40
+lib-deleted-forever-toast = Видалено назавжди
 
 # @where: Details fact
 # @kind: label

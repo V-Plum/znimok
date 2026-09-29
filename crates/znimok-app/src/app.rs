@@ -207,6 +207,8 @@ pub struct App {
     /// Rectangle / ellipse without an outline (a solid plate of the fill).
     no_stroke: bool,
     fill: Option<usize>,
+    /// Outline colour of new texts (its own default: a shape's fill is not a text's outline).
+    text_outline: Option<usize>,
     dash: Dash,
     corners: Corners,
     head_start: Head,
@@ -260,6 +262,11 @@ pub struct App {
     last_out: Point,
     /// Layers list as shown, and groups folded in it (view state, not the document).
     layer_rows: Vec<LayerRef>,
+    /// The rows shown in the Layers tab. Updated in place: a new model would rebuild every row,
+    /// and the row under a pressed button would lose the press — a click selects (and syncs)
+    /// on press, so dragging a layer never started (owner, 29.09).
+    layers_model: std::rc::Rc<VecModel<crate::LayerRow>>,
+    layers_bound: bool,
     collapsed: std::collections::HashSet<GroupId>,
     /// How the picture last left the editor — Enter repeats it (ZK-60, LH): false copy,
     /// true export.
@@ -344,6 +351,7 @@ impl App {
             alpha: 100,
             no_stroke: false,
             fill: None,
+            text_outline: None,
             dash: Dash::Solid,
             corners: Corners::Sharp,
             head_start: Head::None,
@@ -380,6 +388,8 @@ impl App {
             marquee: None,
             last_out: Point::ZERO,
             layer_rows: Vec::new(),
+            layers_model: std::rc::Rc::new(VecModel::default()),
+            layers_bound: false,
             collapsed: std::collections::HashSet::new(),
             last_export: false,
             store: None,
@@ -964,6 +974,20 @@ impl App {
                 self.toast(ui, msg);
             }
         }
+        self.refresh_library(ui);
+    }
+
+    /// Shift+trash on a card (owner 29.09): the file is deleted, not moved to the trash.
+    pub fn lib_delete_forever(&mut self, ui: &AppWindow, path: &Path) {
+        if self.s.as_ref().is_some_and(|s| s.path == path) {
+            self.close_document(ui);
+        }
+        let msg = match std::fs::remove_file(path) {
+            Ok(()) => self.tr.tr("lib-deleted-forever-toast"),
+            Err(e) => format!("{} ({e})", self.tr.tr("lib-error-delete")),
+        };
+        ui.set_toast_action("".into());
+        self.toast(ui, msg);
         self.refresh_library(ui);
     }
 
@@ -1560,6 +1584,8 @@ impl App {
             no_main: self.no_stroke && matches!(t, tool::RECT | tool::ELLIPSE),
             color2: if matches!(t, tool::RECT | tool::ELLIPSE) {
                 self.fill.map(|i| PALETTE[i])
+            } else if t == tool::TEXT {
+                self.text_outline.map(|i| PALETTE[i])
             } else {
                 None
             },
@@ -3213,6 +3239,21 @@ impl App {
                 self.patch_selected(
                     ui,
                     |o| matches!(o.kind(), Kind::Rect | Kind::Ellipse),
+                    style(StylePatch {
+                        color2: Some(c2),
+                        ..Default::default()
+                    }),
+                    None,
+                );
+            }
+            // The outline of a text (owner 29.09: it did nothing — the row went to "fill", which
+            // only touches shapes).
+            "outline" => {
+                self.text_outline = (v >= 0).then(|| (v as usize).min(PALETTE.len() - 1));
+                let c2 = self.text_outline.map(|i| PALETTE[i]);
+                self.patch_selected(
+                    ui,
+                    |o| o.kind() == Kind::Text,
                     style(StylePatch {
                         color2: Some(c2),
                         ..Default::default()
@@ -4947,7 +4988,12 @@ impl App {
                     },
                 );
                 ui.set_thick_index(self.thick as i32);
-                ui.set_fill_index(self.fill.map_or(-1, |i| i as i32));
+                let fill = if self.tool == tool::TEXT {
+                    self.text_outline
+                } else {
+                    self.fill
+                };
+                ui.set_fill_index(fill.map_or(-1, |i| i as i32));
                 ui.set_dash_index(dash_index(self.dash));
                 ui.set_corners_index(corners_index(self.corners));
                 ui.set_alpha(self.alpha as f32 / 100.0);
@@ -5045,7 +5091,23 @@ impl App {
             refs.push(LayerRef::Mark { id: o.id, group: g });
         }
         self.layer_rows = refs;
-        ui.set_layers(std::rc::Rc::new(VecModel::from(rows)).into());
+        {
+            use slint::Model;
+            let m = &self.layers_model;
+            if m.row_count() == rows.len() {
+                for (i, r) in rows.into_iter().enumerate() {
+                    if m.row_data(i).as_ref() != Some(&r) {
+                        m.set_row_data(i, r);
+                    }
+                }
+            } else {
+                m.set_vec(rows);
+            }
+            if !self.layers_bound {
+                ui.set_layers(m.clone().into());
+                self.layers_bound = true;
+            }
+        }
         // Image tab
         ui.set_info_size(format!("{iw} × {ih}").into());
         let source = match doc.meta.source.as_str() {

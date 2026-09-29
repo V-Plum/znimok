@@ -376,6 +376,7 @@ pub fn open(frozen: Frozen, editor_was_visible: bool) -> Result<(), slint::Platf
         editor_was_visible,
     };
     SESSION.with(|s| *s.borrow_mut() = Some(session));
+    crate::hotkeys::grab_escape(true);
     Ok(())
 }
 
@@ -400,6 +401,7 @@ fn with_session(f: impl FnOnce(&mut Session) -> Option<Outcome>) {
     let Some(session) = SESSION.with(|s| s.borrow_mut().take()) else {
         return;
     };
+    crate::hotkeys::grab_escape(false);
     let _ = session.ui.hide();
     let Session {
         frozen,

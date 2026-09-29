@@ -627,6 +627,11 @@ ctx-text-colour = Text colour
 # @max: 32
 ctx-text-outline = Outline colour
 
+# @where: Tooltip of the "none" swatch in a text's outline colours
+# @kind: tooltip
+# @max: 32
+ctx-outline-none = No outline
+
 # @where: Line width option
 # @kind: a11y
 # @max: 16
@@ -1929,6 +1934,16 @@ capture-click = click
 # @max: 20
 capture-window = window
 
+# @where: Hint chip: the mouse wheel / two-finger scroll
+# @kind: badge
+# @max: 12
+capture-wheel = wheel
+
+# @where: Hint after the wheel chip: it turns the magnifier on and zooms it
+# @kind: hint
+# @max: 20
+capture-magnifier = magnifier
+
 # @where: Hint after "Esc"
 # @kind: hint
 # @max: 20
@@ -2318,6 +2333,26 @@ lib-trash = Move to trash
 # @kind: button
 # @max: 24
 lib-trash-long = Move to trash
+
+# @where: Tooltip of the card's trash button, after "Shift —": Shift+click skips the trash
+# @kind: tooltip
+# @max: 24
+lib-delete-forever = delete for good
+
+# @where: Question before Shift+click deletes a document without the trash
+# @kind: title
+# @max: 40
+lib-delete-forever-title = Delete for good?
+
+# @where: Body of that question; $name is the document's name
+# @kind: body
+# @max: 160
+lib-delete-forever-body = “{ $name }” will be deleted without the trash. This cannot be undone.
+
+# @where: Status line after a document was deleted for good
+# @kind: toast
+# @max: 40
+lib-deleted-forever-toast = Deleted for good
 
 # @where: Details fact
 # @kind: label

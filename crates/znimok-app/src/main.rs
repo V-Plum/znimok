@@ -939,9 +939,52 @@ fn wire(ui: &AppWindow, app: &Shared) {
     on!(ui, app, on_save_as, |a, w| {
         a.save_as(&w);
     });
-    on!(ui, app, on_card_trash, |a, w, path| {
-        a.lib_trash(&w, std::path::Path::new(path.as_str()));
-    });
+    {
+        let app = app.clone();
+        let weak = ui.as_weak();
+        ui.on_card_trash(move |path, forever| {
+            let Some(w) = weak.upgrade() else { return };
+            let path = std::path::PathBuf::from(path.as_str());
+            if !forever {
+                app.borrow_mut().lib_trash(&w, &path);
+                return;
+            }
+            // Shift: for good, after one question (it cannot be undone).
+            let (title, body, delete, cancel) = {
+                let a = app.borrow();
+                let name = library::read_entry(&path)
+                    .map(|e| e.name)
+                    .unwrap_or_else(|| {
+                        path.file_stem()
+                            .unwrap_or_default()
+                            .to_string_lossy()
+                            .into()
+                    });
+                let mut args = znimok_i18n::FluentArgs::new();
+                args.set("name", name);
+                (
+                    a.tr.tr("lib-delete-forever-title"),
+                    a.tr.tr_args("lib-delete-forever-body", &args),
+                    a.tr.tr("common-delete"),
+                    a.tr.tr("common-cancel"),
+                )
+            };
+            let app = app.clone();
+            dialog::ask(
+                &w,
+                title,
+                body,
+                vec![delete, cancel],
+                1,
+                Some(1),
+                move |ui, answer| {
+                    if answer == Some(0) {
+                        app.borrow_mut().lib_delete_forever(ui, &path);
+                    }
+                },
+            );
+        });
+    }
     on!(ui, app, on_card_rename, |a, w, path, name| {
         a.lib_rename(&w, std::path::Path::new(path.as_str()), &name);
     });
