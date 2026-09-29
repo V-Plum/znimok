@@ -114,6 +114,28 @@ pub fn with_window<R>(f: impl FnOnce(&slint::Window) -> R) -> Option<R> {
 }
 
 fn tick() {
+    // A system drag (out to a messenger) takes the mouse: the card never hears the pointer
+    // leave, and the hover pause would hold it until a click (owner, 29.09, ZK-133). While
+    // paused, ask the system: pointer away and no button down (the drag is over) = it left.
+    let stuck = PILL.with(|p| {
+        p.borrow()
+            .as_ref()
+            .filter(|s| s.paused && pointer_away(s.ui.window()))
+            .map(|s| s.ui.clone_strong())
+    });
+    if let Some(ui) = stuck {
+        // PointerExited clears the hover in Slint, which calls `hovered(false)`.
+        #[cfg(any(windows, target_os = "macos"))]
+        crate::app::release_pointer(ui.window());
+        #[cfg(not(any(windows, target_os = "macos")))]
+        let _ = ui;
+        // …and the clock goes on even when Slint had no hover to clear.
+        PILL.with(|p| {
+            if let Some(s) = p.borrow_mut().as_mut() {
+                unpause(s);
+            }
+        });
+    }
     let done = PILL.with(|p| {
         let mut p = p.borrow_mut();
         let Some(s) = p.as_mut() else { return false };
@@ -128,6 +150,79 @@ fn tick() {
     if done {
         close();
     }
+}
+
+/// Back from the pointer: a little time to decide, but not the full six seconds.
+fn unpause(s: &mut State) {
+    s.paused = false;
+    s.left = s.left.max(Duration::from_millis(2500));
+}
+
+/// For the self-test: the hover pause as a system drag leaves it (ZK-133), and whether it holds.
+pub fn hold_for_test() {
+    PILL.with(|p| {
+        if let Some(s) = p.borrow_mut().as_mut() {
+            s.paused = true;
+        }
+    });
+}
+
+pub fn paused() -> Option<bool> {
+    PILL.with(|p| p.borrow().as_ref().map(|s| s.paused))
+}
+
+/// The pointer is outside the card's window and no mouse button is down (ZK-133).
+#[cfg(windows)]
+fn pointer_away(w: &slint::Window) -> bool {
+    use windows::Win32::Foundation::POINT;
+    use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LBUTTON, VK_RBUTTON};
+    use windows::Win32::UI::WindowsAndMessaging::GetCursorPos;
+    let mut p = POINT::default();
+    // SAFETY: valid out-pointer; plain state queries.
+    if unsafe { GetCursorPos(&mut p) }.is_err() {
+        return false;
+    }
+    // SAFETY: plain state queries.
+    let down = unsafe { GetAsyncKeyState(VK_LBUTTON.0 as i32) } < 0
+        || unsafe { GetAsyncKeyState(VK_RBUTTON.0 as i32) } < 0;
+    // Both in physical pixels of the virtual desktop (the app is per-monitor DPI aware).
+    let (pos, size) = (w.position(), w.size());
+    let inside = p.x >= pos.x
+        && p.y >= pos.y
+        && p.x < pos.x + size.width as i32
+        && p.y < pos.y + size.height as i32;
+    !inside && !down
+}
+
+#[cfg(target_os = "macos")]
+fn pointer_away(w: &slint::Window) -> bool {
+    use objc2_app_kit::{NSEvent, NSView};
+    use slint::winit_030::WinitWindowAccessor;
+    use slint::winit_030::winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
+    // Pointer and window frame both in global points (bottom-left origin).
+    let frame = w
+        .with_winit_window(|ww| {
+            let handle = ww.window_handle().ok()?;
+            let RawWindowHandle::AppKit(a) = handle.as_raw() else {
+                return None;
+            };
+            // SAFETY: winit hands out the NSView of a live window; we are on the main thread.
+            let view: &NSView = unsafe { a.ns_view.cast().as_ref() };
+            view.window().map(|nw| nw.frame())
+        })
+        .flatten();
+    let Some(f) = frame else { return false };
+    let p = NSEvent::mouseLocation();
+    let inside = p.x >= f.origin.x
+        && p.y >= f.origin.y
+        && p.x < f.origin.x + f.size.width
+        && p.y < f.origin.y + f.size.height;
+    !inside && NSEvent::pressedMouseButtons() == 0
+}
+
+#[cfg(not(any(windows, target_os = "macos")))]
+fn pointer_away(_w: &slint::Window) -> bool {
+    false
 }
 
 /// Slides the card out, then hides the window.
@@ -151,10 +246,10 @@ fn wire(ui: &Pill) {
     ui.on_hovered(|on| {
         PILL.with(|p| {
             if let Some(s) = p.borrow_mut().as_mut() {
-                s.paused = on;
-                // Back from the pointer: a little time to decide, but not the full six seconds.
-                if !on {
-                    s.left = s.left.max(Duration::from_millis(2500));
+                if on {
+                    s.paused = true;
+                } else {
+                    unpause(s);
                 }
             }
         })
