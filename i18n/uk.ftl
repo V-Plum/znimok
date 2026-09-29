@@ -2778,6 +2778,31 @@ shots-seconds = { $n } с
 # @max: 48
 shots-quick-library = Знімки повз редактор теж у бібліотеку
 
+# @where: Settings, Screenshots: the gesture of a row (releasing the mouse without a modifier)
+# @kind: label
+# @max: 18
+shots-gesture-plain = Відпустити
+
+# @where: Settings, Screenshots: the gesture of a row (Shift held on release)
+# @kind: label
+# @max: 18
+shots-gesture-shift = Shift + відпустити
+
+# @where: Settings, Screenshots: the gesture of a row (Alt held on release; Windows)
+# @kind: label
+# @max: 18
+shots-gesture-alt = Alt + відпустити
+
+# @where: Settings, Screenshots: the gesture of a row (Option held on release; macOS)
+# @kind: label
+# @max: 18
+shots-gesture-option = ⌥ + відпустити
+
+# @where: Switch
+# @kind: label
+# @max: 48
+shots-show-hints = Показувати смугу підказок під час знімання
+
 # @where: Switch
 # @kind: label
 # @max: 60

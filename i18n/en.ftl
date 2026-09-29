@@ -2764,6 +2764,31 @@ shots-seconds = { $n } s
 # @max: 48
 shots-quick-library = Quick captures go to the library too
 
+# @where: Settings, Screenshots: the gesture of a row (releasing the mouse without a modifier)
+# @kind: label
+# @max: 18
+shots-gesture-plain = Release
+
+# @where: Settings, Screenshots: the gesture of a row (Shift held on release)
+# @kind: label
+# @max: 18
+shots-gesture-shift = Shift + release
+
+# @where: Settings, Screenshots: the gesture of a row (Alt held on release; Windows)
+# @kind: label
+# @max: 18
+shots-gesture-alt = Alt + release
+
+# @where: Settings, Screenshots: the gesture of a row (Option held on release; macOS)
+# @kind: label
+# @max: 18
+shots-gesture-option = ⌥ + release
+
+# @where: Switch
+# @kind: label
+# @max: 48
+shots-show-hints = Show the hint strip while capturing
+
 # @where: Switch
 # @kind: label
 # @max: 60

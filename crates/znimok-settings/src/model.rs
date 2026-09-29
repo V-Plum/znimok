@@ -76,6 +76,10 @@ pub struct Capture {
     pub quick_save_to_library: bool,
     /// The last Esc in the overlay editor saves before closing (instead of just closing).
     pub overlay_esc_saves: bool,
+    /// What releasing the mouse (or Enter / Space) does, by modifier (ZK-155, as Little Helpers).
+    pub gestures: Gestures,
+    /// The hint strip at the bottom of the capture overlay (ZK-156).
+    pub show_hints: bool,
 }
 
 impl Default for Capture {
@@ -85,7 +89,102 @@ impl Default for Capture {
             hotkeys: Hotkeys::default(),
             quick_save_to_library: true,
             overlay_esc_saves: false,
+            gestures: Gestures::default(),
+            show_hints: true,
         }
+    }
+}
+
+/// Where a capture goes when the choice is made in the overlay.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum CaptureAction {
+    /// The editor window.
+    #[default]
+    Editor,
+    /// The editor right over the frozen screen (ZK-58).
+    OverScreen,
+    /// Straight to the clipboard (and the library, see `quick_save_to_library`).
+    Clipboard,
+}
+
+/// The modifier held when the choice is made (the moment the mouse is released).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Gesture {
+    Plain,
+    Shift,
+    /// Alt on Windows, ⌥ Option on macOS.
+    Alt,
+}
+
+/// Which action each gesture does — a permutation, as in Little Helpers: every action sits on
+/// exactly one gesture, and giving a gesture another's action swaps the two, so none is lost.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(default)]
+pub struct Gestures {
+    pub plain: CaptureAction,
+    pub shift: CaptureAction,
+    pub alt: CaptureAction,
+}
+
+impl Default for Gestures {
+    fn default() -> Self {
+        Self {
+            plain: CaptureAction::Editor,
+            shift: CaptureAction::Clipboard,
+            alt: CaptureAction::OverScreen,
+        }
+    }
+}
+
+impl Gestures {
+    /// The gesture of the modifiers held (Alt wins over Shift, as in Little Helpers).
+    pub fn gesture(shift: bool, alt: bool) -> Gesture {
+        if alt {
+            Gesture::Alt
+        } else if shift {
+            Gesture::Shift
+        } else {
+            Gesture::Plain
+        }
+    }
+
+    pub fn get(&self, g: Gesture) -> CaptureAction {
+        let s = self.valid();
+        match g {
+            Gesture::Plain => s.plain,
+            Gesture::Shift => s.shift,
+            Gesture::Alt => s.alt,
+        }
+    }
+
+    /// The action for the modifiers held.
+    pub fn action(&self, shift: bool, alt: bool) -> CaptureAction {
+        self.get(Self::gesture(shift, alt))
+    }
+
+    /// Gives `g` the action `a`; the gesture that had `a` takes `g`'s old one.
+    pub fn set(&mut self, g: Gesture, a: CaptureAction) {
+        let mut s = self.valid();
+        let old = s.get(g);
+        for slot in [&mut s.plain, &mut s.shift, &mut s.alt] {
+            if *slot == a {
+                *slot = old;
+            }
+        }
+        match g {
+            Gesture::Plain => s.plain = a,
+            Gesture::Shift => s.shift = a,
+            Gesture::Alt => s.alt = a,
+        }
+        *self = s;
+    }
+
+    /// A hand-edited file may name one action twice: then the defaults (no action is lost).
+    pub fn valid(&self) -> Gestures {
+        let all = [self.plain, self.shift, self.alt];
+        let distinct = all[0] != all[1] && all[1] != all[2] && all[0] != all[2];
+        if distinct { *self } else { Gestures::default() }
     }
 }
 
@@ -618,6 +717,25 @@ mod tests {
         let j = serde_json::to_string_pretty(&s).unwrap();
         assert_eq!(serde_json::from_str::<Settings>(&j).unwrap(), s);
         assert!(!s.updates.check_daily, "no network by default");
+        // ZK-155 / ZK-156: Little Helpers' gestures, hints on.
+        assert_eq!(
+            s.capture.gestures.action(false, false),
+            CaptureAction::Editor
+        );
+        assert_eq!(
+            s.capture.gestures.action(true, false),
+            CaptureAction::Clipboard
+        );
+        assert_eq!(
+            s.capture.gestures.action(false, true),
+            CaptureAction::OverScreen
+        );
+        assert_eq!(
+            s.capture.gestures.action(true, true),
+            CaptureAction::OverScreen,
+            "Alt wins"
+        );
+        assert!(s.capture.show_hints);
         assert!(!s.agents.cloud_enabled);
         assert!(s.editor.autosave);
     }
@@ -713,5 +831,60 @@ mod tests {
         let schema = schemars::schema_for!(Settings);
         let j = serde_json::to_value(&schema).unwrap();
         assert!(j["properties"]["capture"].is_object(), "{j}");
+    }
+}
+
+#[cfg(test)]
+mod gesture_tests {
+    use super::*;
+
+    /// Owner's example (ZK-155): the editor over the screen without a modifier, the window with
+    /// Alt — one change swaps the two, nothing is lost.
+    #[test]
+    fn setting_a_gesture_swaps() {
+        let mut g = Gestures::default();
+        g.set(Gesture::Plain, CaptureAction::OverScreen);
+        assert_eq!(
+            (g.plain, g.shift, g.alt),
+            (
+                CaptureAction::OverScreen,
+                CaptureAction::Clipboard,
+                CaptureAction::Editor
+            )
+        );
+        g.set(Gesture::Shift, CaptureAction::Clipboard);
+        assert_eq!(
+            g.shift,
+            CaptureAction::Clipboard,
+            "already there: nothing moves"
+        );
+        // Any sequence keeps a permutation.
+        let acts = [
+            CaptureAction::Editor,
+            CaptureAction::OverScreen,
+            CaptureAction::Clipboard,
+        ];
+        let gs = [Gesture::Plain, Gesture::Shift, Gesture::Alt];
+        for i in 0..27 {
+            g.set(gs[i % 3], acts[(i / 3) % 3]);
+            let all = [g.plain, g.shift, g.alt];
+            assert!(acts.iter().all(|a| all.contains(a)), "{all:?}");
+        }
+    }
+
+    #[test]
+    fn a_broken_file_falls_back() {
+        let g = Gestures {
+            plain: CaptureAction::Clipboard,
+            shift: CaptureAction::Clipboard,
+            alt: CaptureAction::Editor,
+        };
+        assert_eq!(g.valid(), Gestures::default());
+        assert_eq!(g.action(false, false), CaptureAction::Editor);
+        let json: Settings = serde_json::from_str(r#"{"capture":{"gestures":{"plain":"over_screen","shift":"clipboard","alt":"editor"}}}"#).unwrap();
+        assert_eq!(
+            json.capture.gestures.action(false, false),
+            CaptureAction::OverScreen
+        );
     }
 }
