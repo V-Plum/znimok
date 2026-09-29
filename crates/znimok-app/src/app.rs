@@ -258,6 +258,8 @@ pub struct App {
     settings_from: i32,
     /// The last document moved to the trash: (where it is now, where it was) — for "Undo".
     undo_trash: Option<(PathBuf, PathBuf)>,
+    /// Re-reads the macOS permissions while the first-run guide is open.
+    recheck_timer: slint::Timer,
 }
 
 /// The library folder: `ZNIMOK_LIBRARY` (tests, the CLI), then the one chosen in the settings,
@@ -353,6 +355,7 @@ impl App {
             store: None,
             settings_from: 0,
             undo_trash: None,
+            recheck_timer: slint::Timer::default(),
         }
     }
 
@@ -508,9 +511,73 @@ impl App {
         self.settings_sync(ui);
     }
 
+    /// The first-run guide (ZK-57): shown until "Done" or "Skip all"; also from the settings.
+    pub fn onboarding_open(&mut self, ui: &AppWindow) {
+        self.settings_sync(ui);
+        ui.set_page(3);
+        let weak = ui.as_weak();
+        // Permissions change outside the app (System Settings): look again while the guide is up.
+        self.recheck_timer.start(
+            slint::TimerMode::Repeated,
+            std::time::Duration::from_secs(2),
+            move || {
+                if let Some(ui) = weak.upgrade() {
+                    if ui.get_page() != 3 {
+                        return;
+                    }
+                    ui.set_onb_screen_ok(crate::system::screen_ok());
+                }
+            },
+        );
+    }
+
+    fn onboarding_done(&mut self, ui: &AppWindow) {
+        self.recheck_timer.stop();
+        self.save_prefs(ui, |p| p.general.onboarding_done = true);
+        ui.set_page(if self.s.is_some() { 1 } else { 0 });
+        ui.invoke_focus_library();
+    }
+
     /// The settings page's controls, from the file.
     pub fn settings_sync(&self, ui: &AppWindow) {
         let p = self.prefs();
+        {
+            use znimok_platform::AutostartState as A;
+            let st = crate::system::autostart_state();
+            ui.set_pref_autostart(matches!(st, A::On | A::NeedsApproval));
+            ui.set_pref_autostart_ok(st != A::Unavailable);
+            ui.set_pref_autostart_note(
+                match st {
+                    A::NeedsApproval => self.tr.tr("autostart-needs-approval"),
+                    A::DisabledInSystem => self.tr.tr("autostart-disabled-in-system"),
+                    _ => String::new(),
+                }
+                .into(),
+            );
+            ui.set_onb_screen_ok(crate::system::screen_ok());
+            let os = znimok_platform::Os::current();
+            let k = |c: Option<znimok_platform::KeyCombo>| {
+                c.map(|c| c.display(os))
+                    .unwrap_or_else(|| self.tr.tr("keys-not-set"))
+            };
+            let keys = &p.capture.hotkeys;
+            ui.set_onb_keys(
+                self.tr
+                    .tr_args(
+                        if cfg!(target_os = "macos") {
+                            "onb-keys-mac"
+                        } else {
+                            "onb-keys-win"
+                        },
+                        &args(&[
+                            ("region", k(keys.region)),
+                            ("screen", k(keys.screen)),
+                            ("record", k(keys.video)),
+                        ]),
+                    )
+                    .into(),
+            );
+        }
         {
             use crate::hotkeys::{Action, State};
             let os = znimok_platform::Os::current();
@@ -652,6 +719,27 @@ impl App {
             "close" => {
                 self.settings_close(ui);
                 return;
+            }
+            "autostart" => {
+                if let Err(e) = crate::system::set_autostart(on) {
+                    self.toast(ui, e);
+                }
+            }
+            "onb-open" => {
+                self.onboarding_open(ui);
+                return;
+            }
+            "onb-done" => {
+                self.onboarding_done(ui);
+                return;
+            }
+            "onb-screen" => crate::system::ask_screen(),
+            "onb-keys" => {
+                self.recheck_timer.stop();
+                self.settings_from = 0;
+                ui.set_settings_page(1);
+                ui.set_page(2);
+                ui.invoke_focus_settings();
             }
             "reset" => {
                 if let Some(store) = self.store.as_ref() {

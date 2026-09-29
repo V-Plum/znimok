@@ -1256,6 +1256,22 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
             ui.invoke_open_card(c.path);
         }
     }));
+    // ZK-57: the first-run guide (from the settings here; on a fresh profile it opens by
+    // itself). Start at login is not switched in the test: that writes the real Run key.
+    steps.push(Box::new(|_, ui, _| {
+        ui.invoke_setting("onb-open".into(), 0);
+    }));
+    steps.push(Box::new(|app, ui, r| {
+        r.snapshot(ui, "27-onboarding");
+        let shown = ui.get_page() == 3;
+        ui.invoke_setting("onb-done".into(), 0);
+        let done = app.borrow().prefs().general.onboarding_done;
+        r.check(
+            "first-run guide: shown, Done remembers it and returns",
+            shown && done && ui.get_page() == 1,
+            format!("shown {shown}, saved {done}, page {}", ui.get_page()),
+        );
+    }));
     steps.push(Box::new(|app, ui, r| {
         r.check(
             "reopened with marks",

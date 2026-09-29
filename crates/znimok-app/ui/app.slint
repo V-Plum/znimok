@@ -1365,6 +1365,12 @@ export component AppWindow inherits Window {
     in property <string> pref-lib-dir;
     in property <string> pref-file;
     in property <string> pref-version;
+    // Start at login (ZK-57 / ZK-77) and the first-run guide.
+    in property <bool> pref-autostart;
+    in property <bool> pref-autostart-ok: true;
+    in property <string> pref-autostart-note;
+    in property <bool> onb-screen-ok: true;
+    in property <string> onb-keys;
     // Hotkeys page (ZK-44): region, screen, clipboard, empty editor.
     in property <[string]> key-texts;
     in property <[string]> key-warns;
@@ -1517,6 +1523,132 @@ export component AppWindow inherits Window {
                 }
             }
             init => { self.focus(); }
+        }
+    }
+
+    // ============================================================ first run (ZK-57)
+    // Once, before anything else: what Znimok needs from this system, each step one card.
+    Rectangle {
+        opacity: root.page == 3 ? 1 : 0;
+        visible: self.opacity > 0.01;
+        animate opacity { duration: 200ms; easing: ease-in-out; }
+        background: Theme.app;
+        TouchArea { }
+        DragArea { height: 52px; drag => { root.window-drag(); } toggle => { root.window-toggle(); } }
+        if root.custom-frame: WindowControls {
+            x: parent.width - self.width;
+            y: 0;
+            height: 52px;
+            maximized: root.win-maximized;
+            minimize => { root.window-minimize(); }
+            toggle => { root.window-toggle(); }
+            close => { root.window-close(); }
+        }
+        VerticalLayout {
+            x: (parent.width - self.width) / 2;
+            width: min(parent.width - 48px, 620px);
+            alignment: center;
+            spacing: 14px;
+            Path {
+                width: 44px;
+                height: 44px;
+                viewbox-width: 24;
+                viewbox-height: 24;
+                commands: "M3.5 13.5 h8 L3.5 21 h8";
+                stroke: #3D7BF5;
+                stroke-width: 2.4px;
+                fill: transparent;
+            }
+            Text { text: root.mac ? @tr("onb-title-mac" => "Three permissions — and Znimok is ready") : @tr("onb-title-win" => "Two steps — and Znimok is ready"); color: Theme.text; font-size: 22px; font-weight: 700; wrap: word-wrap; }
+            Text { text: root.mac ? @tr("onb-intro-mac" => "macOS asks for permission for everything that sees the screen. Znimok works only on your Mac and sends nothing anywhere without your action.") : @tr("onb-intro-win" => "Znimok needs no administrator rights and sends nothing anywhere without your action. Check the hotkeys and choose where screenshots live."); color: Theme.text2; font-size: 13px; wrap: word-wrap; }
+            // Screen recording (macOS only)
+            if root.mac: Rectangle {
+                border-radius: 12px;
+                background: Theme.panel;
+                border-width: 1px;
+                border-color: root.onb-screen-ok ? #34C48A55 : Theme.control-on;
+                height: screen-lay.preferred-height;
+                screen-lay := HorizontalLayout {
+                    padding: 16px;
+                    spacing: 12px;
+                    VerticalLayout {
+                        spacing: 4px;
+                        horizontal-stretch: 1;
+                        Text { text: @tr("onb-screen" => "Screen and system audio recording"); color: Theme.text; font-size: 14px; font-weight: 600; }
+                        Text { text: root.onb-screen-ok ? @tr("onb-screen-granted" => "Granted. Needed for any capture.") : @tr("onb-screen-needed" => "Needed for any capture. macOS will ask you to restart Znimok."); color: root.onb-screen-ok ? Theme.ok : Theme.text3; font-size: 12px; wrap: word-wrap; }
+                    }
+                    if !root.onb-screen-ok: VerticalLayout {
+                        alignment: center;
+                        TextButton { text: @tr("onb-allow" => "Allow"); primary: true; clicked => { root.setting("onb-screen", 0); } }
+                    }
+                }
+            }
+            // Hotkeys
+            Rectangle {
+                border-radius: 12px;
+                background: Theme.panel;
+                border-width: 1px;
+                border-color: Theme.control-on;
+                height: keys-lay.preferred-height;
+                keys-lay := HorizontalLayout {
+                    padding: 16px;
+                    spacing: 12px;
+                    VerticalLayout {
+                        spacing: 4px;
+                        horizontal-stretch: 1;
+                        Text { text: @tr("onb-keys" => "Hotkeys"); color: Theme.text; font-size: 14px; font-weight: 600; }
+                        Text { text: root.onb-keys; color: Theme.text3; font-size: 12px; wrap: word-wrap; }
+                        for w in root.key-warns: Text { visible: w != ""; height: w != "" ? self.preferred-height : 0; text: w; color: Theme.attention; font-size: 11px; wrap: word-wrap; }
+                    }
+                    VerticalLayout {
+                        alignment: center;
+                        TextButton { text: @tr("onb-open-settings" => "Open settings"); clicked => { root.setting("onb-keys", 0); } }
+                    }
+                }
+            }
+            // Library folder
+            Rectangle {
+                border-radius: 12px;
+                background: Theme.panel;
+                border-width: 1px;
+                border-color: Theme.control-on;
+                height: lib-lay.preferred-height;
+                lib-lay := HorizontalLayout {
+                    padding: 16px;
+                    spacing: 12px;
+                    VerticalLayout {
+                        spacing: 4px;
+                        horizontal-stretch: 1;
+                        Text { text: @tr("onb-library" => "Library folder"); color: Theme.text; font-size: 14px; font-weight: 600; }
+                        Text { text: @tr("onb-library-hint" => "All screenshots and videos live here as files. You can pick a folder on a cloud drive."); color: Theme.text3; font-size: 12px; wrap: word-wrap; }
+                        Text { text: root.pref-lib-dir; color: Theme.text2; font-size: 11px; overflow: elide; }
+                    }
+                    VerticalLayout {
+                        alignment: center;
+                        TextButton { text: @tr("common-change-ellipsis" => "Change…"); clicked => { root.setting("lib-folder", 0); } }
+                    }
+                }
+            }
+            // Start at login
+            if root.pref-autostart-ok: Rectangle {
+                border-radius: 12px;
+                background: Theme.panel;
+                border-width: 1px;
+                border-color: Theme.control-on;
+                height: auto-lay.preferred-height;
+                auto-lay := VerticalLayout {
+                    padding: 16px;
+                    spacing: 4px;
+                    SwitchRow { text: @tr("look-autostart" => "Start at sign-in"); checked: root.pref-autostart; toggled => { root.setting("autostart", self.checked ? 1 : 0); } }
+                    if root.pref-autostart-note != "": Text { text: root.pref-autostart-note; color: Theme.attention; font-size: 11px; wrap: word-wrap; }
+                }
+            }
+            HorizontalLayout {
+                spacing: 8px;
+                alignment: end;
+                TextButton { text: @tr("onb-skip-all" => "Skip all"); clicked => { root.setting("onb-done", 0); } }
+                TextButton { text: @tr("common-done" => "Done"); primary: true; clicked => { root.setting("onb-done", 0); } }
+            }
         }
     }
 
@@ -1715,6 +1847,8 @@ export component AppWindow inherits Window {
                                         SegOption { text: "English"; on: root.pref-lang == 2; clicked => { root.setting("lang", 2); } }
                                     }
                                 }
+                                if root.pref-autostart-ok: SwitchRow { text: @tr("look-autostart" => "Start at sign-in"); checked: root.pref-autostart; toggled => { root.setting("autostart", self.checked ? 1 : 0); } }
+                                if root.pref-autostart-note != "": Text { text: root.pref-autostart-note; color: Theme.attention; font-size: 11px; wrap: word-wrap; }
                                 Text { text: @tr("look-theme" => "Theme"); color: Theme.text2; font-size: 12px; }
                                 Rectangle {
                                     height: 32px;
@@ -1743,6 +1877,11 @@ export component AppWindow inherits Window {
                                     spacing: 12px;
                                     Text { text: row.k; color: Theme.text2; font-size: 12px; horizontal-stretch: 1; }
                                     Text { text: row.v; color: Theme.text3; font-size: 12px; }
+                                }
+                                HorizontalLayout {
+                                    spacing: 12px;
+                                    Text { text: root.mac ? @tr("priv-mac-perms" => "macOS permissions") : @tr("onb-open-guide" => "First-run guide"); color: Theme.text2; font-size: 12px; vertical-alignment: center; horizontal-stretch: 1; }
+                                    TextButton { text: @tr("priv-check" => "Check"); clicked => { root.setting("onb-open", 0); } }
                                 }
                                 Text { text: root.pref-file; color: Theme.text3; font-size: 10px; wrap: word-wrap; }
                             }

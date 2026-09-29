@@ -24,6 +24,7 @@ mod library;
 mod overlay;
 mod pill;
 mod selftest;
+mod system;
 mod tray;
 
 use std::cell::RefCell;
@@ -159,8 +160,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         });
     }
 
+    // Started at login (ZK-77): straight to the tray, no window; "--background" is not a file.
+    let background = std::env::args_os().any(|a| a == "--background");
     // Files from the command line (and "Open with…" on Windows).
-    let files: Vec<PathBuf> = std::env::args_os().skip(1).map(PathBuf::from).collect();
+    let files: Vec<PathBuf> = std::env::args_os()
+        .skip(1)
+        .filter(|a| a != "--background")
+        .map(PathBuf::from)
+        .collect();
+    // The first-run guide (ZK-57), unless a file was asked for or the start is silent.
+    if selftest_dir.is_none()
+        && !background
+        && files.is_empty()
+        && !app.borrow().prefs().general.onboarding_done
+    {
+        app.borrow_mut().onboarding_open(&ui);
+    }
     // Global hotkeys from the settings (ZK-44); the self-test uses them too (recording a key).
     {
         let p = app.borrow().prefs();

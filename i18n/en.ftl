@@ -3152,6 +3152,21 @@ onb-agents-hint = Off. You can turn it on on the Agents page when you need it.
 # @max: 20
 onb-skip-all = Skip all
 
+# @where: Settings and the first-run guide
+# @kind: hint
+# @max: 80
+autostart-needs-approval = Allow Znimok in System Settings → General → Login Items
+
+# @where: Settings and the first-run guide
+# @kind: hint
+# @max: 80
+autostart-disabled-in-system = Switched off in Task Manager — the switch here turns it back on
+
+# @where: Settings and the first-run guide
+# @kind: hint
+# @max: 80
+onb-open-guide = First-run guide
+
 ## Crash reports
 ## After a crash Znimok offers its local report once at the next start. Nothing is sent automatically.
 

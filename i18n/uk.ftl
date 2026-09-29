@@ -3172,6 +3172,21 @@ onb-agents-hint = Вимкнено. Увімкнути можна на стор�
 # @max: 20
 onb-skip-all = Пропустити все
 
+# @where: Settings and the first-run guide
+# @kind: hint
+# @max: 80
+autostart-needs-approval = Дозвольте Znimok у Системних параметрах → Загальні → Об'єкти входу
+
+# @where: Settings and the first-run guide
+# @kind: hint
+# @max: 80
+autostart-disabled-in-system = Вимкнено в Диспетчері задач — перемикач тут увімкне знову
+
+# @where: Settings and the first-run guide
+# @kind: hint
+# @max: 80
+onb-open-guide = Провідник першого запуску
+
 ## Crash reports
 ## After a crash Znimok offers its local report once at the next start. Nothing is sent automatically.
 
