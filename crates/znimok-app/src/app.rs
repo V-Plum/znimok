@@ -466,6 +466,12 @@ impl App {
         ui.window().request_redraw();
     }
 
+    /// Before the process ends (ZK-146): close what must be closed cleanly — the library index
+    /// (a database) — while everything is still alive.
+    pub fn before_exit(&mut self) {
+        self.index = None;
+    }
+
     pub fn prefs(&self) -> znimok_settings::Settings {
         self.store.as_ref().map(|s| s.get()).unwrap_or_default()
     }
