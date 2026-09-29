@@ -58,6 +58,37 @@ jobs:
           name: ocr-linux
           path: out/*.json
 
+  memory:
+    # ZK-120 step 3: peak RAM and time per model set and screen size (RAM matters more than the
+    # installer's size — owner, 29.09).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Tesseract memory
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq tesseract-ocr time
+          pip install -q pillow
+          get() {  # repo lang sha256
+            mkdir -p "models/$1"
+            curl -sfL -o "models/$1/$2.traineddata" "https://github.com/tesseract-ocr/$1/raw/4.1.0/$2.traineddata"
+            echo "$3  models/$1/$2.traineddata" | sha256sum -c -
+          }
+          get tessdata_fast ukr d59e53e2bded32f4445f124b4b00240fcac7e8044c003ab822ccb94f0b3db59b
+          get tessdata_fast eng 7d4322bd2a7749724879683fc3912cb542f19906c83bcc1a52132556427170b2
+          get tessdata_best ukr 1277f6e3b6f707063a92d40e7678e7f57154e8414e328e340be9ee9275eea9c8
+          get tessdata_best eng 8280aed0782fe27257a68ea10fe7ef324ca0f8d85bd2fd145d1c2b560bcb66ba
+          export TESSDATA_FAST="$PWD/models/tessdata_fast" TESSDATA_BEST="$PWD/models/tessdata_best"
+          nproc; tesseract --version | head -1
+          python tools/ocr-eval/memory.py | tee memory.md
+          cat memory.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ocr-memory
+          path: memory.md
+
   macos:
     runs-on: macos-26
     steps:
