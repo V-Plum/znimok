@@ -105,7 +105,13 @@ impl FileAssoc for WinFileAssoc {
         let prog = format!(r"{}\{}", self.classes, self.prog_id);
         write_sz(&prog, "", &self.type_name)?;
         write_sz(&prog, "FriendlyTypeName", &self.type_name)?;
-        write_sz(&format!(r"{prog}\DefaultIcon"), "", &self.icon)?;
+        // With the thumbnail DLL's icon handler registered, the type's icon is "%1" (asked per
+        // file: screenshot, video, video with a log — ZK-150); keep it.
+        let per_file = read_sz(&format!(r"{prog}\shellex\IconHandler"), "")?.is_some()
+            && read_sz(&format!(r"{prog}\DefaultIcon"), "")?.as_deref() == Some("%1");
+        if !per_file {
+            write_sz(&format!(r"{prog}\DefaultIcon"), "", &self.icon)?;
+        }
         write_sz(
             &format!(r"{prog}\shell\open\command"),
             "",
@@ -176,6 +182,30 @@ mod tests {
         fn drop(&mut self) {
             let _ = delete_tree(&self.0);
         }
+    }
+
+    /// With the icon handler in place (ZK-150), registering again keeps the per-file icon.
+    #[test]
+    fn per_file_icon_is_kept() {
+        let s = Scratch::new("icon");
+        let a = s.assoc();
+        a.register("znimok").unwrap();
+        let prog = format!(r"{}\Classes\Znimok.Document", s.0);
+        let icon = || read_sz(&format!(r"{prog}\DefaultIcon"), "").unwrap();
+        assert_ne!(
+            icon().as_deref(),
+            Some("%1"),
+            "without the handler: the app's icon"
+        );
+        write_sz(
+            &format!(r"{prog}\shellex\IconHandler"),
+            "",
+            "{0F5C6E12-2A39-4AAC-9C34-3E2C9305E05A}",
+        )
+        .unwrap();
+        write_sz(&format!(r"{prog}\DefaultIcon"), "", "%1").unwrap();
+        a.register("znimok").unwrap();
+        assert_eq!(icon().as_deref(), Some("%1"));
     }
 
     #[test]

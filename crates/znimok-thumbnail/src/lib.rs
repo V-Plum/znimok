@@ -16,6 +16,10 @@
 /// caches thumbnails by handler.
 pub const CLSID_STR: &str = "{787777D8-E076-4FDC-8065-F7282E5D3F86}";
 
+/// `{0F5C6E12-2A39-4AAC-9C34-3E2C9305E05A}` — the icon handler (ZK-150): a screenshot, a video or
+/// a video with a DevTools log gets its own icon in Explorer's list views. Never change it.
+pub const ICON_CLSID_STR: &str = "{0F5C6E12-2A39-4AAC-9C34-3E2C9305E05A}";
+
 /// How much of the file is read before the stored thumbnail must have appeared.
 #[cfg(windows)]
 const HEAD_LIMIT: usize = 64 << 20;
@@ -42,11 +46,18 @@ pub fn thumbnail_rgba(head: &[u8], size: u32) -> Option<(u32, u32, Vec<u8>)> {
         ((w as f32 * scale).round() as u32).max(1),
         ((h as f32 * scale).round() as u32).max(1),
     );
-    let img = if (tw, th) == (w, h) {
+    let mut img = if (tw, th) == (w, h) {
         img
     } else {
         image::imageops::resize(&img, tw, th, image::imageops::FilterType::Triangle)
     };
+    // A video shows it is one: ▶ and the duration (ZK-150).
+    if let Some(v) = peek
+        .video
+        .filter(|_| peek.kind == znimok_format::DocKind::Video)
+    {
+        badge::draw(&mut img, v.duration_hns);
+    }
     Some((tw, th, img.into_raw()))
 }
 
@@ -67,12 +78,30 @@ pub unsafe extern "C" fn znimok_thumbnail_png(
     }
     // SAFETY: the caller's contract.
     let head = unsafe { std::slice::from_raw_parts(data, len) };
-    let Some(png) = znimok_format::peek(head).ok().and_then(|p| p.thumbnail_png) else {
+    let Ok(peek) = znimok_format::peek(head) else {
+        return std::ptr::null_mut();
+    };
+    let video = peek
+        .video
+        .filter(|_| peek.kind == znimok_format::DocKind::Video);
+    let Some(mut png) = peek.thumbnail_png else {
         return std::ptr::null_mut();
     };
     // Checked here with the bounded decoder, so Quick Look never decodes an oversized one.
-    if znimok_format::decode_png(&png, &thumb_limits()).is_err() {
+    let Ok(r) = znimok_format::decode_png(&png, &thumb_limits()) else {
         return std::ptr::null_mut();
+    };
+    // A video: the same ▶ and duration as in Explorer (ZK-150), re-encoded.
+    if let Some(v) = video {
+        let Some(mut img) = image::RgbaImage::from_raw(r.width, r.height, r.rgba) else {
+            return std::ptr::null_mut();
+        };
+        badge::draw(&mut img, v.duration_hns);
+        let mut out = std::io::Cursor::new(Vec::new());
+        if img.write_to(&mut out, image::ImageFormat::Png).is_err() {
+            return std::ptr::null_mut();
+        }
+        png = out.into_inner();
     }
     let b = png.into_boxed_slice();
     // SAFETY: the caller's contract.
@@ -92,6 +121,40 @@ pub unsafe extern "C" fn znimok_thumbnail_free(p: *mut u8, len: usize) {
     }
 }
 
+/// Which file icon a document gets (ZK-150): one extension, three icons — told apart by the head
+/// of the file, so Explorer's list views show a video as a video.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DocIcon {
+    Image,
+    Video,
+    /// A video with a browser (DevTools) log.
+    Report,
+}
+
+impl DocIcon {
+    /// The icon file installed next to the DLL (`icons\…`), from crates/znimok-thumbnail/icons.
+    pub fn file_name(self) -> &'static str {
+        match self {
+            Self::Image => "doc-image.ico",
+            Self::Video => "doc-video.ico",
+            Self::Report => "doc-report.ico",
+        }
+    }
+}
+
+/// The icon for `head` (the start of a `.znimok` file). Anything unreadable — not ours, damaged,
+/// cut before the kind is known — gets the screenshot icon, the type's default.
+pub fn doc_icon(head: &[u8]) -> DocIcon {
+    match znimok_format::peek(head) {
+        Ok(p) if p.kind == znimok_format::DocKind::Video && p.devtools => DocIcon::Report,
+        Ok(p) if p.kind == znimok_format::DocKind::Video => DocIcon::Video,
+        _ => DocIcon::Image,
+    }
+}
+
+mod badge;
+#[cfg(windows)]
+mod icon;
 #[cfg(windows)]
 mod win;
 
@@ -122,6 +185,41 @@ mod tests {
         let bare = znimok_format::write(&doc, &Default::default());
         assert!(thumbnail_rgba(&bare, 96).is_none());
         assert!(thumbnail_rgba(b"PNG? no", 96).is_none());
+    }
+
+    /// One extension, three icons (ZK-150): the kind comes from the head of the file.
+    #[test]
+    fn doc_icon_by_kind() {
+        let doc = znimok_format_doc();
+        let shot = znimok_format::write(&doc, &Default::default());
+        assert_eq!(doc_icon(&shot), DocIcon::Image);
+
+        let info = znimok_format::VideoInfo {
+            width: 640,
+            height: 400,
+            fps_milli: 30_000,
+            frames: 90,
+            duration_hns: 30_000_000,
+            codec: *b"avc1",
+        };
+        let mut video = znimok_format::Video::new(info);
+        let mp4 = vec![0u8; 64];
+        let clip = znimok_format::write_video(&doc, &video, &mp4, &Default::default());
+        assert_eq!(doc_icon(&clip), DocIcon::Video);
+        video.devlog = Some(znimok_format::DevLog {
+            wall0_ms: 1,
+            events: Vec::new(),
+        });
+        let report = znimok_format::write_video(&doc, &video, &mp4, &Default::default());
+        assert_eq!(doc_icon(&report), DocIcon::Report);
+
+        // Not ours, or cut before the kind: the type's default.
+        assert_eq!(doc_icon(b"not a document"), DocIcon::Image);
+        assert_eq!(doc_icon(&report[..12]), DocIcon::Image);
+        assert_eq!(
+            [DocIcon::Image, DocIcon::Video, DocIcon::Report].map(DocIcon::file_name),
+            ["doc-image.ico", "doc-video.ico", "doc-report.ico"]
+        );
     }
 
     #[test]

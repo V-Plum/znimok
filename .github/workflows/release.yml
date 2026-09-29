@@ -14,6 +14,7 @@ on:
       - "packaging/**"
       - "crates/znimok-thumbnail/mac/**"
       - "tools/ocr-helper/**"
+      - "crates/znimok-thumbnail/icons/**"
       - "crates/znimok-update/**"
       - "tools/verify_release.py"
   workflow_dispatch:
@@ -80,6 +81,8 @@ jobs:
           Copy-Item target/ocr-helper/znimok-ocr.exe $dir
           Copy-Item target/ocr-helper/NOTICE.txt "$dir/NOTICE-ocr.txt"
           Copy-Item -Recurse target/ocr-helper/tessdata $dir
+          New-Item -ItemType Directory -Force "$dir/icons" | Out-Null
+          Copy-Item crates/znimok-thumbnail/icons/doc-*.ico "$dir/icons"
           Compress-Archive -Path "$dir/*" -DestinationPath "dist/Znimok-$v-windows-x64.zip"
           Copy-Item target/release/znimok.exe dist/znimok.exe
       - name: MSI (WiX, per-user)
@@ -95,6 +98,8 @@ jobs:
           Copy-Item target/ocr-helper/znimok-ocr.exe $bin
           Copy-Item target/ocr-helper/NOTICE.txt "$bin/NOTICE-ocr.txt"
           Copy-Item -Recurse target/ocr-helper/tessdata $bin
+          New-Item -ItemType Directory -Force "$bin/icons" | Out-Null
+          Copy-Item crates/znimok-thumbnail/icons/doc-*.ico "$bin/icons"
           wix build packaging/msi/znimok.wxs -arch x64 -d Version=$msiVersion -d Bin=$bin -o "dist/Znimok-$v-windows-x64.msi"
           if ($LASTEXITCODE -ne 0) { throw "wix build failed" }
       - name: MSI installs, registers and uninstalls cleanly
@@ -104,13 +109,17 @@ jobs:
           $dir = Join-Path $env:LOCALAPPDATA "Programs\Znimok"
           $p = Start-Process msiexec -ArgumentList "/i `"$msi`" /qn /l*v install.log" -Wait -PassThru
           if ($p.ExitCode -ne 0) { Get-Content install.log -Tail 40; throw "install failed: $($p.ExitCode)" }
-          foreach ($f in "znimok-app.exe", "znimok.exe", "znimok_thumbnail.dll", "LICENSE.txt", "znimok-ocr.exe", "NOTICE-ocr.txt", "tessdata\ukr.traineddata", "tessdata\eng.traineddata") {
+          foreach ($f in "znimok-app.exe", "znimok.exe", "znimok_thumbnail.dll", "LICENSE.txt", "znimok-ocr.exe", "NOTICE-ocr.txt", "tessdata\ukr.traineddata", "tessdata\eng.traineddata", "icons\doc-image.ico", "icons\doc-video.ico", "icons\doc-report.ico") {
             if (-not (Test-Path (Join-Path $dir $f))) { throw "missing after install: $f" }
           }
           $assoc = (Get-ItemProperty "HKCU:\Software\Classes\.znimok").'(default)'
           if ($assoc -ne "Znimok.Document") { throw ".znimok is '$assoc'" }
           $thumb = (Get-ItemProperty "HKCU:\Software\Classes\.znimok\ShellEx\{e357fccd-a995-4576-b01f-234630154e96}").'(default)'
           if ($thumb -ne "{787777D8-E076-4FDC-8065-F7282E5D3F86}") { throw "thumbnail handler is '$thumb'" }
+          $ih = (Get-ItemProperty "HKCU:\Software\Classes\Znimok.Document\shellex\IconHandler").'(default)'
+          if ($ih -ne "{0F5C6E12-2A39-4AAC-9C34-3E2C9305E05A}") { throw "icon handler is '$ih'" }
+          $di = (Get-ItemProperty "HKCU:\Software\Classes\Znimok.Document\DefaultIcon").'(default)'
+          if ($di -ne "%1") { throw "DefaultIcon is '$di' (the icon handler needs %1)" }
           $path = [Environment]::GetEnvironmentVariable("PATH", "User")
           if ($path -notlike "*$dir*") { throw "the install folder is not on the user PATH" }
           & (Join-Path $dir "znimok.exe") --version
@@ -219,6 +228,8 @@ jobs:
           mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources" "$app/Contents/PlugIns"
           cp target/release/znimok-app target/release/znimok "$app/Contents/MacOS/"
           cp -R target/appex/ZnimokThumbnail.appex "$app/Contents/PlugIns/"
+          # The .znimok document icon (ZK-150), named by the document type in Info.plist.
+          cp crates/znimok-thumbnail/icons/ZnimokDocument.icns "$app/Contents/Resources/"
           cp crates/znimok-app/icons/Znimok.icns "$app/Contents/Resources/"
           sed -e "s/@BUILD@/${GITHUB_SHA::7}/" \
               -e "s#<key>CFBundleShortVersionString</key><string>[^<]*</string>#<key>CFBundleShortVersionString</key><string>$v</string>#" \

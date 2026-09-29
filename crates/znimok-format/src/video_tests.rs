@@ -184,9 +184,11 @@ fn version_kind_and_block_order() {
     assert_eq!(p.video, Some(info()));
     assert_eq!((p.width, p.height), (20, 16));
     assert!(p.thumbnail_png.is_some());
+    // This video carries a browser log: the head says so, for its file icon (ZK-150).
+    assert!(v.devlog.is_some() && p.devtools);
     // A screenshot peeks as an image without video info.
     let p = peek(&write(&doc, &WriteOptions::default())).unwrap();
-    assert_eq!((p.kind, p.video), (DocKind::Image, None));
+    assert_eq!((p.kind, p.video, p.devtools), (DocKind::Image, None, false));
     // `read` gives the poster document with the marks.
     let d = read(&bytes).unwrap();
     assert_eq!(d.objects.len(), 3);
@@ -382,7 +384,7 @@ fn info_block(kind: u8) -> Vec<u8> {
 
 fn vinf_block(i: &VideoInfo) -> Vec<u8> {
     let mut w = Writer::default();
-    video::write_vinf(&mut w, i);
+    video::write_vinf(&mut w, i, false);
     w.buf[8..].to_vec()
 }
 
@@ -677,4 +679,23 @@ fn streaming_reader_bounds() {
         .unwrap_err(),
         FormatError::NotZnimok
     );
+}
+
+/// The `VINF` flags byte (ZK-150): a video without a browser log peeks without it, and a `VINF`
+/// written before the byte existed (it ends at the codec) reads as «no log».
+#[test]
+fn devtools_flag_in_the_head() {
+    let (doc, mut v) = rich();
+    v.devlog = None;
+    let bytes = write_video(&doc, &v, &fake_mp4(100), &WriteOptions::default());
+    let p = peek(&bytes).unwrap();
+    assert_eq!((p.kind, p.devtools), (DocKind::Video, false));
+
+    let mut full = vinf_block(&info());
+    assert_eq!(full.pop(), Some(0), "the flags byte closes VINF");
+    let limits = Limits::default();
+    let mut r = crate::codec::Reader::new(&full, &limits);
+    let back = video::read_vinf(&mut r, &limits).unwrap();
+    assert_eq!(back, info());
+    assert_eq!(video::read_vinf_flags(&mut r).unwrap(), 0);
 }
