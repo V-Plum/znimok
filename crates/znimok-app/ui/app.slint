@@ -1559,7 +1559,10 @@ component ToolRail inherits VerticalLayout {
     in property <int> tool;
     in property <bool> ctrl-held;
     in property <bool> with-crop: true;
+    // Image (ZK-163): a file dialog, so not over the screen (it would open under the frame).
+    in property <bool> with-image: true;
     callback chosen(int);
+    callback insert-image();
     padding: 8px;
     spacing: 4px;
     alignment: start;
@@ -1574,8 +1577,8 @@ component ToolRail inherits VerticalLayout {
         IconButton { width: 40px; height: 36px; tip-side: 1; label: @tr("tool-highlighter" => "Highlighter (H)"); icon: "M14 3.5 L20.5 10 L13 17.5 L6.5 11 Z M6.5 11 L4 16.5 L7.5 20 L13 17.5 M16.5 6 L10 12.5 M3 22.3 h9"; active: root.tool == 7 && !root.ctrl-held; clicked => { root.chosen(7); } }
         IconButton { width: 40px; height: 36px; tip-side: 1; label: @tr("tool-counter" => "Counter (N)"); icon: "M3 12 a9 9 0 1 0 18 0 a9 9 0 1 0 -18 0 z M10.5 9 l2 -1.2 V16"; active: root.tool == 8 && !root.ctrl-held; clicked => { root.chosen(8); } }
         IconButton { width: 40px; height: 36px; tip-side: 1; label: @tr("tool-stamp" => "Stamp (S)"); icon: "M8 12 V7 a4 4 0 0 1 8 0 v5 M5 12 h14 v4 H5 z M7 16 v4 h10 v-4"; active: root.tool == 9 && !root.ctrl-held; clicked => { root.chosen(9); } }
-        // Stable layout from v1: tools not implemented yet stay in place, disabled.
-        IconButton { width: 40px; height: 36px; tip-side: 1; label: @tr("tool-image" => "Image (I)"); tip: self.label + " — " + @tr("common-in-development" => "Coming soon"); icon: "M5 5 h14 a2 2 0 0 1 2 2 v10 a2 2 0 0 1 -2 2 H5 a2 2 0 0 1 -2 -2 V7 a2 2 0 0 1 2 -2 z M7 10 a1.5 1.5 0 1 0 3 0 a1.5 1.5 0 1 0 -3 0 M4 17 l5 -5 4 4 3 -3 4 4"; enabled: false; }
+        // Not a tool that stays on: it asks for a picture and puts it in as a mark (ZK-163).
+        if root.with-image: IconButton { width: 40px; height: 36px; tip-side: 1; label: @tr("tool-image" => "Image (I)"); tip: self.label + " — " + @tr("tool-image-tip" => "Put a picture from a file on the screenshot (Ctrl+V pastes one from the clipboard)"); icon: "M5 5 h14 a2 2 0 0 1 2 2 v10 a2 2 0 0 1 -2 2 H5 a2 2 0 0 1 -2 -2 V7 a2 2 0 0 1 2 -2 z M7 10 a1.5 1.5 0 1 0 3 0 a1.5 1.5 0 1 0 -3 0 M4 17 l5 -5 4 4 3 -3 4 4"; clicked => { root.insert-image(); } }
         if root.with-crop: Rectangle { height: 9px; Rectangle { y: 4px; height: 1px; x: 8px; width: parent.width - 16px; background: Theme.line; } }
         if root.with-crop: IconButton { width: 40px; height: 36px; tip-side: 1; label: @tr("tool-crop" => "Crop (C)"); icon: "M6 2 v14 a2 2 0 0 0 2 2 h14 M2 6 h14 a2 2 0 0 1 2 2 v14"; active: root.tool == 10; clicked => { root.chosen(10); } }
 }
@@ -1731,6 +1734,8 @@ export component AppWindow inherits Window {
     callback export();
     callback autosave-toggled(bool);
     callback tool-chosen(int);
+    // The Image button (ZK-163): pick a picture file, it becomes a mark.
+    callback insert-image();
     // kind (0 down, 1 move, 2 up), x, y, button (0 left, 1 right, 2 middle), shift, ctrl (⌘ on macOS)
     callback pointer(int, length, length, int, bool, bool);
     // Ctrl held on the canvas = the Select tool for the moment (owner, 28.09).
@@ -2704,7 +2709,7 @@ export component AppWindow inherits Window {
                     width: root.over-screen ? 0px : 56px;
                     visible: !root.over-screen;
                     background: Theme.panel;
-                    ToolRail { tool: root.tool; ctrl-held: root.ctrl-held; chosen(i) => { root.tool-chosen(i); } }
+                    ToolRail { tool: root.tool; ctrl-held: root.ctrl-held; chosen(i) => { root.tool-chosen(i); } insert-image => { root.insert-image(); } }
                 }
                 Rectangle { width: root.over-screen ? 0px : 1px; background: Theme.line; }
                 // ---- canvas
@@ -2831,6 +2836,7 @@ export component AppWindow inherits Window {
                             tool: root.tool;
                             ctrl-held: root.ctrl-held;
                             with-crop: false;
+                            with-image: false;
                             chosen(i) => { root.tool-chosen(i); }
                         }
                     }

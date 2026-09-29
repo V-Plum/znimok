@@ -501,6 +501,17 @@ fn pick_open(app: &Shared) -> Option<PathBuf> {
         .pick_file()
 }
 
+/// The Image button / I (ZK-163): a picture file as a mark on the open document.
+fn insert_image_with_dialog(app: &Shared, ui: &AppWindow) {
+    let file = rfd::FileDialog::new()
+        .add_filter("PNG, JPEG, WebP, GIF, BMP", io::IMAGE_EXTENSIONS)
+        .pick_file();
+    if let Some(p) = file {
+        app.borrow_mut().insert_image_file(ui, &p);
+    }
+    ui.invoke_focus_canvas();
+}
+
 fn open_with_dialog(app: &Shared, ui: &AppWindow) {
     confirm_leave(app, ui, |app, ui| {
         if let Some(p) = pick_open(app) {
@@ -894,6 +905,14 @@ fn wire(ui: &AppWindow, app: &Shared) {
         a.setting(&w, "autosave", on as i32);
         a.sync(&w);
     });
+    {
+        let (app, weak) = (app.clone(), ui.as_weak());
+        ui.on_insert_image(move || {
+            if let Some(ui) = weak.upgrade() {
+                insert_image_with_dialog(&app, &ui);
+            }
+        });
+    }
     on!(ui, app, on_tool_chosen, |a, w, t| {
         a.set_tool(&w, t.max(0) as usize);
         w.invoke_focus_canvas();
@@ -927,6 +946,7 @@ fn wire(ui: &AppWindow, app: &Shared) {
                 KeyAction::Copy => app.borrow_mut().copy(&ui),
                 KeyAction::Export => export_with_dialog(&app, &ui),
                 KeyAction::Open => open_with_dialog(&app, &ui),
+                KeyAction::InsertImage => insert_image_with_dialog(&app, &ui),
                 KeyAction::Back => {
                     confirm_leave(&app, &ui, |app, ui| app.borrow_mut().close_document(ui))
                 }

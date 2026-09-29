@@ -573,6 +573,11 @@ tool-image = Image (I)
 # @max: 20
 tool-image-name = Image
 
+# @where: Tooltip of the Image button, after its name
+# @kind: tooltip
+# @max: 96
+tool-image-tip = Put a picture from a file on the screenshot (Ctrl+V pastes one from the clipboard)
+
 # @where: Tool rail button tooltip and accessible name; (C) is its shortcut
 # @kind: tooltip
 # @max: 28

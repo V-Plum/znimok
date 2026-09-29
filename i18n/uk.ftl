@@ -575,6 +575,11 @@ tool-image = Зображення (I)
 # @max: 20
 tool-image-name = Зображення
 
+# @where: Tooltip of the Image button, after its name
+# @kind: tooltip
+# @max: 96
+tool-image-tip = Покласти на знімок картинку з файлу (Ctrl+V вставляє з буфера)
+
 # @where: Tool rail button tooltip and accessible name; (C) is its shortcut
 # @kind: tooltip
 # @max: 28
