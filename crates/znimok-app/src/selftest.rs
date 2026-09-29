@@ -532,6 +532,62 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
                     .all(|o| o.group != 0)
         };
         r.check("Ctrl+G groups", grouped, String::new());
+        // ZK-159: on the canvas a group is one — a click on a member selects all of it, a drag
+        // moves all of it (owner, 29.09: members were still picked and moved one by one).
+        let members: Vec<(u32, i32, i32)> = {
+            let a = app.borrow();
+            let s = a.s.as_ref().unwrap();
+            s.ed.selection()
+                .iter()
+                .filter_map(|id| s.ed.doc.get(*id))
+                .map(|o| (o.id, o.rect.x, o.rect.y))
+                .collect()
+        };
+        if let Some(&(id0, _, _)) = members.first() {
+            let at = {
+                let a = app.borrow();
+                let o = a.s.as_ref().unwrap().ed.doc.get(id0).unwrap();
+                let b = o.bounds();
+                a.doc_to_logical(b.x as f64 + b.w as f64 / 2.0, b.y as f64 + b.h as f64 / 2.0)
+            };
+            key(app, ui, "\u{1b}", false, false);
+            click(app, ui, at);
+            let n = ui.get_selection_count();
+            r.check(
+                "a click on a group member selects the whole group",
+                n as usize == members.len(),
+                format!("{n} of {} selected", members.len()),
+            );
+            drag(app, ui, at, (at.0 + 30.0, at.1 + 20.0));
+            let moved = {
+                let a = app.borrow();
+                let s = a.s.as_ref().unwrap();
+                members.iter().all(|(id, x, y)| {
+                    s.ed.doc
+                        .get(*id)
+                        .is_some_and(|o| o.rect.x != *x && o.rect.y != *y)
+                })
+            };
+            r.check(
+                "dragging a member moves the whole group",
+                moved,
+                String::new(),
+            );
+            key(app, ui, "z", true, false);
+            // Shift+click on a member takes the whole group out of the selection.
+            {
+                let mut a = app.borrow_mut();
+                a.pointer(ui, 0, at.0, at.1, 0, true, false);
+                a.pointer(ui, 2, at.0, at.1, 0, true, false);
+            }
+            let n2 = ui.get_selection_count();
+            r.check(
+                "Shift+click on a member deselects the whole group",
+                n2 == 0,
+                format!("{n2} selected"),
+            );
+            click(app, ui, at);
+        }
         key(app, ui, "g", true, true);
         let ungrouped = {
             let a = app.borrow();

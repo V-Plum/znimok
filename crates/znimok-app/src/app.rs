@@ -2157,13 +2157,9 @@ impl App {
                 }
                 Some(id) => {
                     if !sel.contains(&id) {
-                        self.apply(
-                            ui,
-                            Command::Select {
-                                ids: vec![id],
-                                add: false,
-                            },
-                        );
+                        // A member of a group brings the whole group (ZK-159).
+                        let ids = self.with_groups(vec![id]);
+                        self.apply(ui, Command::Select { ids, add: false });
                     }
                     let merge = self.merge_key();
                     self.drag = Some(Drag::Move { last: p, merge });
@@ -2267,13 +2263,8 @@ impl App {
                     return;
                 }
                 if !was_selected {
-                    self.apply(
-                        ui,
-                        Command::Select {
-                            ids: vec![id],
-                            add: true,
-                        },
-                    );
+                    let ids = self.with_groups(vec![id]);
+                    self.apply(ui, Command::Select { ids, add: true });
                 }
                 let merge = self.merge_key();
                 self.drag = Some(Drag::Move { last: start, merge });
@@ -2434,6 +2425,7 @@ impl App {
                         .map(|i| doc.objects[i].id)
                         .collect()
                 };
+                let ids = self.with_groups(ids);
                 let current = self.selection();
                 if add {
                     let missing: Vec<ObjectId> =
@@ -2497,10 +2489,41 @@ impl App {
         self.dirty = true;
     }
 
-    /// Shift / Ctrl click on a mark: a selected one leaves the selection, another one joins it.
+    /// The marks with every group any of them is in (ZK-159): on the canvas a group is picked,
+    /// toggled and caught by the marquee as one; the layers list can still pick a single member.
+    /// Order kept, no repeats.
+    fn with_groups(&self, ids: Vec<ObjectId>) -> Vec<ObjectId> {
+        let Some(s) = self.s.as_ref() else {
+            return ids;
+        };
+        let doc = &s.ed.doc;
+        let mut out: Vec<ObjectId> = Vec::with_capacity(ids.len());
+        for id in ids {
+            let g = doc.get(id).map_or(0, |o| o.group);
+            let more = if g == 0 {
+                vec![]
+            } else {
+                self.group_members(g)
+            };
+            for m in std::iter::once(id).chain(more) {
+                if !out.contains(&m) {
+                    out.push(m);
+                }
+            }
+        }
+        out
+    }
+
+    /// Shift / Ctrl click on a mark: a selected one leaves the selection, another one joins it
+    /// (with its group, ZK-159).
     fn toggle_selected(&mut self, ui: &AppWindow, id: ObjectId, was_selected: bool) {
+        let ids = self.with_groups(vec![id]);
         if was_selected {
-            let rest: Vec<ObjectId> = self.selection().into_iter().filter(|s| *s != id).collect();
+            let rest: Vec<ObjectId> = self
+                .selection()
+                .into_iter()
+                .filter(|s| !ids.contains(s))
+                .collect();
             if rest.is_empty() {
                 self.apply(ui, Command::ClearSelection);
             } else {
@@ -2513,13 +2536,7 @@ impl App {
                 );
             }
         } else {
-            self.apply(
-                ui,
-                Command::Select {
-                    ids: vec![id],
-                    add: true,
-                },
-            );
+            self.apply(ui, Command::Select { ids, add: true });
         }
     }
 
