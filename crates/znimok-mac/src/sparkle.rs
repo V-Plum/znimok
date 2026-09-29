@@ -77,12 +77,17 @@ pub enum Event {
     Dismissed,
 }
 
+/// A reply block Sparkle waits on (`SPUUserUpdateChoice`), kept until the app answers.
+type Reply = RefCell<Option<RcBlock<dyn Fn(isize)>>>;
+/// A cancellation / retry block.
+type Action = RefCell<Option<RcBlock<dyn Fn()>>>;
+
 struct DriverIvars {
     tx: Sender<Event>,
-    found: RefCell<Option<RcBlock<dyn Fn(isize)>>>,
-    ready: RefCell<Option<RcBlock<dyn Fn(isize)>>>,
-    cancel: RefCell<Option<RcBlock<dyn Fn()>>>,
-    retry: RefCell<Option<RcBlock<dyn Fn()>>>,
+    found: Reply,
+    ready: Reply,
+    cancel: Action,
+    retry: Action,
 }
 
 fn text(s: Option<Retained<NSString>>) -> String {
