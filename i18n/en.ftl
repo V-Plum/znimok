@@ -1280,6 +1280,11 @@ stamp-search = Search emoji
 # @max: 12
 stamp-stamps = Stamps
 
+# @where: Stamp picker: heading of the emoji grid
+# @kind: label
+# @max: 16
+stamp-emoji = Emoji
+
 # @where: Picker section
 # @kind: tab
 # @max: 24

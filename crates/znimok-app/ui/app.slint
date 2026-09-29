@@ -1299,6 +1299,14 @@ export component AppWindow inherits Window {
         edit.set-selection-offsets(anchor, focus);
     }
     in property <int> text-align;
+    // Counters and stamps (ZK-51).
+    in property <int> counter-shape;
+    in property <int> digit-index: -1;
+    in property <int> pin-rot;
+    in-out property <string> counter-start;
+    in property <string> counter-next;
+    in property <int> stamp-id;
+    callback set-counter-start(string);
     in-out property <string> text-box;
     callback set-text-box(string);
     callback arrange(int);
@@ -2249,6 +2257,77 @@ export component AppWindow inherits Window {
                                             spacing: 6px;
                                             NumField { label: ""; value <=> root.text-box; committed(v) => { root.set-text-box(v); } }
                                             SegOption { width: 64px; horizontal-stretch: 0; text: @tr("common-auto" => "Auto"); on: root.text-box == ""; tip: @tr("text-block-hint" => "Width 0 — no wrapping; the side handles change the width."); clicked => { root.set-prop("box-auto", 0); } }
+                                        }
+                                    }
+                                }
+                                // ---- Counter (ZK-51): shape, digit colour, numbering
+                                if root.prop-kind == 7: PropSection {
+                                    title: @tr("tool-counter-name" => "Counter");
+                                    PropRow {
+                                        label: @tr("counter-shape" => "Shape");
+                                        HorizontalLayout {
+                                            spacing: 2px;
+                                            SegOption { icon: "M3 12 a9 9 0 1 0 18 0 a9 9 0 1 0 -18 0 z"; on: root.counter-shape == 0; tip: @tr("counter-circle" => "Circle"); clicked => { root.set-prop("counter-shape", 0); } }
+                                            SegOption { icon: "M6 4 h12 a2 2 0 0 1 2 2 v12 a2 2 0 0 1 -2 2 H6 a2 2 0 0 1 -2 -2 V6 a2 2 0 0 1 2 -2 z"; on: root.counter-shape == 1; tip: @tr("counter-square" => "Square"); clicked => { root.set-prop("counter-shape", 1); } }
+                                            SegOption { icon: "M12 21 C7 15 5 12 5 9 a7 7 0 1 1 14 0 c0 3 -2 6 -7 12 z"; on: root.counter-shape == 2; tip: @tr("counter-pin" => "Pin"); clicked => { root.set-prop("counter-shape", 2); } }
+                                        }
+                                    }
+                                    // A pin points where it matters: four directions.
+                                    if root.counter-shape == 2 && root.prop-for-selection: PropRow {
+                                        label: "";
+                                        HorizontalLayout {
+                                            spacing: 2px;
+                                            SegOption { icon: "M12 5 v14 M6 13 l6 6 6 -6"; on: root.pin-rot == 0; clicked => { root.set-prop("pin-rot", 0); } }
+                                            SegOption { icon: "M19 12 H5 M11 6 l-6 6 6 6"; on: root.pin-rot == 1; clicked => { root.set-prop("pin-rot", 1); } }
+                                            SegOption { icon: "M12 19 V5 M6 11 l6 -6 6 6"; on: root.pin-rot == 2; clicked => { root.set-prop("pin-rot", 2); } }
+                                            SegOption { icon: "M5 12 h14 M13 6 l6 6 -6 6"; on: root.pin-rot == 3; clicked => { root.set-prop("pin-rot", 3); } }
+                                        }
+                                    }
+                                    Text { height: 22px; text: @tr("counter-digit-colour" => "Number"); color: Theme.text3; font-size: 11px; font-weight: 600; letter-spacing: 0.4px; vertical-alignment: center; }
+                                    ColourRow {
+                                        selected: root.digit-index;
+                                        with-none: true;
+                                        none-tip: @tr("counter-digit-auto" => "Auto: black or white, whichever reads better");
+                                        picked(i) => { root.set-prop("digit", i); }
+                                    }
+                                    HorizontalLayout {
+                                        spacing: 8px;
+                                        Text { text: @tr("counter-start-from" => "Start numbering from…"); color: Theme.text3; font-size: 11px; vertical-alignment: center; horizontal-stretch: 1; wrap: word-wrap; }
+                                        NumField { width: 90px; label: ""; value <=> root.counter-start; committed(v) => { root.set-counter-start(v); } }
+                                    }
+                                    HorizontalLayout {
+                                        spacing: 8px;
+                                        TextButton { text: @tr("counter-new-group" => "New numbering group"); clicked => { root.set-prop("counter-group-new", 0); } }
+                                        if !root.prop-for-selection: Text { text: root.counter-next; color: Theme.text3; font-size: 11px; vertical-alignment: center; }
+                                    }
+                                }
+                                // ---- Stamp (ZK-51): six drawn signs and emoji
+                                if root.prop-kind == 8: PropSection {
+                                    title: @tr("stamp-picker" => "Stamps and emoji");
+                                    Text { height: 18px; text: @tr("stamp-stamps" => "Stamps"); color: Theme.text3; font-size: 11px; font-weight: 600; vertical-alignment: center; }
+                                    HorizontalLayout {
+                                        spacing: 2px;
+                                            SegOption { icon: "M5 12.5 l4.5 4.5 L19 7"; on: root.stamp-id == 0; tip: @tr("stamp-check" => "Check mark"); clicked => { root.set-prop("stamp", 0); } }
+                                            SegOption { icon: "M6 6 l12 12 M18 6 L6 18"; on: root.stamp-id == 1; tip: @tr("stamp-cross" => "Cross"); clicked => { root.set-prop("stamp", 1); } }
+                                            SegOption { icon: "M9 9 a3 3 0 1 1 4 2.8 c-.8 .4 -1 1 -1 2.2 M12 17.5 v.5"; on: root.stamp-id == 2; tip: @tr("stamp-question" => "Question"); clicked => { root.set-prop("stamp", 2); } }
+                                            SegOption { icon: "M12 5 v9 M12 18 v.5"; on: root.stamp-id == 3; tip: @tr("stamp-exclamation" => "Exclamation"); clicked => { root.set-prop("stamp", 3); } }
+                                            SegOption { icon: "M12 3.5 l2.6 5.3 5.9 .9 -4.2 4.1 1 5.8 -5.3 -2.8 -5.3 2.8 1 -5.8 -4.2 -4.1 5.9 -.9 z"; on: root.stamp-id == 4; tip: @tr("stamp-star" => "Star"); clicked => { root.set-prop("stamp", 4); } }
+                                            SegOption { icon: "M12 4 L21 19 H3 z M12 10 v4 M12 16.5 v.5"; on: root.stamp-id == 5; tip: @tr("stamp-warning" => "Warning"); clicked => { root.set-prop("stamp", 5); } }
+                                    }
+                                    Text { height: 18px; text: @tr("stamp-emoji" => "Emoji"); color: Theme.text3; font-size: 11px; font-weight: 600; vertical-alignment: center; }
+                                    // 8 a row: the cell size fits the panel, whatever its width.
+                                    Rectangle {
+                                        height: 3 * (self.width / 8);
+                                        for e[c] in ["😀", "👍", "🔥", "⭐", "❤️", "✅", "⚠️", "🚀", "😂", "😍", "🤔", "😎", "😭", "😡", "🙏", "👏", "👀", "💡", "🎉", "📌", "❌", "❓", "💬", "🐞"]: Rectangle {
+                                            x: mod(c, 8) * (parent.width / 8);
+                                            y: floor(c / 8) * (parent.width / 8);
+                                            width: parent.width / 8 - 2px;
+                                            height: parent.width / 8 - 2px;
+                                            border-radius: 7px;
+                                            background: root.stamp-id == 100 + c ? Theme.control-on : (em-ta.has-hover ? Theme.elevated : transparent);
+                                            animate background { duration: 120ms; }
+                                            Text { text: e; font-size: 17px; horizontal-alignment: center; vertical-alignment: center; width: parent.width; height: parent.height; }
+                                            em-ta := TouchArea { mouse-cursor: MouseCursor.pointer; clicked => { root.set-prop("stamp", 100 + c); } }
                                         }
                                     }
                                 }

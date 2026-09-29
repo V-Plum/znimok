@@ -4,9 +4,15 @@
 use znimok_core::*;
 
 /// Emoji stamps by index (100+). A handful is enough for the prototype.
+/// The emoji of a stamp id (100 + index). New ones are only ever appended: the ids are stored
+/// in documents.
+pub const EMOJI: [&str; 24] = [
+    "😀", "👍", "🔥", "⭐", "❤️", "✅", "⚠️", "🚀", "😂", "😍", "🤔", "😎", "😭", "😡", "🙏", "👏",
+    "👀", "💡", "🎉", "📌", "❌", "❓", "💬", "🐞",
+];
+
 pub fn emoji_for(id: u32) -> &'static str {
-    const E: [&str; 8] = ["😀", "👍", "🔥", "⭐", "❤️", "✅", "⚠️", "🚀"];
-    E[(id.saturating_sub(100) as usize) % E.len()]
+    EMOJI[(id.saturating_sub(100) as usize) % EMOJI.len()]
 }
 
 /// A flat "application window" drawing, `w`×`h`, straight alpha.

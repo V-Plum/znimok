@@ -1282,6 +1282,11 @@ stamp-search = Пошук емодзі
 # @max: 12
 stamp-stamps = Штампи
 
+# @where: Stamp picker: heading of the emoji grid
+# @kind: label
+# @max: 16
+stamp-emoji = Емодзі
+
 # @where: Picker section
 # @kind: tab
 # @max: 24

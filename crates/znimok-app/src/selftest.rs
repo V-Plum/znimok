@@ -714,6 +714,94 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
         );
         ui.set_insp_tab(1);
     }));
+    // ZK-51: counters (shape, digit colour, a new numbering group), stamps and emoji, a dropped
+    // picture becomes a mark.
+    steps.push(Box::new(|app, ui, r| {
+        use znimok_core::{CounterShape, Data, Kind};
+        let first = app.borrow().s.as_ref().and_then(|s| {
+            s.ed.doc
+                .objects
+                .iter()
+                .find(|o| o.kind() == Kind::Counter)
+                .map(|o| o.id)
+        });
+        if let Some(id) = first {
+            ui.set_insp_tab(0);
+            ui.invoke_tool_chosen(0);
+            app.borrow_mut().layer_click(ui, id as i32, false);
+            ui.invoke_set_prop("counter-shape".into(), 2);
+            ui.invoke_set_prop("digit".into(), 2);
+            let o = app
+                .borrow()
+                .s
+                .as_ref()
+                .and_then(|s| s.ed.doc.get(id).cloned());
+            let ok = o.as_ref().is_some_and(|o| {
+                matches!(
+                    o.data,
+                    Data::Counter {
+                        shape: CounterShape::Pin,
+                        ..
+                    }
+                ) && o.style.color2 == Some(crate::app::PALETTE[2])
+            });
+            r.check(
+                "counter: pin, yellow digit",
+                ok,
+                format!("{:?}", o.map(|o| (o.data, o.style.color2))),
+            );
+        }
+    }));
+    steps.push(Box::new(|app, ui, r| {
+        use znimok_core::{Data, Kind};
+        r.snapshot(ui, "25-counter");
+        // A new group: the next counter is number 1 of group 2.
+        ui.invoke_set_prop("counter-group-new".into(), 0);
+        let (cx, cy) = centre(ui);
+        click(app, ui, (cx - 300.0, cy + 250.0));
+        let last = app.borrow().s.as_ref().and_then(|s| {
+            let doc = &s.ed.doc;
+            let i = doc
+                .objects
+                .iter()
+                .rposition(|o| o.kind() == Kind::Counter)?;
+            Some((doc.objects[i].data.clone(), doc.counter_number(i)))
+        });
+        let ok = matches!(&last, Some((Data::Counter { group, .. }, Some(1))) if *group >= 2);
+        r.check("new numbering group starts at 1", ok, format!("{last:?}"));
+        key(app, ui, "z", true, false);
+        // A stamp with an emoji.
+        ui.invoke_set_prop("stamp".into(), 105);
+        click(app, ui, (cx - 250.0, cy + 250.0));
+        let stamp = app.borrow().s.as_ref().and_then(|s| {
+            s.ed.doc
+                .objects
+                .iter()
+                .rev()
+                .find(|o| o.kind() == Kind::Stamp)
+                .map(|o| o.data.clone())
+        });
+        r.check(
+            "stamp picker: an emoji stamp",
+            matches!(stamp, Some(Data::Stamp { id: 105 })) && ui.get_tool() == 9,
+            format!("{stamp:?}"),
+        );
+    }));
+    steps.push(Box::new(|app, ui, r| {
+        r.snapshot(ui, "26-stamps");
+        key(app, ui, "z", true, false);
+        // A picture dropped on the open document: an image mark, not a new document.
+        let n = count(app);
+        let sample = std::env::args_os().nth(1).map(std::path::PathBuf::from);
+        let dropped = sample.is_some_and(|p| app.borrow_mut().drop_image_mark(ui, &p));
+        r.check(
+            "a dropped picture becomes a mark",
+            dropped && count(app) == n + 1 && ui.get_page() == 1,
+            format!("{n} → {} marks", count(app)),
+        );
+        key(app, ui, "z", true, false);
+        ui.invoke_tool_chosen(0);
+    }));
     // Cursors (ZK-47) and dragging rows of the layers list (ZK-54).
     steps.push(Box::new(|app, ui, r| {
         let order = |app: &Shared| -> Vec<(u32, u32)> {

@@ -281,7 +281,7 @@ thread_local! {
     /// A hotkey field of the settings is waiting for a combination (ZK-44).
     pub(crate) static REC: std::cell::Cell<Option<hotkeys::Action>> = const { std::cell::Cell::new(None) };
     static MODS: std::cell::Cell<slint::winit_030::winit::keyboard::ModifiersState> =
-        std::cell::Cell::new(slint::winit_030::winit::keyboard::ModifiersState::empty());
+        const { std::cell::Cell::new(slint::winit_030::winit::keyboard::ModifiersState::empty()) };
 }
 
 /// Shows the window and brings it to the front (from the tray, the hotkey, a second start).
@@ -566,6 +566,10 @@ fn wire(ui: &AppWindow, app: &Shared) {
                     if let Some((app, weak)) = ctx
                         && let Some(ui) = weak.upgrade()
                     {
+                        // On an open document a picture becomes a mark; otherwise it opens.
+                        if app.borrow_mut().drop_image_mark(&ui, &path) {
+                            return;
+                        }
                         confirm_leave(&app, &ui, move |app, ui| {
                             app.borrow_mut().open_path(ui, &path);
                         });
@@ -875,6 +879,10 @@ fn wire(ui: &AppWindow, app: &Shared) {
             }
         });
     }
+    on!(ui, app, on_set_counter_start, |a, w, text| {
+        a.set_counter_start(&w, &text);
+        w.invoke_focus_canvas();
+    });
     on!(ui, app, on_save_as, |a, w| {
         a.save_as(&w);
     });

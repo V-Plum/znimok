@@ -211,6 +211,12 @@ pub struct App {
     italic: bool,
     /// Alignment of new texts (and of the selection's, ZK-49).
     align: Align,
+    /// New counters and stamps (ZK-51): shape, numbering group, digit colour (None = auto
+    /// black or white), which stamp or emoji.
+    counter_shape: CounterShape,
+    counter_group: u32,
+    digit: Option<usize>,
+    stamp_id: u32,
     /// One undo step per drag of the opacity slider.
     alpha_merge: Option<MergeKey>,
     /// Crop being edited (Crop tool), picture pixels. The document gets it as one `SetCrop`
@@ -319,6 +325,10 @@ impl App {
             bold: false,
             italic: false,
             align: Align::Left,
+            counter_shape: CounterShape::Circle,
+            counter_group: 1,
+            digit: None,
+            stamp_id: 0,
             alpha_merge: None,
             crop: None,
             crop_lock: false,
@@ -1424,17 +1434,43 @@ impl App {
                 let st = self.style_for(self.tool);
                 let d = st.thick;
                 let data = if self.tool == tool::COUNTER {
+                    // The group keeps its start number; a new group starts at 1.
+                    let start = self
+                        .s
+                        .as_ref()
+                        .and_then(|s| {
+                            s.ed.doc.objects.iter().find_map(|o| match o.data {
+                                Data::Counter { group, start, .. }
+                                    if group == self.counter_group =>
+                                {
+                                    Some(start)
+                                }
+                                _ => None,
+                            })
+                        })
+                        .unwrap_or(1);
                     Data::Counter {
                         seq: 0,
-                        group: 1,
-                        start: 1,
-                        shape: CounterShape::Circle,
+                        group: self.counter_group,
+                        start,
+                        shape: self.counter_shape,
                     }
                 } else {
-                    Data::Stamp { id: 0 }
+                    Data::Stamp { id: self.stamp_id }
                 };
+                let mut st = st;
+                if self.tool == tool::COUNTER {
+                    st.color2 = self.digit.map(|i| PALETTE[i]);
+                }
+                // A pin is taller than wide: its point sits under the pointer's click.
+                let (w, h) =
+                    if self.tool == tool::COUNTER && self.counter_shape == CounterShape::Pin {
+                        (d, d * 13 / 10)
+                    } else {
+                        (d, d)
+                    };
                 let obj =
-                    Object::new(IRect::new(p.0 - d / 2, p.1 - d / 2, d, d), data).with_style(st);
+                    Object::new(IRect::new(p.0 - w / 2, p.1 - h / 2, w, h), data).with_style(st);
                 self.apply(
                     ui,
                     Command::AddObject {
@@ -2499,6 +2535,34 @@ impl App {
             self.toast(ui, msg);
             return;
         };
+        self.add_image_mark(ui, r);
+    }
+
+    /// An image file dropped on the open document (ZK-51): a mark, like Ctrl+V. A .znimok or
+    /// an unreadable file returns false (the caller opens it instead).
+    pub fn drop_image_mark(&mut self, ui: &AppWindow, path: &Path) -> bool {
+        if self.s.is_none() || ui.get_page() != 1 {
+            return false;
+        }
+        let head = std::fs::read(path)
+            .ok()
+            .map(|d| znimok_format::is_znimok(&d));
+        if head != Some(false) {
+            return false;
+        }
+        match io::load_image(path) {
+            Ok(r) => {
+                self.add_image_mark(ui, r);
+                self.sync(ui);
+                ui.window().request_redraw();
+                true
+            }
+            Err(_) => false,
+        }
+    }
+
+    /// A picture as a mark in the middle of the frame, at most 80 % of it.
+    fn add_image_mark(&mut self, ui: &AppWindow, r: Raster) {
         let Some(s) = self.s.as_mut() else { return };
         let f = s.ed.doc.frame();
         let k = (f.w as f64 * 0.8 / r.width as f64)
@@ -2603,6 +2667,84 @@ impl App {
                     }
                 };
                 self.patch_selected(ui, |o| o.kind().fx_allowed(), style(sp), None);
+            }
+            "counter-shape" => {
+                self.counter_shape = match v {
+                    1 => CounterShape::RoundedBox,
+                    2 => CounterShape::Pin,
+                    _ => CounterShape::Circle,
+                };
+                let shape = self.counter_shape;
+                self.patch_data(ui, Kind::Counter, move |d| {
+                    if let Data::Counter { shape: s, .. } = d {
+                        *s = shape;
+                    }
+                });
+            }
+            "digit" => {
+                self.digit = (v >= 0).then(|| (v as usize).min(PALETTE.len() - 1));
+                let c = self.digit.map(|i| PALETTE[i]);
+                self.patch_selected(
+                    ui,
+                    |o| o.kind() == Kind::Counter,
+                    style(StylePatch {
+                        color2: Some(c),
+                        ..Default::default()
+                    }),
+                    None,
+                );
+            }
+            "counter-group-new" => {
+                // The next counters number themselves from 1 in a group of their own.
+                let top = self
+                    .s
+                    .as_ref()
+                    .map(|s| {
+                        s.ed.doc
+                            .objects
+                            .iter()
+                            .filter_map(|o| match o.data {
+                                Data::Counter { group, .. } => Some(group),
+                                _ => None,
+                            })
+                            .max()
+                            .unwrap_or(0)
+                    })
+                    .unwrap_or(0);
+                self.counter_group = top.max(self.counter_group) + 1;
+                if !self.selection().is_empty() {
+                    self.apply(ui, Command::ClearSelection);
+                }
+                self.set_tool(ui, tool::COUNTER);
+            }
+            "pin-rot" => {
+                let rot = ((v.rem_euclid(4)) * 90) as u16;
+                let ids = self.selected_where(|o| o.kind() == Kind::Counter);
+                if !ids.is_empty() {
+                    self.apply(
+                        ui,
+                        Command::UpdateObjects {
+                            ids,
+                            patch: ObjectPatch {
+                                rot: Some(rot),
+                                ..Default::default()
+                            },
+                            merge: None,
+                        },
+                    );
+                }
+            }
+            "stamp" => {
+                self.stamp_id = v.max(0) as u32;
+                let id = self.stamp_id;
+                self.patch_data(ui, Kind::Stamp, move |d| {
+                    if let Data::Stamp { id: s } = d {
+                        *s = id;
+                    }
+                });
+                if self.selected_where(|o| o.kind() == Kind::Stamp).is_empty() {
+                    self.set_tool(ui, tool::STAMP);
+                }
             }
             "align" => {
                 self.align = match v {
@@ -2925,6 +3067,71 @@ impl App {
             for id in ids {
                 self.fit_text(ui, id, Some(merge.clone()));
             }
+        }
+        self.sync(ui);
+        ui.window().request_redraw();
+    }
+
+    /// Changes the data of every selected mark of a kind (one undo step).
+    fn patch_data(&mut self, ui: &AppWindow, kind: Kind, f: impl Fn(&mut Data)) {
+        let marks: Vec<(ObjectId, Data)> = {
+            let Some(s) = self.s.as_ref() else { return };
+            s.ed.selection()
+                .iter()
+                .filter_map(|id| s.ed.doc.get(*id))
+                .filter(|o| o.kind() == kind)
+                .map(|o| {
+                    let mut d = o.data.clone();
+                    f(&mut d);
+                    (o.id, d)
+                })
+                .collect()
+        };
+        let merge = self.merge_key();
+        for (id, data) in marks {
+            self.apply(
+                ui,
+                Command::UpdateObjects {
+                    ids: vec![id],
+                    patch: ObjectPatch {
+                        data: Some(data),
+                        ..Default::default()
+                    },
+                    merge: Some(merge.clone()),
+                },
+            );
+        }
+    }
+
+    /// "Start numbering from…" of the selected counter's group (or the group new ones join).
+    pub fn set_counter_start(&mut self, ui: &AppWindow, text: &str) {
+        let Ok(n) = text.trim().parse::<i32>() else {
+            self.sync(ui);
+            return;
+        };
+        let group = self
+            .selected_where(|o| o.kind() == Kind::Counter)
+            .first()
+            .and_then(|id| self.s.as_ref()?.ed.doc.get(*id))
+            .and_then(|o| match o.data {
+                Data::Counter { group, .. } => Some(group),
+                _ => None,
+            })
+            .unwrap_or(self.counter_group);
+        let exists = self.s.as_ref().is_some_and(|s| {
+            s.ed.doc
+                .objects
+                .iter()
+                .any(|o| matches!(o.data, Data::Counter { group: g, .. } if g == group))
+        });
+        if exists {
+            self.apply(
+                ui,
+                Command::SetCounterStart {
+                    group,
+                    start: n.clamp(-9999, 9999),
+                },
+            );
         }
         self.sync(ui);
         ui.window().request_redraw();
@@ -4231,6 +4438,19 @@ impl App {
                     ui.set_text_bold(bold);
                     ui.set_text_italic(italic);
                 }
+                if let Data::Counter { shape, start, .. } = o.data {
+                    ui.set_counter_shape(shape_index(shape));
+                    ui.set_counter_start(start.to_string().into());
+                    ui.set_digit_index(
+                        st.color2
+                            .and_then(|c| PALETTE.iter().position(|p| *p == c))
+                            .map_or(-1, |i| i as i32),
+                    );
+                    ui.set_pin_rot((o.rot / 90) as i32);
+                }
+                if let Data::Stamp { id } = o.data {
+                    ui.set_stamp_id(id as i32);
+                }
                 if let Data::Text { align, box_w, .. } = o.data {
                     ui.set_text_align(align_index(align));
                     ui.set_text_box(
@@ -4283,6 +4503,26 @@ impl App {
                 ui.set_text_italic(self.italic);
                 ui.set_text_align(align_index(self.align));
                 ui.set_text_box("".into());
+                ui.set_counter_shape(shape_index(self.counter_shape));
+                ui.set_digit_index(self.digit.map_or(-1, |i| i as i32));
+                ui.set_stamp_id(self.stamp_id as i32);
+                // What the next counter will say.
+                let (start, n) = doc
+                    .objects
+                    .iter()
+                    .filter_map(|o| match o.data {
+                        Data::Counter { group, start, .. } if group == self.counter_group => {
+                            Some(start)
+                        }
+                        _ => None,
+                    })
+                    .fold((1, 0), |(_, n), st| (st, n + 1));
+                ui.set_counter_start(start.to_string().into());
+                ui.set_counter_next(
+                    self.tr
+                        .tr_args("counter-next", &args(&[("n", (start + n).to_string())]))
+                        .into(),
+                );
             }
         }
         // Layers: front first; unnamed marks are "<kind> <n>", numbered per kind bottom-up. A
@@ -4894,6 +5134,14 @@ fn corners_index(c: Corners) -> i32 {
         Corners::Sharp => 0,
         Corners::Soft => 1,
         Corners::Round => 2,
+    }
+}
+
+fn shape_index(s: CounterShape) -> i32 {
+    match s {
+        CounterShape::Circle => 0,
+        CounterShape::RoundedBox => 1,
+        CounterShape::Pin => 2,
     }
 }
 
