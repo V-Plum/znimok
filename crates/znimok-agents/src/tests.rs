@@ -411,3 +411,18 @@ fn agents_doc_matches_the_tools() {
         );
     }
 }
+
+/// The annotate input schema resolves its `$ref`s from its own root.
+#[test]
+fn annotate_schema_references_resolve() {
+    let tools = crate::tools::list();
+    let t = tools.iter().find(|t| t["name"] == "annotate").unwrap();
+    let s = &t["inputSchema"];
+    let text = s.to_string();
+    let n = text.matches("\"$ref\":\"#/$defs/").count();
+    assert!(n > 10, "{n}");
+    for part in text.split("\"$ref\":\"#/$defs/").skip(1) {
+        let name = part.split('"').next().unwrap();
+        assert!(s["$defs"].get(name).is_some(), "{name} does not resolve");
+    }
+}

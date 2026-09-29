@@ -202,12 +202,36 @@ impl Client {
 
     /// Sends a prepared request; `month` (`YYYY-MM`) is where the meter books it.
     pub fn send(&self, out: &Outgoing, month: &str) -> Result<Answer, AiError> {
+        let v = self.messages(&serde_json::from_slice(&out.body()).expect("JSON"), month)?;
+        let text = v["content"]
+            .as_array()
+            .ok_or_else(|| AiError::Protocol("no content".into()))?
+            .iter()
+            .filter(|b| b["type"] == "text")
+            .filter_map(|b| b["text"].as_str())
+            .collect::<Vec<_>>()
+            .join("");
+        let usage: Usage = serde_json::from_value(v["usage"].clone()).unwrap_or_default();
+        let model = v["model"].as_str().unwrap_or(&out.model).to_string();
+        Ok(Answer {
+            text,
+            usd: usage.cost(&model),
+            model,
+            stop_reason: v["stop_reason"].as_str().map(str::to_string),
+            usage,
+        })
+    }
+
+    /// Any Messages API request (tools, several turns — the assistant, ZK-73); returns the
+    /// response body. The meter books its usage under `month`.
+    pub fn messages(&self, body: &Value, month: &str) -> Result<Value, AiError> {
+        let bytes = serde_json::to_vec(body).map_err(|e| AiError::Protocol(e.to_string()))?;
         let resp = self
             .transport
             .post_json(
                 API_URL,
                 &[("x-api-key", &self.key), ("anthropic-version", API_VERSION)],
-                &out.body(),
+                &bytes,
                 self.timeout,
             )
             .map_err(AiError::Network)?;
@@ -230,27 +254,20 @@ impl Client {
             400..=499 => return Err(AiError::Invalid(message())),
             s => return Err(AiError::Server(s, message())),
         }
-        let text = v["content"]
-            .as_array()
-            .ok_or_else(|| AiError::Protocol("no content".into()))?
-            .iter()
-            .filter(|b| b["type"] == "text")
-            .filter_map(|b| b["text"].as_str())
-            .collect::<Vec<_>>()
-            .join("");
+        if !v["content"].is_array() {
+            return Err(AiError::Protocol("no content".into()));
+        }
         let usage: Usage = serde_json::from_value(v["usage"].clone()).unwrap_or_default();
-        let model = v["model"].as_str().unwrap_or(&out.model).to_string();
+        let model = v["model"]
+            .as_str()
+            .or(body["model"].as_str())
+            .unwrap_or("")
+            .to_string();
         if let Some(m) = &self.meter {
             // Counting must not lose the answer.
             let _ = m.record(month, &model, &usage);
         }
-        Ok(Answer {
-            text,
-            usd: usage.cost(&model),
-            model,
-            stop_reason: v["stop_reason"].as_str().map(str::to_string),
-            usage,
-        })
+        Ok(v)
     }
 }
 
