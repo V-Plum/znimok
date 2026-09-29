@@ -35,6 +35,7 @@ def score(results: dict) -> dict:
     uk_errs = uk_chars = 0
     sp_ref = sp_hit = 0
     worst = []
+    lat_ref = lat_hit = 0
     for png in sorted(SET.glob("*.png")):
         ref = norm((SET / (png.stem + ".txt")).read_text(encoding="utf-8"))
         hyp = norm(results.get(png.name, ""))
@@ -47,12 +48,19 @@ def score(results: dict) -> dict:
         rc, hc = Counter(c for c in ref if c in SPECIAL), Counter(c for c in hyp if c in SPECIAL)
         sp_ref += sum(rc.values())
         sp_hit += sum(min(v, hc[k]) for k, v in rc.items())
+        # Latin tokens (e-mail, paths, English words) exactly right: what the masking of
+        # secrets sees.
+        lt = Counter(t for t in ref.split() if any(c.isascii() and c.isalpha() for c in t))
+        ht = Counter(hyp.split())
+        lat_ref += sum(lt.values())
+        lat_hit += sum(min(v, ht[k]) for k, v in lt.items())
         worst.append((e / max(1, len(ref)), png.name, ref, hyp))
     worst.sort(reverse=True)
     return {
         "cer": errs / max(1, chars),
         "cer_ukrainian": uk_errs / max(1, uk_chars),
         "special_recall": sp_hit / max(1, sp_ref),
+        "latin_exact": lat_hit / max(1, lat_ref),
         "worst": worst[:3],
     }
 
@@ -63,10 +71,11 @@ def main():
         s = score(json.loads(Path(f).read_text(encoding="utf-8")))
         rows.append((Path(f).stem, s))
     rows.sort(key=lambda r: r[1]["cer"])
-    print("| Engine | CER, all | CER, Ukrainian text | і ї є ґ ' found |")
-    print("|---|---|---|---|")
+    print("| Engine | CER, all | CER, Ukrainian text | і ї є ґ ' found | Latin words exact |")
+    print("|---|---|---|---|---|")
     for name, s in rows:
-        print(f"| {name} | {s['cer']:.1%} | {s['cer_ukrainian']:.1%} | {s['special_recall']:.1%} |")
+        print(f"| {name} | {s['cer']:.1%} | {s['cer_ukrainian']:.1%} | {s['special_recall']:.1%} "
+              f"| {s['latin_exact']:.1%} |")
     print()
     for name, s in rows:
         print(f"**{name}** — worst:")
