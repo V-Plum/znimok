@@ -20,14 +20,24 @@ pub const CLSID_STR: &str = "{787777D8-E076-4FDC-8065-F7282E5D3F86}";
 #[cfg(windows)]
 const HEAD_LIMIT: usize = 64 << 20;
 
+/// A stored thumbnail is at most 320×240 (the app writes it); a file claiming more is not ours —
+/// decoding it unbounded in Explorer's or Finder's process would be a memory bomb (ZK-113).
+pub fn thumb_limits() -> znimok_format::Limits {
+    znimok_format::Limits {
+        max_image_side: 1024,
+        max_image_pixels: 1 << 20,
+        max_image_bytes: 16 << 20,
+        ..Default::default()
+    }
+}
+
 /// The stored thumbnail of a `.znimok` file, scaled to fit `size`×`size`, as straight RGBA.
 /// `None` if the bytes are not a Znimok document or it has no thumbnail.
 pub fn thumbnail_rgba(head: &[u8], size: u32) -> Option<(u32, u32, Vec<u8>)> {
     let peek = znimok_format::peek(head).ok()?;
     let png = peek.thumbnail_png?;
-    let img = image::load_from_memory_with_format(&png, image::ImageFormat::Png)
-        .ok()?
-        .into_rgba8();
+    let r = znimok_format::decode_png(&png, &thumb_limits()).ok()?;
+    let img = image::RgbaImage::from_raw(r.width, r.height, r.rgba)?;
     let (w, h) = img.dimensions();
     if w == 0 || h == 0 {
         return None;
@@ -65,6 +75,10 @@ pub unsafe extern "C" fn znimok_thumbnail_png(
     let Some(png) = znimok_format::peek(head).ok().and_then(|p| p.thumbnail_png) else {
         return std::ptr::null_mut();
     };
+    // Checked here with the bounded decoder, so Quick Look never decodes an oversized one.
+    if znimok_format::decode_png(&png, &thumb_limits()).is_err() {
+        return std::ptr::null_mut();
+    }
     let b = png.into_boxed_slice();
     // SAFETY: the caller's contract.
     unsafe { *out_len = b.len() };
@@ -134,6 +148,22 @@ mod tests {
             znimok_thumbnail_free(p, len);
             assert!(znimok_thumbnail_png(b"nope".as_ptr(), 4, &mut len).is_null());
         }
+    }
+
+    /// A thumbnail claiming a huge size is refused without allocating it (ZK-113).
+    #[test]
+    fn oversized_stored_thumbnail_is_refused() {
+        let bytes = znimok_format::write(
+            &znimok_format_doc(),
+            &znimok_format::WriteOptions {
+                thumbnail: Some(solid(2000, 10, [1, 2, 3, 255])),
+                ..Default::default()
+            },
+        );
+        assert!(thumbnail_rgba(&bytes, 96).is_none());
+        let mut len = 0usize;
+        // SAFETY: valid buffer and out pointer.
+        assert!(unsafe { znimok_thumbnail_png(bytes.as_ptr(), bytes.len(), &mut len) }.is_null());
     }
 
     pub(crate) fn solid(w: u32, h: u32, c: [u8; 4]) -> znimok_core::Raster {
