@@ -1958,6 +1958,10 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
         r.check("copy: tick still there", ui.get_copied(), String::new());
         r.snapshot(ui, "copy-tick");
     }));
+    // The tick holds 1 s; copying a large picture blocks the thread a while, so ~1.75 s of steps
+    // before checking that the title is back (3200×2000 had only ~50 ms to spare).
+    steps.push(Box::new(|_, _, _| {}));
+    steps.push(Box::new(|_, _, _| {}));
     steps.push(Box::new(|_, _, _| {}));
     steps.push(Box::new(|_app, ui, r| {
         r.check(
