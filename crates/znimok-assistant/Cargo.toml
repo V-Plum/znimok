@@ -1,0 +1,19 @@
+[package]
+name = "znimok-assistant"
+description = "The Ctrl+K assistant of Znimok — a request in plain words becomes a plan of editor commands (Claude with the user's key, tools = the command layer), shown before anything changes; no pixels leave the machine without consent"
+version.workspace = true
+edition.workspace = true
+license-file.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+znimok-core = { path = "../znimok-core" }
+znimok-models = { path = "../znimok-models" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+schemars = "1"

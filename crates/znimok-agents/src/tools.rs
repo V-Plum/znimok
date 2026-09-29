@@ -140,14 +140,24 @@ const TOOLS: &[Tool] = &[
         scope: Some(Scope::LibraryWrite),
         read_only: false,
         schema: || {
-            obj(
+            // `$defs` of the command schema go to the root, where `#/$defs/…` resolve.
+            let mut cmd = serde_json::to_value(schemars::schema_for!(Command)).unwrap_or_default();
+            let defs = cmd.as_object_mut().and_then(|o| {
+                o.remove("$schema");
+                o.remove("$defs")
+            });
+            let mut s = obj(
                 json!({
                     "document": doc_arg(),
-                    "commands": {"type": "array", "items": serde_json::to_value(schemars::schema_for!(Command)).unwrap_or_default(),
+                    "commands": {"type": "array", "items": cmd,
                                  "description": "Commands in order; each is one step of undo"}
                 }),
                 &["document", "commands"],
-            )
+            );
+            if let Some(d) = defs {
+                s["$defs"] = d;
+            }
+            s
         },
     },
     Tool {

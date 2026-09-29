@@ -6579,6 +6579,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "znimok-assistant"
+version = "0.0.0"
+dependencies = [
+ "schemars",
+ "serde",
+ "serde_json",
+ "znimok-core",
+ "znimok-models",
+]
+
+[[package]]
 name = "znimok-cli"
 version = "0.0.0"
 dependencies = [
