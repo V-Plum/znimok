@@ -128,6 +128,16 @@ enum Drag {
         points: Vec<(i32, i32)>,
         merge: MergeKey,
     },
+    /// Turning the selection by its rotation handle (ZK-164): the angle of the pointer about
+    /// `center` against `ang0` at the press. One mark turns about its own centre; several turn
+    /// about the middle of their box — each moves round it and adds the angle to its own.
+    Rotate {
+        center: (f64, f64),
+        ang0: f64,
+        /// Each mark as it was: id, centre, angle, whether it turns (Hide and Marker only move).
+        orig: Vec<(ObjectId, (f64, f64), u16, bool)>,
+        merge: MergeKey,
+    },
     Move {
         last: (i32, i32),
         merge: MergeKey,
@@ -2169,6 +2179,28 @@ impl App {
         let px = self.view.scale / self.dpr;
         let sel = self.selection();
 
+        // The rotation handle comes first, before the resize handles and the tool (ZK-164).
+        if let Some((grip, center, _)) = self.rotation_grip() {
+            let pd = self.view.to_doc(out.x, out.y);
+            let k = px.max(1e-6);
+            if ((grip.0 - pd.x).powi(2) + (grip.1 - pd.y).powi(2)).sqrt() <= 7.0 / k {
+                let orig = {
+                    let doc = &self.s.as_ref().unwrap().ed.doc;
+                    sel.iter()
+                        .filter_map(|id| doc.get(*id))
+                        .map(|o| (o.id, o.bounds().center(), o.rot, o.kind().can_rotate()))
+                        .collect()
+                };
+                self.drag = Some(Drag::Rotate {
+                    center,
+                    ang0: hit::angle_from_up(center, (pd.x, pd.y)),
+                    orig,
+                    merge: self.merge_key(),
+                });
+                return;
+            }
+        }
+
         // Handles of a single selection come before the tool (LH §2.7).
         if sel.len() == 1 {
             let doc = &self.s.as_ref().unwrap().ed.doc;
@@ -2444,6 +2476,75 @@ impl App {
                 );
                 self.drag = Some(Drag::Move { last: p, merge });
             }
+            Drag::Rotate {
+                center,
+                ang0,
+                orig,
+                merge,
+            } => {
+                let pd = self.view.to_doc(out.x, out.y);
+                let mut delta = hit::angle_from_up(center, (pd.x, pd.y)) - ang0;
+                let single = orig.len() == 1;
+                // Shift: steps of 15° — of the mark's own angle alone, of the turn for several.
+                if shift && !single {
+                    delta = (delta / 15.0).round() * 15.0;
+                }
+                let norm = |a: f64| (a.round() as i32).rem_euclid(360) as u16;
+                for (id, c0, rot0, turns) in orig {
+                    if !single {
+                        let (tx, ty) = hit::turn(c0, center, delta);
+                        let cur = self
+                            .s
+                            .as_ref()
+                            .and_then(|s| s.ed.doc.get(id))
+                            .map(|o| o.bounds().center())
+                            .unwrap_or(c0);
+                        let (dx, dy) = ((tx - cur.0).round() as i32, (ty - cur.1).round() as i32);
+                        if dx != 0 || dy != 0 {
+                            self.apply(
+                                ui,
+                                Command::MoveObjects {
+                                    ids: vec![id],
+                                    dx,
+                                    dy,
+                                    merge: Some(merge.clone()),
+                                },
+                            );
+                        }
+                    }
+                    if turns {
+                        let mut a = rot0 as f64 + delta;
+                        if shift && single {
+                            a = (a / 15.0).round() * 15.0;
+                        }
+                        self.apply(
+                            ui,
+                            Command::UpdateObjects {
+                                ids: vec![id],
+                                patch: ObjectPatch {
+                                    rot: Some(norm(a)),
+                                    ..Default::default()
+                                },
+                                merge: Some(merge.clone()),
+                            },
+                        );
+                    }
+                }
+                // The angle beside the pointer while turning.
+                let shown = if single {
+                    self.s
+                        .as_ref()
+                        .and_then(|s| s.ed.doc.get(orig_first_id(&self.drag)))
+                        .map_or(0, |o| o.rot as i32)
+                } else {
+                    (delta.round() as i32).rem_euclid(360)
+                };
+                let lp = ((out.x / self.dpr) as f32, (out.y / self.dpr) as f32);
+                ui.set_rot_hint(format!("{shown}°").into());
+                ui.set_rot_hint_x(lp.0);
+                ui.set_rot_hint_y(lp.1);
+                self.dirty = true;
+            }
             Drag::Resize {
                 id,
                 handle,
@@ -2525,6 +2626,9 @@ impl App {
             self.drag = None;
             self.set_tool(ui, tool::SELECT);
         }
+        if matches!(self.drag, Some(Drag::Rotate { .. })) {
+            ui.set_rot_hint(SharedString::new());
+        }
         if let Some(Drag::Toggle {
             id, was_selected, ..
         }) = self.drag
@@ -2541,6 +2645,53 @@ impl App {
         self.drag = None;
         self.marquee = None;
         self.dirty = true;
+    }
+
+    /// The rotation handle of the selection (ZK-164): (the handle, the centre it turns about, the
+    /// foot of its stem), in screenshot coordinates. One mark that can turn: above its top edge,
+    /// turned with it; several marks: above the middle of their box (LH `EdManyRotHandle`).
+    fn rotation_grip(&self) -> Option<(Pt, Pt, Pt)> {
+        let s = self.s.as_ref()?;
+        if self.editing.is_some() || self.tool == tool::CROP {
+            return None;
+        }
+        let px = (self.view.scale / self.dpr).max(1e-6);
+        let doc = &s.ed.doc;
+        let sel: Vec<&Object> =
+            s.ed.selection()
+                .iter()
+                .filter_map(|id| doc.get(*id))
+                .collect();
+        match sel.as_slice() {
+            [] => None,
+            [o] => {
+                let g = hit::rotation_handle(o, px)?;
+                let b = o.bounds();
+                let c = b.center();
+                let foot = hit::turn(
+                    (c.0, b.y as f64),
+                    c,
+                    if hit::turned(o) { o.rot as f64 } else { 0.0 },
+                );
+                Some((g, c, foot))
+            }
+            many => {
+                let mut b = many[0].bounds();
+                for o in &many[1..] {
+                    b = b.union(o.bounds());
+                }
+                let c = b.center();
+                let foot = (c.0, b.y as f64);
+                Some(((c.0, b.y as f64 - hit::ROTATION_STEM / px), c, foot))
+            }
+        }
+    }
+
+    /// For the self-test: the rotation handle and the centre it turns about, in logical canvas
+    /// pixels.
+    pub fn rotation_grip_probe(&self) -> Option<((f32, f32), (f32, f32))> {
+        let (g, c, _) = self.rotation_grip()?;
+        Some((self.doc_to_logical(g.0, g.1), self.doc_to_logical(c.0, c.1)))
     }
 
     /// The marks with every group any of them is in (ZK-159): on the canvas a group is picked,
@@ -2625,6 +2776,7 @@ impl App {
         const TEXT: i32 = 2;
         const MOVE: i32 = 3;
         const GRABBING: i32 = 9;
+        const ROTATE: i32 = 10;
         // Resize arrows per handle of a box, clockwise from the top-left corner.
         const BOX: [i32; 8] = [4, 6, 5, 7, 4, 6, 5, 7];
         let Some(s) = self.s.as_ref() else {
@@ -2645,15 +2797,27 @@ impl App {
                 return TEXT;
             }
         }
+        // Turned marks show the resize arrow turned with them (to the nearest 45°).
+        let turn8 = |o: &Object| {
+            if hit::turned(o) {
+                ((o.rot as f64 / 45.0).round() as usize) % 8
+            } else {
+                0
+            }
+        };
         match &self.drag {
+            Some(Drag::Rotate { .. }) => return ROTATE,
             Some(Drag::TextSelect { .. }) => return TEXT,
             Some(Drag::Pan { .. }) => return GRABBING,
             Some(Drag::Move { .. } | Drag::Toggle { .. }) => return MOVE,
             Some(Drag::Resize { id, handle, .. }) => {
-                return match doc.get(*id).map(|o| o.kind()) {
-                    Some(Kind::Line) => CROSS,
-                    Some(Kind::Text | Kind::Mark) => 7,
-                    _ => BOX[*handle % 8],
+                return match doc.get(*id) {
+                    Some(o) if o.kind() == Kind::Line => CROSS,
+                    Some(o) if matches!(o.kind(), Kind::Text | Kind::Mark) => {
+                        BOX[(3 + turn8(o)) % 8]
+                    }
+                    Some(o) => BOX[(*handle + turn8(o)) % 8],
+                    None => BOX[*handle % 8],
                 };
             }
             Some(Drag::CropEdit { handle, .. }) => {
@@ -2685,14 +2849,19 @@ impl App {
         let px = self.view.scale / self.dpr;
         let pd = self.view.to_doc(out.x, out.y);
         let sel = s.ed.selection();
+        if let Some((grip, _, _)) = self.rotation_grip()
+            && ((grip.0 - pd.x).powi(2) + (grip.1 - pd.y).powi(2)).sqrt() <= 7.0 / px.max(1e-6)
+        {
+            return ROTATE;
+        }
         if sel.len() == 1
             && let Some(o) = doc.get(sel[0])
             && let Some(h) = hit::hit_handle(o, (pd.x, pd.y), px)
         {
             return match o.kind() {
                 Kind::Line => CROSS,
-                Kind::Text | Kind::Mark => 7,
-                _ => BOX[h % 8],
+                Kind::Text | Kind::Mark => BOX[(3 + turn8(o)) % 8],
+                _ => BOX[(h + turn8(o)) % 8],
             };
         }
         let tool = if ctrl { tool::SELECT } else { self.tool };
@@ -4324,6 +4493,15 @@ impl App {
                     merge: None,
                 }
             }
+            // The angle, degrees clockwise (ZK-164).
+            "rot" => Command::UpdateObjects {
+                ids: vec![id],
+                patch: ObjectPatch {
+                    rot: Some(v.rem_euclid(360) as u16),
+                    ..Default::default()
+                },
+                merge: None,
+            },
             "w" | "h" => {
                 let mut n = r;
                 if field == "w" {
@@ -5588,6 +5766,8 @@ impl App {
                 ui.set_geom_y(o.rect.y.to_string().into());
                 ui.set_geom_w(o.rect.w.to_string().into());
                 ui.set_geom_h(o.rect.h.to_string().into());
+                ui.set_geom_rot(o.rot.to_string().into());
+                ui.set_prop_can_turn(o.kind().can_rotate());
             }
             None => {
                 ui.set_prop_title(
@@ -5919,6 +6099,18 @@ impl App {
         for o in &selected {
             overlay.push(selection_box(&self.view, o, self.dpr));
         }
+        let grip = if typing.is_none() {
+            self.rotation_grip()
+        } else {
+            None
+        };
+        if let Some((g, _, base)) = grip {
+            let r = znimok_render::vello_cpu::kurbo::Rect::from_points(
+                Point::new(g.0, g.1),
+                Point::new(base.0, base.1),
+            );
+            overlay.push(out_box(&self.view, r, (8.0 * self.dpr).ceil() as i32 + 2));
+        }
         if let Some(m) = self.marquee {
             let r = znimok_render::vello_cpu::kurbo::Rect::new(
                 m.x as f64,
@@ -5974,6 +6166,9 @@ impl App {
         }
         for o in &selected {
             draw_selection(&mut self.pixmap, &self.view, o, self.dpr);
+        }
+        if let Some((g, _, base)) = grip {
+            draw_rotation_grip(&mut self.pixmap, &self.view, base, g, self.dpr);
         }
         if let Some(m) = self.marquee {
             draw_marquee(&mut self.pixmap, &self.view, m);
@@ -6431,6 +6626,18 @@ fn selection_box(view: &View, o: &Object, dpr: f64) -> IRect {
     for (hx, hy) in hit::handles(o) {
         r = r.union_pt(Point::new(hx, hy));
     }
+    if hit::turned(o) {
+        let c = b.center();
+        for p in [
+            (b.x as f64, b.y as f64),
+            (b.right() as f64, b.y as f64),
+            (b.right() as f64, b.bottom() as f64),
+            (b.x as f64, b.bottom() as f64),
+        ] {
+            let q = hit::turn(p, c, o.rot as f64);
+            r = r.union_pt(Point::new(q.0, q.1));
+        }
+    }
     out_box(view, r, hs)
 }
 
@@ -6440,6 +6647,61 @@ fn clip_rect(r: IRect, to: IRect) -> Option<IRect> {
     let x1 = r.right().min(to.right());
     let y1 = r.bottom().min(to.bottom());
     (x1 > x0 && y1 > y0).then(|| IRect::new(x0, y0, x1 - x0, y1 - y0))
+}
+
+/// A point in screenshot coordinates.
+type Pt = (f64, f64);
+
+/// The id of the first mark a rotation drag turns (for the angle shown beside the pointer).
+fn orig_first_id(d: &Option<Drag>) -> ObjectId {
+    match d {
+        Some(Drag::Rotate { orig, .. }) => orig.first().map_or(0, |o| o.0),
+        _ => 0,
+    }
+}
+
+/// The rotation handle (ZK-164): a thin stem from the top edge and a white disc with a blue
+/// ring at its end, drawn straight into the pixmap like the resize handles.
+fn draw_rotation_grip(pix: &mut Pixmap, view: &View, foot: (f64, f64), grip: (f64, f64), dpr: f64) {
+    let (w, h) = (pix.width() as i64, pix.height() as i64);
+    let data = pix.data_mut();
+    let mut put = |x: i64, y: i64, c: [u8; 4]| {
+        if x >= 0 && y >= 0 && x < w && y < h {
+            data[(y * w + x) as usize] = znimok_render::vello_cpu::color::PremulRgba8 {
+                r: c[0],
+                g: c[1],
+                b: c[2],
+                a: c[3],
+            };
+        }
+    };
+    let blue = [0x3D, 0x7B, 0xF5, 0xFF];
+    let white = [0xFF, 0xFF, 0xFF, 0xFF];
+    let a = view.to_out(Point::new(foot.0, foot.1));
+    let b = view.to_out(Point::new(grip.0, grip.1));
+    let len = (b - a).hypot().max(1.0);
+    for i in 0..=len as i64 {
+        let t = i as f64 / len;
+        put(
+            (a.x + (b.x - a.x) * t).round() as i64,
+            (a.y + (b.y - a.y) * t).round() as i64,
+            blue,
+        );
+    }
+    let r = 5.5 * dpr;
+    let ring = 1.8 * dpr;
+    let (cx, cy) = (b.x, b.y);
+    let n = r.ceil() as i64 + 1;
+    for y in -n..=n {
+        for x in -n..=n {
+            let d = ((x as f64).powi(2) + (y as f64).powi(2)).sqrt();
+            if d <= r {
+                let px = (cx + x as f64).round() as i64;
+                let py = (cy + y as f64).round() as i64;
+                put(px, py, if d > r - ring { blue } else { white });
+            }
+        }
+    }
 }
 
 /// Selection outline and handles drawn straight into the pixmap, in screen pixels.
@@ -6458,7 +6720,36 @@ fn draw_selection(pix: &mut Pixmap, view: &View, o: &Object, dpr: f64) {
     };
     let blue = [0x3D, 0x7B, 0xF5, 0xFF];
     let white = [0xFF, 0xFF, 0xFF, 0xFF];
-    if !o.kind().is_segment() {
+    if !o.kind().is_segment() && hit::turned(o) {
+        // The dashed outline turns with the mark (LH): it would otherwise promise a box that
+        // is not there.
+        let b = o.bounds();
+        let c = b.center();
+        let corners = [
+            (b.x as f64, b.y as f64),
+            (b.right() as f64, b.y as f64),
+            (b.right() as f64, b.bottom() as f64),
+            (b.x as f64, b.bottom() as f64),
+        ]
+        .map(|p| {
+            let q = hit::turn(p, c, o.rot as f64);
+            view.to_out(Point::new(q.0, q.1))
+        });
+        for i in 0..4 {
+            let (p, q) = (corners[i], corners[(i + 1) % 4]);
+            let len = (q - p).hypot().max(1.0);
+            for k in 0..=len as i64 {
+                if k % 6 < 3 {
+                    let t = k as f64 / len;
+                    put(
+                        (p.x + (q.x - p.x) * t).round() as i64,
+                        (p.y + (q.y - p.y) * t).round() as i64,
+                        blue,
+                    );
+                }
+            }
+        }
+    } else if !o.kind().is_segment() {
         let b = o.bounds();
         let p0 = view.to_out(Point::new(b.x as f64, b.y as f64));
         let p1 = view.to_out(Point::new(b.right() as f64, b.bottom() as f64));
