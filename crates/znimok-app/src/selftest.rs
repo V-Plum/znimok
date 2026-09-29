@@ -1496,7 +1496,11 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
     }));
     steps.push(Box::new(|_, _, _| {}));
     steps.push(Box::new(|_app, ui, r| {
-        r.check("copy: title back after a second", !ui.get_copied(), String::new());
+        r.check(
+            "copy: title back after a second",
+            !ui.get_copied(),
+            String::new(),
+        );
         r.snapshot(ui, "copy-title");
     }));
     // ZK-117 / ZK-46: the main screens once more in the light theme, and text contrast in both
