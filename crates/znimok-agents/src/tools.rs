@@ -652,8 +652,14 @@ mod arg_tests {
         assert_eq!(arg_int(&json!({"window": 197496}), "window"), Ok(197496));
         assert_eq!(arg_int(&json!({"window": "197496"}), "window"), Ok(197496));
         assert_eq!(arg_int(&json!({"x": -40.0}), "x"), Ok(-40));
-        assert_eq!(arg_int(&json!({}), "window"), Err("«window» is required".into()));
-        assert_eq!(arg_int(&json!({"window": null}), "window"), Err("«window» is required".into()));
+        assert_eq!(
+            arg_int(&json!({}), "window"),
+            Err("«window» is required".into())
+        );
+        assert_eq!(
+            arg_int(&json!({"window": null}), "window"),
+            Err("«window» is required".into())
+        );
         let e = arg_int(&json!({"window": "Explorer"}), "window").unwrap_err();
         assert!(e.contains("must be a whole number"), "{e}");
         assert!(arg_int(&json!({"x": 1.5}), "x").is_err());
