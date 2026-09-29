@@ -477,6 +477,13 @@ pub fn open(frozen: Frozen, editor_was_visible: bool) -> Result<(), slint::Platf
             });
         }
         ui.on_pointer(move |kind, x, y, shift, alt| {
+            // The choice is made on release: the modifiers held at that moment count, however
+            // early or late they were pressed (ZK-154).
+            let (shift, alt) = if kind == 2 {
+                held_modifiers().unwrap_or((shift, alt))
+            } else {
+                (shift, alt)
+            };
             with_session(|s| {
                 s.active = i;
                 s.pointer(
@@ -492,6 +499,7 @@ pub fn open(frozen: Frozen, editor_was_visible: bool) -> Result<(), slint::Platf
             })
         });
         ui.on_key(|text, shift, alt| {
+            let (shift, alt) = held_modifiers().unwrap_or((shift, alt));
             with_session(|s| {
                 s.key(
                     &text,
@@ -614,8 +622,36 @@ fn overlay_has_focus() -> bool {
     })
 }
 
-/// Modifiers at the moment the choice is made: Shift = to the clipboard and the library,
-/// Alt (⌥) = edit over the screen.
+/// Shift and Alt (⌥) as the OS has them right now (ZK-154). The overlay's window hears only
+/// the key changes that happen while it has the focus: a Shift pressed before the overlay came
+/// up (or before its first click) never reached it, so its own modifier state said «no Shift».
+#[cfg(windows)]
+fn held_modifiers() -> Option<(bool, bool)> {
+    use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_MENU, VK_SHIFT};
+    // SAFETY: plain state queries.
+    let down = |k: windows::Win32::UI::Input::KeyboardAndMouse::VIRTUAL_KEY| unsafe {
+        GetAsyncKeyState(k.0 as i32)
+    } < 0;
+    Some((down(VK_SHIFT), down(VK_MENU)))
+}
+
+#[cfg(target_os = "macos")]
+fn held_modifiers() -> Option<(bool, bool)> {
+    use objc2_app_kit::{NSEvent, NSEventModifierFlags};
+    let f = NSEvent::modifierFlags_class();
+    Some((
+        f.contains(NSEventModifierFlags::Shift),
+        f.contains(NSEventModifierFlags::Option),
+    ))
+}
+
+#[cfg(not(any(windows, target_os = "macos")))]
+fn held_modifiers() -> Option<(bool, bool)> {
+    None
+}
+
+/// Modifiers at the moment the choice is made (the release of the button, or the key):
+/// Shift = to the clipboard and the library, Alt (⌥) = edit over the screen.
 #[derive(Clone, Copy)]
 struct Gesture {
     shift: bool,
