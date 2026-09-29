@@ -28,6 +28,21 @@ jobs:
           pip install -q pillow
           python tools/ocr-eval/run_engine.py tesseract out/tesseract.json
           python tools/ocr-eval/run_engine.py tesseract-2x out/tesseract-2x.json
+      - name: Tesseract model variants (fast / best, pinned 4.1.0) and the dual pass
+        run: |
+          get() {  # repo lang sha256
+            mkdir -p "models/$1"
+            curl -sfL -o "models/$1/$2.traineddata" "https://github.com/tesseract-ocr/$1/raw/4.1.0/$2.traineddata"
+            echo "$3  models/$1/$2.traineddata" | sha256sum -c -
+          }
+          get tessdata_fast ukr d59e53e2bded32f4445f124b4b00240fcac7e8044c003ab822ccb94f0b3db59b
+          get tessdata_fast eng 7d4322bd2a7749724879683fc3912cb542f19906c83bcc1a52132556427170b2
+          get tessdata_best ukr 1277f6e3b6f707063a92d40e7678e7f57154e8414e328e340be9ee9275eea9c8
+          get tessdata_best eng 8280aed0782fe27257a68ea10fe7ef324ca0f8d85bd2fd145d1c2b560bcb66ba
+          export TESSDATA_FAST="$PWD/models/tessdata_fast" TESSDATA_BEST="$PWD/models/tessdata_best"
+          for e in tesseract-2x-dual tesseract-fast-2x tesseract-fast-2x-dual tesseract-best-2x tesseract-best-2x-dual; do
+            python tools/ocr-eval/run_engine.py "$e" "out/$e.json"
+          done
       - name: EasyOCR (uk + en, CPU)
         continue-on-error: true
         run: |
