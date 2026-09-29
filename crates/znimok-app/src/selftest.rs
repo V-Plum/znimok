@@ -2154,11 +2154,15 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
     }));
     steps.push(Box::new(|_, ui, r| {
         r.snapshot(ui, "33-updates");
+        ui.set_settings_page(6);
         r.check(
             "updates page: version and last check shown",
             !ui.get_upd_version().is_empty() && !ui.get_upd_last().is_empty(),
             format!("{} · {}", ui.get_upd_version(), ui.get_upd_last()),
         );
+    }));
+    steps.push(Box::new(|_, ui, r| {
+        r.snapshot(ui, "35-about");
         ui.invoke_setting("close".into(), 0);
     }));
 

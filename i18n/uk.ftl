@@ -3198,6 +3198,11 @@ look-as-system = як у системі
 # @max: 40
 about-version = Znimok { $version }
 
+# @where: About page, under the Znimok wordmark next to the app icon
+# @kind: value
+# @max: 32
+about-version-line = Версія { $version }
+
 # @where: About: after the version
 # @kind: badge
 # @max: 40

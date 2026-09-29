@@ -840,7 +840,7 @@ impl App {
         ui.set_pref_version(
             self.tr
                 .tr_args(
-                    "about-version",
+                    "about-version-line",
                     &args(&[("version", env!("CARGO_PKG_VERSION").to_string())]),
                 )
                 .into(),

@@ -141,7 +141,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     let ui = AppWindow::new()?;
-    ui.set_app_icon(tray::icon(64));
+    ui.set_app_icon(tray::window_icon());
     frame::before_show(&ui);
     ui.set_mac(cfg!(target_os = "macos"));
     ui.global::<Keys>().set_mac(cfg!(target_os = "macos"));
@@ -192,7 +192,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Tray / menu bar icon; while it exists, closing the window keeps the app running.
     let tray_ui = if selftest_dir.is_none() {
         let t = AppTray::new()?;
-        t.set_tray_icon(tray::icon(44));
+        t.set_tray_icon(tray::tray_icon());
+        // macOS: the menu bar glyph as a template image (the status item exists once shown).
+        #[cfg(target_os = "macos")]
+        for ms in [0u64, 300, 1500] {
+            slint::Timer::single_shot(Duration::from_millis(ms), tray::template_menu_icon);
+        }
         t.set_capture_key(ui.get_capture_key());
         t.set_capture_available(capture::available());
         t.set_mac(cfg!(target_os = "macos"));

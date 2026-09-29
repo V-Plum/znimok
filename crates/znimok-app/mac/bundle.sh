@@ -13,6 +13,7 @@ security unlock-keychain -p "$(cat "$HOME/.znimok-sign/pass")" "$KC"
 APP="target/app/Znimok.app"
 rm -rf "$APP"; mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp target/release/znimok-app "$APP/Contents/MacOS/znimok-app"
+cp crates/znimok-app/icons/Znimok.icns "$APP/Contents/Resources/Znimok.icns"
 # The working build has its own identifier and name (ZK-125): with the release's
 # ua.plum.znimok.app and version 0.0.0 (newer than any -preview by semver) Launch Services
 # preferred it over /Applications/Znimok.app, which declares the .znimok type and carries the
