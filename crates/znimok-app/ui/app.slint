@@ -532,7 +532,8 @@ component MenuItemRow inherits Rectangle {
         padding-left: 10px;
         padding-right: 10px;
         spacing: 12px;
-        Text { text: root.text; color: enabled ? Theme.text : Theme.disabled; font-size: 13px; vertical-alignment: center; horizontal-stretch: 1; wrap: no-wrap; }
+        // A label longer than the menu ends with «…» instead of running past its edge.
+        Text { text: root.text; color: enabled ? Theme.text : Theme.disabled; font-size: 13px; vertical-alignment: center; horizontal-stretch: 1; wrap: no-wrap; overflow: elide; min-width: 0px; }
         Text { text: root.shortcut; color: Theme.text3; font-size: 11px; vertical-alignment: center; wrap: no-wrap; }
     }
     ta := TouchArea {
@@ -2184,7 +2185,7 @@ export component AppWindow inherits Window {
                                     MenuItemRow { text: @tr("doc-save-as" => "Save as…"); clicked => { root.save-as(); } }
                                     MenuItemRow { text: @tr("share-system" => "Share…"); enabled: false; }
                                     Rectangle { height: 1px; background: Theme.line; }
-                                    MenuItemRow { text: @tr("export-metadata" => "Write metadata (title, description, author, date)"); shortcut: root.export-meta ? "✓" : ""; clicked => { root.toggle-export-meta(); } }
+                                    MenuItemRow { text: @tr("export-metadata-menu" => "Write metadata"); shortcut: root.export-meta ? "✓" : ""; clicked => { root.toggle-export-meta(); } }
                                 }
                             }
                         }

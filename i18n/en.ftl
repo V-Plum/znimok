@@ -2154,6 +2154,7 @@ export-quality = Quality
 # @kind: label
 # @max: 56
 export-metadata = Write metadata (title, description, author, date)
+export-metadata-menu = Write metadata
 
 # @where: Checkbox
 # @kind: label
