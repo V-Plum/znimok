@@ -2164,6 +2164,10 @@ export-quality = Якість
 # @kind: label
 # @max: 56
 export-metadata = Записати метадані (назва, опис, автор, дата)
+
+# @where: Item of the Copy button's menu; toggles writing title, description, author and date into files
+# @kind: menu
+# @max: 28
 export-metadata-menu = Записати метадані
 
 # @where: Checkbox
