@@ -13,6 +13,7 @@
 //! Installing (Windows: `msiexec` after the app exits, with a way back) and macOS (Sparkle with our
 //! window) build on this.
 
+pub mod apply;
 pub mod sha256;
 pub mod sig;
 pub mod version;
@@ -145,6 +146,22 @@ fn get(
     max: usize,
     timeout: Duration,
 ) -> Result<Vec<u8>, UpdateError> {
+    get_status(t, url, current, max, timeout).and_then(|(status, body)| {
+        if status == 200 {
+            Ok(body)
+        } else {
+            Err(UpdateError::Release(format!("HTTP {status} for {url}")))
+        }
+    })
+}
+
+fn get_status(
+    t: &dyn Transport,
+    url: &str,
+    current: &str,
+    max: usize,
+    timeout: Duration,
+) -> Result<(u16, Vec<u8>), UpdateError> {
     // Only our repository's release files, only HTTPS.
     let ours = url.starts_with(API)
         || url.starts_with(&format!("https://github.com/{REPO}/releases/download/"));
@@ -158,10 +175,7 @@ fn get(
     let r = t
         .get(url, &h, timeout, max)
         .map_err(|e| UpdateError::Network(e.to_string()))?;
-    if r.status != 200 {
-        return Err(UpdateError::Release(format!("HTTP {} for {url}", r.status)));
-    }
-    Ok(r.body)
+    Ok((r.status, r.body))
 }
 
 /// The latest release, if it is newer than `current` and has this platform's installer, the
@@ -174,8 +188,15 @@ pub fn check(
     if RELEASE_KEY.is_none() {
         return Err(UpdateError::NotConfigured);
     }
-    let body = get(t, API, current, SMALL, Duration::from_secs(20))?;
-    pick(&body, current, platform)
+    let (status, body) = get_status(t, API, current, SMALL, Duration::from_secs(20))?;
+    match status {
+        200 => pick(&body, current, platform),
+        // No release published yet.
+        404 => Ok(None),
+        s => Err(UpdateError::Release(format!(
+            "HTTP {s} for the latest release"
+        ))),
+    }
 }
 
 /// The decision part of [`check`], without the network.
@@ -260,7 +281,23 @@ pub fn download(
     current: &str,
     dir: &Path,
 ) -> Result<PathBuf, UpdateError> {
-    let key = RELEASE_KEY.ok_or(UpdateError::NotConfigured)?;
+    download_with(
+        t,
+        a,
+        current,
+        dir,
+        RELEASE_KEY.ok_or(UpdateError::NotConfigured)?,
+    )
+}
+
+/// [`download`] with a given key (tests; the app always uses the committed one).
+fn download_with(
+    t: &dyn Transport,
+    a: &Available,
+    current: &str,
+    dir: &Path,
+    key: &str,
+) -> Result<PathBuf, UpdateError> {
     let sums = get(t, &a.sums, current, SMALL, Duration::from_secs(30))?;
     let sig = get(t, &a.sig, current, 4096, Duration::from_secs(30))?;
     // The signature before the installer is even downloaded.
@@ -379,6 +416,90 @@ mod tests {
             verify_download(KEY, SUMS, SIG, "other.msi", b""),
             Err(UpdateError::BadChecksum)
         );
+    }
+
+    /// A fake GitHub: the release files, and a log of what was asked for.
+    #[cfg(any(windows, target_os = "macos"))]
+    struct Fake {
+        files: Vec<(String, Vec<u8>)>,
+        asked: std::sync::Mutex<Vec<String>>,
+    }
+
+    #[cfg(any(windows, target_os = "macos"))]
+    impl Transport for Fake {
+        fn post_json(
+            &self,
+            _: &str,
+            _: &[(&str, &str)],
+            _: &[u8],
+            _: Duration,
+        ) -> Result<znimok_models::http::Response, znimok_models::http::HttpError> {
+            unreachable!()
+        }
+        fn get(
+            &self,
+            url: &str,
+            _: &[(&str, &str)],
+            _: Duration,
+            _: usize,
+        ) -> Result<znimok_models::http::Response, znimok_models::http::HttpError> {
+            self.asked.lock().unwrap().push(url.to_string());
+            let body = self
+                .files
+                .iter()
+                .find(|(n, _)| url.ends_with(&format!("/{n}")));
+            Ok(znimok_models::http::Response {
+                status: if body.is_some() { 200 } else { 404 },
+                body: body.map(|(_, b)| b.clone()).unwrap_or_default(),
+                retry_after: None,
+            })
+        }
+    }
+
+    /// The whole path on a fake release: signed list → installer → verified file in the folder;
+    /// a swapped installer is refused; a forged signature stops before the installer is fetched.
+    #[cfg(any(windows, target_os = "macos"))]
+    #[test]
+    fn download_verifies_in_order() {
+        const INSTALLER: &[u8] = include_bytes!("../tests/fixtures/installer.bin");
+        let name = "Znimok-1.2.0-windows-x64.msi";
+        let rel = release("v1.2.0", false, &[name, "SHA256SUMS", "SHA256SUMS.sig"]);
+        let a = pick(&rel, "1.1.0", Platform::WindowsX64).unwrap().unwrap();
+        let dir = std::env::temp_dir().join(format!("znimok-update-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let fake = |installer: &[u8], sig: &[u8]| Fake {
+            files: vec![
+                (name.into(), installer.to_vec()),
+                ("SHA256SUMS".into(), SUMS.to_vec()),
+                ("SHA256SUMS.sig".into(), sig.to_vec()),
+            ],
+            asked: Default::default(),
+        };
+
+        let good = fake(INSTALLER, SIG);
+        let path = download_with(&good, &a, "1.1.0", &dir, KEY).unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), INSTALLER);
+        assert!(path.starts_with(&dir));
+
+        let swapped = fake(b"evil", SIG);
+        assert_eq!(
+            download_with(&swapped, &a, "1.1.0", &dir, KEY),
+            Err(UpdateError::BadChecksum)
+        );
+
+        let mut forged = SIG.to_vec();
+        let last = forged.len() - 1;
+        forged[last] ^= 1;
+        let bad = fake(INSTALLER, &forged);
+        assert_eq!(
+            download_with(&bad, &a, "1.1.0", &dir, KEY),
+            Err(UpdateError::BadSignature)
+        );
+        assert!(
+            !bad.asked.lock().unwrap().iter().any(|u| u.ends_with(name)),
+            "the installer must not be fetched before the signature verifies"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

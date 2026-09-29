@@ -48,13 +48,17 @@ pub fn raw_signature(der: &[u8]) -> Option<[u8; 64]> {
             return None;
         }
         let (int, rest) = rest.split_at(n);
-        // A leading zero only when the next byte has its top bit set (DER minimal encoding).
+        // DER INTEGER: a set top bit means negative (never valid here); a leading zero only when
+        // the next byte has its top bit set (minimal encoding) — then it is dropped.
+        if int[0] & 0x80 != 0 {
+            return None;
+        }
         let int = match int {
             [0, next, ..] if next & 0x80 != 0 => &int[1..],
-            [0, ..] if n > 1 => return None,
+            [0, _, ..] => return None,
             _ => int,
         };
-        if int.len() > 32 || int[0] & 0x80 != 0 {
+        if int.len() > 32 {
             return None;
         }
         out[half * 32 + 32 - int.len()..half * 32 + 32].copy_from_slice(int);
@@ -253,6 +257,21 @@ mod tests {
         assert!(
             public_point("-----BEGIN PUBLIC KEY-----\nAAAA\n-----END PUBLIC KEY-----").is_none()
         );
+    }
+
+    /// Half of real signatures have an integer with its top bit set, written with a leading zero;
+    /// some have a short one. Both must parse (the first fixture happened to have neither).
+    #[test]
+    fn der_integers_with_leading_zero_and_short() {
+        let mut der = vec![0x30, 0x44, 0x02, 0x21, 0x00, 0xdf];
+        der.extend([0x11; 31]);
+        der.extend([0x02, 0x1f, 0x7f]);
+        der.extend([0x22; 30]);
+        let raw = raw_signature(&der).unwrap();
+        assert_eq!(raw[0], 0xdf);
+        assert_eq!(&raw[1..32], &[0x11; 31]);
+        assert_eq!(raw[32], 0, "a 31-byte s is left-padded");
+        assert_eq!(raw[33], 0x7f);
     }
 
     #[test]
