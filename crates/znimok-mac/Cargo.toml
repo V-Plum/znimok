@@ -22,3 +22,9 @@ objc2 = "0.6"
 block2 = "0.6"
 objc2-app-kit = "0.3"
 image = { version = "0.25", default-features = false, features = ["png"] }
+
+# Sparkle through the driver, on the main thread (no harness): ZNIMOK_SPARKLE_FRAMEWORK=… runs
+# the live part.
+[[test]]
+name = "sparkle_live"
+harness = false

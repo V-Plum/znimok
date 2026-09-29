@@ -287,6 +287,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if selftest_dir.is_none() {
         slint::Timer::single_shot(Duration::from_millis(1500), || {
             update::confirm_start();
+            // macOS: Sparkle from the bundle, when it is there (ZK-143).
+            #[cfg(target_os = "macos")]
+            update::mac::init();
             if let Some(text) = update::take_outcome() {
                 with_ctx(|a, ui| {
                     let (title, close) = (a.tr.tr("upd-outcome-title"), a.tr.tr("common-close"));

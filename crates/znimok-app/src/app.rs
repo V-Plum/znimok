@@ -339,6 +339,8 @@ pub struct App {
     /// Updates (ZK-142): a check or a download is running; what the last check found.
     update_busy: bool,
     update_found: Option<crate::update::Found>,
+    /// macOS (ZK-143): where the Sparkle update stands.
+    update_phase: crate::update::Phase,
     /// The folder's fingerprint at the last look, and when that was (the watcher, ZK-131).
     lib_fp: u64,
     lib_polled: Option<Instant>,
@@ -472,6 +474,7 @@ impl App {
             index: None,
             update_busy: false,
             update_found: None,
+            update_phase: crate::update::Phase::Idle,
             lib_fp: 0,
             lib_polled: None,
             recheck_timer: slint::Timer::default(),
@@ -558,7 +561,10 @@ impl App {
     }
 
     /// Once a day, when the person turned daily checks on (ZK-142). Cheap until it is due.
+    /// macOS: also where Sparkle's events are taken (every timer tick).
     pub fn update_tick(&mut self, ui: &AppWindow) {
+        #[cfg(target_os = "macos")]
+        self.sparkle_events(ui);
         if self.update_busy {
             return;
         }
@@ -567,20 +573,129 @@ impl App {
         if !p.updates.check_daily || now.saturating_sub(p.updates.last_check) < 24 * 3600 {
             return;
         }
-        self.update_check(ui);
+        self.update_check(ui, false);
     }
 
-    /// «Перевірити зараз», and the daily check.
-    pub fn update_check(&mut self, ui: &AppWindow) {
+    /// «Перевірити зараз» (`user_initiated`), and the daily check.
+    pub fn update_check(&mut self, ui: &AppWindow, user_initiated: bool) {
         if self.update_busy {
             return;
         }
-        self.update_busy = true;
-        ui.set_upd_status(self.tr.tr("upd-checking").into());
-        ui.set_upd_busy(true);
-        crate::update::check(|found| {
-            crate::with_ctx(|a, ui| a.update_checked(ui, found));
-        });
+        #[cfg(target_os = "macos")]
+        {
+            // Sparkle: a background check is silent unless there is an update; a check by the
+            // person answers either way (through the events).
+            if !crate::update::mac::available() {
+                self.update_checked(ui, crate::update::Found::NotConfigured);
+                return;
+            }
+            if crate::update::mac::check(user_initiated) {
+                self.update_busy = true;
+                if user_initiated {
+                    ui.set_upd_status(self.tr.tr("upd-checking").into());
+                }
+                ui.set_upd_busy(true);
+            }
+            return;
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            let _ = user_initiated;
+            self.update_busy = true;
+            ui.set_upd_status(self.tr.tr("upd-checking").into());
+            ui.set_upd_busy(true);
+            crate::update::check(|found| {
+                crate::with_ctx(|a, ui| a.update_checked(ui, found));
+            });
+        }
+    }
+
+    /// macOS: what Sparkle said since the last tick, into the page's state.
+    #[cfg(target_os = "macos")]
+    fn sparkle_events(&mut self, ui: &AppWindow) {
+        use crate::update::mac::{Choice, Event};
+        use crate::update::{Found, Phase};
+        let events = crate::update::mac::poll();
+        if events.is_empty() {
+            return;
+        }
+        for e in events {
+            match e {
+                Event::Checking => {
+                    self.update_busy = true;
+                }
+                Event::Found {
+                    version,
+                    notes_url,
+                    size,
+                    ..
+                } => {
+                    self.update_phase = Phase::Idle;
+                    self.update_checked(
+                        ui,
+                        Found::Sparkle {
+                            version,
+                            notes: notes_url,
+                            size,
+                        },
+                    );
+                }
+                Event::NotFound(_) => {
+                    self.update_phase = Phase::Idle;
+                    self.update_checked(ui, Found::UpToDate);
+                }
+                Event::Error(e) => {
+                    self.update_phase = Phase::Idle;
+                    self.update_checked(ui, Found::Failed(e));
+                }
+                Event::NotesFailed(_) => {}
+                Event::DownloadStarted => {
+                    self.update_busy = true;
+                    self.update_phase = Phase::Downloading {
+                        received: 0,
+                        total: 0,
+                    };
+                }
+                Event::DownloadTotal(t) => {
+                    if let Phase::Downloading { total, .. } = &mut self.update_phase {
+                        *total = t;
+                    }
+                }
+                Event::DownloadProgress(n) => {
+                    if let Phase::Downloading { received, .. } = &mut self.update_phase {
+                        *received += n;
+                    }
+                }
+                Event::Extracting(p) => {
+                    self.update_busy = true;
+                    self.update_phase = Phase::Extracting(p);
+                }
+                Event::ReadyToInstall => {
+                    // «Оновити зараз» means the whole way, as on Windows: save, then relaunch.
+                    self.save_now(ui);
+                    self.update_phase = Phase::Installing;
+                    crate::update::mac::reply(Choice::Install);
+                }
+                Event::Installing { app_terminated } => {
+                    self.update_phase = Phase::Installing;
+                    if !app_terminated {
+                        // Sparkle's installer waits for the app: leave the loop (before_exit
+                        // saves and flushes), the new version comes up by itself.
+                        let _ = slint::quit_event_loop();
+                    }
+                }
+                Event::InstalledAndRelaunched(_) => {
+                    self.update_phase = Phase::Idle;
+                    self.update_busy = false;
+                }
+                Event::Dismissed => {
+                    self.update_phase = Phase::Idle;
+                    self.update_busy = false;
+                }
+            }
+        }
+        let p = self.prefs();
+        self.agents_sync(ui, &p);
     }
 
     fn update_checked(&mut self, ui: &AppWindow, found: crate::update::Found) {
@@ -589,6 +704,7 @@ impl App {
         let now = chrono::Local::now().timestamp().max(0) as u64;
         let tag = match &found {
             Found::Available(a) => Some(a.tag.clone()),
+            Found::Sparkle { version, .. } => Some(format!("v{version}")),
             _ => None,
         };
         let told = self.prefs().updates.notified_tag;
@@ -597,14 +713,18 @@ impl App {
             p.updates.available_tag = tag.clone();
         });
         // A new release is told once (a toast); the Updates page always shows it.
-        if let Found::Available(a) = &found
-            && told.as_deref() != Some(a.tag.as_str())
+        let new_version = match &found {
+            Found::Available(a) => Some((a.tag.clone(), a.version.clone())),
+            Found::Sparkle { version, .. } => Some((format!("v{version}"), version.clone())),
+            _ => None,
+        };
+        if let Some((t, version)) = new_version
+            && told.as_deref() != Some(t.as_str())
         {
             let msg = self
                 .tr
-                .tr_args("update-available", &args(&[("version", a.version.clone())]));
+                .tr_args("update-available", &args(&[("version", version)]));
             self.toast(ui, msg);
-            let t = a.tag.clone();
             self.save_prefs(ui, |p| p.updates.notified_tag = Some(t));
         }
         self.update_found = Some(found);
@@ -612,8 +732,32 @@ impl App {
         self.agents_sync(ui, &p);
     }
 
-    /// «Встановити» (Windows): download, verify, hand over to the installer and exit.
+    /// «Встановити»: Windows — download, verify, hand over to the installer and exit; macOS —
+    /// Sparkle downloads, verifies and, once ready, relaunches (see `sparkle_events`).
     pub fn update_install(&mut self, ui: &AppWindow) {
+        #[cfg(target_os = "macos")]
+        {
+            if self.update_busy
+                || !matches!(
+                    self.update_found,
+                    Some(crate::update::Found::Sparkle { .. })
+                )
+            {
+                return;
+            }
+            if crate::update::mac::reply(crate::update::mac::Choice::Install) {
+                self.update_busy = true;
+                self.update_phase = crate::update::Phase::Downloading {
+                    received: 0,
+                    total: 0,
+                };
+                ui.set_upd_status(self.tr.tr("upd-downloading").into());
+                ui.set_upd_busy(true);
+                ui.set_upd_progress(0.0);
+            }
+            return;
+        }
+        #[cfg(not(target_os = "macos"))]
         let Some(crate::update::Found::Available(a)) = self.update_found.clone() else {
             return;
         };
@@ -714,6 +858,18 @@ impl App {
         ui.set_upd_last(last.into());
         // What the last check (this run) found, and what can be done about it.
         use crate::update::Found;
+        use crate::update::Phase;
+        let mb = |b: u64| format!("{:.0} MB", b as f64 / (1 << 20) as f64);
+        let available_text = |version: &str, size: u64| {
+            format!(
+                "{} · {}",
+                self.tr.tr_args(
+                    "update-available",
+                    &args(&[("version", version.to_string())])
+                ),
+                mb(size)
+            )
+        };
         let status = match &self.update_found {
             None => String::new(),
             Some(Found::UpToDate) => self.tr.tr("upd-up-to-date"),
@@ -721,23 +877,43 @@ impl App {
             Some(Found::Failed(e)) => self
                 .tr
                 .tr_args("upd-failed", &args(&[("reason", e.clone())])),
-            Some(Found::Available(a)) => {
-                let size = format!("{:.0} MB", a.installer_size() as f64 / (1 << 20) as f64);
-                format!(
-                    "{} · {}",
-                    self.tr
-                        .tr_args("update-available", &args(&[("version", a.version.clone())])),
-                    size
-                )
-            }
+            Some(Found::Available(a)) => available_text(&a.version, a.installer_size()),
+            Some(Found::Sparkle { version, size, .. }) => available_text(version, *size),
         };
-        if !self.update_busy {
+        // macOS: the Sparkle phases on top of what was found.
+        let (status, progress) = match &self.update_phase {
+            Phase::Idle => (status, -1.0),
+            Phase::Downloading { received, total } => (
+                if *total > 0 {
+                    format!(
+                        "{} {} / {}",
+                        self.tr.tr("upd-downloading"),
+                        mb(*received),
+                        mb(*total)
+                    )
+                } else {
+                    self.tr.tr("upd-downloading")
+                },
+                if *total > 0 {
+                    (*received as f32 / *total as f32).clamp(0.0, 1.0)
+                } else {
+                    0.0
+                },
+            ),
+            Phase::Extracting(p) => (self.tr.tr("upd-extracting"), *p as f32),
+            Phase::Installing => (self.tr.tr("upd-installing"), 1.0),
+        };
+        if !self.update_busy || self.update_phase != Phase::Idle {
             ui.set_upd_status(status.into());
         }
+        ui.set_upd_progress(progress);
         ui.set_upd_busy(self.update_busy);
-        let available = matches!(self.update_found, Some(Found::Available(_)));
-        ui.set_upd_can_install(available && cfg!(windows));
-        ui.set_upd_can_open(available && !cfg!(windows));
+        let (win, mac) = (
+            matches!(self.update_found, Some(Found::Available(_))),
+            matches!(self.update_found, Some(Found::Sparkle { .. })),
+        );
+        ui.set_upd_can_install((win && cfg!(windows)) || (mac && self.update_phase == Phase::Idle));
+        ui.set_upd_can_open((win && !cfg!(windows)) || mac);
     }
 
     pub fn settings_open(&mut self, ui: &AppWindow) {
@@ -1094,7 +1270,7 @@ impl App {
                 self.agents_sync(ui, &p);
             }
             "upd-check" => {
-                self.update_check(ui);
+                self.update_check(ui, true);
                 return;
             }
             "upd-install" => {
@@ -1102,8 +1278,12 @@ impl App {
                 return;
             }
             "upd-page" => {
-                if let Some(crate::update::Found::Available(a)) = &self.update_found {
-                    crate::update::open_page(&a.page);
+                match &self.update_found {
+                    Some(crate::update::Found::Available(a)) => crate::update::open_page(&a.page),
+                    Some(crate::update::Found::Sparkle { notes: Some(n), .. }) => {
+                        crate::update::open_page(n)
+                    }
+                    _ => {}
                 }
                 return;
             }

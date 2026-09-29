@@ -14,6 +14,20 @@ APP="target/app/Znimok.app"
 rm -rf "$APP"; mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp target/release/znimok-app "$APP/Contents/MacOS/znimok-app"
 cp crates/znimok-app/icons/Znimok.icns "$APP/Contents/Resources/Znimok.icns"
+# Sparkle (ZK-143): the same framework as the release, cached in ~/.znimok-sparkle. A dev build
+# has no feed (SUFeedURL is stripped below) — the page says updates are not set up; to try the
+# whole flow, start the app with ZNIMOK_SPARKLE_FEED=<appcast url>.
+SPARKLE_VERSION=2.10.0
+SPARKLE_SHA256=c2bf58aa8387266ac179357b1415d6f2635f044da8be41042af32425dae6da0c
+SPARKLE_DIR="$HOME/.znimok-sparkle"
+if [ ! -d "$SPARKLE_DIR/Sparkle.framework" ]; then
+    mkdir -p "$SPARKLE_DIR"
+    curl -sSL -o "$SPARKLE_DIR/Sparkle-$SPARKLE_VERSION.tar.xz" "https://github.com/sparkle-project/Sparkle/releases/download/$SPARKLE_VERSION/Sparkle-$SPARKLE_VERSION.tar.xz"
+    echo "$SPARKLE_SHA256  $SPARKLE_DIR/Sparkle-$SPARKLE_VERSION.tar.xz" | shasum -a 256 -c -
+    tar -xf "$SPARKLE_DIR/Sparkle-$SPARKLE_VERSION.tar.xz" -C "$SPARKLE_DIR" Sparkle.framework
+fi
+mkdir -p "$APP/Contents/Frameworks"
+ditto "$SPARKLE_DIR/Sparkle.framework" "$APP/Contents/Frameworks/Sparkle.framework"
 # The working build has its own identifier and name (ZK-125): with the release's
 # ua.plum.znimok.app and version 0.0.0 (newer than any -preview by semver) Launch Services
 # preferred it over /Applications/Znimok.app, which declares the .znimok type and carries the
@@ -22,6 +36,7 @@ ID="ua.plum.znimok.app.dev"
 sed -e "s/@BUILD@/$BUILD/" \
     -e "s|<string>ua.plum.znimok.app</string>|<string>$ID</string>|" \
     -e "s|<string>Znimok</string>|<string>Znimok Dev</string>|g" \
+    -e "/<key>SUFeedURL<\/key>/d" \
     crates/znimok-app/mac/Info.plist > "$APP/Contents/Info.plist"
 grep -q "<string>$ID</string>" "$APP/Contents/Info.plist"
 codesign --force --sign "$SHA1" --keychain "$KC" --identifier "$ID" --timestamp=none "$APP"

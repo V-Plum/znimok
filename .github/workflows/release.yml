@@ -17,6 +17,7 @@ on:
       - "crates/znimok-thumbnail/icons/**"
       - "crates/znimok-update/**"
       - "tools/verify_release.py"
+      - "tools/sparkle_appcast.py"
   workflow_dispatch:
 
 permissions:
@@ -222,6 +223,9 @@ jobs:
       - name: Quick Look thumbnails (ZnimokThumbnail.appex, ZK-76)
         run: bash crates/znimok-thumbnail/mac/build-appex.sh target/appex "${{ needs.version.outputs.version }}"
       - name: Znimok.app (ad-hoc signed; Developer ID and notarisation come with ZK-80)
+        env:
+          SPARKLE_VERSION: "2.10.0"
+          SPARKLE_SHA256: c2bf58aa8387266ac179357b1415d6f2635f044da8be41042af32425dae6da0c
         run: |
           v="${{ needs.version.outputs.version }}"
           app="dist/Znimok.app"
@@ -231,7 +235,17 @@ jobs:
           # The .znimok document icon (ZK-150), named by the document type in Info.plist.
           cp crates/znimok-thumbnail/icons/ZnimokDocument.icns "$app/Contents/Resources/"
           cp crates/znimok-app/icons/Znimok.icns "$app/Contents/Resources/"
-          sed -e "s/@BUILD@/${GITHUB_SHA::7}/" \
+          # Sparkle 2 (ZK-143): the framework of the pinned release, as published (its own
+          # signatures stay valid; re-signing comes with Developer ID, ZK-80). Loaded at run time
+          # from Contents/Frameworks — no link step.
+          curl -sSL -o "$RUNNER_TEMP/sparkle.tar.xz" "https://github.com/sparkle-project/Sparkle/releases/download/$SPARKLE_VERSION/Sparkle-$SPARKLE_VERSION.tar.xz"
+          echo "$SPARKLE_SHA256  $RUNNER_TEMP/sparkle.tar.xz" | shasum -a 256 -c -
+          mkdir -p "$RUNNER_TEMP/sparkle" "$app/Contents/Frameworks"
+          tar -xf "$RUNNER_TEMP/sparkle.tar.xz" -C "$RUNNER_TEMP/sparkle" Sparkle.framework
+          ditto "$RUNNER_TEMP/sparkle/Sparkle.framework" "$app/Contents/Frameworks/Sparkle.framework"
+          codesign --verify --strict "$app/Contents/Frameworks/Sparkle.framework"
+          # CFBundleVersion is what Sparkle compares with the appcast: the version itself.
+          sed -e "s/@BUILD@/$v/" \
               -e "s#<key>CFBundleShortVersionString</key><string>[^<]*</string>#<key>CFBundleShortVersionString</key><string>$v</string>#" \
               crates/znimok-app/mac/Info.plist > "$app/Contents/Info.plist"
           # The document type (ZK-75): exported UTI + document type, unless the app's plist has them.
@@ -258,6 +272,19 @@ jobs:
           mkdir -p dmg && cp -R dist/Znimok.app dmg/ && ln -s /Applications dmg/Applications
           hdiutil create -volname "Znimok $v" -srcfolder dmg -ov -format UDZO "dist/Znimok-$v-macos-arm64.dmg"
           hdiutil verify "dist/Znimok-$v-macos-arm64.dmg"
+      - name: appcast (Sparkle, ZK-143) — the DMG signed with the Ed25519 key
+        env:
+          ZNIMOK_SPARKLE_KEY: ${{ secrets.ZNIMOK_SPARKLE_KEY }}
+        run: |
+          v="${{ needs.version.outputs.version }}"
+          if [[ -z "$ZNIMOK_SPARKLE_KEY" ]]; then
+            echo "::warning::ZNIMOK_SPARKLE_KEY is not set — no appcast, macOS updates stay off (ZK-111)"
+            exit 0
+          fi
+          python3 tools/sparkle_appcast.py sign --file "dist/Znimok-$v-macos-arm64.dmg" --version "$v" \
+            --url "https://github.com/V-Plum/znimok/releases/download/$GITHUB_REF_NAME/Znimok-$v-macos-arm64.dmg" \
+            --notes "https://github.com/V-Plum/znimok/releases/tag/$GITHUB_REF_NAME" --out dist/appcast.xml
+          python3 tools/sparkle_appcast.py verify --appcast dist/appcast.xml --file "dist/Znimok-$v-macos-arm64.dmg"
       - name: Homebrew cask (ZK-81) — style, audit, install, uninstall
         run: |
           v="${{ needs.version.outputs.version }}"
@@ -285,6 +312,7 @@ jobs:
           path: |
             dist/*.zip
             dist/*.dmg
+            dist/appcast.xml
             dist/znimok
           retention-days: 14
 
@@ -344,6 +372,7 @@ jobs:
         run: |
           mkdir -p out
           cp in/windows/*.zip in/windows/*.msi in/macos/*.zip in/macos/*.dmg in/mcpb/*.mcpb in/sbom/*.zip out/
+          cp in/macos/appcast.xml out/ 2>/dev/null || true
           cd out
           sha256sum * > SHA256SUMS
           cat SHA256SUMS
@@ -365,7 +394,7 @@ jobs:
             echo "Znimok ${{ needs.version.outputs.version }}"
             echo
             echo "- Windows: Znimok-…-windows-x64.msi — installs for the current user, no admin rights (Start menu, .znimok files, Explorer thumbnails, \`znimok\` on PATH). The .zip is the same without installing."
-            echo "- macOS (Apple silicon): Znimok-…-macos-arm64.dmg (or .zip) — ad-hoc signed, not notarised: open with right-click → Open. Finder thumbnails included."
+            echo "- macOS (Apple silicon): Znimok-…-macos-arm64.dmg (or .zip) — ad-hoc signed, not notarised: open with right-click → Open. Finder thumbnails included. Updates itself through Sparkle (appcast.xml, EdDSA-signed)."
             echo "- Claude Desktop: znimok-….mcpb. SBOM: …-sbom-cyclonedx.zip. Binaries carry their dependency list (cargo auditable)."
             if [[ "$SIGNED" == "1" ]]; then
               echo "- Signed: SHA256SUMS.sig (ECDSA P-256, keys/znimok-release-p256.pub.pem). Check: python tools/verify_release.py <tag>."

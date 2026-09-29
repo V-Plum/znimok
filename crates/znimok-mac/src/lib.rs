@@ -24,6 +24,8 @@ mod mac;
 pub mod picker;
 #[cfg(target_os = "macos")]
 mod share;
+#[cfg(target_os = "macos")]
+pub mod sparkle;
 
 #[cfg(target_os = "macos")]
 pub use autostart::MacAutostart;

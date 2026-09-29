@@ -1828,6 +1828,8 @@ export component AppWindow inherits Window {
     in property <bool> upd-busy;
     in property <bool> upd-can-install;
     in property <bool> upd-can-open;
+    // macOS (ZK-143): download / unpacking progress 0…1, hidden below 0.
+    in property <float> upd-progress: -1;
     in property <int> pref-lang;
     in property <bool> pref-ret-size;
     in-out property <string> pref-ret-count;
@@ -2445,6 +2447,12 @@ export component AppWindow inherits Window {
                                     TextButton { text: @tr("upd-check-now" => "Check now"); enabled: !root.upd-busy; clicked => { root.setting("upd-check", 0); } }
                                 }
                                 if root.upd-status != "": Text { text: root.upd-status; color: Theme.text2; font-size: 12px; wrap: word-wrap; }
+                                if root.upd-progress >= 0: Rectangle {
+                                    height: 6px;
+                                    border-radius: 3px;
+                                    background: Theme.control-on;
+                                    Rectangle { x: 0; width: parent.width * min(1, root.upd-progress); height: parent.height; border-radius: 3px; background: Theme.accent; animate width { duration: 150ms; } }
+                                }
                                 if root.upd-can-install || root.upd-can-open: HorizontalLayout {
                                     alignment: start;
                                     spacing: 8px;

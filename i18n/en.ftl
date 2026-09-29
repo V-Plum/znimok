@@ -3694,6 +3694,16 @@ upd-checking = Checking…
 # @max: 60
 upd-downloading = Downloading and verifying the update…
 
+# @where: Updates page (macOS): Sparkle unpacks the downloaded update
+# @kind: status
+# @max: 40
+upd-extracting = Unpacking the update…
+
+# @where: Updates page (macOS): Sparkle installs and relaunches the app
+# @kind: status
+# @max: 48
+upd-installing = Installing and relaunching…
+
 # @where: Updates page: no newer release
 # @kind: status
 # @max: 40

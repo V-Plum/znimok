@@ -92,6 +92,22 @@ def check_signature(d: Path) -> bool | None:
         return r.returncode == 0
 
 
+def check_appcast(d: Path) -> bool | None:
+    """The Sparkle appcast (macOS updates): its edSignature over the DMG. None = no appcast."""
+    appcast = d / "appcast.xml"
+    if not appcast.exists():
+        return None
+    dmgs = sorted(d.glob("*-macos-arm64.dmg"))
+    if not dmgs:
+        print("appcast.xml without a DMG")
+        return False
+    tool = Path(__file__).resolve().parent / "sparkle_appcast.py"
+    r = subprocess.run([sys.executable, str(tool), "verify", "--appcast", str(appcast), "--file", str(dmgs[0])],
+                       capture_output=True, text=True)
+    print(r.stdout.strip() or r.stderr.strip())
+    return r.returncode == 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("tag", nargs="?", help="release tag, e.g. v0.1.0")
@@ -108,11 +124,14 @@ def main() -> int:
     print(f"assets: {d}")
     sums_ok = check_sums(d)
     sig = check_signature(d)
+    appcast = check_appcast(d)
     print()
     print("checksums:", "all match" if sums_ok else "MISMATCH")
     print("signature:", {True: "valid (ECDSA P-256, key of this repository)",
                          False: "INVALID", None: "not signed"}[sig])
-    return 0 if sums_ok and sig is not False else 1
+    print("appcast:", {True: "DMG signature valid (Ed25519, key of this repository)",
+                       False: "INVALID", None: "none"}[appcast])
+    return 0 if sums_ok and sig is not False and appcast is not False else 1
 
 
 if __name__ == "__main__":

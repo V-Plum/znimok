@@ -16,5 +16,10 @@
     <key>NSHighResolutionCapable</key><true/>
     <key>NSSupportsAutomaticGraphicsSwitching</key><true/>
     <key>NSScreenCaptureUsageDescription</key><string>Znimok робить знімки екрана й вікон, які ви вибираєте.</string>
+    <!-- Sparkle 2 (ZK-143): the appcast of the latest release; the app checks on its own timer.
+         The public key is keys/znimok-sparkle-ed25519.pub.pem (its raw 32 bytes, base64). -->
+    <key>SUFeedURL</key><string>https://github.com/V-Plum/znimok/releases/latest/download/appcast.xml</string>
+    <key>SUPublicEDKey</key><string>p50rDlGE6KaWMf+pVP4wg11kaaew9Ka4CvoCDKXtBQc=</string>
+    <key>SUEnableAutomaticChecks</key><false/>
 </dict>
 </plist>

@@ -5,7 +5,11 @@
 //! - with «Перевіряти щодня» on, a background check once a day; a newer release is reported once;
 //! - «Встановити» (Windows): download and verify (signature, then checksum), hand the installer to
 //!   `znimok.exe update install` and exit — it installs, starts the new version and rolls back if
-//!   that does not come up. macOS installs through Sparkle (ZK-143); until then, the release page.
+//!   that does not come up.
+//! - macOS (ZK-143): Sparkle 2 does the checking, the EdDSA-verified download, the installation
+//!   and the relaunch; the page in the settings is Znimok's own (`mac` below, on
+//!   `znimok_mac::sparkle`). Without the framework in the bundle (a dev build) or a feed, the
+//!   page says updates are not set up.
 //!
 //! Nothing touches the network unless the person turned the daily check on or pressed a button.
 
@@ -43,6 +47,78 @@ pub enum Found {
     /// No release key in this build yet (ZK-111).
     NotConfigured,
     Failed(String),
+    /// macOS: what Sparkle found (`size` in bytes; `notes` the release page).
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+    Sparkle {
+        version: String,
+        notes: Option<String>,
+        size: u64,
+    },
+}
+
+/// Where a Sparkle update stands (macOS), for the page.
+#[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+pub enum Phase {
+    Idle,
+    Downloading { received: u64, total: u64 },
+    Extracting(f64),
+    Installing,
+}
+
+#[cfg(target_os = "macos")]
+pub mod mac {
+    //! The one Sparkle updater of the process, on the main thread.
+    use std::cell::RefCell;
+
+    pub use znimok_mac::sparkle::{Choice, Event};
+    use znimok_mac::sparkle::{Sparkle, framework_in_bundle};
+
+    thread_local! {
+        static SPARKLE: RefCell<Option<Sparkle>> = const { RefCell::new(None) };
+    }
+
+    /// Start Sparkle when the bundle carries it and a feed is set (`SUFeedURL`, or
+    /// `ZNIMOK_SPARKLE_FEED` in the environment for tests). `false` = updates not set up.
+    pub fn init() -> bool {
+        let Some(fw) = framework_in_bundle() else {
+            return false;
+        };
+        let feed = std::env::var("ZNIMOK_SPARKLE_FEED").ok();
+        match Sparkle::start(&fw, None, feed.as_deref()) {
+            Ok(s) => {
+                SPARKLE.with(|c| *c.borrow_mut() = Some(s));
+                true
+            }
+            Err(e) => {
+                eprintln!("Sparkle: {e}");
+                false
+            }
+        }
+    }
+
+    pub fn available() -> bool {
+        SPARKLE.with(|c| c.borrow().is_some())
+    }
+
+    /// A check: by the person (Sparkle reports «up to date» too) or in the background.
+    pub fn check(user_initiated: bool) -> bool {
+        SPARKLE.with(|c| match c.borrow().as_ref() {
+            Some(s) if s.can_check() => {
+                s.check(user_initiated);
+                true
+            }
+            _ => false,
+        })
+    }
+
+    pub fn reply(choice: Choice) -> bool {
+        SPARKLE.with(|c| c.borrow().as_ref().is_some_and(|s| s.reply(choice)))
+    }
+
+    pub fn poll() -> Vec<Event> {
+        SPARKLE.with(|c| c.borrow().as_ref().map(|s| s.poll()).unwrap_or_default())
+    }
 }
 
 /// Checks on a worker thread; `then` runs on the UI thread.
