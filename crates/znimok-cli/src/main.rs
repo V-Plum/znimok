@@ -115,6 +115,45 @@ enum Cmd {
         #[command(subcommand)]
         cmd: AgentsCmd,
     },
+    /// Updates from GitHub releases: the signature of the checksums is verified with the key
+    /// built into Znimok before anything is downloaded (ZK-122).
+    Update {
+        #[command(subcommand)]
+        cmd: UpdateCmd,
+    },
+}
+
+#[derive(Subcommand)]
+enum UpdateCmd {
+    /// Whether a newer release exists (asks GitHub once; nothing is downloaded).
+    Check,
+    /// Downloads the newer release's installer into the user's own folder and verifies it
+    /// (signature, then checksum); prints its path. Installing is a separate step.
+    Download,
+    /// Windows: installs a downloaded update after the app exits, checks that the new version
+    /// starts and goes back to the previous one if it does not. Runs from a copy of itself.
+    Install {
+        /// The downloaded installer (in the updates folder).
+        #[arg(long)]
+        msi: PathBuf,
+        /// Its version (the app confirms the start of this version).
+        #[arg(long)]
+        version: String,
+        /// Wait for this process (the app) to exit first.
+        #[arg(long)]
+        wait_pid: Option<u32>,
+        /// The app to start after installing; default: znimok-app.exe next to this program.
+        #[arg(long)]
+        app: Option<PathBuf>,
+        /// Arguments for the app (repeatable).
+        #[arg(long = "app-arg")]
+        app_args: Vec<String>,
+        /// Internal: this process is the copy outside the install folder.
+        #[arg(long, hide = true)]
+        as_runner: bool,
+    },
+    /// The app has started: confirms a running update of VERSION (the app does this itself).
+    MarkStarted { version: String },
 }
 
 #[derive(Subcommand)]
@@ -647,6 +686,7 @@ fn run(cli: Cli) -> Result<(), Fail> {
             znimok_agents::serve_stdio().map_err(|e| Fail(3, e.to_string()))?;
         }
         Cmd::Agents { cmd } => agents(cmd, &out)?,
+        Cmd::Update { cmd } => update(cmd, &out)?,
         Cmd::Schema { kind } => {
             let s = match kind {
                 SchemaKind::Command => znimok_core::command::command_schema(),
@@ -768,6 +808,128 @@ fn chrono_ms(ms: i64) -> String {
     let mo = if mp < 10 { mp + 3 } else { mp - 9 };
     let y = if mo <= 2 { y + 1 } else { y };
     format!("{y:04}-{mo:02}-{d:02} {h:02}:{m:02}:{s:02} UTC")
+}
+
+fn update(cmd: UpdateCmd, out: &dyn Fn(serde_json::Value, String)) -> Result<(), Fail> {
+    let current = env!("CARGO_PKG_VERSION");
+    let updates = znimok_agents::data_dir().join("Updates");
+    match cmd {
+        UpdateCmd::MarkStarted { version } => {
+            znimok_update::apply::mark_started(&updates, &version)
+                .map_err(|e| Fail(3, e.to_string()))?;
+            out(
+                json!({ "started": version }),
+                format!("start of {version} confirmed"),
+            );
+            return Ok(());
+        }
+        #[cfg(windows)]
+        UpdateCmd::Install {
+            msi,
+            version,
+            wait_pid,
+            app,
+            app_args,
+            as_runner,
+        } => {
+            let app = match app {
+                Some(a) => a,
+                None => std::env::current_exe()
+                    .map_err(|e| Fail(3, e.to_string()))?
+                    .with_file_name("znimok-app.exe"),
+            };
+            if !as_runner {
+                // From a copy: the MSI replaces the files of the install folder, this one too.
+                let mut args = vec![
+                    "update".into(),
+                    "install".into(),
+                    "--msi".into(),
+                    msi.display().to_string(),
+                    "--version".into(),
+                    version,
+                    "--app".into(),
+                    app.display().to_string(),
+                    "--as-runner".into(),
+                ];
+                if let Some(pid) = wait_pid {
+                    args.extend(["--wait-pid".into(), pid.to_string()]);
+                }
+                for a in app_args {
+                    args.extend(["--app-arg".into(), a]);
+                }
+                let exe = std::env::current_exe().map_err(|e| Fail(3, e.to_string()))?;
+                znimok_update::apply::run_detached_copy(&updates, &exe, &args)
+                    .map_err(|e| Fail(3, e.to_string()))?;
+                out(
+                    json!({ "started": true }),
+                    "installing in the background".into(),
+                );
+                return Ok(());
+            }
+            if let Some(pid) = wait_pid
+                && !znimok_update::apply::wait_for_exit(pid, std::time::Duration::from_secs(120))
+            {
+                return Err(Fail(3, "the app did not exit".into()));
+            }
+            let mut app_cmd = vec![app.display().to_string()];
+            app_cmd.extend(app_args);
+            let o = znimok_update::apply::install(
+                &updates,
+                &msi,
+                &version,
+                &app_cmd,
+                znimok_update::apply::START_WAIT,
+            );
+            let ok = matches!(o, znimok_update::apply::Outcome::Installed { .. });
+            out(json!({ "outcome": format!("{o:?}") }), format!("{o:?}"));
+            return if ok {
+                Ok(())
+            } else {
+                Err(Fail(3, format!("{o:?}")))
+            };
+        }
+        #[cfg(not(windows))]
+        UpdateCmd::Install { .. } => {
+            return Err(Fail(3, "on macOS updates come through Sparkle".into()));
+        }
+        _ => {}
+    }
+    let platform = znimok_update::Platform::current().ok_or_else(|| {
+        Fail(
+            3,
+            "updates exist for Windows x64 and macOS on Apple silicon".into(),
+        )
+    })?;
+    let http = znimok_models::http::system();
+    let fail = |e: znimok_update::UpdateError| Fail(3, e.to_string());
+    let found = znimok_update::check(http.as_ref(), current, platform).map_err(fail)?;
+    let Some(a) = found else {
+        out(
+            json!({ "current": current, "available": null }),
+            format!("Znimok {current} is up to date"),
+        );
+        return Ok(());
+    };
+    match cmd {
+        UpdateCmd::Check => out(
+            json!({ "current": current, "available": a.version, "page": a.page,
+                    "installer": a.installer_name(), "size": a.installer_size() }),
+            format!(
+                "Znimok {} is available (now {current}): {}",
+                a.version, a.page
+            ),
+        ),
+        UpdateCmd::Download => {
+            let path =
+                znimok_update::download(http.as_ref(), &a, current, &updates).map_err(fail)?;
+            out(
+                json!({ "version": a.version, "installer": path.display().to_string(), "verified": true }),
+                format!("{} — signature and checksum verified", path.display()),
+            );
+        }
+        UpdateCmd::Install { .. } | UpdateCmd::MarkStarted { .. } => unreachable!(),
+    }
+    Ok(())
 }
 
 fn main() -> ExitCode {

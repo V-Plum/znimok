@@ -24,6 +24,8 @@ znimok-i18n = { path = "../znimok-i18n" }
 znimok-agents = { path = "../znimok-agents" }
 znimok-codes = { path = "../znimok-codes" }
 znimok-settings = { path = "../znimok-settings" }
+znimok-update = { path = "../znimok-update" }
+znimok-models = { path = "../znimok-models" }
 clap = { version = "4", features = ["derive"] }
 serde_json = "1"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp"] }

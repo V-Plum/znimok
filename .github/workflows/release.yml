@@ -14,6 +14,7 @@ on:
       - "packaging/**"
       - "crates/znimok-thumbnail/mac/**"
       - "tools/ocr-helper/**"
+      - "crates/znimok-update/**"
       - "tools/verify_release.py"
   workflow_dispatch:
 
@@ -121,6 +122,59 @@ jobs:
           $path = [Environment]::GetEnvironmentVariable("PATH", "User")
           if ($path -like "*$dir*") { throw "PATH entry left after uninstall" }
           "install → check → uninstall: clean"
+      - name: update installs, confirms the start, and goes back when the new version does not start (ZK-122)
+        shell: pwsh
+        run: |
+          # Three MSIs of the same files with different versions: 0.0.1 → 0.0.2 (confirms) → 0.0.3 (silent → back to 0.0.2).
+          $bin = "msi-bin"
+          foreach ($ver in "0.0.1", "0.0.2", "0.0.3") {
+            wix build packaging/msi/znimok.wxs -arch x64 -d Version=$ver -d Bin=$bin -o "upd/Znimok-$ver-windows-x64.msi"
+            if ($LASTEXITCODE -ne 0) { throw "wix build $ver failed" }
+          }
+          $dir = Join-Path $env:LOCALAPPDATA "Programs\Znimok"
+          $updates = Join-Path $env:LOCALAPPDATA "Znimok\Updates"
+          function Installed-Version {
+            (Get-ItemProperty "HKCU:\Software\Znimok\Installed" -ErrorAction SilentlyContinue).version
+          }
+          function Wait-Outcome([string]$want) {
+            $f = Join-Path $updates "last-outcome.txt"
+            for ($i = 0; $i -lt 240; $i++) {
+              if ((Test-Path $f) -and ((Get-Content $f -Raw) -like "*$want*")) { return (Get-Content $f -Raw) }
+              Start-Sleep -Milliseconds 500
+            }
+            throw "no outcome «$want»: $(if (Test-Path $f) { Get-Content $f -Raw })"
+          }
+          $p = Start-Process msiexec -ArgumentList "/i `"$((Resolve-Path upd/Znimok-0.0.1-windows-x64.msi).Path)`" /qn" -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "0.0.1 install: $($p.ExitCode)" }
+          if ((Installed-Version) -ne "0.0.1") { throw "installed: $(Installed-Version)" }
+          New-Item -ItemType Directory -Force (Join-Path $updates "installed") | Out-Null
+          Copy-Item upd/Znimok-0.0.1-windows-x64.msi (Join-Path $updates "installed")
+          $cli = Join-Path $dir "znimok.exe"
+
+          # 1) 0.0.2: the started "app" confirms its version → installed.
+          Copy-Item upd/Znimok-0.0.2-windows-x64.msi $updates
+          & $cli update install --msi (Join-Path $updates "Znimok-0.0.2-windows-x64.msi") --version 0.0.2 `
+            --app $cli --app-arg update --app-arg mark-started --app-arg 0.0.2
+          $o = Wait-Outcome "installed 0.0.2"; "outcome: $o"
+          if ((Installed-Version) -ne "0.0.2") { throw "after the update: $(Installed-Version)" }
+          if (-not (Test-Path (Join-Path $updates "installed\Znimok-0.0.2-windows-x64.msi"))) { throw "0.0.2 not kept for a way back" }
+
+          # 2) 0.0.3: the "app" confirms another version → no start signal → back to 0.0.2.
+          Remove-Item (Join-Path $updates "last-outcome.txt")
+          Copy-Item upd/Znimok-0.0.3-windows-x64.msi $updates
+          & $cli update install --msi (Join-Path $updates "Znimok-0.0.3-windows-x64.msi") --version 0.0.3 `
+            --app $cli --app-arg update --app-arg mark-started --app-arg 9.9.9
+          $o = Wait-Outcome "did not start"; "outcome: $o"
+          if ((Installed-Version) -ne "0.0.2") { throw "after the way back: $(Installed-Version)" }
+
+          # 3) An installer outside the updates folder is refused.
+          & $cli update install --msi (Resolve-Path upd/Znimok-0.0.3-windows-x64.msi).Path --version 0.0.3 --as-runner
+          if ($LASTEXITCODE -eq 0) { throw "an installer outside the updates folder was accepted" }
+
+          $p = Start-Process msiexec -ArgumentList "/x `"$((Resolve-Path upd/Znimok-0.0.2-windows-x64.msi).Path)`" /qn" -Wait -PassThru
+          "update: 0.0.1 → 0.0.2 installed; 0.0.3 did not start → 0.0.2 back; foreign path refused"
+          # The refused install above left exit code 3; the step itself succeeded.
+          $global:LASTEXITCODE = 0
       - name: winget manifest (ZK-81) is valid
         shell: pwsh
         run: |

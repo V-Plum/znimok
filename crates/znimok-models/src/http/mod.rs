@@ -47,6 +47,18 @@ pub trait Transport: Send + Sync {
         body: &[u8],
         timeout: Duration,
     ) -> Result<Response, HttpError>;
+
+    /// GET `url` with extra `headers`; the body as bytes (a release's files, ZK-122). Refuses a
+    /// body larger than `max_bytes`.
+    fn get(
+        &self,
+        _url: &str,
+        _headers: &[(&str, &str)],
+        _timeout: Duration,
+        _max_bytes: usize,
+    ) -> Result<Response, HttpError> {
+        Err(HttpError::Unsupported)
+    }
 }
 
 /// The OS transport.

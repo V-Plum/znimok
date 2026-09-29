@@ -1,0 +1,2 @@
+# Signed test data: the bytes must not change with the platform line endings (ZK-122).
+crates/znimok-update/tests/fixtures/** -text

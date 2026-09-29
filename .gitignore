@@ -14,6 +14,8 @@ desktop.ini
 
 # Local secrets and signing material never belong here
 *.pem
+# …except the committed public keys that verify releases (ZK-111, ZK-122).
+!keys/*.pub.pem
 *.p12
 *.pfx
 .env

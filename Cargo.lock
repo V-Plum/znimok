@@ -6767,8 +6767,10 @@ dependencies = [
  "znimok-format",
  "znimok-html",
  "znimok-i18n",
+ "znimok-models",
  "znimok-render",
  "znimok-settings",
+ "znimok-update",
 ]
 
 [[package]]
@@ -6994,6 +6996,17 @@ dependencies = [
  "windows-core",
  "znimok-core",
  "znimok-format",
+]
+
+[[package]]
+name = "znimok-update"
+version = "0.0.0"
+dependencies = [
+ "base64",
+ "serde",
+ "serde_json",
+ "windows",
+ "znimok-models",
 ]
 
 [[package]]
