@@ -19,14 +19,14 @@ fn explorer_shows_the_stored_thumbnail() {
         eprintln!("skipped: registers a shell extension; runs on CI or with ZNIMOK_LIVE_SHELL=1");
         return;
     }
+    // `cargo test` leaves the cdylib in target/<profile>/deps; `cargo build` in target/<profile>.
     let exe = std::env::current_exe().unwrap();
-    let dll = exe
-        .parent()
-        .unwrap()
-        .parent()
-        .unwrap()
-        .join("znimok_thumbnail.dll");
-    assert!(dll.exists(), "{}", dll.display());
+    let deps = exe.parent().unwrap();
+    let dll = [deps, deps.parent().unwrap()]
+        .iter()
+        .map(|d| d.join("znimok_thumbnail.dll"))
+        .find(|p| p.exists())
+        .unwrap_or_else(|| panic!("znimok_thumbnail.dll not built next to {}", exe.display()));
     znimok_thumbnail::register(&dll.display().to_string(), r"Software\Classes").unwrap();
     // SAFETY: documented broadcast.
     unsafe { SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, None, None) };
