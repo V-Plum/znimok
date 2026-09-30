@@ -45,6 +45,8 @@ export struct CardData {
     meta: string,
     thumb: image,
     path: string,
+    // Picked with Shift / Ctrl (ZK-176).
+    selected: bool,
 }
 
 component Icon inherits Path {
@@ -982,21 +984,32 @@ component CardHover inherits Rectangle {
 
 component CardView inherits Rectangle {
     in property <CardData> data;
+    // A card of the library's trash (ZK-175): Restore and Destroy instead of Rename, Show and
+    // Trash, and a click never opens it.
+    in property <bool> in-trash;
     callback open;
+    // ZK-176: 0 a plain click in the trash (just this card), 1 Ctrl / ⌘ (one more or one less),
+    // 2 Shift (a range from the last clicked card).
+    callback pick(int);
     callback rename(string);
     // true = Shift held: delete for good instead of the trash.
     callback trash(bool);
     callback reveal();
+    callback restore();
+    callback destroy();
     property <bool> renaming;
+    // ZK-174: the card stays under the pointer while the pointer is on one of its buttons
+    // (the buttons take the hover from the card's own area, the card must not "jump").
+    property <bool> hot: ta.has-hover || rb.hover || fb.hover || tb.hover || sb.hover || db.hover;
     border-radius: 12px;
     background: Theme.panel;
-    border-width: ta.has-hover ? 1.5px : 0;
+    border-width: root.data.selected ? 2.5px : (root.hot ? 1.5px : 0);
     border-color: Theme.accent;
     // Lifts a little under the pointer, dips when pressed.
     transform-origin: { x: self.width / 2, y: self.height / 2 };
-    transform-scale: ta.pressed ? 0.98 : (ta.has-hover ? 1.02 : 1.0);
+    transform-scale: ta.pressed ? 0.98 : (root.hot ? 1.02 : 1.0);
     animate transform-scale { duration: 180ms; easing: cubic-bezier(0.2, 0.8, 0.2, 1); }
-    drop-shadow-blur: ta.has-hover ? 18px : 0px;
+    drop-shadow-blur: root.hot ? 18px : 0px;
     drop-shadow-color: #00000066;
     animate drop-shadow-blur { duration: 180ms; easing: ease-out; }
     Rectangle {
@@ -1035,7 +1048,28 @@ component CardView inherits Rectangle {
     }
     ta := TouchArea {
         mouse-cursor: MouseCursor.pointer;
-        clicked => { if (!root.renaming) { root.open(); } }
+        // The modifiers of the press decide what the click does.
+        property <int> mode;
+        pointer-event(e) => {
+            if (e.kind == PointerEventKind.down) {
+                self.mode = e.modifiers.shift ? 2 : (e.modifiers.control ? 1 : 0);
+            }
+        }
+        clicked => {
+            if (!root.renaming) {
+                if (self.mode == 0 && !root.in-trash) { root.open(); } else { root.pick(self.mode); }
+            }
+        }
+    }
+    // Picked: a tick on the picture's corner.
+    if root.data.selected: Rectangle {
+        x: 14px;
+        y: 14px;
+        width: 22px;
+        height: 22px;
+        border-radius: 11px;
+        background: Theme.accent;
+        Icon { width: 14px; height: 14px; d: "M5 12.5 l4.5 4.5 L19 7"; tint: #FFFFFF; }
     }
     // Inline rename: Enter keeps the name, Esc or leaving the field drops it.
     if root.renaming: Rectangle {
@@ -1070,11 +1104,23 @@ component CardView inherits Rectangle {
         x: parent.width - self.preferred-width - 14px;
         y: 14px;
         spacing: 6px;
-        opacity: ta.has-hover || rb.hover || fb.hover || tb.hover ? 1 : 0;
+        visible: !root.in-trash;
+        opacity: root.hot ? 1 : 0;
         animate opacity { duration: 140ms; }
         rb := CardHover { icon: "M15.5 4.5 a2.1 2.1 0 0 1 3 3 L8 18 l-4 1 1 -4 z"; tip: @tr("common-rename" => "Rename"); clicked => { root.renaming = true; } }
         fb := CardHover { icon: "M3 7 a2 2 0 0 1 2 -2 h4 l2 2 h8 a2 2 0 0 1 2 2 v8 a2 2 0 0 1 -2 2 H5 a2 2 0 0 1 -2 -2 z"; tip: @tr("lib-show-in-folder" => "Show in folder"); clicked => { root.reveal(); } }
         tb := CardHover { icon: "M4 7 h16 M10 11 v6 M14 11 v6 M6 7 l1 12 a2 2 0 0 0 2 2 h6 a2 2 0 0 0 2 -2 l1 -12 M9 7 V4 h6 v3"; tip: @tr("lib-trash-long" => "Move to trash") + " · Shift — " + @tr("lib-delete-forever" => "delete for good"); danger: true; clicked => { root.trash(self.with-shift); } }
+    }
+    // In the trash: back to the library, or away for good (after one question).
+    HorizontalLayout {
+        x: parent.width - self.preferred-width - 14px;
+        y: 14px;
+        spacing: 6px;
+        visible: root.in-trash;
+        opacity: root.hot ? 1 : 0;
+        animate opacity { duration: 140ms; }
+        sb := CardHover { icon: "M4 12 a8 8 0 1 0 2.3 -5.6 M4 4 v4 h4"; tip: @tr("trash-restore" => "Restore"); clicked => { root.restore(); } }
+        db := CardHover { icon: "M4 7 h16 M10 11 v6 M14 11 v6 M6 7 l1 12 a2 2 0 0 0 2 2 h6 a2 2 0 0 0 2 -2 l1 -12 M9 7 V4 h6 v3"; tip: @tr("trash-destroy" => "Destroy"); danger: true; clicked => { root.destroy(); } }
     }
 }
 
@@ -1614,6 +1660,10 @@ export component AppWindow inherits Window {
     // ---- state shared with Rust
     in-out property <int> page: 0; // 0 library, 1 editor
     in property <[CardData]> cards;
+    // The library page shows the trash (ZK-175); documents in it; cards picked (ZK-176).
+    in property <bool> trash-view;
+    in property <int> trash-count;
+    in property <int> picked-count;
     in property <string> library-dir;
     in property <bool> capture-available: true;
     in property <string> capture-key: "Ctrl+Shift+4";
@@ -1817,6 +1867,11 @@ export component AppWindow inherits Window {
     callback card-trash(string, bool);
     callback card-rename(string, string);
     callback card-reveal(string);
+    // ZK-176: a card clicked with Ctrl / ⌘ (1) or Shift (2), or plainly in the trash (0).
+    callback card-click(string, int);
+    // ZK-175/176: view-library, view-trash, pick-all, pick-none, picked-trash, picked-restore,
+    // picked-destroy, trash-empty; restore / destroy with the card's path.
+    callback lib-action(string, string);
     in property <string> toast-action;
     callback toast-action-clicked();
     // Settings page (ZK-56): page 2 of the window.
@@ -1853,6 +1908,7 @@ export component AppWindow inherits Window {
     in property <int> pref-lang;
     in property <bool> pref-ret-size;
     in-out property <string> pref-ret-count;
+    in-out property <string> pref-trash-days;
     in-out property <string> pref-ret-mb;
     in property <string> pref-lib-dir;
     in property <string> pref-file;
@@ -1894,6 +1950,19 @@ export component AppWindow inherits Window {
                     root.open-file();
                     return accept;
                 }
+                // ZK-176: all the cards shown, none, the picked ones away.
+                if (e.modifiers.control && (e.text == "a" || e.text == "A" || e.text == "ф" || e.text == "Ф")) {
+                    root.lib-action("pick-all", "");
+                    return accept;
+                }
+                if (e.text == Key.Escape && root.picked-count > 0) {
+                    root.lib-action("pick-none", "");
+                    return accept;
+                }
+                if ((e.text == Key.Delete || e.text == Key.Backspace) && root.picked-count > 0) {
+                    root.lib-action(root.trash-view ? "picked-destroy" : "picked-trash", "");
+                    return accept;
+                }
                 return reject;
             }
             VerticalLayout {
@@ -1919,7 +1988,20 @@ export component AppWindow inherits Window {
                             width: 26px; height: 26px;
                             source: @image-url("../icons/app-64.png");
                         }
-                        Text { text: @tr("lib-title" => "Library"); color: Theme.text; font-size: 15px; font-weight: 700; vertical-alignment: center; }
+                        // The library or its trash (ZK-175).
+                        Rectangle {
+                            y: (parent.height - self.height) / 2;
+                            width: 230px;
+                            height: 32px;
+                            border-radius: 9px;
+                            background: Theme.elevated;
+                            HorizontalLayout {
+                                padding: 2px;
+                                spacing: 2px;
+                                SegOption { text: @tr("lib-title" => "Library"); on: !root.trash-view; clicked => { root.lib-action("view-library", ""); } }
+                                SegOption { text: root.trash-count > 0 ? @tr("lib-trash-tab" => "Trash") + " · " + root.trash-count : @tr("lib-trash-tab" => "Trash"); on: root.trash-view; clicked => { root.lib-action("view-trash", ""); } }
+                            }
+                        }
                         Rectangle {
                             width: 360px;
                             LineEdit {
@@ -1930,7 +2012,14 @@ export component AppWindow inherits Window {
                             }
                         }
                         Rectangle { horizontal-stretch: 1; }
-                        TextButton {
+                        if root.trash-view: TextButton {
+                            y: (parent.height - self.height) / 2;
+                            text: @tr("trash-destroy-all" => "Destroy all");
+                            icon: "M4 7 h16 M10 11 v6 M14 11 v6 M6 7 l1 12 a2 2 0 0 0 2 2 h6 a2 2 0 0 0 2 -2 l1 -12 M9 7 V4 h6 v3";
+                            enabled: root.cards.length > 0;
+                            clicked => { root.lib-action("trash-empty", ""); }
+                        }
+                        if !root.trash-view: TextButton {
                             y: (parent.height - self.height) / 2;
                             text: @tr("lib-new-shot" => "New screenshot");
                             icon: "M12 5 v14 M5 12 h14";
@@ -1938,7 +2027,7 @@ export component AppWindow inherits Window {
                             enabled: root.capture-available;
                             clicked => { root.new-shot(); }
                         }
-                        TextButton {
+                        if !root.trash-view: TextButton {
                             y: (parent.height - self.height) / 2;
                             text: @tr("open-file" => "File…");
                             icon: "M3 7 a2 2 0 0 1 2 -2 h4 l2 2 h8 a2 2 0 0 1 2 2 v9 a2 2 0 0 1 -2 2 H5 a2 2 0 0 1 -2 -2 z";
@@ -1959,7 +2048,13 @@ export component AppWindow inherits Window {
                     property <int> cols: max(1, floor((self.width - 32px + gap) / (240px + gap)));
                     property <length> cw: (self.width - 32px - (cols - 1) * gap) / cols;
                     property <length> ch: cw * 0.62 + 56px;
-                    if root.cards.length == 0: VerticalLayout {
+                    if root.cards.length == 0 && root.trash-view: VerticalLayout {
+                        alignment: center;
+                        spacing: 8px;
+                        Text { text: @tr("trash-empty-title" => "The trash is empty"); color: Theme.text; font-size: 18px; font-weight: 700; horizontal-alignment: center; }
+                        Text { text: @tr("trash-empty-body" => "Deleted documents stay here for {0} days, then go for good. The term is in Settings → Library.", root.pref-trash-days); color: Theme.text2; horizontal-alignment: center; wrap: word-wrap; }
+                    }
+                    if root.cards.length == 0 && !root.trash-view: VerticalLayout {
                         alignment: center;
                         spacing: 8px;
                         Text { text: @tr("lib-empty-title" => "Your screenshots will appear here"); color: Theme.text; font-size: 18px; font-weight: 700; horizontal-alignment: center; }
@@ -1993,10 +2088,37 @@ export component AppWindow inherits Window {
                             width: grid.cw;
                             height: grid.ch;
                             data: card;
+                            in-trash: root.trash-view;
                             open => { root.open-card(card.path); }
+                            pick(m) => { root.card-click(card.path, m); }
                             rename(name) => { root.card-rename(card.path, name); }
                             trash(forever) => { root.card-trash(card.path, forever); }
                             reveal => { root.card-reveal(card.path); }
+                            restore => { root.lib-action("restore", card.path); }
+                            destroy => { root.lib-action("destroy", card.path); }
+                        }
+                    }
+                    // Cards picked (ZK-176): how many, and what to do with them.
+                    if root.picked-count > 0: Rectangle {
+                        x: (parent.width - self.width) / 2;
+                        y: parent.height - self.height - 16px;
+                        width: pick-bar.preferred-width;
+                        height: 48px;
+                        border-radius: 12px;
+                        background: Theme.panel;
+                        border-width: 1px;
+                        border-color: Theme.line;
+                        drop-shadow-blur: 18px;
+                        drop-shadow-color: #00000060;
+                        pick-bar := HorizontalLayout {
+                            padding: 8px;
+                            padding-left: 16px;
+                            spacing: 8px;
+                            Text { text: @tr("lib-picked" => "Selected: {0}", root.picked-count); color: Theme.text; font-size: 13px; font-weight: 600; vertical-alignment: center; }
+                            if !root.trash-view: TextButton { text: @tr("lib-trash-long" => "Move to trash"); clicked => { root.lib-action("picked-trash", ""); } }
+                            if root.trash-view: TextButton { text: @tr("trash-restore" => "Restore"); clicked => { root.lib-action("picked-restore", ""); } }
+                            if root.trash-view: TextButton { text: @tr("trash-destroy" => "Destroy"); clicked => { root.lib-action("picked-destroy", ""); } }
+                            IconButton { icon: "M6 6 L18 18 M18 6 L6 18"; label: @tr("lib-pick-none" => "Clear selection"); tip: self.label + "  Esc"; clicked => { root.lib-action("pick-none", ""); } }
                         }
                     }
                 }
@@ -2379,6 +2501,13 @@ export component AppWindow inherits Window {
                                     Text { text: root.pref-ret-size ? "MB" : ""; color: Theme.text3; font-size: 12px; vertical-alignment: center; width: 24px; }
                                 }
                                 Text { text: @tr("libset-oldest-trash" => "The oldest go to the trash, not away for good"); color: Theme.text3; font-size: 11px; wrap: word-wrap; }
+                                Rectangle { height: 1px; background: Theme.line; }
+                                // ZK-175: how long the trash keeps what was deleted.
+                                HorizontalLayout {
+                                    spacing: 8px;
+                                    Text { text: @tr("libset-trash-days" => "Keep deleted documents in the trash, days"); color: Theme.text2; font-size: 12px; vertical-alignment: center; horizontal-stretch: 1; wrap: word-wrap; }
+                                    NumField { width: 110px; label: ""; value <=> root.pref-trash-days; committed(v) => { root.setting("trash-days", 0); } }
+                                }
                             }
                             // ---- Sharing
                             if root.settings-page == 3: VerticalLayout {

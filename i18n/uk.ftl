@@ -4401,3 +4401,99 @@ dev-reset = Скинути всі налаштування
 # @kind: button
 # @max: 60
 dev-done = Готово
+
+## Library trash and picking cards (ZK-175, ZK-176)
+
+# @where: Library header: the switch to the library's trash
+# @kind: tab
+# @max: 16
+lib-trash-tab = Кошик
+
+# @where: Library → Trash header: delete everything in the trash for good
+# @kind: button
+# @max: 24
+trash-destroy-all = Знищити все
+
+# @where: Library → Trash: card button and the picked bar; back into the library
+# @kind: button
+# @max: 16
+trash-restore = Відновити
+
+# @where: Library → Trash: card button, the picked bar and the question's button; delete for good
+# @kind: button
+# @max: 16
+trash-destroy = Знищити
+
+# @where: Library → Trash, nothing in it
+# @kind: title
+# @max: 40
+trash-empty-title = Кошик порожній
+
+# @where: Library → Trash, nothing in it; $days is the setting
+# @kind: body
+# @max: 160
+trash-empty-body = Видалені документи лежать тут { $days } дн., потім зникають назавжди. Термін — у Налаштуваннях → Бібліотека.
+
+# @where: Library: the bar over picked cards; $count cards
+# @kind: label
+# @max: 24
+lib-picked = Вибрано: { $count }
+
+# @where: Library: the bar over picked cards, the close button
+# @kind: tooltip
+# @max: 32
+lib-pick-none = Зняти вибір
+
+# @where: Settings → Library: the days a deleted document stays in the trash
+# @kind: label
+# @max: 60
+libset-trash-days = Зберігати видалені документи в кошику, днів
+
+# @where: Question before deleting from the trash for good
+# @kind: title
+# @max: 40
+trash-destroy-title = Знищити назавжди?
+
+# @where: Toast after several documents went to the trash, with Undo
+# @kind: toast
+# @max: 48
+lib-trashed-many-toast = 
+    { $count ->
+        [one] { $count } документ переміщено в кошик
+        [few] { $count } документи переміщено в кошик
+        [many] { $count } документів переміщено в кошик
+       *[other] { $count } документи переміщено в кошик
+    }
+
+# @where: Toast after documents came back from the trash
+# @kind: toast
+# @max: 48
+trash-restored-toast = 
+    { $count ->
+        [one] Відновлено { $count } документ
+        [few] Відновлено { $count } документи
+        [many] Відновлено { $count } документів
+       *[other] Відновлено { $count } документи
+    }
+
+# @where: Body of the question before deleting from the trash; $count documents
+# @kind: body
+# @max: 160
+trash-destroy-body = 
+    { $count ->
+        [one] { $count } документ буде видалено назавжди. Скасувати це неможливо.
+        [few] { $count } документи буде видалено назавжди. Скасувати це неможливо.
+        [many] { $count } документів буде видалено назавжди. Скасувати це неможливо.
+       *[other] { $count } документи буде видалено назавжди. Скасувати це неможливо.
+    }
+
+# @where: Library → Trash: a card's line; $date when it went in, $days until it goes for good
+# @kind: label
+# @max: 48
+trash-card-meta = 
+    { $days ->
+        [one] видалено { $date } · зникне за { $days } день
+        [few] видалено { $date } · зникне за { $days } дні
+        [many] видалено { $date } · зникне за { $days } днів
+       *[other] видалено { $date } · зникне за { $days } дні
+    }

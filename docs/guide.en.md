@@ -155,8 +155,17 @@ window's close button just closes it. The window's title is the document's name.
 
 Every shot saves itself to the library (autosave can be turned off — then Ctrl+S and a question on
 closing). Cards show thumbnails; search looks at the name, description and tags. Hovering a card
-offers rename, show in folder, to the trash (with "Undo"; the trash empties itself after 30 days).
-Shift+trash deletes for good after one question.
+offers rename, show in folder, to the trash (with "Undo"). Shift+trash deletes for good after one
+question.
+
+**Several cards.** Ctrl+click (⌘ on a Mac) adds or removes a card, Shift+click takes everything from
+the last picked one, Ctrl+A all the cards shown, Esc clears the pick. A bar "Selected: N" shows at the
+bottom with "Move to trash" (or Delete). A plain click still opens the document.
+
+**Trash.** The "Library / Trash" switch in the header. In the trash a card has "Restore" and
+"Destroy", the header "Destroy all" (after one question); picking several cards works the same.
+A document cannot be opened straight from the trash — restore it first. Deleted documents stay in
+the trash for 7 days (Settings → Library), then go for good.
 
 The library folder is the source of truth: `%LOCALAPPDATA%\Znimok\Library` on Windows,
 `~/Library/Application Support/Znimok/Library` on macOS, or any other in the settings. It can live

@@ -4369,3 +4369,91 @@ dev-reset = Reset all settings
 # @kind: button
 # @max: 60
 dev-done = Done
+
+## Library trash and picking cards (ZK-175, ZK-176)
+
+# @where: Library header: the switch to the library's trash
+# @kind: tab
+# @max: 16
+lib-trash-tab = Trash
+
+# @where: Library → Trash header: delete everything in the trash for good
+# @kind: button
+# @max: 24
+trash-destroy-all = Destroy all
+
+# @where: Library → Trash: card button and the picked bar; back into the library
+# @kind: button
+# @max: 16
+trash-restore = Restore
+
+# @where: Library → Trash: card button, the picked bar and the question's button; delete for good
+# @kind: button
+# @max: 16
+trash-destroy = Destroy
+
+# @where: Library → Trash, nothing in it
+# @kind: title
+# @max: 40
+trash-empty-title = The trash is empty
+
+# @where: Library → Trash, nothing in it; $days is the setting
+# @kind: body
+# @max: 160
+trash-empty-body = Deleted documents stay here for { $days } days, then go for good. The term is in Settings → Library.
+
+# @where: Library: the bar over picked cards; $count cards
+# @kind: label
+# @max: 24
+lib-picked = Selected: { $count }
+
+# @where: Library: the bar over picked cards, the close button
+# @kind: tooltip
+# @max: 32
+lib-pick-none = Clear selection
+
+# @where: Settings → Library: the days a deleted document stays in the trash
+# @kind: label
+# @max: 60
+libset-trash-days = Keep deleted documents in the trash, days
+
+# @where: Question before deleting from the trash for good
+# @kind: title
+# @max: 40
+trash-destroy-title = Destroy for good?
+
+# @where: Toast after several documents went to the trash, with Undo
+# @kind: toast
+# @max: 48
+lib-trashed-many-toast = 
+    { $count ->
+        [one] { $count } document moved to the trash
+       *[other] { $count } documents moved to the trash
+    }
+
+# @where: Toast after documents came back from the trash
+# @kind: toast
+# @max: 48
+trash-restored-toast = 
+    { $count ->
+        [one] { $count } document restored
+       *[other] { $count } documents restored
+    }
+
+# @where: Body of the question before deleting from the trash; $count documents
+# @kind: body
+# @max: 160
+trash-destroy-body = 
+    { $count ->
+        [one] { $count } document will be deleted for good. This cannot be undone.
+       *[other] { $count } documents will be deleted for good. This cannot be undone.
+    }
+
+# @where: Library → Trash: a card's line; $date when it went in, $days until it goes for good
+# @kind: label
+# @max: 48
+trash-card-meta = 
+    { $days ->
+        [one] deleted { $date } · goes in { $days } day
+       *[other] deleted { $date } · goes in { $days } days
+    }

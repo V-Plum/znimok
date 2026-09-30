@@ -863,10 +863,11 @@ fn wire(ui: &AppWindow, app: &Shared) {
     {
         let app = app.clone();
         let weak = ui.as_weak();
+        // A plain click: the library opens the document; nothing opens from the trash (ZK-175).
         ui.on_open_card(move |path| {
             let Some(ui) = weak.upgrade() else { return };
             app.borrow_mut()
-                .open_path(&ui, std::path::Path::new(path.as_str()));
+                .card_click(&ui, std::path::Path::new(path.as_str()), 0);
         });
     }
     {
@@ -1174,6 +1175,13 @@ fn wire(ui: &AppWindow, app: &Shared) {
             );
         });
     }
+    // ZK-175/176: picking cards, the trash and its actions.
+    on!(ui, app, on_card_click, |a, w, path, mode| {
+        a.card_click(&w, std::path::Path::new(path.as_str()), mode);
+    });
+    on!(ui, app, on_lib_action, |a, w, what, path| {
+        a.lib_action(&w, &what, std::path::Path::new(path.as_str()));
+    });
     on!(ui, app, on_card_rename, |a, w, path, name| {
         a.lib_rename(&w, std::path::Path::new(path.as_str()), &name);
     });

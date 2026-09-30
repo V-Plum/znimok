@@ -320,6 +320,8 @@ pub struct Library {
     pub retention: Retention,
     /// Size limit for videos, MB (separate from screenshots).
     pub video_limit_mb: u64,
+    /// Days a deleted document stays in the library's trash (ZK-175).
+    pub trash_days: u32,
 }
 
 impl Default for Library {
@@ -329,6 +331,7 @@ impl Default for Library {
             filter: LibraryFilter::All,
             retention: Retention::default(),
             video_limit_mb: 5120,
+            trash_days: 7,
         }
     }
 }
@@ -680,6 +683,10 @@ impl Settings {
         fix(
             "library.video_limit_mb",
             clamp(&mut self.library.video_limit_mb, 100, 10_000_000),
+        );
+        fix(
+            "library.trash_days",
+            clamp(&mut self.library.trash_days, 1, 3650),
         );
 
         let fps = if self.video.fps >= 45 { 60 } else { 30 };

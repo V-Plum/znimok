@@ -105,12 +105,28 @@ pub fn read_entry(path: &Path) -> Option<Entry> {
 }
 
 /// The library's own trash (ZK-55): a hidden folder inside it, so a deleted screenshot can be
-/// brought back with one click and follows the library to another disk; emptied after 30 days.
+/// brought back with one click and follows the library to another disk; emptied after the days
+/// set in the settings (ZK-175, 7 by default).
 pub fn trash_dir(lib: &Path) -> PathBuf {
     lib.join(".trash")
 }
 
-pub const TRASH_DAYS: u64 = 30;
+/// Documents in the trash now.
+pub fn trash_count(lib: &Path) -> usize {
+    std::fs::read_dir(trash_dir(lib))
+        .map(|rd| {
+            rd.flatten()
+                .filter(|e| e.metadata().is_ok_and(|m| m.is_file()))
+                .count()
+        })
+        .unwrap_or(0)
+}
+
+/// When a trashed document went in (its modification time is set then), ms since the epoch.
+pub fn trashed_at_ms(p: &Path) -> Option<i64> {
+    let t = std::fs::metadata(p).ok()?.modified().ok()?;
+    Some(t.duration_since(std::time::UNIX_EPOCH).ok()?.as_millis() as i64)
+}
 
 /// Moves a document into the trash; returns where it went.
 pub fn move_to_trash(lib: &Path, file: &Path) -> std::io::Result<PathBuf> {
@@ -127,7 +143,7 @@ pub fn move_to_trash(lib: &Path, file: &Path) -> std::io::Result<PathBuf> {
         n += 1;
     }
     std::fs::rename(file, &to)?;
-    // The time it went in, for the 30 days.
+    // The time it went in, for the days it is kept.
     let _ = std::fs::File::options()
         .write(true)
         .open(&to)
@@ -136,7 +152,7 @@ pub fn move_to_trash(lib: &Path, file: &Path) -> std::io::Result<PathBuf> {
 }
 
 /// Brings a trashed document back to where it was (or next to it, if that name is taken).
-pub fn restore(trashed: &Path, original: &Path) -> std::io::Result<()> {
+pub fn restore(trashed: &Path, original: &Path) -> std::io::Result<PathBuf> {
     let mut to = original.to_path_buf();
     let mut n = 1;
     while to.exists() {
@@ -144,15 +160,21 @@ pub fn restore(trashed: &Path, original: &Path) -> std::io::Result<()> {
         to = original.with_file_name(format!("{stem} ({n}).znimok"));
         n += 1;
     }
-    std::fs::rename(trashed, to)
+    std::fs::rename(trashed, &to)?;
+    Ok(to)
 }
 
-/// Deletes for good what has been in the trash longer than [`TRASH_DAYS`].
-pub fn purge_trash(lib: &Path) {
+/// From the trash's page (ZK-175): back into the library folder, under its own file name.
+pub fn restore_to_library(lib: &Path, trashed: &Path) -> std::io::Result<PathBuf> {
+    restore(trashed, &lib.join(trashed.file_name().unwrap_or_default()))
+}
+
+/// Deletes for good what has been in the trash longer than `days` (the settings, ZK-175).
+pub fn purge_trash(lib: &Path, days: u64) {
     let Ok(rd) = std::fs::read_dir(trash_dir(lib)) else {
         return;
     };
-    let limit = std::time::Duration::from_secs(TRASH_DAYS * 24 * 3600);
+    let limit = std::time::Duration::from_secs(days.max(1) * 24 * 3600);
     for e in rd.flatten() {
         let old = e
             .metadata()

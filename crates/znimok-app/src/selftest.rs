@@ -2040,6 +2040,74 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
                 ),
             );
         }
+        // ZK-176: picking cards with Ctrl / Shift; ZK-175: the picked ones to the trash, the
+        // trash page (a click picks, nothing opens), Restore, Destroy all after one question.
+        if let Some(c) = slint::Model::row_data(&ui.get_cards(), 0) {
+            let src = std::path::PathBuf::from(c.path.as_str());
+            let lib = src.parent().map(|p| p.to_path_buf()).unwrap_or_default();
+            let (pa, pb) = (
+                lib.join("Znimok-selftest-pick-a.znimok"),
+                lib.join("Znimok-selftest-pick-b.znimok"),
+            );
+            let _ = std::fs::copy(&src, &pa);
+            let _ = std::fs::copy(&src, &pb);
+            app.borrow_mut().lib_poll(ui, true);
+            let s_of = |p: &std::path::Path| slint::SharedString::from(p.to_string_lossy().as_ref());
+            let marked = |ui: &AppWindow| {
+                (0..slint::Model::row_count(&ui.get_cards()))
+                    .filter(|i| slint::Model::row_data(&ui.get_cards(), *i).is_some_and(|c| c.selected))
+                    .count()
+            };
+            ui.invoke_card_click(s_of(&pa), 1);
+            ui.invoke_card_click(s_of(&pb), 2);
+            let range = ui.get_picked_count();
+            ui.invoke_lib_action("pick-none".into(), "".into());
+            ui.invoke_card_click(s_of(&pa), 1);
+            ui.invoke_card_click(s_of(&pb), 1);
+            ui.invoke_card_click(s_of(&pb), 1);
+            let toggled = ui.get_picked_count();
+            ui.invoke_card_click(s_of(&pb), 1);
+            let picked = (ui.get_picked_count(), marked(ui));
+            ui.invoke_lib_action("picked-trash".into(), "".into());
+            let left = slint::Model::row_count(&ui.get_cards());
+            let undo = !ui.get_toast_action().is_empty();
+            ui.invoke_lib_action("view-trash".into(), "".into());
+            let in_trash = (ui.get_trash_view(), slint::Model::row_count(&ui.get_cards()), ui.get_trash_count());
+            r.snapshot(ui, "04b-trash");
+            let windows = crate::wins::editors().len();
+            let first = slint::Model::row_data(&ui.get_cards(), 0).map(|c| c.path).unwrap_or_default();
+            ui.invoke_open_card(first.clone());
+            let not_opened = crate::wins::editors().len() == windows && ui.get_picked_count() == 1;
+            ui.invoke_lib_action("restore".into(), first);
+            let after_restore = slint::Model::row_count(&ui.get_cards());
+            ui.invoke_lib_action("trash-empty".into(), "".into());
+            let asked = ui.get_dialog_open();
+            ui.invoke_dialog_answer(0);
+            let emptied = (slint::Model::row_count(&ui.get_cards()), ui.get_trash_count());
+            ui.invoke_lib_action("view-library".into(), "".into());
+            let back = (!ui.get_trash_view(), slint::Model::row_count(&ui.get_cards()));
+            let days = app.borrow().prefs().library.trash_days;
+            r.check(
+                "cards: Ctrl picks one, Shift a range; the picked go to the trash with Undo",
+                range >= 2 && toggled == 1 && picked == (2, 2) && left == 1 && undo,
+                format!("range {range} · toggled {toggled} · picked {picked:?} · left {left} · undo {undo}"),
+            );
+            r.check(
+                "trash page: two cards, a click does not open, Restore, Destroy all asks; 7 days by default",
+                in_trash == (true, 2, 2)
+                    && not_opened
+                    && after_restore == 1
+                    && asked
+                    && emptied == (0, 0)
+                    && back == (true, 2)
+                    && days == 7,
+                format!("{in_trash:?} · not opened {not_opened} · {after_restore} after restore · asked {asked} · {emptied:?} · back {back:?} · {days} days"),
+            );
+            // The one restored goes, so the library has its single card again.
+            let _ = std::fs::remove_file(&pa);
+            let _ = std::fs::remove_file(&pb);
+            app.borrow_mut().lib_poll(ui, true);
+        }
         // ZK-56: the settings page; a switch goes into settings.json at once; language live.
         ui.invoke_settings_open();
         ui.set_settings_page(2);

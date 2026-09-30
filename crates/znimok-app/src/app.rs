@@ -372,8 +372,18 @@ pub struct App {
     store: Option<std::rc::Rc<znimok_settings::Store>>,
     /// Page shown before the settings (Esc / back returns there).
     settings_from: i32,
-    /// The last document moved to the trash: (where it is now, where it was) — for "Undo".
-    undo_trash: Option<(PathBuf, PathBuf)>,
+    /// The documents last moved to the trash: (where each is now, where it was) — for "Undo".
+    undo_trash: Vec<(PathBuf, PathBuf)>,
+    /// The library window shows the library's trash (ZK-175).
+    trash_view: bool,
+    /// Cards picked with Shift / Ctrl (ZK-176), by path, and the last one clicked (the start
+    /// of a Shift range).
+    picked: Vec<PathBuf>,
+    pick_anchor: Option<PathBuf>,
+    /// The cards as shown, in order, and their model (a pick changes its mark in place, the
+    /// thumbnails are not decoded again).
+    shown: Vec<PathBuf>,
+    cards_model: std::rc::Rc<VecModel<CardData>>,
     /// The library index (ZK-131) and the folder it belongs to.
     index: Option<(PathBuf, library::Index)>,
     /// Updates (ZK-142): a check or a download is running; what the last check found.
@@ -424,6 +434,13 @@ fn args(pairs: &[(&'static str, String)]) -> FluentArgs<'static> {
     for (k, v) in pairs {
         a.set(*k, v.clone());
     }
+    a
+}
+
+/// A number for a plural selector (a string would always take the default variant).
+fn count_args(name: &'static str, n: i64) -> FluentArgs<'static> {
+    let mut a = FluentArgs::new();
+    a.set(name, n);
     a
 }
 
@@ -518,7 +535,12 @@ impl App {
             last_export: false,
             store: None,
             settings_from: 0,
-            undo_trash: None,
+            undo_trash: Vec::new(),
+            trash_view: false,
+            picked: Vec::new(),
+            pick_anchor: None,
+            shown: Vec::new(),
+            cards_model: std::rc::Rc::new(VecModel::default()),
             index: None,
             update_busy: false,
             update_found: None,
@@ -562,7 +584,8 @@ impl App {
     ) {
         self.store = store;
         if self.role == crate::wins::Role::Library {
-            library::purge_trash(&self.lib_dir);
+            let days = self.prefs().library.trash_days as u64;
+            library::purge_trash(&self.lib_dir, days);
         }
         let p = self.prefs();
         self.autosave = p.editor.autosave;
@@ -1290,6 +1313,7 @@ impl App {
         ui.set_pref_ret_size(p.library.retention.by == znimok_settings::RetentionBy::Size);
         ui.set_pref_ret_count(p.library.retention.count.to_string().into());
         ui.set_pref_ret_mb(p.library.retention.size_mb.to_string().into());
+        ui.set_pref_trash_days(p.library.trash_days.to_string().into());
         ui.set_pref_lib_dir(self.lib_dir.display().to_string().into());
         ui.set_pref_file(
             self.store
@@ -1444,6 +1468,17 @@ impl App {
                 let n = ui.get_pref_ret_count().trim().parse::<u32>().unwrap_or(100);
                 self.save_prefs(ui, |p| p.library.retention.count = n);
             }
+            "trash-days" => {
+                let n = ui
+                    .get_pref_trash_days()
+                    .trim()
+                    .parse::<u32>()
+                    .unwrap_or(7)
+                    .clamp(1, 3650);
+                self.save_prefs(ui, |p| p.library.trash_days = n);
+                library::purge_trash(&self.lib_dir, n as u64);
+                self.refresh_library(ui);
+            }
             "ret-mb" => {
                 let n = ui.get_pref_ret_mb().trim().parse::<u64>().unwrap_or(500);
                 self.save_prefs(ui, |p| p.library.retention.size_mb = n);
@@ -1582,12 +1617,32 @@ impl App {
             crate::wins::library_later(|a, ui| a.refresh_library(ui));
             return;
         }
-        if self.index.as_ref().is_none_or(|(d, _)| *d != self.lib_dir) {
-            self.index = library::Index::open(&self.lib_dir).map(|i| (self.lib_dir.clone(), i));
+        if self.trash_view {
+            // The trash (ZK-175): what is over its days goes first; no index (it is small).
+            library::purge_trash(&self.lib_dir, self.prefs().library.trash_days as u64);
+            let dir = library::trash_dir(&self.lib_dir);
+            self.lib_fp = library::fingerprint(&dir);
+            self.entries = library::scan(&dir, None);
+            self.entries
+                .sort_by_key(|e| std::cmp::Reverse(library::trashed_at_ms(&e.path).unwrap_or(0)));
+        } else {
+            if self.index.as_ref().is_none_or(|(d, _)| *d != self.lib_dir) {
+                self.index = library::Index::open(&self.lib_dir).map(|i| (self.lib_dir.clone(), i));
+            }
+            self.lib_fp = library::fingerprint(&self.lib_dir);
+            self.entries = library::scan(&self.lib_dir, self.index.as_ref().map(|(_, i)| i));
         }
-        self.lib_fp = library::fingerprint(&self.lib_dir);
-        self.entries = library::scan(&self.lib_dir, self.index.as_ref().map(|(_, i)| i));
+        ui.set_trash_count(library::trash_count(&self.lib_dir) as i32);
         self.show_cards(ui);
+    }
+
+    /// The folder the library page shows now: the library, or its trash.
+    fn shown_dir(&self) -> PathBuf {
+        if self.trash_view {
+            library::trash_dir(&self.lib_dir)
+        } else {
+            self.lib_dir.clone()
+        }
     }
 
     /// The watcher (ZK-131): while the library is on screen, a look at the folder every 2 s;
@@ -1602,28 +1657,229 @@ impl App {
             return;
         }
         self.lib_polled = Some(Instant::now());
-        if library::fingerprint(&self.lib_dir) != self.lib_fp {
+        if library::fingerprint(&self.shown_dir()) != self.lib_fp {
             self.refresh_library(ui);
         }
     }
 
     /// Card: to the trash, with "Undo" in the status line (ZK-55).
     pub fn lib_trash(&mut self, ui: &AppWindow, path: &Path) {
-        // An open document: its window goes first (autosave is on, or the user saved).
-        crate::wins::close_editor_of(path);
-        match library::move_to_trash(&self.lib_dir, path) {
-            Ok(to) => {
-                self.undo_trash = Some((to, path.to_path_buf()));
-                let msg = self.tr.tr("lib-trashed-toast");
-                self.toast(ui, msg);
-                ui.set_toast_action(self.tr.tr("lib-undo").into());
+        self.trash_paths(ui, vec![path.to_path_buf()]);
+    }
+
+    /// Documents to the trash, with one "Undo" for all of them (ZK-176).
+    fn trash_paths(&mut self, ui: &AppWindow, paths: Vec<PathBuf>) {
+        self.undo_trash.clear();
+        let mut failed = None;
+        for path in &paths {
+            // An open document: its window goes first (autosave is on, or the user saved).
+            crate::wins::close_editor_of(path);
+            match library::move_to_trash(&self.lib_dir, path) {
+                Ok(to) => self.undo_trash.push((to, path.clone())),
+                Err(e) => failed = Some(e),
             }
-            Err(e) => {
+        }
+        self.clear_picks();
+        match failed {
+            Some(e) => {
                 let msg = format!("{} ({e})", self.tr.tr("lib-error-delete"));
                 self.toast(ui, msg);
             }
+            None => {
+                let n = self.undo_trash.len();
+                let msg = if n == 1 {
+                    self.tr.tr("lib-trashed-toast")
+                } else {
+                    self.tr
+                        .tr_args("lib-trashed-many-toast", &count_args("count", n as i64))
+                };
+                self.toast(ui, msg);
+                ui.set_toast_action(self.tr.tr("lib-undo").into());
+            }
         }
         self.refresh_library(ui);
+    }
+
+    /// From the trash back into the library (ZK-175).
+    fn restore_paths(&mut self, ui: &AppWindow, paths: Vec<PathBuf>) {
+        let mut ok = 0;
+        let mut failed = None;
+        for p in &paths {
+            match library::restore_to_library(&self.lib_dir, p) {
+                Ok(_) => ok += 1,
+                Err(e) => failed = Some(e),
+            }
+        }
+        self.clear_picks();
+        let msg = match failed {
+            Some(e) => format!("{} ({e})", self.tr.tr("lib-error-delete")),
+            None => self
+                .tr
+                .tr_args("trash-restored-toast", &count_args("count", ok as i64)),
+        };
+        self.toast(ui, msg);
+        self.refresh_library(ui);
+    }
+
+    /// Deleted for good, after one question (ZK-175): the trash's cards, the picked ones, or
+    /// everything in the trash.
+    fn ask_destroy(&mut self, ui: &AppWindow, paths: Vec<PathBuf>) {
+        if paths.is_empty() {
+            return;
+        }
+        let (title, body, yes, no) = (
+            self.tr.tr("trash-destroy-title"),
+            self.tr.tr_args(
+                "trash-destroy-body",
+                &count_args("count", paths.len() as i64),
+            ),
+            self.tr.tr("trash-destroy"),
+            self.tr.tr("common-cancel"),
+        );
+        let me = self.me();
+        crate::dialog::ask(
+            ui,
+            title,
+            body,
+            vec![yes, no],
+            1,
+            Some(1),
+            move |_, answer| {
+                if answer == Some(0) {
+                    me.with(|a, ui| a.destroy_paths(ui, &paths));
+                }
+            },
+        );
+    }
+
+    fn destroy_paths(&mut self, ui: &AppWindow, paths: &[PathBuf]) {
+        // Every file is removed; the last failure (if any) is what the message says.
+        let mut failed = None;
+        for p in paths {
+            if let Err(e) = std::fs::remove_file(p) {
+                failed = Some(e);
+            }
+        }
+        self.clear_picks();
+        let msg = match failed {
+            Some(e) => format!("{} ({e})", self.tr.tr("lib-error-delete")),
+            None => self.tr.tr("lib-deleted-forever-toast"),
+        };
+        ui.set_toast_action("".into());
+        self.toast(ui, msg);
+        self.refresh_library(ui);
+    }
+
+    fn clear_picks(&mut self) {
+        self.picked.clear();
+        self.pick_anchor = None;
+    }
+
+    /// A card clicked (ZK-176): `mode` 0 a plain click (the library opens the document, the
+    /// trash picks just this card — nothing opens from the trash, ZK-175), 1 Ctrl / ⌘ (one more
+    /// or one less), 2 Shift (the range from the last clicked card).
+    pub fn card_click(&mut self, ui: &AppWindow, path: &Path, mode: i32) {
+        let path = path.to_path_buf();
+        match mode {
+            1 => {
+                if let Some(i) = self.picked.iter().position(|p| *p == path) {
+                    self.picked.remove(i);
+                } else {
+                    self.picked.push(path.clone());
+                }
+                self.pick_anchor = Some(path);
+            }
+            2 => {
+                let anchor = self.pick_anchor.clone().unwrap_or_else(|| path.clone());
+                let at = |p: &PathBuf| self.shown.iter().position(|s| s == p);
+                match (at(&anchor), at(&path)) {
+                    (Some(a), Some(b)) => {
+                        self.picked = self.shown[a.min(b)..=a.max(b)].to_vec();
+                    }
+                    _ => self.picked = vec![path.clone()],
+                }
+                self.pick_anchor = Some(anchor);
+            }
+            _ if !self.trash_view => {
+                self.clear_picks();
+                self.show_picks(ui);
+                self.open_path(ui, &path);
+                return;
+            }
+            _ => {
+                self.picked = vec![path.clone()];
+                self.pick_anchor = Some(path);
+            }
+        }
+        self.show_picks(ui);
+    }
+
+    /// The library page's actions (ZK-175/176). `path` is the card's, for the card buttons.
+    pub fn lib_action(&mut self, ui: &AppWindow, what: &str, path: &Path) {
+        match what {
+            "view-library" | "view-trash" => {
+                let trash = what == "view-trash";
+                if trash != self.trash_view {
+                    self.trash_view = trash;
+                    self.clear_picks();
+                    self.refresh_library(ui);
+                }
+            }
+            "pick-all" => {
+                self.picked = self.shown.clone();
+                self.show_picks(ui);
+            }
+            "pick-none" => {
+                self.clear_picks();
+                self.show_picks(ui);
+            }
+            "picked-trash" if !self.trash_view => {
+                let v = self.picked.clone();
+                self.trash_paths(ui, v);
+            }
+            "restore" => self.restore_paths(ui, vec![path.to_path_buf()]),
+            "picked-restore" if self.trash_view => {
+                let v = self.picked.clone();
+                self.restore_paths(ui, v);
+            }
+            "destroy" => self.ask_destroy(ui, vec![path.to_path_buf()]),
+            "picked-destroy" if self.trash_view => {
+                let v = self.picked.clone();
+                self.ask_destroy(ui, v);
+            }
+            "trash-empty" => {
+                let dir = library::trash_dir(&self.lib_dir);
+                let all: Vec<PathBuf> = std::fs::read_dir(&dir)
+                    .map(|rd| {
+                        rd.flatten()
+                            .map(|e| e.path())
+                            .filter(|p| p.is_file())
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                self.ask_destroy(ui, all);
+            }
+            _ => {}
+        }
+    }
+
+    /// The pick marks on the cards and the count, in place.
+    fn show_picks(&self, ui: &AppWindow) {
+        use slint::Model;
+        let m = &self.cards_model;
+        for i in 0..m.row_count() {
+            if let Some(mut c) = m.row_data(i) {
+                let want = self
+                    .picked
+                    .iter()
+                    .any(|p| p.as_os_str() == std::ffi::OsStr::new(c.path.as_str()));
+                if c.selected != want {
+                    c.selected = want;
+                    m.set_row_data(i, c);
+                }
+            }
+        }
+        ui.set_picked_count(self.picked.len() as i32);
     }
 
     /// Shift+trash on a card (owner 29.09): the file is deleted, not moved to the trash.
@@ -1641,11 +1897,16 @@ impl App {
     /// "Undo" next to the message: the last trashed document comes back.
     pub fn toast_action(&mut self, ui: &AppWindow) {
         ui.set_toast_action("".into());
-        if let Some((trashed, original)) = self.undo_trash.take()
-            && library::restore(&trashed, &original).is_ok()
-        {
-            ui.set_toast("".into());
-            self.refresh_library(ui);
+        let undo = std::mem::take(&mut self.undo_trash);
+        if !undo.is_empty() {
+            let back = undo
+                .iter()
+                .filter(|(trashed, original)| library::restore(trashed, original).is_ok())
+                .count();
+            if back > 0 {
+                ui.set_toast("".into());
+                self.refresh_library(ui);
+            }
         }
     }
 
@@ -1730,24 +1991,56 @@ impl App {
         self.show_cards(ui);
     }
 
-    fn show_cards(&self, ui: &AppWindow) {
-        let cards: Vec<CardData> = self
+    fn show_cards(&mut self, ui: &AppWindow) {
+        let days = self.prefs().library.trash_days as i64;
+        let shown: Vec<&library::Entry> = self
             .entries
             .iter()
             .filter(|e| e.matches(&self.filter))
+            .collect();
+        let cards: Vec<CardData> = shown
+            .iter()
             .map(|e| CardData {
                 name: e.name.as_str().into(),
-                meta: e.meta_line().into(),
+                meta: if self.trash_view {
+                    self.trash_meta(e, days)
+                } else {
+                    e.meta_line()
+                }
+                .into(),
                 thumb: e
                     .thumb_png
                     .as_deref()
                     .and_then(library::thumb_image)
                     .unwrap_or_default(),
                 path: e.path.display().to_string().into(),
+                selected: self.picked.contains(&e.path),
             })
             .collect();
-        ui.set_cards(std::rc::Rc::new(VecModel::from(cards)).into());
-        ui.set_library_dir(self.lib_dir.display().to_string().into());
+        self.shown = shown.iter().map(|e| e.path.clone()).collect();
+        // Picks of cards gone (trashed, filtered out, removed from outside) go too.
+        let shown_now = &self.shown;
+        self.picked.retain(|p| shown_now.contains(p));
+        self.cards_model = std::rc::Rc::new(VecModel::from(cards));
+        ui.set_cards(self.cards_model.clone().into());
+        ui.set_trash_view(self.trash_view);
+        ui.set_picked_count(self.picked.len() as i32);
+        ui.set_library_dir(self.shown_dir().display().to_string().into());
+    }
+
+    /// A trashed card's line: when it went, and in how many days it goes for good (ZK-175).
+    fn trash_meta(&self, e: &library::Entry, days: i64) -> String {
+        let at = library::trashed_at_ms(&e.path).unwrap_or(0);
+        let when = chrono::Local
+            .timestamp_millis_opt(at)
+            .single()
+            .map(|t| t.format("%d.%m %H:%M").to_string())
+            .unwrap_or_default();
+        let left_ms = at + days * 86_400_000 - chrono::Local::now().timestamp_millis();
+        let left = (left_ms + 86_399_999).div_euclid(86_400_000).max(1);
+        let mut a = count_args("days", left);
+        a.set("date", when);
+        self.tr.tr_args("trash-card-meta", &a)
     }
 
     pub fn toast(&mut self, ui: &AppWindow, text: impl Into<SharedString>) {
@@ -1770,7 +2063,7 @@ impl App {
             self.toast_at = None;
             ui.set_toast(SharedString::new());
             ui.set_toast_action(SharedString::new());
-            self.undo_trash = None;
+            self.undo_trash.clear();
         }
     }
 
