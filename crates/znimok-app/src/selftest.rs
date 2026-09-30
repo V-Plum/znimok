@@ -3882,6 +3882,8 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
         let frame =
             znimok_win::raw::dwm_bounds(znimok_win::raw::hwnd(znimok_platform::WindowId(hwnd)));
         let display = znimok_win::raw::monitors().first().map(|m| m.info.bounds);
+        // With the system sound (ZK-89): a track of its own in the document.
+        ui.invoke_setting("rec-sound".into(), 1);
         match (frame, display) {
             (Some(frame), Some(display)) => crate::rec::start(crate::rec::Choice {
                 display,
@@ -3954,6 +3956,11 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
                     v.video.info.height,
                     v.video.info.frames,
                     v.doc.meta.source.clone(),
+                    v.video
+                        .audio
+                        .iter()
+                        .map(|t| (t.source, t.label.clone()))
+                        .collect::<Vec<_>>(),
                 )),
                 _ => None,
             });
@@ -3976,7 +3983,7 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
         r.check(
             "recording: stop leaves a video document in the library (▶ on the card)",
             doc.as_ref()
-                .is_some_and(|(w, h, n, s)| *w > 0 && *h > 0 && *n >= 20 && s == "window")
+                .is_some_and(|(w, h, n, s, _)| *w > 0 && *h > 0 && *n >= 20 && s == "window")
                 && card.as_deref().is_some_and(|m| m.starts_with('▶'))
                 && crate::pill::is_open(),
             format!(
@@ -3984,6 +3991,19 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
                 crate::pill::is_open()
             ),
         );
+        // ZK-89: the system sound is a track of the document, named after its device (where
+        // this machine has an output device at all).
+        let outputs = znimok_video_win::audio_devices(znimok_video::traits::AudioKind::System);
+        let tracks = doc.as_ref().map(|d| d.4.clone()).unwrap_or_default();
+        r.check(
+            "recording: the system sound is a track of its own, named after the device",
+            outputs.is_empty()
+                || (tracks.len() == 1
+                    && tracks[0].0 == znimok_format::video::AudioSource::System
+                    && !tracks[0].1.is_empty()),
+            format!("{tracks:?} · outputs {}", outputs.len()),
+        );
+        ui.invoke_setting("rec-sound".into(), 0);
         crate::pill::close();
         if let Some(p) = path {
             app.borrow_mut().open_path(ui, &p);

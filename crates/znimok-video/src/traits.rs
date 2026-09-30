@@ -109,6 +109,12 @@ impl std::error::Error for AudioError {}
 pub trait AudioSource: Send {
     fn kind(&self) -> AudioKind;
 
+    /// The device's name as the person sees it ("Microphone (USB Audio)"), once opened; empty
+    /// when unknown. It goes into the video document's track (ZK-89).
+    fn label(&self) -> String {
+        String::new()
+    }
+
     /// Open (or reopen after [`AudioError::DeviceLost`]) the device, asking for 48 kHz stereo
     /// float. Sources are opened BEFORE the encoder so the track is added only when there is
     /// something to record (§7 item 43).
