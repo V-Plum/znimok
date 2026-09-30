@@ -1328,6 +1328,38 @@ pub fn pixmap_to_rgba(p: &Pixmap) -> Vec<u8> {
 
 #[cfg(test)]
 mod tests {
+
+    /// ZK-94: a mark outside its time is not drawn; with the plain effects a Hide still covers
+    /// its box (a plate) where the picture is left out.
+    #[test]
+    fn marks_follow_the_frame_shown() {
+        use znimok_core::{Data, Document, HideMode, IRect, Object, Raster, Rgb, Timeline};
+        let mut d = Document::from_raster("v", Raster::solid(200, 100, Rgb::new(10, 200, 10)));
+        let id = d.objects.len();
+        d.push(Object::new(IRect::new(20, 20, 60, 40), Data::Rect));
+        let rect_id = d.objects[id].id;
+        let mut t = Timeline::whole(100);
+        t.marks.insert(rect_id, (10, 20));
+        d.timeline = Some(t);
+        let view = View::one_to_one(&d);
+        let mut r = Renderer::deterministic();
+        let mut with = Pixmap::new(1, 1);
+        let mut without = Pixmap::new(1, 1);
+        d.shown_frame = Some(15);
+        r.render(&d, view, &mut with);
+        d.shown_frame = Some(50);
+        r.render(&d, view, &mut without);
+        assert_ne!(with.data_as_u8_slice(), without.data_as_u8_slice(), "drawn on frame 15");
+        let mut plain = Document::from_raster("v", Raster::solid(200, 100, Rgb::new(10, 200, 10)));
+        plain.push(Object::new(IRect::new(20, 20, 60, 40), Data::Hide { mode: HideMode::Blur, strength: 50 }));
+        r.set_picture(false);
+        r.set_plain_effects(true);
+        let mut out = Pixmap::new(1, 1);
+        r.render(&plain, view, &mut out);
+        let px = |x: usize, y: usize| out.data_as_u8_slice()[(y * 200 + x) * 4 + 3];
+        assert_eq!(px(5, 5), 0, "the picture is left out");
+        assert!(px(50, 40) > 200, "the Hide is a plate over the video");
+    }
     use super::*;
 
     /// Renders the reference scene 1:1 and writes it next to the target dir so a human (or a

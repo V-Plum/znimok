@@ -940,6 +940,28 @@
           "format": "int64",
           "type": "integer"
         },
+        "marks": {
+          "additionalProperties": false,
+          "description": "When each mark shows (ZK-94): source frames `[a, b)` by object id. A mark without an entry\nshows all the time (the app gives a new mark three seconds from the current frame).",
+          "patternProperties": {
+            "^\\d+$": {
+              "maxItems": 2,
+              "minItems": 2,
+              "prefixItems": [
+                {
+                  "format": "int64",
+                  "type": "integer"
+                },
+                {
+                  "format": "int64",
+                  "type": "integer"
+                }
+              ],
+              "type": "array"
+            }
+          },
+          "type": "object"
+        },
         "out_point": {
           "format": "int64",
           "type": "integer"

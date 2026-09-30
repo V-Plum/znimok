@@ -954,6 +954,29 @@ impl Document {
 
 #[cfg(test)]
 mod tests {
+
+    /// ZK-94: the marks' times are part of a valid timeline, inside the video.
+    #[test]
+    fn marks_times_are_checked() {
+        let mut t = Timeline::whole(100);
+        assert!(t.is_valid());
+        t.marks.insert(1, (10, 40));
+        assert!(t.is_valid() && t.mark_live(1, 10) && !t.mark_live(1, 40) && t.mark_live(2, 99));
+        t.marks.insert(2, (40, 40));
+        assert!(!t.is_valid(), "an empty time");
+        t.marks.insert(2, (90, 101));
+        assert!(!t.is_valid(), "past the end");
+        t.marks.remove(&2);
+        let json = serde_json::to_string(&t).unwrap();
+        assert!(json.contains("marks"));
+        let back: Timeline = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, t);
+        // A timeline without marks reads as before.
+        let old: Timeline =
+            serde_json::from_str(r#"{"parts":[{"a":0,"b":100}],"in_point":0,"out_point":100}"#)
+                .unwrap();
+        assert!(old.marks.is_empty() && old.is_valid());
+    }
     use super::*;
 
     fn counter(seq: u32, group: u32, start: i32) -> Object {

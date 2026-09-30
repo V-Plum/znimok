@@ -699,3 +699,38 @@ fn devtools_flag_in_the_head() {
     assert_eq!(back, info());
     assert_eq!(video::read_vinf_flags(&mut r).unwrap(), 0);
 }
+
+/// ZK-94: the marks' times open into the document's timeline, and a save writes the timeline's
+/// times (only for marks that are there, inside the video).
+#[test]
+fn marks_times_live_in_the_documents_timeline() {
+    let (doc, v) = rich();
+    let dir = std::env::temp_dir().join(format!("znimok-vspn-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("v.znimok");
+    std::fs::write(&path, write_video(&doc, &v, &fake_mp4(5000), &WriteOptions::default())).unwrap();
+    let vd = loaded_video(open(&path).unwrap());
+    let t = vd.doc.timeline.clone().unwrap();
+    assert_eq!(t.marks.get(&doc.objects[0].id), Some(&(0, 90)));
+    assert_eq!(t.marks.get(&doc.objects[2].id), Some(&(120, 121)));
+    // The editor moves one, gives another a time, and one points at a mark that is gone.
+    let mut d2 = vd.doc.clone();
+    let mut t2 = t.clone();
+    t2.marks.insert(doc.objects[0].id, (30, 60));
+    t2.marks.insert(doc.objects[1].id, (5, 6));
+    t2.marks.insert(9999, (1, 2));
+    d2.timeline = Some(t2);
+    let part = VideoPart {
+        video: vd.video.clone(),
+        payload: vd.payload.clone(),
+        source: path.clone(),
+    };
+    save_same_kind(&path, &d2, Some(&part), &WriteOptions::default()).unwrap();
+    let back = loaded_video(open(&path).unwrap());
+    assert_eq!(back.video.mark_spans.get(&doc.objects[0].id), Some(&(30, 60)));
+    assert_eq!(back.video.mark_spans.get(&doc.objects[1].id), Some(&(5, 6)));
+    assert!(!back.video.mark_spans.contains_key(&9999));
+    assert_eq!(back.doc.timeline.unwrap().marks.get(&doc.objects[0].id), Some(&(30, 60)));
+    let _ = std::fs::remove_dir_all(&dir);
+}
