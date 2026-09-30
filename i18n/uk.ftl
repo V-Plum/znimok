@@ -4404,6 +4404,7 @@ dev-done = Готово
 
 ## Library trash and picking cards (ZK-175, ZK-176)
 
+
 # @where: Library header: the switch to the library's trash
 # @kind: tab
 # @max: 16
@@ -4457,7 +4458,7 @@ trash-destroy-title = Знищити назавжди?
 # @where: Toast after several documents went to the trash, with Undo
 # @kind: toast
 # @max: 48
-lib-trashed-many-toast = 
+lib-trashed-many-toast =
     { $count ->
         [one] { $count } документ переміщено в кошик
         [few] { $count } документи переміщено в кошик
@@ -4468,7 +4469,7 @@ lib-trashed-many-toast =
 # @where: Toast after documents came back from the trash
 # @kind: toast
 # @max: 48
-trash-restored-toast = 
+trash-restored-toast =
     { $count ->
         [one] Відновлено { $count } документ
         [few] Відновлено { $count } документи
@@ -4479,7 +4480,7 @@ trash-restored-toast =
 # @where: Body of the question before deleting from the trash; $count documents
 # @kind: body
 # @max: 160
-trash-destroy-body = 
+trash-destroy-body =
     { $count ->
         [one] { $count } документ буде видалено назавжди. Скасувати це неможливо.
         [few] { $count } документи буде видалено назавжди. Скасувати це неможливо.
@@ -4490,10 +4491,113 @@ trash-destroy-body =
 # @where: Library → Trash: a card's line; $date when it went in, $days until it goes for good
 # @kind: label
 # @max: 48
-trash-card-meta = 
+trash-card-meta =
     { $days ->
         [one] видалено { $date } · зникне за { $days } день
         [few] видалено { $date } · зникне за { $days } дні
         [many] видалено { $date } · зникне за { $days } днів
        *[other] видалено { $date } · зникне за { $days } дні
     }
+
+## Library groups, pins and keys (ZK-177, ZK-178, ZK-179)
+
+
+# @where: Library card button: pin the document
+# @kind: tooltip
+# @max: 60
+lib-pin = Закріпити — ліміт бібліотеки його не прибере
+
+# @where: Library: the bar over picked cards, pin them
+# @kind: button
+# @max: 16
+lib-pin-short = Закріпити
+
+# @where: Library: unpin (card button and the bar over picked cards)
+# @kind: button
+# @max: 16
+lib-unpin = Відкріпити
+
+# @where: Library grid: title of the pinned documents' group
+# @kind: title
+# @max: 24
+lib-group-pinned = Закріплені
+
+# @where: Library grid: group title
+# @kind: title
+# @max: 24
+lib-group-today = Сьогодні
+
+# @where: Library grid: group title
+# @kind: title
+# @max: 24
+lib-group-yesterday = Вчора
+
+# @where: Library grid: group title, earlier this week
+# @kind: title
+# @max: 24
+lib-group-week = Цього тижня
+
+# @where: Library grid: group title, earlier this month
+# @kind: title
+# @max: 24
+lib-group-month = Цього місяця
+
+# @where: Library grid: group title of an older month (the year follows when it is not this year)
+# @kind: title
+# @max: 16
+month-1 = Січень
+
+# @where: Library grid: group title of an older month (the year follows when it is not this year)
+# @kind: title
+# @max: 16
+month-2 = Лютий
+
+# @where: Library grid: group title of an older month (the year follows when it is not this year)
+# @kind: title
+# @max: 16
+month-3 = Березень
+
+# @where: Library grid: group title of an older month (the year follows when it is not this year)
+# @kind: title
+# @max: 16
+month-4 = Квітень
+
+# @where: Library grid: group title of an older month (the year follows when it is not this year)
+# @kind: title
+# @max: 16
+month-5 = Травень
+
+# @where: Library grid: group title of an older month (the year follows when it is not this year)
+# @kind: title
+# @max: 16
+month-6 = Червень
+
+# @where: Library grid: group title of an older month (the year follows when it is not this year)
+# @kind: title
+# @max: 16
+month-7 = Липень
+
+# @where: Library grid: group title of an older month (the year follows when it is not this year)
+# @kind: title
+# @max: 16
+month-8 = Серпень
+
+# @where: Library grid: group title of an older month (the year follows when it is not this year)
+# @kind: title
+# @max: 16
+month-9 = Вересень
+
+# @where: Library grid: group title of an older month (the year follows when it is not this year)
+# @kind: title
+# @max: 16
+month-10 = Жовтень
+
+# @where: Library grid: group title of an older month (the year follows when it is not this year)
+# @kind: title
+# @max: 16
+month-11 = Листопад
+
+# @where: Library grid: group title of an older month (the year follows when it is not this year)
+# @kind: title
+# @max: 16
+month-12 = Грудень

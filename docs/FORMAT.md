@@ -49,7 +49,7 @@ Written in this order. Only `SRC ` is mandatory.
 | Tag | Value | Written |
 |---|---|---|
 | `META` | 16 bytes UUID (RFC 4122 byte order); `i64` created, Unix ms UTC — the moment of capture, re-saving does not move it; `str` name; `str` source (`screen`, `window`, `region`, `clipboard`, `file`…); `str` application version (diagnostics, readers ignore it) | always |
-| `DESC` | `u8` version = 1; `str` description; `str` author; `str` copyright; `u32` n + n × `str` tags | when any is set |
+| `DESC` | `u8` version = 2; `str` description; `str` author; `str` copyright; `u32` n + n × `str` tags; `u8` flags (bit 0: pinned in the library, ZK-178) — version 1 ends after the tags, and a version-1 reader ignores the flags | when any is set |
 | `INFO` | `u32` width, `u32` height of what export produces — the **frame** (crop or whole picture), for a resized video the export size; `u32` number of marks; `u8` document kind: 0 = image, 1 = video (1.1); an unknown kind reads as an image | always |
 | `VINF` | video only, see [Video documents](#video-documents) | video |
 | `THMB` | PNG of the composed frame (marks, crop), at most 320 × 240 | when the writer has one |

@@ -33,6 +33,8 @@ pub struct Entry {
     pub thumb_png: Option<Vec<u8>>,
     /// A video document: its length (ZK-145).
     pub video_ms: Option<u64>,
+    /// Pinned (ZK-178): its own group first, never trashed by the library's limit.
+    pub pinned: bool,
 }
 
 impl Entry {
@@ -93,6 +95,7 @@ pub fn read_entry(path: &Path) -> Option<Entry> {
         created_ms,
         width: p.width,
         height: p.height,
+        pinned: p.meta.pinned,
         tags: p.meta.tags,
         description: p.meta.description,
         thumb_png: p.thumbnail_png,
@@ -403,7 +406,7 @@ fn cache_dir() -> PathBuf {
 
 // A card in the index: stamp, then length-prefixed fields (little endian). Version byte first,
 // so a future layout is simply read again from the file.
-const INDEX_VERSION: u8 = 2;
+const INDEX_VERSION: u8 = 3;
 
 fn encode(e: &Entry, st: Stamp) -> Vec<u8> {
     let mut v = vec![INDEX_VERSION];
@@ -421,6 +424,7 @@ fn encode(e: &Entry, st: Stamp) -> Vec<u8> {
     bytes(&mut v, e.tags.join("\n").as_bytes());
     bytes(&mut v, e.thumb_png.as_deref().unwrap_or(&[]));
     v.extend_from_slice(&e.video_ms.map_or(-1i64, |m| m as i64).to_le_bytes());
+    v.push(u8::from(e.pinned));
     v
 }
 
@@ -452,6 +456,7 @@ fn decode(b: &[u8], p: &Path, st: Stamp) -> Option<Entry> {
     let tags = String::from_utf8(field()?).ok()?;
     let thumb = field()?;
     let video = i64_(take(8)?);
+    let pinned = take(1)?[0] != 0;
     Some(Entry {
         path: p.to_path_buf(),
         name,
@@ -466,6 +471,7 @@ fn decode(b: &[u8], p: &Path, st: Stamp) -> Option<Entry> {
         description,
         thumb_png: (!thumb.is_empty()).then_some(thumb),
         video_ms: (video >= 0).then_some(video as u64),
+        pinned,
     })
 }
 
@@ -512,12 +518,14 @@ mod tests {
             description: "опис".into(),
             thumb_png: Some(png(4, 3)),
             video_ms: Some(12_345),
+            pinned: true,
         };
         let st = Stamp {
             mtime_ms: 5,
             size: 99,
         };
         let d = decode(&encode(&e, st), &e.path, st).expect("decodes");
+        assert!(d.pinned, "the pin survives the index");
         assert_eq!(
             (
                 d.name,
@@ -563,6 +571,7 @@ mod tests {
             description: String::new(),
             thumb_png: None,
             video_ms: None,
+            pinned: false,
         }
     }
 

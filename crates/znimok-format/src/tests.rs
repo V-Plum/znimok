@@ -12,6 +12,7 @@ fn rich_doc() -> Document {
         author: "Plum".into(),
         copyright: "".into(),
         tags: vec!["друк".into(), "крок".into()],
+        pinned: true,
     };
     doc.recipe = Recipe {
         exposure: 0.5,

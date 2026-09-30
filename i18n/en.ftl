@@ -4372,6 +4372,7 @@ dev-done = Done
 
 ## Library trash and picking cards (ZK-175, ZK-176)
 
+
 # @where: Library header: the switch to the library's trash
 # @kind: tab
 # @max: 16
@@ -4425,7 +4426,7 @@ trash-destroy-title = Destroy for good?
 # @where: Toast after several documents went to the trash, with Undo
 # @kind: toast
 # @max: 48
-lib-trashed-many-toast = 
+lib-trashed-many-toast =
     { $count ->
         [one] { $count } document moved to the trash
        *[other] { $count } documents moved to the trash
@@ -4434,7 +4435,7 @@ lib-trashed-many-toast =
 # @where: Toast after documents came back from the trash
 # @kind: toast
 # @max: 48
-trash-restored-toast = 
+trash-restored-toast =
     { $count ->
         [one] { $count } document restored
        *[other] { $count } documents restored
@@ -4443,7 +4444,7 @@ trash-restored-toast =
 # @where: Body of the question before deleting from the trash; $count documents
 # @kind: body
 # @max: 160
-trash-destroy-body = 
+trash-destroy-body =
     { $count ->
         [one] { $count } document will be deleted for good. This cannot be undone.
        *[other] { $count } documents will be deleted for good. This cannot be undone.
@@ -4452,8 +4453,111 @@ trash-destroy-body =
 # @where: Library → Trash: a card's line; $date when it went in, $days until it goes for good
 # @kind: label
 # @max: 48
-trash-card-meta = 
+trash-card-meta =
     { $days ->
         [one] deleted { $date } · goes in { $days } day
        *[other] deleted { $date } · goes in { $days } days
     }
+
+## Library groups, pins and keys (ZK-177, ZK-178, ZK-179)
+
+
+# @where: Library card button: pin the document
+# @kind: tooltip
+# @max: 60
+lib-pin = Pin — the library limit never removes it
+
+# @where: Library: the bar over picked cards, pin them
+# @kind: button
+# @max: 16
+lib-pin-short = Pin
+
+# @where: Library: unpin (card button and the bar over picked cards)
+# @kind: button
+# @max: 16
+lib-unpin = Unpin
+
+# @where: Library grid: title of the pinned documents' group
+# @kind: title
+# @max: 24
+lib-group-pinned = Pinned
+
+# @where: Library grid: group title
+# @kind: title
+# @max: 24
+lib-group-today = Today
+
+# @where: Library grid: group title
+# @kind: title
+# @max: 24
+lib-group-yesterday = Yesterday
+
+# @where: Library grid: group title, earlier this week
+# @kind: title
+# @max: 24
+lib-group-week = This week
+
+# @where: Library grid: group title, earlier this month
+# @kind: title
+# @max: 24
+lib-group-month = This month
+
+# @where: Library grid: group title of an older month (the year follows when it is not this year)
+# @kind: title
+# @max: 16
+month-1 = January
+
+# @where: Library grid: group title of an older month (the year follows when it is not this year)
+# @kind: title
+# @max: 16
+month-2 = February
+
+# @where: Library grid: group title of an older month (the year follows when it is not this year)
+# @kind: title
+# @max: 16
+month-3 = March
+
+# @where: Library grid: group title of an older month (the year follows when it is not this year)
+# @kind: title
+# @max: 16
+month-4 = April
+
+# @where: Library grid: group title of an older month (the year follows when it is not this year)
+# @kind: title
+# @max: 16
+month-5 = May
+
+# @where: Library grid: group title of an older month (the year follows when it is not this year)
+# @kind: title
+# @max: 16
+month-6 = June
+
+# @where: Library grid: group title of an older month (the year follows when it is not this year)
+# @kind: title
+# @max: 16
+month-7 = July
+
+# @where: Library grid: group title of an older month (the year follows when it is not this year)
+# @kind: title
+# @max: 16
+month-8 = August
+
+# @where: Library grid: group title of an older month (the year follows when it is not this year)
+# @kind: title
+# @max: 16
+month-9 = September
+
+# @where: Library grid: group title of an older month (the year follows when it is not this year)
+# @kind: title
+# @max: 16
+month-10 = October
+
+# @where: Library grid: group title of an older month (the year follows when it is not this year)
+# @kind: title
+# @max: 16
+month-11 = November
+
+# @where: Library grid: group title of an older month (the year follows when it is not this year)
+# @kind: title
+# @max: 16
+month-12 = December

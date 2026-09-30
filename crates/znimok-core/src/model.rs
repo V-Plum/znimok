@@ -641,6 +641,8 @@ pub struct Meta {
     pub author: String,
     pub copyright: String,
     pub tags: Vec<String>,
+    /// Pinned in the library (ZK-178): shown first, never trashed by the library's limit.
+    pub pinned: bool,
 }
 
 /// One part of a video's timeline: frames `[a, b)`; `off` = cut out (ZK-144).

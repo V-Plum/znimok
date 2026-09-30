@@ -519,6 +519,11 @@
           "default": "",
           "type": "string"
         },
+        "pinned": {
+          "default": false,
+          "description": "Pinned in the library (ZK-178): shown first, never trashed by the library's limit.",
+          "type": "boolean"
+        },
         "source": {
           "default": "",
           "description": "Where the picture came from: \"screen\", \"window\", \"region\", \"clipboard\", \"file\"…",

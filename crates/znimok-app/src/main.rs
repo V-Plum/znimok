@@ -1182,6 +1182,28 @@ fn wire(ui: &AppWindow, app: &Shared) {
     on!(ui, app, on_lib_action, |a, w, what, path| {
         a.lib_action(&w, &what, std::path::Path::new(path.as_str()));
     });
+    // ZK-177: the grid's columns; ZK-179: its keys.
+    {
+        // Slint reports new columns while laying out, which a window shown from inside the
+        // app's own code can trigger: then the app is busy — take it right after.
+        let (app, weak) = (app.clone(), ui.as_weak());
+        ui.on_lib_layout(move |cols| {
+            let Some(w) = weak.upgrade() else { return };
+            if let Ok(mut a) = app.try_borrow_mut() {
+                a.lib_layout(&w, cols);
+                return;
+            }
+            let (app, weak) = (app.clone(), weak.clone());
+            slint::Timer::single_shot(Duration::ZERO, move || {
+                if let (Some(w), Ok(mut a)) = (weak.upgrade(), app.try_borrow_mut()) {
+                    a.lib_layout(&w, cols);
+                }
+            });
+        });
+    }
+    on!(ui, app, on_lib_key, |a, w, key, shift| {
+        a.lib_key(&w, &key, shift);
+    });
     on!(ui, app, on_card_rename, |a, w, path, name| {
         a.lib_rename(&w, std::path::Path::new(path.as_str()), &name);
     });

@@ -28,7 +28,7 @@ interface. Little Helpers files are not compatible — the features move over, n
 - **Editor**: rectangles and ellipses, lines with arrowheads, pen, text, hide (pixelate, blur,
   plate), highlighter, counters, stamps and emoji, pictures, crop, rotation, tone; any colour with
   an eyedropper; groups, layers, turning marks; every action undoes.
-- **Library** with thumbnails, search, picking several cards and a trash (restore / destroy); the folder may live on a cloud drive. Every
+- **Library** with thumbnails, search, date groups, pins, the keyboard, picking several cards and a trash (restore / destroy); the folder may live on a cloud drive. Every
   document opens in a window of its own — shots can be compared side by side and marks dragged
   between them.
 - **Share**: copy, drag into a chat, export to PNG/JPEG/WebP with metadata.

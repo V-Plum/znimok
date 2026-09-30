@@ -2108,6 +2108,78 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
             let _ = std::fs::remove_file(&pb);
             app.borrow_mut().lib_poll(ui, true);
         }
+        // ZK-177/178/179: pinning puts the card in its own group first and into its file; the
+        // library's limit never trashes it; the keys move through the groups.
+        if let Some(c) = slint::Model::row_data(&ui.get_cards(), 0) {
+            let src = std::path::PathBuf::from(c.path.as_str());
+            let lib = src.parent().map(|p| p.to_path_buf()).unwrap_or_default();
+            let titles = |ui: &AppWindow| -> Vec<String> {
+                let h = ui.get_lib_headers();
+                (0..slint::Model::row_count(&h))
+                    .filter_map(|i| slint::Model::row_data(&h, i).map(|x| x.title.to_string()))
+                    .collect()
+            };
+            let before = titles(ui);
+            ui.invoke_lib_action("pin".into(), c.path.clone());
+            let pinned_file = crate::library::read_entry(&src).is_some_and(|e| e.pinned);
+            let after = titles(ui);
+            let (pa, pb) = (
+                lib.join("Znimok-selftest-keys-a.znimok"),
+                lib.join("Znimok-selftest-keys-b.znimok"),
+            );
+            // Unpinned copies (a pinned file's copy is pinned too).
+            let _ = std::fs::copy(&src, &pa);
+            let _ = std::fs::copy(&src, &pb);
+            for p in [&pa, &pb] {
+                if let Ok((mut doc, v)) = znimok_format::open_parts(p) {
+                    doc.meta.pinned = false;
+                    let _ = znimok_format::save_same_kind(p, &doc, v.as_ref(), &Default::default());
+                }
+            }
+            app.borrow_mut().lib_poll(ui, true);
+            let cur = |ui: &AppWindow| {
+                (0..slint::Model::row_count(&ui.get_cards()))
+                    .find(|i| slint::Model::row_data(&ui.get_cards(), *i).is_some_and(|c| c.current))
+            };
+            ui.invoke_lib_key("home".into(), false);
+            let home = cur(ui);
+            ui.invoke_lib_key("down".into(), false);
+            let down = cur(ui);
+            ui.invoke_lib_key("right".into(), false);
+            let right = cur(ui);
+            ui.invoke_lib_key("left".into(), true);
+            let (left, grown) = (cur(ui), ui.get_picked_count());
+            ui.invoke_lib_action("pick-none".into(), "".into());
+            r.snapshot(ui, "04c-groups");
+            // The limit: one unpinned card kept; the pinned one is neither counted nor trashed.
+            ui.set_pref_ret_count("1".into());
+            ui.invoke_setting("ret-count".into(), 0);
+            app.borrow_mut().apply_retention(ui);
+            let kept_pin = src.exists();
+            let copies_left = [&pa, &pb].iter().filter(|p| p.exists()).count();
+            ui.set_pref_ret_count("100".into());
+            ui.invoke_setting("ret-count".into(), 0);
+            r.check(
+                "library groups: pinned first, the pin is in the file",
+                before.len() == 1 && after.first().map(String::as_str) == Some("Закріплені") && pinned_file,
+                format!("{before:?} → {after:?} · file pinned {pinned_file}"),
+            );
+            r.check(
+                "library keys: Home, Down into the next group, Right, Shift+Left grows the pick",
+                home == Some(0) && down == Some(1) && right == Some(2) && left == Some(1) && grown == 2,
+                format!("home {home:?} · down {down:?} · right {right:?} · left {left:?} · picked {grown}"),
+            );
+            r.check(
+                "library limit: the pinned card is never trashed",
+                kept_pin && copies_left == 1,
+                format!("pinned kept {kept_pin} · copies left {copies_left}"),
+            );
+            ui.invoke_lib_action("pin".into(), c.path.clone());
+            let _ = std::fs::remove_file(&pa);
+            let _ = std::fs::remove_file(&pb);
+            let _ = std::fs::remove_dir_all(crate::library::trash_dir(&lib));
+            app.borrow_mut().lib_poll(ui, true);
+        }
         // ZK-56: the settings page; a switch goes into settings.json at once; language live.
         ui.invoke_settings_open();
         ui.set_settings_page(2);

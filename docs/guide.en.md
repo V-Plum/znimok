@@ -158,6 +158,14 @@ closing). Cards show thumbnails; search looks at the name, description and tags.
 offers rename, show in folder, to the trash (with "Undo"). Shift+trash deletes for good after one
 question.
 
+**Groups and pins.** Cards are grouped by date: "Today", "Yesterday", "This week", "This month",
+then by month. The pin on a card (or "Pin" for the picked ones) puts the document into the
+"Pinned" group on top; the library's limit (count or size) never removes pinned documents nor counts
+them. The pin is kept in the file itself.
+
+**Keyboard.** Arrows move through the grid (and across groups), Home / End to the first / last card,
+Shift+arrow grows the pick, Space picks the card, Enter opens, F2 renames, Delete to the trash.
+
 **Several cards.** Ctrl+click (⌘ on a Mac) adds or removes a card, Shift+click takes everything from
 the last picked one, Ctrl+A all the cards shown, Esc clears the pick. A bar "Selected: N" shows at the
 bottom with "Move to trash" (or Delete). A plain click still opens the document.

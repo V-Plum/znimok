@@ -384,6 +384,12 @@ pub struct App {
     /// thumbnails are not decoded again).
     shown: Vec<PathBuf>,
     cards_model: std::rc::Rc<VecModel<CardData>>,
+    /// The groups of cards as shown (ZK-177): a title and how many cards, in `shown` order.
+    groups: Vec<(String, usize)>,
+    /// Columns of the grid as the window last reported them.
+    lib_cols: usize,
+    /// The keyboard's card in the grid (ZK-179).
+    cur: Option<PathBuf>,
     /// The library index (ZK-131) and the folder it belongs to.
     index: Option<(PathBuf, library::Index)>,
     /// Updates (ZK-142): a check or a download is running; what the last check found.
@@ -435,6 +441,32 @@ fn args(pairs: &[(&'static str, String)]) -> FluentArgs<'static> {
         a.set(*k, v.clone());
     }
     a
+}
+
+/// Which date group a moment falls in (ZK-177): 0 today, 1 yesterday, 2 earlier this week,
+/// 3 earlier this month, then 4 + months back (one group per month).
+fn date_bucket(ms: i64) -> usize {
+    use chrono::{Datelike, Local, TimeZone};
+    let now = Local::now();
+    let Some(t) = Local.timestamp_millis_opt(ms).single() else {
+        return 0;
+    };
+    let (d, today) = (t.date_naive(), now.date_naive());
+    if d >= today {
+        return 0;
+    }
+    if today.signed_duration_since(d).num_days() == 1 {
+        return 1;
+    }
+    let monday = today - chrono::Duration::days(today.weekday().num_days_from_monday() as i64);
+    if d >= monday {
+        return 2;
+    }
+    if (d.year(), d.month()) == (today.year(), today.month()) {
+        return 3;
+    }
+    let months = (today.year() - d.year()) * 12 + today.month() as i32 - d.month() as i32;
+    3 + months.max(1) as usize
 }
 
 /// A number for a plural selector (a string would always take the default variant).
@@ -541,6 +573,9 @@ impl App {
             pick_anchor: None,
             shown: Vec::new(),
             cards_model: std::rc::Rc::new(VecModel::default()),
+            groups: Vec::new(),
+            lib_cols: 4,
+            cur: None,
             index: None,
             update_busy: false,
             update_found: None,
@@ -1780,6 +1815,7 @@ impl App {
     /// or one less), 2 Shift (the range from the last clicked card).
     pub fn card_click(&mut self, ui: &AppWindow, path: &Path, mode: i32) {
         let path = path.to_path_buf();
+        self.set_current(ui, Some(path.clone()));
         match mode {
             1 => {
                 if let Some(i) = self.picked.iter().position(|p| *p == path) {
@@ -1830,12 +1866,27 @@ impl App {
                 self.show_picks(ui);
             }
             "pick-none" => {
+                if self.picked.is_empty() {
+                    self.set_current(ui, None);
+                }
                 self.clear_picks();
                 self.show_picks(ui);
             }
             "picked-trash" if !self.trash_view => {
                 let v = self.picked.clone();
                 self.trash_paths(ui, v);
+            }
+            "pin" => {
+                let on = !self.entries.iter().any(|e| e.path == path && e.pinned);
+                self.pin_paths(ui, vec![path.to_path_buf()], on);
+            }
+            // All picked pinned → unpin them; otherwise pin them all.
+            "picked-pin" if !self.trash_view => {
+                let v = self.picked.clone();
+                let all = v
+                    .iter()
+                    .all(|p| self.entries.iter().any(|e| e.path == *p && e.pinned));
+                self.pin_paths(ui, v, !all);
             }
             "restore" => self.restore_paths(ui, vec![path.to_path_buf()]),
             "picked-restore" if self.trash_view => {
@@ -1880,6 +1931,12 @@ impl App {
             }
         }
         ui.set_picked_count(self.picked.len() as i32);
+        let all_pinned = !self.picked.is_empty()
+            && self
+                .picked
+                .iter()
+                .all(|p| self.entries.iter().any(|e| e.path == *p && e.pinned));
+        ui.set_picked_pinned(all_pinned);
     }
 
     /// Shift+trash on a card (owner 29.09): the file is deleted, not moved to the trash.
@@ -1967,6 +2024,10 @@ impl App {
         let mut kept: u32 = 0;
         let mut gone = 0;
         for e in &entries {
+            // Pinned documents are never trashed by the limit, nor counted in it (ZK-178).
+            if e.pinned {
+                continue;
+            }
             let size = std::fs::metadata(&e.path).map(|m| m.len()).unwrap_or(0);
             let over = match r.by {
                 znimok_settings::RetentionBy::Count => kept >= r.count.max(1),
@@ -1993,11 +2054,43 @@ impl App {
 
     fn show_cards(&mut self, ui: &AppWindow) {
         let days = self.prefs().library.trash_days as i64;
-        let shown: Vec<&library::Entry> = self
+        // Groups (ZK-177): pinned first (not in the trash), then by date — of capture in the
+        // library, of deletion in the trash. Each group keeps the newest first.
+        let when = |e: &library::Entry| {
+            if self.trash_view {
+                library::trashed_at_ms(&e.path).unwrap_or(0)
+            } else {
+                e.created_ms
+            }
+        };
+        let mut keyed: Vec<(usize, i64, &library::Entry)> = self
             .entries
             .iter()
             .filter(|e| e.matches(&self.filter))
+            .map(|e| {
+                let t = when(e);
+                let g = if e.pinned && !self.trash_view {
+                    0
+                } else {
+                    1 + date_bucket(t)
+                };
+                (g, t, e)
+            })
             .collect();
+        keyed.sort_by_key(|(g, t, _)| (*g, std::cmp::Reverse(*t)));
+        let mut groups: Vec<(String, usize)> = Vec::new();
+        let mut last = usize::MAX;
+        for (g, t, _) in &keyed {
+            if *g != last {
+                groups.push((self.group_title(*g, *t), 0));
+                last = *g;
+            }
+            if let Some(x) = groups.last_mut() {
+                x.1 += 1;
+            }
+        }
+        self.groups = groups;
+        let shown: Vec<&library::Entry> = keyed.iter().map(|(_, _, e)| *e).collect();
         let cards: Vec<CardData> = shown
             .iter()
             .map(|e| CardData {
@@ -2015,17 +2108,248 @@ impl App {
                     .unwrap_or_default(),
                 path: e.path.display().to_string().into(),
                 selected: self.picked.contains(&e.path),
+                pinned: e.pinned,
+                current: self.cur.as_ref() == Some(&e.path),
+                ..Default::default()
             })
             .collect();
         self.shown = shown.iter().map(|e| e.path.clone()).collect();
         // Picks of cards gone (trashed, filtered out, removed from outside) go too.
         let shown_now = &self.shown;
         self.picked.retain(|p| shown_now.contains(p));
+        if self.cur.as_ref().is_some_and(|c| !shown_now.contains(c)) {
+            self.cur = None;
+        }
         self.cards_model = std::rc::Rc::new(VecModel::from(cards));
         ui.set_cards(self.cards_model.clone().into());
+        self.lay_out_cards(ui);
         ui.set_trash_view(self.trash_view);
         ui.set_picked_count(self.picked.len() as i32);
         ui.set_library_dir(self.shown_dir().display().to_string().into());
+    }
+
+    /// A group's title (ZK-177): 0 pinned, then [`date_bucket`] + 1.
+    fn group_title(&self, g: usize, t: i64) -> String {
+        match g {
+            0 => self.tr.tr("lib-group-pinned"),
+            1 => self.tr.tr("lib-group-today"),
+            2 => self.tr.tr("lib-group-yesterday"),
+            3 => self.tr.tr("lib-group-week"),
+            4 => self.tr.tr("lib-group-month"),
+            _ => {
+                use chrono::Datelike;
+                let d = chrono::Local
+                    .timestamp_millis_opt(t)
+                    .single()
+                    .unwrap_or_else(chrono::Local::now);
+                let month = self.tr.tr(&format!("month-{}", d.month()));
+                if d.year() == chrono::Local::now().year() {
+                    month
+                } else {
+                    format!("{month} {}", d.year())
+                }
+            }
+        }
+    }
+
+    /// The grid's columns changed (the window was resized): the cards and titles take new
+    /// places (ZK-177).
+    pub fn lib_layout(&mut self, ui: &AppWindow, cols: i32) {
+        let cols = cols.max(1) as usize;
+        if cols != self.lib_cols {
+            self.lib_cols = cols;
+            self.lay_out_cards(ui);
+        }
+    }
+
+    /// Places of the cards and group titles in the grid, in rows (ZK-177): for a title the
+    /// titles and card rows above it; for a card the titles up to its own and the card rows
+    /// above its row, and its column. Slint turns them into pixels.
+    fn lay_out_cards(&self, ui: &AppWindow) {
+        use slint::Model;
+        let cols = self.lib_cols.max(1);
+        let mut headers = Vec::new();
+        let (mut hb, mut rb, mut i) = (0i32, 0i32, 0usize);
+        let m = &self.cards_model;
+        for (title, n) in &self.groups {
+            headers.push(crate::LibHeader {
+                title: title.as_str().into(),
+                hb,
+                rb,
+            });
+            hb += 1;
+            for k in 0..*n {
+                if let Some(mut c) = m.row_data(i) {
+                    let (r, col) = (rb + (k / cols) as i32, (k % cols) as i32);
+                    if (c.hb, c.rb, c.col) != (hb, r, col) {
+                        (c.hb, c.rb, c.col) = (hb, r, col);
+                        m.set_row_data(i, c);
+                    }
+                }
+                i += 1;
+            }
+            rb += n.div_ceil(cols) as i32;
+        }
+        ui.set_lib_headers(std::rc::Rc::new(VecModel::from(headers)).into());
+        ui.set_lib_hb(hb);
+        ui.set_lib_rb(rb);
+    }
+
+    /// The keyboard in the grid (ZK-179): arrows, Home / End (Shift: the pick grows from the
+    /// last clicked card), Enter opens, Space picks, Delete, F2 renames.
+    pub fn lib_key(&mut self, ui: &AppWindow, key: &str, shift: bool) {
+        if self.shown.is_empty() {
+            return;
+        }
+        let at = self
+            .cur
+            .as_ref()
+            .and_then(|c| self.shown.iter().position(|p| p == c));
+        let target = match (key, at) {
+            ("left" | "right" | "up" | "down" | "home" | "end", None) => Some(0),
+            ("left", Some(i)) => Some(i.saturating_sub(1)),
+            ("right", Some(i)) => Some((i + 1).min(self.shown.len() - 1)),
+            ("up", Some(i)) => Some(self.grid_step(i, false)),
+            ("down", Some(i)) => Some(self.grid_step(i, true)),
+            ("home", _) => Some(0),
+            ("end", _) => Some(self.shown.len() - 1),
+            _ => None,
+        };
+        if let Some(t) = target {
+            let path = self.shown[t].clone();
+            if shift {
+                let anchor = self
+                    .pick_anchor
+                    .clone()
+                    .or_else(|| self.cur.clone())
+                    .unwrap_or_else(|| path.clone());
+                let a = self.shown.iter().position(|p| *p == anchor).unwrap_or(t);
+                self.picked = self.shown[a.min(t)..=a.max(t)].to_vec();
+                self.pick_anchor = Some(anchor);
+            }
+            self.set_current(ui, Some(path));
+            self.show_picks(ui);
+            return;
+        }
+        let Some(i) = at else { return };
+        let path = self.shown[i].clone();
+        match key {
+            "enter" if !self.trash_view => self.card_click(ui, &path, 0),
+            "space" => self.card_click(ui, &path, 1),
+            "delete" if !self.picked.is_empty() => {
+                let v = self.picked.clone();
+                if self.trash_view {
+                    self.ask_destroy(ui, v);
+                } else {
+                    self.trash_paths(ui, v);
+                }
+            }
+            "delete" if self.trash_view => self.ask_destroy(ui, vec![path]),
+            "delete" => self.trash_paths(ui, vec![path]),
+            "f2" if !self.trash_view => ui.set_lib_rename_tick(ui.get_lib_rename_tick() + 1),
+            _ => {}
+        }
+    }
+
+    /// One row up or down from card `i`, through the groups: the same column where it can be,
+    /// else the nearest card (a short last row, a shorter group).
+    fn grid_step(&self, i: usize, down: bool) -> usize {
+        let cols = self.lib_cols.max(1);
+        // Which group, and where in it.
+        let (mut g, mut start) = (0usize, 0usize);
+        while g < self.groups.len() && i >= start + self.groups[g].1 {
+            start += self.groups[g].1;
+            g += 1;
+        }
+        let Some(&(_, n)) = self.groups.get(g) else {
+            return i;
+        };
+        let k = i - start;
+        if down {
+            if k + cols < n {
+                return i + cols;
+            }
+            if k / cols < (n - 1) / cols {
+                return start + n - 1;
+            }
+            match self.groups.get(g + 1) {
+                Some(&(_, n2)) => start + n + (k % cols).min(n2 - 1),
+                None => i,
+            }
+        } else {
+            if k >= cols {
+                return i - cols;
+            }
+            if g == 0 {
+                return i;
+            }
+            let n0 = self.groups[g - 1].1;
+            let s0 = start - n0;
+            let last_row = (n0 - 1) / cols * cols;
+            s0 + (last_row + k % cols).min(n0 - 1)
+        }
+    }
+
+    /// The keyboard's card: its ring, and the grid scrolls to it.
+    fn set_current(&mut self, ui: &AppWindow, cur: Option<PathBuf>) {
+        use slint::Model;
+        self.cur = cur;
+        let m = &self.cards_model;
+        for i in 0..m.row_count() {
+            if let Some(mut c) = m.row_data(i) {
+                let want = self
+                    .cur
+                    .as_ref()
+                    .is_some_and(|p| p.as_os_str() == std::ffi::OsStr::new(c.path.as_str()));
+                if c.current != want {
+                    c.current = want;
+                    if want {
+                        ui.invoke_lib_scroll_to(c.hb, c.rb);
+                    }
+                    m.set_row_data(i, c);
+                }
+            }
+        }
+    }
+
+    /// Pin or unpin documents (ZK-178): written into each file; an open one through its window.
+    fn pin_paths(&mut self, ui: &AppWindow, paths: Vec<PathBuf>, on: bool) {
+        let mut failed = None;
+        for path in &paths {
+            if let Some((app, win)) = crate::wins::editor_of(path)
+                && let Ok(mut a) = app.try_borrow_mut()
+            {
+                a.pin_open(&win, on);
+                continue;
+            }
+            let r = znimok_format::open_parts(path)
+                .map_err(|e| e.to_string())
+                .and_then(|(mut doc, video)| {
+                    doc.meta.pinned = on;
+                    let opts = self.options_for(&doc);
+                    let _guard = SAVE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+                    znimok_format::save_same_kind(path, &doc, video.as_ref(), &opts)
+                        .map(|_| ())
+                        .map_err(|e| e.to_string())
+                });
+            if let Err(e) = r {
+                failed = Some(e);
+            }
+        }
+        if let Some(e) = failed {
+            let msg = format!("{} ({e})", self.tr.tr("err-library-save"));
+            self.toast(ui, msg);
+        }
+        self.refresh_library(ui);
+    }
+
+    /// The pin of the document open in this window, saved at once.
+    pub fn pin_open(&mut self, ui: &AppWindow, on: bool) {
+        let Some(s) = self.s.as_ref() else { return };
+        let mut meta = s.ed.doc.meta.clone();
+        meta.pinned = on;
+        self.apply(ui, Command::SetMeta { meta });
+        self.save_now(ui);
     }
 
     /// A trashed card's line: when it went, and in how many days it goes for good (ZK-175).

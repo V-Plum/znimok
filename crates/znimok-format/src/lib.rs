@@ -236,10 +236,13 @@ fn write_doc(doc: &Document, opts: &WriteOptions, video: Option<&Video>) -> Writ
     if !(m.description.is_empty()
         && m.author.is_empty()
         && m.copyright.is_empty()
-        && m.tags.is_empty())
+        && m.tags.is_empty()
+        && !m.pinned)
     {
+        // Version 2 adds a flags byte at the end (bit 0: pinned, ZK-178); a version-1 reader
+        // stops after the tags and ignores it.
         w.record(b"DESC", |w| {
-            w.u8(1);
+            w.u8(2);
             w.str(&m.description);
             w.str(&m.author);
             w.str(&m.copyright);
@@ -247,6 +250,7 @@ fn write_doc(doc: &Document, opts: &WriteOptions, video: Option<&Video>) -> Writ
             for t in &m.tags {
                 w.str(t);
             }
+            w.u8(u8::from(m.pinned));
         });
     }
     let frame = doc.frame();
@@ -701,7 +705,7 @@ fn read_meta(b: &mut Reader<'_>, p: &mut Peek) -> Result<(), FormatError> {
 }
 
 fn read_desc(b: &mut Reader<'_>, m: &mut Meta, limits: &Limits) -> Result<(), FormatError> {
-    let _ver = b.u8()?;
+    let ver = b.u8()?;
     m.description = b.str()?;
     m.author = b.str()?;
     m.copyright = b.str()?;
@@ -710,6 +714,9 @@ fn read_desc(b: &mut Reader<'_>, m: &mut Meta, limits: &Limits) -> Result<(), Fo
         return Err(FormatError::Corrupt(format!("{n} tags exceed the limit")));
     }
     m.tags = (0..n).map(|_| b.str()).collect::<Result<_, _>>()?;
+    if ver >= 2 && b.remaining() >= 1 {
+        m.pinned = b.u8()? & 1 != 0;
+    }
     Ok(())
 }
 
