@@ -338,7 +338,8 @@ impl FramePool {
 }
 
 /// Supplies the overlay for a slot (the cursor and the clicks at that moment) — ZK-90.
-pub type OverlayFn = Box<dyn FnMut(i64) -> Overlay + Send>;
+/// Called with the slot and where the desktop is in the video at that moment.
+pub type OverlayFn = Box<dyn FnMut(i64, &crate::shader::DesktopMap) -> Overlay + Send>;
 
 // ---------------------------------------------------------------------------------------------
 // WGC
@@ -690,14 +691,22 @@ impl FrameSource for WgcSource {
     }
 
     fn frame_for_slot(&mut self, slot: i64) -> Result<&GpuFrame> {
-        let ov = self.overlay.as_mut().map(|f| f(slot));
         let c = self
             .current
             .as_mut()
             .ok_or_else(|| VideoError::Screen("ще немає кадру".into()))?;
         c.geometry.white = self.white;
-        if let Some(ov) = ov {
-            c.overlay = ov;
+        if let Some(f) = self.overlay.as_mut() {
+            // A window's texture starts at its DWM bounds (it moves); a display's at its corner.
+            let origin = match self.plan.hwnd {
+                Some(h) => znimok_win::raw::dwm_bounds(h).map_or((0, 0), |b| (b.x, b.y)),
+                None => (self.plan.monitor_bounds.x, self.plan.monitor_bounds.y),
+            };
+            let map = crate::shader::DesktopMap {
+                origin,
+                geometry: c.geometry,
+            };
+            c.overlay = f(slot, &map);
         }
         Ok(c)
     }
@@ -897,13 +906,16 @@ impl FrameSource for DdaSource {
     }
 
     fn frame_for_slot(&mut self, slot: i64) -> Result<&GpuFrame> {
-        let ov = self.overlay.as_mut().map(|f| f(slot));
         let c = self
             .current
             .as_mut()
             .ok_or_else(|| VideoError::Screen("ще немає кадру".into()))?;
-        if let Some(ov) = ov {
-            c.overlay = ov;
+        if let Some(f) = self.overlay.as_mut() {
+            let map = crate::shader::DesktopMap {
+                origin: (self.plan.monitor_bounds.x, self.plan.monitor_bounds.y),
+                geometry: c.geometry,
+            };
+            c.overlay = f(slot, &map);
         }
         Ok(c)
     }
@@ -1020,7 +1032,7 @@ pub fn open_source(
 }
 
 /// The sRGB curve undone (for the `PrintWindow` frame in FP16 slots, ZK-193).
-fn srgb_to_linear(c: f32) -> f32 {
+pub(crate) fn srgb_to_linear(c: f32) -> f32 {
     if c <= 0.04045 {
         c / 12.92
     } else {
@@ -1029,7 +1041,7 @@ fn srgb_to_linear(c: f32) -> f32 {
 }
 
 /// An `f32` as IEEE half bits (truncated; values here are 0 … a few, tiny ones become 0).
-fn f16_bits(v: f32) -> u16 {
+pub(crate) fn f16_bits(v: f32) -> u16 {
     let b = v.to_bits();
     let sign = ((b >> 16) & 0x8000) as u16;
     let exp = ((b >> 23) & 0xff) as i32 - 127 + 15;

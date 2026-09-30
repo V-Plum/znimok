@@ -45,6 +45,9 @@ thread_local! {
 struct Active {
     #[cfg(windows)]
     rec: Option<znimok_video_win::Recording>,
+    /// The cursor and the clicks (ZK-90): the hook lives as long as the recording.
+    #[cfg(windows)]
+    mouse: Option<znimok_video_win::MouseInput>,
     /// The MP4 being written (it becomes the document's stream).
     mp4: PathBuf,
     size: (u32, u32),
@@ -181,6 +184,21 @@ fn start_inner(choice: &Choice) -> Result<(), String> {
                 p.audio.microphone_device.clone(),
             )));
     }
+    // The cursor and the clicks (ZK-90): drawn into the frames, and the clicks logged.
+    let mouse = (p.cursor || p.clicks).then(znimok_video_win::MouseInput::start);
+    if let Some(m) = &mouse {
+        let color = match p.click_color {
+            znimok_settings::ClickColor::Yellow => [1.0, 0.82, 0.25],
+            znimok_settings::ClickColor::Red => [1.0, 0.35, 0.37],
+            znimok_settings::ClickColor::Blue => [0.24, 0.48, 0.96],
+        };
+        req.events = Some(m.queue());
+        req.overlay = Some(m.overlay(znimok_video_win::MouseOpts {
+            cursor: p.cursor,
+            clicks: p.clicks,
+            color,
+        }));
+    }
     let rec = Recording::start(req).map_err(|e| e.to_string())?;
     let size = rec.started().size;
     let fps = if p.fps >= 45 { 60 } else { 30 };
@@ -197,6 +215,7 @@ fn start_inner(choice: &Choice) -> Result<(), String> {
     REC.with(|r| {
         *r.borrow_mut() = Some(Active {
             rec: Some(rec),
+            mouse,
             mp4,
             size,
             fps,
@@ -213,8 +232,38 @@ fn start_inner(choice: &Choice) -> Result<(), String> {
         })
     });
     show_indicators();
+    // Clicks on the bar (Pause, Stop) are not the recording's.
+    REC.with(|r| {
+        if let Some(a) = r.borrow().as_ref()
+            && let (Some(m), Some(h)) = (a.mouse.as_ref(), hwnd_of(a.bar.window()))
+        {
+            m.exclude(h);
+        }
+    });
     tick();
     Ok(())
+}
+
+/// A press into the running recording as if the mouse made it (the self-test, ZK-90).
+#[cfg(windows)]
+pub fn note_click(x: i32, y: i32, down: bool) {
+    REC.with(|r| {
+        if let Some(m) = r.borrow().as_ref().and_then(|a| a.mouse.as_ref()) {
+            m.note(x, y, znimok_video::events::Button::Left, down);
+        }
+    });
+}
+
+/// A top-level window's handle (for the hook to leave its clicks out).
+#[cfg(windows)]
+fn hwnd_of(w: &slint::Window) -> Option<isize> {
+    use slint::winit_030::WinitWindowAccessor;
+    use slint::winit_030::winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
+    w.with_winit_window(|w| match w.window_handle().ok()?.as_raw() {
+        RawWindowHandle::Win32(h) => Some(h.hwnd.get()),
+        _ => None,
+    })
+    .flatten()
 }
 
 /// Pause / resume (the bar's button).
@@ -253,6 +302,10 @@ pub fn stop() {
     set_tray(false, String::new());
     #[cfg(windows)]
     {
+        // The hook goes first: nothing after Stop is the recording's.
+        if let Some(mut m) = a.mouse.take() {
+            m.stop();
+        }
         let Some(rec) = a.rec.take() else { return };
         let lib = crate::with_lib_dir().unwrap_or_else(crate::library::default_dir);
         let name = doc_name();
@@ -352,6 +405,22 @@ fn wrap(
             },
             label: label.clone(),
             ..Default::default()
+        })
+        .collect();
+    // The clicks, in video time and video pixels (the MOUS log, ZK-90).
+    video.mouse = result
+        .events
+        .iter()
+        .map(|e| znimok_format::video::MouseEvent {
+            ms: e.ms.clamp(0, i32::MAX as i64) as i32,
+            x: e.event.x,
+            y: e.event.y,
+            button: match e.event.button {
+                znimok_video::events::Button::Left => znimok_format::video::MouseButton::Left,
+                znimok_video::events::Button::Right => znimok_format::video::MouseButton::Right,
+                znimok_video::events::Button::Middle => znimok_format::video::MouseButton::Middle,
+            },
+            down: e.event.down,
         })
         .collect();
     doc.timeline = Some(video.edit.to_timeline());
