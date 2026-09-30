@@ -101,6 +101,20 @@ Settings → Screenshots; the hint strip at the bottom of the overlay shows the 
 | Save to the library now | Ctrl+S | ⌘S |
 | Open a file | Ctrl+O | ⌘O |
 
+## Video (editor)
+
+| Action | Windows | macOS |
+|---|---|---|
+| Play / pause | Space | Space |
+| A frame back / forward | ← / → (no marks selected) | ← / → |
+| A second back / forward | Shift+← / Shift+→ | ⇧← / ⇧→ |
+| To the start / the end | Home / End | Home / End |
+| Play backwards / stop / forwards (the timeline has the keys) | J / K / L | J / K / L |
+| In / out here, split (the timeline has the keys) | I / O / S | I / O / S |
+| Cut the piece / keep only it | Delete / Shift+Delete | Delete / ⇧Delete |
+| Mute | M | M |
+| Loop | Ctrl+L | ⌘L |
+
 ## Esc
 
 Esc takes off exactly one layer at a time:

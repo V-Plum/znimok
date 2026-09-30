@@ -8294,7 +8294,8 @@ impl App {
             let data = self.pixmap.data_as_u8_slice_mut();
             for r in upload {
                 for y in r.y as usize..r.bottom() as usize {
-                    let row = &mut data[(y * pw + r.x as usize) * 4..(y * pw + r.right() as usize) * 4];
+                    let row =
+                        &mut data[(y * pw + r.x as usize) * 4..(y * pw + r.right() as usize) * 4];
                     for px in row.as_chunks_mut::<4>().0 {
                         let a = px[3] as u32;
                         if a != 0 && a != 255 {
@@ -9173,8 +9174,7 @@ impl App {
             return;
         }
         v.player_started = true;
-        let source =
-            znimok_play::Source::of_part(part, crate::library::cache_dir().join("video"));
+        let source = znimok_play::Source::of_part(part, crate::library::cache_dir().join("video"));
         match znimok_play::Player::open(gpu, source, v.frames, move |e| {
             let _ = slint::invoke_from_event_loop(move || me.with(|a, ui| a.video_event(ui, e)));
         }) {
@@ -9341,10 +9341,7 @@ impl App {
             return;
         };
         const STRIP_H: f64 = 52.0;
-        let (iw, ih) = (
-            part.video.info.width.max(1),
-            part.video.info.height.max(1),
-        );
+        let (iw, ih) = (part.video.info.width.max(1), part.video.info.height.max(1));
         let tile_w = ((STRIP_H * iw as f64 / ih as f64).round() as i32).max(16);
         let tiles = v.strip_tiles(tile_w);
         let key = (
@@ -9601,8 +9598,8 @@ impl App {
             "play" | "reverse" | "forward" | "pause" => {
                 let backward = what == "reverse";
                 // Play toggles; J / L while already going that way stop it; K stops.
-                let stop = what == "pause"
-                    || (v.playing && (what == "play" || v.backward == backward));
+                let stop =
+                    what == "pause" || (v.playing && (what == "play" || v.backward == backward));
                 if stop {
                     v.playing = false;
                     if let Some(p) = &v.player {

@@ -65,7 +65,10 @@ impl Rig {
         .unwrap();
         match rx.recv_timeout(Duration::from_secs(20)).unwrap() {
             Event::Opened(i) => {
-                eprintln!("player: {}×{} at {} fps, path {}", i.width, i.height, i.fps, i.path);
+                eprintln!(
+                    "player: {}×{} at {} fps, path {}",
+                    i.width, i.height, i.fps, i.path
+                );
                 assert_eq!((i.width, i.height), (W, H));
             }
             Event::Failed(e) => panic!("player failed: {e}"),

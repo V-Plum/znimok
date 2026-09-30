@@ -116,9 +116,7 @@ macro_rules! on {
 /// The wgpu device for Slint, made the way Slint would (the adapter from WGPU_ADAPTER_NAME or the
 /// first one of the chosen backends) but with the adapter's own limits and, where the adapter has
 /// them, NV12 textures — the video player's compute pass and zero-copy path (ZK-92).
-fn manual_wgpu(
-    s: &slint::wgpu_30::WGPUSettings,
-) -> Option<slint::wgpu_30::WGPUConfiguration> {
+fn manual_wgpu(s: &slint::wgpu_30::WGPUSettings) -> Option<slint::wgpu_30::WGPUConfiguration> {
     let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
         backends: s.backends,
         flags: s.instance_flags,
@@ -209,8 +207,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // storage buffers or textures — the video player converts its frames in a compute pass)
     // and, on Windows, NV12 textures when the adapter has them (frames without a copy).
     // Anything that fails leaves Slint to choose as before.
-    let config = manual_wgpu(&settings)
-        .unwrap_or(slint::wgpu_30::WGPUConfiguration::Automatic(settings));
+    let config =
+        manual_wgpu(&settings).unwrap_or(slint::wgpu_30::WGPUConfiguration::Automatic(settings));
     selector
         .require_wgpu_30(config)
         // The card after a capture (ZK-41) must not take the focus or show in the taskbar.

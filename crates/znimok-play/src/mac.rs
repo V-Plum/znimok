@@ -82,7 +82,12 @@ impl AvPlayer {
             let track = tracks.firstObject().ok_or("no video track")?;
             let fps = f64::from(track.nominalFrameRate());
             let s = track.naturalSize();
-            (asset, track, fps, (s.width.round() as u32, s.height.round() as u32))
+            (
+                asset,
+                track,
+                fps,
+                (s.width.round() as u32, s.height.round() as u32),
+            )
         };
         // The planes as Metal textures on the UI's own device; without it — the upload path.
         // SAFETY: only reads the device handle wgpu created.

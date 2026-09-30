@@ -209,15 +209,17 @@ comes with the next update). A window that did not change for the whole recordin
 recording — Znimok says so. On macOS recording comes with the next update.
 
 **Editor.** A video document opens in the "Video" mode: the same tools, and under the canvas a transport (Space —
-play / pause, ← → — a frame, Shift+← → — a second, Home / End) and a timeline. Trimming: the white
+play / pause, ◁ — play backwards, ← → — a frame, Shift+← → — a second, Home / End, speed 0.5–2×) and a
+timeline with thumbnails of the frames on its strip. Trimming: the white
 handles at the ends of the strip, or I / O at the current frame; a drag on the strip picks a piece —
 Del cuts it, Shift+Del keeps only it; S splits; a cut-out piece is hatched, with "Restore". The
-timeline's keys work while the last click was on it (a thin ring); on the canvas the letters stay
-with the tools. The recording is never changed: the edits live in the document and undo together
+timeline's keys work while the last click was on it (a thin ring): there J plays backwards, K stops,
+L plays forwards; on the canvas the letters stay with the tools. The recording is never changed: the edits live in the document and undo together
 with the marks. The "Video" tab has the trimming summary, the sound (no sound / system /
-microphone / both), the crop, tone and size; "Frame as screenshot" opens the current frame as a
-document of its own. Playback is Windows-only for now; on macOS the first frame stands for the
-video and trimming works.
+microphone / both), the crop, tone and size (the tone applies to the video as it plays too);
+"Frame as screenshot" opens the current frame as a document of its own. The graphics card decodes
+and shows the video — on Windows and macOS, without copying frames through the processor; the marks
+are drawn over it.
 
 ## Sharing the result
 

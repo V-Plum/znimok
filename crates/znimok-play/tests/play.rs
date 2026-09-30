@@ -29,15 +29,24 @@ const SECONDS: f64 = 3.0;
 
 /// Records the synthetic source; None when this machine cannot.
 fn record(dir: &Path) -> Option<PathBuf> {
+    record_clip(dir, W, H, FPS, SECONDS)
+}
+
+/// Records the synthetic source at any size; None when this machine cannot.
+fn record_clip(dir: &Path, w: u32, h: u32, fps: u32, seconds: f64) -> Option<PathBuf> {
     znimok_video_win::mf::startup().unwrap();
-    let gpu = Rc::new(RecGpu::new(None).map_err(|e| eprintln!("skipped: {e}")).ok()?);
+    let gpu = Rc::new(
+        RecGpu::new(None)
+            .map_err(|e| eprintln!("skipped: {e}"))
+            .ok()?,
+    );
     let bridge = Rc::new(
         Bridge::new(&gpu)
             .map_err(|e| eprintln!("skipped: {e}"))
             .ok()?,
     );
-    let pool = FramePool::new(gpu.clone(), bridge.clone(), W, H, PoolFormat::Bgra8).ok()?;
-    let src = SyntheticSource::new(pool.clone(), W, H, 1.0).ok()?;
+    let pool = FramePool::new(gpu.clone(), bridge.clone(), w, h, PoolFormat::Bgra8).ok()?;
+    let src = SyntheticSource::new(pool.clone(), w, h, 1.0).ok()?;
     let clock = ManualClock::new();
     let ctl = RecordingControl::new();
     let final_path = dir.join("clip.mp4");
@@ -47,13 +56,13 @@ fn record(dir: &Path) -> Option<PathBuf> {
         clock.clone(),
         RecSource::Synthetic(src),
         |tracks| {
-            let cfg = encoder_config(W, H, FPS, Quality::Normal, tracks);
+            let cfg = encoder_config(w, h, fps, Quality::Normal, tracks);
             MfSink::open_best(g2.clone(), b2.clone(), p2.clone(), &part2, &cfg, true)
                 .map_err(znimok_video::VideoError::Encoder)
         },
         Vec::new(),
         RecorderConfig {
-            fps: FPS,
+            fps,
             audio_layout: AudioLayout::Separate,
             probe: None,
         },
@@ -64,7 +73,7 @@ fn record(dir: &Path) -> Option<PathBuf> {
     let start = clock.ticks();
     let f = clock.frequency();
     loop {
-        if (clock.ticks() - start) as f64 / f as f64 >= SECONDS {
+        if (clock.ticks() - start) as f64 / f as f64 >= seconds {
             ctl.stop();
         }
         if rec.step() == Step::Stopped {
@@ -148,9 +157,14 @@ fn open(gpu: &Gpu, source: Source, frames: i64) -> Rig {
     .unwrap();
     match rx.recv_timeout(Duration::from_secs(20)).unwrap() {
         Event::Opened(i) => {
-            eprintln!("player: {}×{} at {} fps, path {}", i.width, i.height, i.fps, i.path);
-            assert_eq!((i.width, i.height), (W, H));
-            let nv12 = gpu.device.features().contains(wgpu::Features::TEXTURE_FORMAT_NV12);
+            eprintln!(
+                "player: {}×{} at {} fps, path {}",
+                i.width, i.height, i.fps, i.path
+            );
+            let nv12 = gpu
+                .device
+                .features()
+                .contains(wgpu::Features::TEXTURE_FORMAT_NV12);
             assert_eq!(i.path, if nv12 { "gpu" } else { "upload" });
         }
         Event::Failed(e) => panic!("player failed: {e}"),
@@ -290,9 +304,16 @@ fn plays_a_recording_on_the_gpu() {
 
     // Thumbnails: every one arrives, small, from a key frame at or before the wanted one.
     let (tx, rx) = mpsc::channel();
-    let _t = Thumbs::start(gpu.clone(), src, vec![0, 30, 60, 89], 32, None, move |f, r| {
-        let _ = tx.send((f, r.width, r.height));
-    });
+    let _t = Thumbs::start(
+        gpu.clone(),
+        src,
+        vec![0, 30, 60, 89],
+        32,
+        None,
+        move |f, r| {
+            let _ = tx.send((f, r.width, r.height));
+        },
+    );
     let mut got = Vec::new();
     while let Ok(t) = rx.recv_timeout(Duration::from_secs(10)) {
         got.push(t);
@@ -321,5 +342,114 @@ fn plays_through_the_upload_path() {
         assert_eq!(r.seek(f), (f, Some(f as u32)), "upload path, frame {f}");
     }
     drop(r);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// CPU time of this process (all threads).
+fn cpu_time() -> Duration {
+    use windows::Win32::Foundation::FILETIME;
+    use windows::Win32::System::Threading::{GetCurrentProcess, GetProcessTimes};
+    let (mut a, mut b, mut k, mut u) = (
+        FILETIME::default(),
+        FILETIME::default(),
+        FILETIME::default(),
+        FILETIME::default(),
+    );
+    // SAFETY: out-pointers to locals.
+    unsafe {
+        let _ = GetProcessTimes(GetCurrentProcess(), &mut a, &mut b, &mut k, &mut u);
+    }
+    let t = |f: FILETIME| (u64::from(f.dwHighDateTime) << 32) | u64::from(f.dwLowDateTime);
+    Duration::from_nanos((t(k) + t(u)) * 100)
+}
+
+/// 4K at 60 fps: how many frames reach the UI at 1× and what it costs, and how fast seeks are.
+/// `cargo test --release -p znimok-play --test play bench_4k -- --ignored --nocapture`
+#[test]
+#[ignore]
+fn bench_4k() {
+    let dir = std::env::temp_dir().join(format!("znimok-play-4k-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let (w, h, fps, secs) = (3840, 2160, 60, 6.0);
+    let Some(mp4) = record_clip(&dir, w, h, fps, secs) else {
+        return;
+    };
+    let Some(gpu) = device(true) else { return };
+    let frames = (secs * f64::from(fps)) as i64;
+    let (tx, rx) = mpsc::channel();
+    let player = Player::open(gpu.clone(), Source::File(mp4), frames, move |e| {
+        let _ = tx.send(e);
+    })
+    .unwrap();
+    match rx.recv_timeout(Duration::from_secs(20)).unwrap() {
+        Event::Opened(i) => eprintln!(
+            "4K: {}×{} at {} fps, path {}",
+            i.width, i.height, i.fps, i.path
+        ),
+        Event::Failed(e) => panic!("{e}"),
+        _ => {}
+    }
+    // Seeks: 30 random frames, the time from the command to the frame in the mailbox.
+    let mut seeks = Vec::new();
+    for i in 1..=30i64 {
+        // 30 different frames scattered over the clip (37 and 360 share no divisor).
+        let f = (i * 37 + 5) % frames;
+        let t = std::time::Instant::now();
+        player.seek(f);
+        loop {
+            match rx.recv_timeout(Duration::from_secs(5)).expect("frame") {
+                Event::Frame => {
+                    if player.take().is_some_and(|s| s.frame == f) {
+                        break;
+                    }
+                }
+                _ => continue,
+            }
+        }
+        seeks.push(t.elapsed().as_secs_f64() * 1000.0);
+    }
+    seeks.sort_by(f64::total_cmp);
+    // Playback at 1× from the start: frames shown and the CPU it took.
+    player.seek(0);
+    while let Ok(e) = rx.recv_timeout(Duration::from_millis(500)) {
+        if matches!(e, Event::Frame) {
+            let _ = player.take();
+        }
+    }
+    let cpu0 = cpu_time();
+    let t0 = std::time::Instant::now();
+    player.play(0, 1.0, false, false);
+    let mut shown = 0;
+    let mut last = 0;
+    loop {
+        match rx.recv_timeout(Duration::from_secs(5)) {
+            Ok(Event::Frame) => {
+                if let Some(s) = player.take() {
+                    shown += 1;
+                    last = s.frame;
+                    if !s.playing {
+                        break;
+                    }
+                }
+            }
+            Ok(_) => continue,
+            Err(_) => break,
+        }
+    }
+    let wall = t0.elapsed().as_secs_f64();
+    let cpu = (cpu_time() - cpu0).as_secs_f64();
+    eprintln!(
+        "4K60 1x: {shown} of {frames} frames shown (last {last}) in {wall:.2} s = {:.1} fps; CPU {:.1} % of one core",
+        shown as f64 / wall,
+        cpu / wall * 100.0
+    );
+    eprintln!(
+        "seek: median {:.1} ms, p90 {:.1} ms, max {:.1} ms",
+        seeks[seeks.len() / 2],
+        seeks[seeks.len() * 9 / 10],
+        seeks[seeks.len() - 1]
+    );
+    drop(player);
     let _ = std::fs::remove_dir_all(&dir);
 }

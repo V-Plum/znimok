@@ -75,7 +75,11 @@ impl Source {
 /// The MP4 inside a document as a file of its own in `cache` (named after the document and the
 /// payload's place, so a re-saved document gets a new copy).
 #[cfg_attr(windows, allow(dead_code))]
-fn extract(path: &std::path::Path, ranges: &[Range<u64>], cache: &std::path::Path) -> Result<PathBuf, String> {
+fn extract(
+    path: &std::path::Path,
+    ranges: &[Range<u64>],
+    cache: &std::path::Path,
+) -> Result<PathBuf, String> {
     use std::io::{Read, Seek, Write};
     std::fs::create_dir_all(cache).map_err(|e| e.to_string())?;
     let payload = znimok_format::video::Payload {
@@ -91,8 +95,7 @@ fn extract(path: &std::path::Path, ranges: &[Range<u64>], cache: &std::path::Pat
         return Ok(out);
     }
     let f = std::fs::File::open(path).map_err(|e| e.to_string())?;
-    let mut reader =
-        znimok_format::video::PayloadReader::new(std::io::BufReader::new(f), &payload);
+    let mut reader = znimok_format::video::PayloadReader::new(std::io::BufReader::new(f), &payload);
     reader
         .seek(std::io::SeekFrom::Start(0))
         .map_err(|e| e.to_string())?;
@@ -140,7 +143,10 @@ pub enum Event {
     /// A new frame waits in the mailbox — take it with [`Player::take`].
     Frame,
     /// A CPU copy of the frame shown while paused.
-    Still { frame: i64, raster: Arc<Raster> },
+    Still {
+        frame: i64,
+        raster: Arc<Raster>,
+    },
 }
 
 /// The decoders of the two systems.
@@ -633,7 +639,8 @@ impl Engine {
                 std::thread::sleep(due - now);
             }
             // Far behind (a slow decode, a busy UI): the frames in between are skipped.
-            let late = Instant::now().saturating_duration_since(due).as_secs_f64() * self.fps * speed;
+            let late =
+                Instant::now().saturating_duration_since(due).as_secs_f64() * self.fps * speed;
             if late >= 1.0 || self.ui_busy() {
                 let skip = (late as i64).max(1);
                 for _ in 0..skip {

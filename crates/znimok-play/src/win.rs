@@ -180,7 +180,10 @@ impl IStream_Impl for PayloadStream_Impl {
     }
 }
 
-fn byte_stream(path: &std::path::Path, ranges: &[std::ops::Range<u64>]) -> Result<IMFByteStream, String> {
+fn byte_stream(
+    path: &std::path::Path,
+    ranges: &[std::ops::Range<u64>],
+) -> Result<IMFByteStream, String> {
     let payload = znimok_format::video::Payload {
         ranges: ranges.to_vec(),
     };
@@ -193,7 +196,8 @@ fn byte_stream(path: &std::path::Path, ranges: &[std::ops::Range<u64>]) -> Resul
     .into();
     // SAFETY: MF wraps our stream; the attribute tells its resolver what is inside.
     unsafe {
-        let bs = MFCreateMFByteStreamOnStream(&stream).map_err(e("MFCreateMFByteStreamOnStream"))?;
+        let bs =
+            MFCreateMFByteStreamOnStream(&stream).map_err(e("MFCreateMFByteStreamOnStream"))?;
         if let Ok(a) = bs.cast::<IMFAttributes>() {
             let _ = a.SetString(&MF_BYTESTREAM_CONTENT_TYPE, &HSTRING::from("video/mp4"));
         }
@@ -235,10 +239,11 @@ impl Bridge {
                 .raw_device()
                 .clone();
             let luid = d12.GetAdapterLuid();
-            let factory: IDXGIFactory4 =
-                CreateDXGIFactory2(DXGI_CREATE_FACTORY_FLAGS(0)).map_err(e("CreateDXGIFactory2"))?;
-            let adapter: IDXGIAdapter1 =
-                factory.EnumAdapterByLuid(luid).map_err(e("EnumAdapterByLuid"))?;
+            let factory: IDXGIFactory4 = CreateDXGIFactory2(DXGI_CREATE_FACTORY_FLAGS(0))
+                .map_err(e("CreateDXGIFactory2"))?;
+            let adapter: IDXGIAdapter1 = factory
+                .EnumAdapterByLuid(luid)
+                .map_err(e("EnumAdapterByLuid"))?;
             let (mut device, mut ctx) = (None, None);
             D3D11CreateDevice(
                 &adapter.cast::<IDXGIAdapter>().map_err(e("IDXGIAdapter"))?,
@@ -273,7 +278,8 @@ impl Bridge {
             let mut fence: Option<ID3D11Fence> = None;
             dev5.CreateFence(0, D3D11_FENCE_FLAG_NONE, &mut fence)
                 .map_err(e("CreateFence"))?;
-            let event = CreateEventW(None, false, false, PCWSTR::null()).map_err(e("CreateEvent"))?;
+            let event =
+                CreateEventW(None, false, false, PCWSTR::null()).map_err(e("CreateEvent"))?;
             Ok(Self {
                 device,
                 ctx,
@@ -334,7 +340,8 @@ fn shared_nv12(bridge: &Bridge, gpu: &Gpu, w: u32, h: u32) -> Result<Slot, Strin
             Usage: D3D11_USAGE_DEFAULT,
             BindFlags: D3D11_BIND_SHADER_RESOURCE.0 as u32,
             CPUAccessFlags: 0,
-            MiscFlags: (D3D11_RESOURCE_MISC_SHARED.0 | D3D11_RESOURCE_MISC_SHARED_NTHANDLE.0) as u32,
+            MiscFlags: (D3D11_RESOURCE_MISC_SHARED.0 | D3D11_RESOURCE_MISC_SHARED_NTHANDLE.0)
+                as u32,
         };
         let mut t = None;
         bridge
@@ -519,7 +526,8 @@ impl MfPlayer {
                 (&raw mut area).cast::<u8>(),
                 std::mem::size_of::<MFVideoArea>(),
             );
-            if t.GetBlob(&MF_MT_MINIMUM_DISPLAY_APERTURE, blob, None).is_ok()
+            if t.GetBlob(&MF_MT_MINIMUM_DISPLAY_APERTURE, blob, None)
+                .is_ok()
                 && area.Area.cx > 0
                 && area.Area.cy > 0
             {

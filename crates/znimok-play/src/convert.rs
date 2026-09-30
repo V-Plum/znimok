@@ -33,7 +33,9 @@ impl Converter {
         let l = device.limits();
         if l.max_storage_textures_per_shader_stage < 1 || l.max_storage_buffers_per_shader_stage < 1
         {
-            return Err("the GPU device allows no storage textures / buffers in a compute pass".into());
+            return Err(
+                "the GPU device allows no storage textures / buffers in a compute pass".into(),
+            );
         }
         let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("znimok nv12"),
@@ -201,10 +203,7 @@ impl Converter {
                 ],
             });
         let (w, h) = (out.width(), out.height());
-        let mut enc = self
-            .gpu
-            .device
-            .create_command_encoder(&Default::default());
+        let mut enc = self.gpu.device.create_command_encoder(&Default::default());
         {
             let mut pass = enc.begin_compute_pass(&Default::default());
             pass.set_pipeline(if thumb { &self.thumb } else { &self.main });
@@ -271,10 +270,7 @@ impl Converter {
             usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
             mapped_at_creation: false,
         });
-        let mut enc = self
-            .gpu
-            .device
-            .create_command_encoder(&Default::default());
+        let mut enc = self.gpu.device.create_command_encoder(&Default::default());
         enc.copy_texture_to_buffer(
             tex.as_image_copy(),
             wgpu::TexelCopyBufferInfo {
@@ -293,10 +289,7 @@ impl Converter {
         slice.map_async(wgpu::MapMode::Read, move |r| {
             let _ = tx.send(r);
         });
-        let _ = self
-            .gpu
-            .device
-            .poll(wgpu::PollType::wait_indefinitely());
+        let _ = self.gpu.device.poll(wgpu::PollType::wait_indefinitely());
         rx.recv()
             .map_err(|e| e.to_string())?
             .map_err(|e| e.to_string())?;
