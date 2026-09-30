@@ -3849,9 +3849,9 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
     // «Відео» mode.
     #[cfg(windows)]
     steps.push(Box::new(|_, ui, r| {
-        // Another program's window (in-process windows give WGC no frames — see the note in
-        // rec.rs): VS Code where the self-test runs from it, else the editor window itself.
-        let _ = ui;
+        // Another program's window: VS Code where the self-test runs from it; else this window
+        // itself — WGC sends an in-process window no frames, and since ZK-193 the recording
+        // takes its picture with PrintWindow and repeats it.
         let hwnd = {
             use znimok_platform::WindowList;
             let cap = znimok_win::WinCapture::new();
@@ -3860,7 +3860,17 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
                 .into_iter()
                 .find(|w| w.title.contains("Visual Studio Code"))
                 .map(|w| w.id.0)
-        };
+        }
+        .or_else(|| {
+            use slint::winit_030::WinitWindowAccessor;
+            use slint::winit_030::winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
+            ui.window()
+                .with_winit_window(|w| match w.window_handle().ok()?.as_raw() {
+                    RawWindowHandle::Win32(h) => Some(h.hwnd.get() as u64),
+                    _ => None,
+                })
+                .flatten()
+        });
         let Some(hwnd) = hwnd else {
             r.check(
                 "recording: a window to record",
@@ -3951,15 +3961,15 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
             .as_deref()
             .and_then(crate::library::read_entry)
             .map(|e| e.meta_line());
-        // WGC sends a window's frame only when it is drawn anew: a window that stood still for
-        // the whole recording gives nothing, and the library says so instead of saving.
+        // WGC sends a window's frame only when it is drawn anew; a window that stands still
+        // gets its first frame from PrintWindow (ZK-193), so the recording is never empty.
         let frames = crate::rec::LAST_FRAMES.load(std::sync::atomic::Ordering::SeqCst);
         if frames == 0 {
             let said = crate::wins::library().map(|(_, u)| u.get_toast().to_string());
             r.check(
-                "recording: a window that did not change — nothing saved, and the library says so",
-                path.is_none() && said.as_deref().is_some_and(|t| !t.is_empty()),
-                format!("{said:?}"),
+                "recording: a still window is recorded too (ZK-193)",
+                false,
+                format!("0 frames · {said:?}"),
             );
             return;
         }

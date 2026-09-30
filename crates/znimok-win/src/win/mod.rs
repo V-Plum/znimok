@@ -15,7 +15,7 @@ pub mod raw {
     pub use super::com_thread;
     pub use super::display::{Monitor, list as monitors};
     pub use super::wgc::{borderless, supported as wgc_supported};
-    pub use super::winlist::{display_of, dwm_bounds, hwnd, is_alive, is_minimized};
+    pub use super::winlist::{display_of, dwm_bounds, hwnd, is_alive, is_minimized, print_window};
 }
 
 use std::sync::Once;
