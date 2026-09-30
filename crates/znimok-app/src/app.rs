@@ -7535,7 +7535,7 @@ impl App {
                 }
             },
             (T::File, Some(path)) => {
-                let opts = export_encode(&prefs, prefs.format);
+                let opts = export_encode(prefs, prefs.format);
                 let meta = self.file_meta();
                 let r = io::encode(tw, th, &rgba, opts, meta.as_ref())
                     .and_then(|b| std::fs::write(path, b).map_err(|e| e.to_string()));
