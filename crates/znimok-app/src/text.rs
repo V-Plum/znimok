@@ -20,7 +20,7 @@ pub type Reading = Result<(Vec<Found>, Vec<String>), String>;
 pub fn recognize(w: u32, h: u32, rgba: Vec<u8>, origin: (i32, i32)) -> Reading {
     let img = znimok_models::Rgba::new(w, h, rgba).ok_or("empty picture")?;
     let engine = ocr::system().ok_or("no text recognition on this system")?;
-    let r = engine.recognize(&img, &[]).map_err(|e| e.to_string())?;
+    let r = ocr::read_text(engine.as_ref(), &img).map_err(|e| e.to_string())?;
     // What the engine made of icons, lines and shapes is dropped: a line needs letters or digits
     // for most of it, and a box many times taller than a usual line is not a line of text.
     let kept: Vec<_> = r.lines.into_iter().filter(|l| plausible(&l.text)).collect();

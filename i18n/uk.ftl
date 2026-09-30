@@ -2555,6 +2555,11 @@ text-none = Тексту не знайдено
 # @max: 80
 text-missing = не встановлено для розпізнавання: { $langs }
 
+# @where: Text panel status (Windows): no reader for Ukrainian — neither Znimok's helper nor the Windows language pack
+# @kind: status
+# @max: 200
+text-missing-uk = української тут не прочитати, кирилиця може вийти хибною: перевстановіть Znimok (з ним іде розпізнавач тексту) або додайте в Windows мовний пакет «Українська»
+
 # @where: Text panel status: the reading failed
 # @kind: error
 # @max: 96

@@ -465,9 +465,14 @@ fn run(cli: Cli) -> Result<(), Fail> {
                 .ok_or_else(|| Fail(3, format!("{}: empty picture", file.display())))?;
             let engine = znimok_models::ocr::system()
                 .ok_or_else(|| Fail(1, "no text recognition on this system".into()))?;
-            let r = engine
-                .recognize(&img, &[])
+            let r = znimok_models::ocr::read_text(engine.as_ref(), &img)
                 .map_err(|e| Fail(1, e.to_string()))?;
+            if !r.missing.is_empty() {
+                eprintln!(
+                    "warning: not installed for reading: {} — the text may be wrong",
+                    r.missing.join(", ")
+                );
+            }
             let lines: Vec<serde_json::Value> = r
                 .lines
                 .iter()
