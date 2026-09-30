@@ -1307,7 +1307,8 @@ impl Session {
         // A (Ф in the Ukrainian layout) in a recording's overlay: the next sound choice, kept
         // (ZK-189); every display's strip says it.
         if crate::rec::video_mode() && matches!(text, "a" | "A" | "ф" | "Ф") {
-            let label: slint::SharedString = crate::rec::sound_text(crate::rec::cycle_sound()).into();
+            let label: slint::SharedString =
+                crate::rec::sound_text(crate::rec::cycle_sound()).into();
             for p in &self.parts {
                 p.ui.set_sound_text(label.clone());
             }

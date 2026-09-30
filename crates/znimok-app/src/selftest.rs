@@ -2246,6 +2246,27 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
             r.snapshot(ui, "24b-settings-shots");
             ui.set_settings_page(10);
             r.snapshot(ui, "24c-settings-recording");
+            // ZK-189: «Both» shows a device row for each source, «default» first.
+            let before = ui.get_pref_rec_sound();
+            ui.invoke_setting("rec-sound".into(), 3);
+            r.snapshot(ui, "24d-settings-sound");
+            use slint::Model;
+            let sys = ui.get_rec_sys_devices();
+            let mic = ui.get_rec_mic_devices();
+            let default = app.borrow().tr.tr("rec-default-device");
+            r.check(
+                "sound choice: a device row per source, the default one first",
+                sys.row_count() >= 1
+                    && mic.row_count() >= 1
+                    && sys.row_data(0).is_some_and(|n| n == default.as_str())
+                    && ui.get_rec_sys_device() == 0,
+                format!(
+                    "system {} · microphone {}",
+                    sys.row_count(),
+                    mic.row_count()
+                ),
+            );
+            ui.invoke_setting("rec-sound".into(), before);
             ui.set_settings_page(0);
             ui.invoke_setting("gesture-plain".into(), 1);
             let g = app.borrow().prefs().capture.gestures;

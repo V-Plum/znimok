@@ -1394,7 +1394,10 @@ impl App {
                 .map_or(0, |i| i as i32 + 1);
             (std::rc::Rc::new(slint::VecModel::from(names)).into(), at)
         };
-        let (names, at) = devices(znimok_video::traits::AudioKind::System, &p.video.audio.system_device);
+        let (names, at) = devices(
+            znimok_video::traits::AudioKind::System,
+            &p.video.audio.system_device,
+        );
         ui.set_rec_sys_devices(names);
         ui.set_rec_sys_device(at);
         let (names, at) = devices(
@@ -1597,7 +1600,11 @@ impl App {
                     znimok_video::traits::AudioKind::Microphone
                 };
                 let id = (value > 0)
-                    .then(|| audio_devices(kind).get(value as usize - 1).map(|d| d.0.clone()))
+                    .then(|| {
+                        audio_devices(kind)
+                            .get(value as usize - 1)
+                            .map(|d| d.0.clone())
+                    })
                     .flatten();
                 self.save_prefs(ui, |p| match kind {
                     znimok_video::traits::AudioKind::System => p.video.audio.system_device = id,
