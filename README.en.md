@@ -4,12 +4,12 @@
 
 [Українська](README.md) · **English**
 
-> **In development.** The first release is not out yet; the code and the plan are changing.
+> **Preview version 0.0.1.** Znimok is in development: features arrive with every update, the code and the plan are changing.
 
 Screenshots for Windows and macOS with an editor that keeps marks editable: an arrow, a caption or
 a hidden area can be adjusted a week later. Shots live in a library on your computer, in their own
 open format; the result goes to the clipboard, to a file, or straight to a person or an AI agent.
-Screen recording with a synchronised DevTools log comes in the second version.
+Screen recording is in preview; a DevTools log alongside it comes later.
 
 Znimok succeeds the screenshot and video features of [Little Helpers](https://github.com/V-Plum/lilhelpers):
 the same experience, but new code in Rust, two operating systems, an installer and a modern
@@ -31,6 +31,10 @@ interface. Little Helpers files are not compatible — the features move over, n
 - **Library** with thumbnails, search, date groups, pins, the keyboard, picking several cards and a trash (restore / destroy); the folder may live on a cloud drive. Every
   document opens in a window of its own — shots can be compared side by side and marks dragged
   between them.
+- **Video (preview)**: record a region, a window or the screen on Windows; playback on the
+  graphics card on Windows and macOS (forwards, backwards, 0.5–2×, thumbnails on the strip);
+  trimming and cutting without re-encoding; marks with their time on a track; a frame as a
+  screenshot of its own.
 - **Share**: copy, drag into a chat, export to PNG/JPEG/WebP with metadata.
 - **For agents**: an MCP server and the `znimok` command — capture, read the library, edit
   documents (off until you turn it on).
@@ -72,9 +76,10 @@ updates them). Fonts are built in: Onest, JetBrains Mono, Unbounded — all unde
 - Updates: Windows — Znimok's own updater (ECDSA-signed SHA256SUMS, MSI, a rollback when the
   new version does not start); macOS — Sparkle 2 in the bundle with Znimok's own Updates page
   (check, EdDSA-verified download, relaunch). The daily check runs only when switched on.
-- Video recording (phase 8) is a library only so far: `crates/znimok-video-win` — Windows
-  (WGC or Desktop Duplication → a wgpu shader → NV12 on the GPU → hardware H.264 through
-  Media Foundation, AAC audio; the software encoder as the fallback). Try it without the app:
+- Video (phase 8): recording — `crates/znimok-video-win` (WGC or Desktop Duplication → a wgpu
+  shader → NV12 on the GPU → hardware H.264 through Media Foundation; the software encoder as the
+  fallback); playback — `crates/znimok-play` (Media Foundation on D3D11 or VideoToolbox → a
+  texture without a copy through the processor → wgpu). Try recording without the app:
   `cargo run --release -p znimok-video-win --example record -- --seconds 5 [--window Title]`.
 
 ## License
