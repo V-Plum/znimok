@@ -4415,6 +4415,11 @@ vid-frame-back = Кадр назад
 # @max: 16
 vid-play = Пуск
 
+# @where: Transport: plays the video backwards (J)
+# @kind: a11y
+# @max: 18
+vid-play-back = Пуск назад
+
 # @where: Transport
 # @kind: a11y
 # @max: 16
@@ -4925,10 +4930,10 @@ vid-sound-both = Обидва
 # @max: 12
 vid-fit = Вписати
 
-# @where: Video, Trim section: playback is not available on this machine
+# @where: Video, Trim section: the player could not start on this machine
 # @kind: body
 # @max: 160
-vid-poster-note = Відтворення тут ще недоступне: перший кадр стоїть за все відео; обрізання працює.
+vid-poster-note = Відео не вдалося відтворити тут: перший кадр стоїть за нього; обрізання працює.
 
 # @where: Name of the screenshot made from a video frame; $name the video, $n the frame
 # @kind: label

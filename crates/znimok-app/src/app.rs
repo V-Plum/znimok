@@ -7994,6 +7994,8 @@ impl App {
             return;
         }
         self.dpr = ui.window().scale_factor() as f64;
+        // ZK-92: the player starts once this window has its GPU device.
+        self.video_start(ui);
         let (w, h) = self.canvas_px(ui);
         let size_changed = self
             .gpu
@@ -8036,8 +8038,18 @@ impl App {
         let shown_crop = self
             .crop
             .or_else(|| self.over.as_ref().map(|_| s.ed.doc.frame()));
-        // A video (ZK-181): the frame the player delivered stands in for the poster.
-        let frame = s.vid.as_ref().and_then(|v| v.raster.clone());
+        // A video (ZK-92): while the player shows its frames on the GPU the canvas leaves the
+        // picture out (the marks are drawn over the video layer); the CPU copy of the paused
+        // frame stands in for the poster, for Hide marks that sample it.
+        let live = s.vid.as_ref().is_some_and(|v| v.shown.is_some());
+        if self.renderer.picture() == live {
+            self.renderer.set_picture(!live);
+            self.frame_changed = true;
+        }
+        let frame = s
+            .vid
+            .as_ref()
+            .and_then(|v| v.raster.as_ref().map(|(_, r)| r.clone()));
         let doc: std::borrow::Cow<Document> =
             if shown_crop.is_some() || self.compare || frame.is_some() {
                 let mut d = s.ed.doc.clone();
@@ -8093,7 +8105,16 @@ impl App {
                     draw_crop(&mut self.base, &self.view, c, self.dpr, self.over.is_none());
                 }
                 if self.over.is_none() {
-                    draw_frame_edge(&mut self.base, &self.view, frame_rect, self.dpr, dark, None);
+                    let checker = self.renderer.picture();
+                    draw_frame_edge(
+                        &mut self.base,
+                        &self.view,
+                        frame_rect,
+                        self.dpr,
+                        dark,
+                        None,
+                        checker,
+                    );
                 }
             }
             Repaint::Rects(rs) => {
@@ -8107,6 +8128,7 @@ impl App {
                         self.dpr,
                         dark,
                         Some(rs),
+                        self.renderer.picture(),
                     );
                 }
             }
@@ -8265,6 +8287,26 @@ impl App {
         let (tex, _, _) = gpu.texture.as_ref().unwrap();
         let whole = [canvas];
         let upload: &[IRect] = restore.as_deref().unwrap_or(&whole);
+        // Over a video layer the canvas is see-through: Slint blends a texture as straight
+        // alpha, the renderer's pixels are premultiplied (translucent marks came out dark).
+        if !self.renderer.picture() {
+            let pw = self.pixmap.width() as usize;
+            let data = self.pixmap.data_as_u8_slice_mut();
+            for r in upload {
+                for y in r.y as usize..r.bottom() as usize {
+                    let row =
+                        &mut data[(y * pw + r.x as usize) * 4..(y * pw + r.right() as usize) * 4];
+                    for px in row.as_chunks_mut::<4>().0 {
+                        let a = px[3] as u32;
+                        if a != 0 && a != 255 {
+                            for c in &mut px[..3] {
+                                *c = ((*c as u32 * 255 + a / 2) / a).min(255) as u8;
+                            }
+                        }
+                    }
+                }
+            }
+        }
         for r in upload {
             gpu.queue.write_texture(
                 wgpu::TexelCopyTextureInfo {
@@ -8291,6 +8333,7 @@ impl App {
             );
         }
         self.dirty = false;
+        self.place_video_layer(ui);
     }
 
     pub fn gpu_lost(&mut self) {
@@ -8429,6 +8472,7 @@ fn draw_frame_edge(
     dpr: f64,
     dark: bool,
     clip: Option<&[IRect]>,
+    checker: bool,
 ) {
     use znimok_render::vello_cpu::color::PremulRgba8;
     let (w, h) = (pix.width() as i64, pix.height() as i64);
@@ -8448,14 +8492,16 @@ fn draw_frame_edge(
             x >= r.x as i64 && x < r.right() as i64 && y >= r.y as i64 && y < r.bottom() as i64
         })
     };
-    // Transparent parts over a checkerboard of 8-point squares.
+    // Transparent parts over a checkerboard of 8-point squares (not over a playing video: the
+    // canvas is see-through there, ZK-92).
     let sq = (8.0 * dpr).round().max(4.0) as i64;
+    let clip_checker: &[IRect] = if checker { clip } else { &[] };
     let (c1, c2) = if dark {
         (58u16, 44u16)
     } else {
         (255u16, 226u16)
     };
-    for r in clip {
+    for r in clip_checker {
         for y in y0.max(0).max(r.y as i64)..y1.min(h).min(r.bottom() as i64) {
             for x in x0.max(0).max(r.x as i64)..x1.min(w).min(r.right() as i64) {
                 let p = &mut data[(y * w + x) as usize];
@@ -9080,13 +9126,19 @@ fn head_index(h: Head) -> i32 {
 // ------------------------------------------------------------------ video (ZK-181)
 
 impl App {
+    /// Whether the canvas draws the picture (false while a video plays on the GPU under it).
+    #[cfg_attr(not(windows), allow(dead_code))]
+    pub fn picture_drawn(&self) -> bool {
+        self.renderer.picture()
+    }
+
     pub fn is_video(&self) -> bool {
         self.s.as_ref().is_some_and(|s| s.vid.is_some())
     }
 
-    /// A video document opened in an editor window: the player and the timeline come up.
+    /// A video document opened in an editor window: the timeline comes up; the player starts as
+    /// soon as the window has its GPU device ([`Self::video_start`]).
     fn video_open(&mut self, ui: &AppWindow) {
-        let me = self.me();
         let role = self.role;
         let Some(s) = self.s.as_mut() else { return };
         let Some(part) = s.video.as_ref() else {
@@ -9097,36 +9149,279 @@ impl App {
             return;
         }
         let info = &part.video.info;
-        let mut v =
-            crate::video::Vid::new(info.fps(), info.frames as i64, s.ed.doc.timeline.as_ref());
-        match crate::video::Player::open(part, move |d| {
-            let _ = slint::invoke_from_event_loop(move || me.with(|a, ui| a.video_frame(ui, d)));
+        let v = crate::video::Vid::new(info.fps(), info.frames as i64, s.ed.doc.timeline.as_ref());
+        s.vid = Some(v);
+        ui.set_vid_mode(true);
+        ui.set_insp_tab(2);
+        self.video_start(ui);
+        self.sync_video(ui);
+    }
+
+    /// The player of the open video, on this window's GPU device (ZK-92): once.
+    fn video_start(&mut self, ui: &AppWindow) {
+        let me = self.me();
+        let Some(gpu) = self.gpu.as_ref().map(|g| znimok_play::Gpu {
+            device: g.device.clone(),
+            queue: g.queue.clone(),
+        }) else {
+            return;
+        };
+        let Some(s) = self.s.as_mut() else { return };
+        let (Some(v), Some(part)) = (s.vid.as_mut(), s.video.as_ref()) else {
+            return;
+        };
+        if v.player_started {
+            return;
+        }
+        v.player_started = true;
+        let source = znimok_play::Source::of_part(part, crate::library::cache_dir().join("video"));
+        match znimok_play::Player::open(gpu, source, v.frames, move |e| {
+            let _ = slint::invoke_from_event_loop(move || me.with(|a, ui| a.video_event(ui, e)));
         }) {
             Ok(p) => {
                 p.set_edit(v.edit().clone());
-                p.seek(0);
+                p.seek(v.frame);
                 v.player = Some(p);
             }
             Err(e) => v.player_error = Some(e),
         }
-        s.vid = Some(v);
-        ui.set_vid_mode(true);
-        ui.set_insp_tab(2);
+        self.video_tone();
         self.sync_video(ui);
     }
 
-    /// The player delivered a frame.
-    pub fn video_frame(&mut self, ui: &AppWindow, d: crate::video::Delivered) {
+    /// What the player says (on the UI thread).
+    pub fn video_event(&mut self, ui: &AppWindow, e: znimok_play::Event) {
+        let hides = self
+            .s
+            .as_ref()
+            .is_some_and(|s| s.ed.doc.objects.iter().any(|o| o.kind() == Kind::Hide));
         let Some(v) = self.s.as_mut().and_then(|s| s.vid.as_mut()) else {
             return;
         };
-        v.frame = d.frame;
-        v.raster = Some(d.raster);
-        v.playing = d.playing;
-        self.frame_changed = true;
-        self.dirty = true;
-        self.sync_video(ui);
-        ui.window().request_redraw();
+        match e {
+            znimok_play::Event::Opened(info) => {
+                v.path = Some(info.path);
+                self.sync_video(ui);
+            }
+            znimok_play::Event::Failed(err) => {
+                eprintln!("player: {err}");
+                v.player = None;
+                v.shown = None;
+                v.player_error = Some(err);
+                ui.set_vid_live(false);
+                self.frame_changed = true;
+                self.dirty = true;
+                self.sync_video(ui);
+                ui.window().request_redraw();
+            }
+            znimok_play::Event::Frame => {
+                let Some(sh) = v.player.as_ref().and_then(|p| p.take()) else {
+                    return;
+                };
+                let first = v.shown.is_none();
+                v.frame = sh.frame;
+                v.playing = sh.playing;
+                match slint::Image::try_from(sh.texture.clone()) {
+                    Ok(img) => {
+                        ui.set_vid_image(img);
+                        ui.set_vid_live(true);
+                    }
+                    Err(err) => eprintln!("video frame: {err:?}"),
+                }
+                v.shown = Some(sh);
+                if first {
+                    self.dirty = true;
+                }
+                if v.playing {
+                    self.sync_playhead(ui);
+                } else {
+                    self.sync_video(ui);
+                }
+                ui.window().request_redraw();
+            }
+            znimok_play::Event::Still { frame, raster } => {
+                if frame != v.frame {
+                    return;
+                }
+                v.raster = Some((frame, raster));
+                let shot = std::mem::take(&mut v.shot_pending);
+                if hides {
+                    self.frame_changed = true;
+                    self.dirty = true;
+                    ui.window().request_redraw();
+                }
+                if shot {
+                    self.frame_as_shot(ui);
+                }
+            }
+        }
+    }
+
+    /// While playing only the time and the playhead move (the rest of the bars stays).
+    fn sync_playhead(&mut self, ui: &AppWindow) {
+        let Some(v) = self.s.as_mut().and_then(|s| s.vid.as_mut()) else {
+            return;
+        };
+        ui.set_vid_playing(v.playing);
+        ui.set_vid_time(v.time_str(v.frame).into());
+        let before = v.view.off;
+        v.view.auto_scroll((v.frame as f64 + 0.5) / v.fps.max(1e-6));
+        if (v.view.off - before).abs() > 1e-9 {
+            self.sync_video(ui);
+            return;
+        }
+        let x = v.view.time_to_x((v.frame as f64 + 0.5) / v.fps.max(1e-6));
+        ui.set_tl_playhead(x as f32);
+    }
+
+    /// The picture's tone to the player (the video is converted with it on the GPU), and a new
+    /// film strip when it changed.
+    fn video_tone(&mut self) {
+        let Some(s) = self.s.as_mut() else { return };
+        let r = s.ed.doc.recipe;
+        let lut = if znimok_render::develop::tone_is_default(&r) {
+            None
+        } else {
+            Some(znimok_render::develop::tone_lut(&r))
+        };
+        let Some(v) = s.vid.as_mut() else { return };
+        if v.tone_sent == Some(lut) {
+            return;
+        }
+        if let Some(p) = &v.player {
+            p.set_tone(lut);
+            v.tone_sent = Some(lut);
+            v.thumbs.clear();
+            v.thumbs_job = None;
+            v.strip_key = None;
+        }
+    }
+
+    /// The video layer under the canvas: the whole picture at the view's place and scale,
+    /// clipped to the frame (the crop), in logical pixels.
+    fn place_video_layer(&mut self, ui: &AppWindow) {
+        let Some(s) = self.s.as_ref() else { return };
+        if s.vid.as_ref().is_none_or(|v| v.shown.is_none()) {
+            return;
+        }
+        let (iw, ih) = s.ed.doc.image_size();
+        let fr = if self.crop.is_some() {
+            IRect::new(0, 0, iw as i32, ih as i32)
+        } else {
+            s.ed.doc.frame()
+        };
+        let d = self.dpr.max(0.1);
+        let sc = self.view.scale;
+        let (ox, oy) = (self.view.origin.x, self.view.origin.y);
+        let to_x = |x: f64| ((x - ox) * sc / d) as f32;
+        let to_y = |y: f64| ((y - oy) * sc / d) as f32;
+        ui.set_vid_x(to_x(0.0));
+        ui.set_vid_y(to_y(0.0));
+        ui.set_vid_w((iw as f64 * sc / d) as f32);
+        ui.set_vid_h((ih as f64 * sc / d) as f32);
+        ui.set_vid_clip_x(to_x(fr.x as f64));
+        ui.set_vid_clip_y(to_y(fr.y as f64));
+        ui.set_vid_clip_w((fr.w as f64 * sc / d) as f32);
+        ui.set_vid_clip_h((fr.h as f64 * sc / d) as f32);
+        // Sharp pixels from 200 % up, smooth below.
+        ui.set_vid_smooth(sc < 2.0);
+    }
+
+    /// The film strip (ZK-92): a thumbnail per tile at the timeline's zoom, from key frames,
+    /// made on the GPU by a worker and composed here into one image.
+    fn video_strip(&mut self, ui: &AppWindow) {
+        let me = self.me();
+        let dpr = self.dpr.max(0.5);
+        let gpu = self.gpu.as_ref().map(|g| znimok_play::Gpu {
+            device: g.device.clone(),
+            queue: g.queue.clone(),
+        });
+        let Some(s) = self.s.as_mut() else { return };
+        let (Some(v), Some(part)) = (s.vid.as_mut(), s.video.as_ref()) else {
+            return;
+        };
+        const STRIP_H: f64 = 52.0;
+        let (iw, ih) = (part.video.info.width.max(1), part.video.info.height.max(1));
+        let tile_w = ((STRIP_H * iw as f64 / ih as f64).round() as i32).max(16);
+        let tiles = v.strip_tiles(tile_w);
+        let key = (
+            v.view.width,
+            tiles.first().map_or(-1, |t| t.1) * 1_000_003 + tiles.len() as i64,
+            v.view.visible().to_bits(),
+            v.thumbs.len(),
+        );
+        if v.strip_key == Some(key) {
+            return;
+        }
+        let had_job_for_view = v
+            .strip_key
+            .is_some_and(|k| (k.0, k.1, k.2) == (key.0, key.1, key.2));
+        v.strip_key = Some(key);
+        // The missing ones go to a worker (a new view replaces the old job).
+        let mut missing: Vec<i64> = tiles
+            .iter()
+            .map(|t| t.1)
+            .filter(|f| !v.thumbs.contains_key(f))
+            .collect();
+        missing.dedup();
+        if !missing.is_empty()
+            && !had_job_for_view
+            && let Some(gpu) = gpu
+            && v.player.is_some()
+        {
+            let source =
+                znimok_play::Source::of_part(part, crate::library::cache_dir().join("video"));
+            let tone = v.tone_sent.flatten();
+            let h_px = (STRIP_H * dpr).round() as u32;
+            v.thumbs_job = Some(znimok_play::Thumbs::start(
+                gpu,
+                source,
+                missing,
+                h_px,
+                tone,
+                move |f, r| {
+                    let _ = slint::invoke_from_event_loop(move || {
+                        me.with(|a, ui| a.video_thumb(ui, f, r))
+                    });
+                },
+            ));
+        }
+        // Compose what is there.
+        let (sw, sh) = (
+            ((v.view.width as f64) * dpr).round().max(1.0) as u32,
+            (STRIP_H * dpr).round().max(1.0) as u32,
+        );
+        let mut buf = slint::SharedPixelBuffer::<slint::Rgba8Pixel>::new(sw, sh);
+        let out = buf.make_mut_bytes();
+        for (x, f) in &tiles {
+            let Some(t) = v.thumbs.get(f) else { continue };
+            let x0 = ((*x as f64) * dpr).round() as i64;
+            let rows = t.height.min(sh) as usize;
+            for y in 0..rows {
+                for tx in 0..t.width as i64 {
+                    let ox = x0 + tx;
+                    if ox < 0 || ox >= sw as i64 {
+                        continue;
+                    }
+                    let si = (y * t.width as usize + tx as usize) * 4;
+                    let di = (y * sw as usize + ox as usize) * 4;
+                    out[di..di + 4].copy_from_slice(&t.rgba[si..si + 4]);
+                }
+            }
+        }
+        ui.set_tl_strip(slint::Image::from_rgba8(buf));
+    }
+
+    /// A thumbnail arrived from the strip's worker.
+    pub fn video_thumb(&mut self, ui: &AppWindow, f: i64, r: Raster) {
+        let Some(v) = self.s.as_mut().and_then(|s| s.vid.as_mut()) else {
+            return;
+        };
+        if v.thumbs.len() > 600 {
+            v.thumbs.clear();
+        }
+        v.thumbs.insert(f, r);
+        self.video_strip(ui);
     }
 
     /// Everything the video bars and the «Відео» tab show.
@@ -9252,6 +9547,9 @@ impl App {
             })
             .collect();
         ui.set_vid_tracks(std::rc::Rc::new(VecModel::from(rows)).into());
+        ui.set_vid_backward(v.backward && v.playing);
+        self.video_tone();
+        self.video_strip(ui);
     }
 
     /// The frame to show: the player decodes it; without one the timeline still moves.
@@ -9296,21 +9594,29 @@ impl App {
             return;
         };
         match what {
-            "play" => {
-                if v.playing {
+            // Play / pause; «reverse» plays backwards (J), «forward» forwards (L), «pause» (K).
+            "play" | "reverse" | "forward" | "pause" => {
+                let backward = what == "reverse";
+                // Play toggles; J / L while already going that way stop it; K stops.
+                let stop =
+                    what == "pause" || (v.playing && (what == "play" || v.backward == backward));
+                if stop {
                     v.playing = false;
                     if let Some(p) = &v.player {
                         p.pause();
                     }
                 } else if let Some(p) = &v.player {
-                    // At the end: from the start again.
-                    let from = if v.frame >= v.end() {
+                    // At the end (the start, backwards): from the other end again.
+                    let from = if !backward && v.frame >= v.end() {
                         v.home()
+                    } else if backward && v.frame <= v.home() {
+                        v.end()
                     } else {
                         v.frame
                     };
                     v.playing = true;
-                    p.play(from, v.speed(), v.looping);
+                    v.backward = backward;
+                    p.play(from, v.speed(), v.looping, backward);
                 }
             }
             "back" => {
@@ -9343,9 +9649,24 @@ impl App {
                 self.vid_seek(ui, f);
                 return;
             }
-            "loop" => v.looping = !v.looping,
+            "loop" => {
+                v.looping = !v.looping;
+                if v.playing
+                    && let Some(p) = &v.player
+                {
+                    p.play(v.frame, v.speed(), v.looping, v.backward);
+                }
+            }
             "mute" => v.muted = !v.muted,
-            "speed" => v.speed_i = (v.speed_i + 1) % crate::video::SPEEDS.len(),
+            "speed" => {
+                v.speed_i = (v.speed_i + 1) % crate::video::SPEEDS.len();
+                // Playing: on from where it is, at the new speed.
+                if v.playing
+                    && let Some(p) = &v.player
+                {
+                    p.play(v.frame, v.speed(), v.looping, v.backward);
+                }
+            }
             "fit" => {
                 v.view.zoom = 1.0;
                 v.view.off = 0.0;
@@ -9525,13 +9846,27 @@ impl App {
     /// «Кадр як знімок»: the frame on the canvas, full size, as a new document — in a window of
     /// its own (ZK-107). The marks come with ZK-94.
     fn frame_as_shot(&mut self, ui: &AppWindow) {
-        let Some(s) = self.s.as_ref() else { return };
-        let Some(v) = s.vid.as_ref() else { return };
-        let raster = v
+        let Some(s) = self.s.as_mut() else { return };
+        let Some(v) = s.vid.as_mut() else { return };
+        // The frame on the GPU comes back to the CPU a moment after the player rests: wait for it.
+        let copy = v
             .raster
             .as_ref()
-            .map(|r| (**r).clone())
-            .unwrap_or_else(|| s.ed.doc.source().clone());
+            .filter(|(f, _)| *f == v.frame)
+            .map(|(_, r)| (**r).clone());
+        if copy.is_none() && v.shown.is_some() && v.player.is_some() {
+            v.shot_pending = true;
+            if v.playing {
+                v.playing = false;
+                if let Some(p) = &v.player {
+                    p.pause();
+                }
+            }
+            return;
+        }
+        let Some(s) = self.s.as_ref() else { return };
+        let Some(v) = s.vid.as_ref() else { return };
+        let raster = copy.unwrap_or_else(|| s.ed.doc.source().clone());
         let mut a = count_args("n", v.frame);
         a.set("name", s.ed.doc.name.clone());
         let name = self.tr.tr_args("vid-frame-doc-name", &a);
@@ -9604,6 +9939,19 @@ impl App {
                 }
                 Some('s') => {
                     self.vid_action(ui, "split", 0);
+                    return done(self);
+                }
+                // J / K / L, as in video editors: backwards, stop, forwards (ZK-92).
+                Some('j') => {
+                    self.vid_transport(ui, "reverse");
+                    return done(self);
+                }
+                Some('k') => {
+                    self.vid_transport(ui, "pause");
+                    return done(self);
+                }
+                Some('l') => {
+                    self.vid_transport(ui, "forward");
                     return done(self);
                 }
                 _ => {}

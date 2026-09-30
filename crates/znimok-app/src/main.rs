@@ -113,6 +113,47 @@ macro_rules! on {
     }};
 }
 
+/// The wgpu device for Slint, made the way Slint would (the adapter from WGPU_ADAPTER_NAME or the
+/// first one of the chosen backends) but with the adapter's own limits and, where the adapter has
+/// them, NV12 textures — the video player's compute pass and zero-copy path (ZK-92).
+fn manual_wgpu(s: &slint::wgpu_30::WGPUSettings) -> Option<slint::wgpu_30::WGPUConfiguration> {
+    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+        backends: s.backends,
+        flags: s.instance_flags,
+        backend_options: s.backend_options.clone(),
+        memory_budget_thresholds: s.instance_memory_budget_thresholds,
+        display: None,
+    });
+    let adapter = pollster::block_on(wgpu::util::initialize_adapter_from_env(&instance, None))
+        .ok()
+        .or_else(|| {
+            pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
+                power_preference: s.power_preference,
+                force_fallback_adapter: false,
+                compatible_surface: None,
+                apply_limit_buckets: false,
+            }))
+            .ok()
+        })?;
+    let nv12 = adapter.features() & wgpu::Features::TEXTURE_FORMAT_NV12;
+    let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
+        label: Some("znimok"),
+        required_features: s.device_required_features | nv12,
+        required_limits: adapter.limits(),
+        experimental_features: s.device_experimental_features,
+        memory_hints: s.device_memory_hints.clone(),
+        trace: wgpu::Trace::default(),
+    }))
+    .map_err(|e| eprintln!("wgpu: own device failed ({e}); Slint chooses"))
+    .ok()?;
+    Some(slint::wgpu_30::WGPUConfiguration::Manual {
+        instance,
+        adapter,
+        device,
+        queue,
+    })
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Log file and crash reports (ZK-32); keep the guard until the end of main to flush the log.
     let _log = znimok_log::init(znimok_log::Config::for_app(
@@ -162,8 +203,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         selector.with_winit_event_loop_builder(b)
     };
+    // The device is made here (ZK-92): with the adapter's own limits (Slint's defaults allow no
+    // storage buffers or textures — the video player converts its frames in a compute pass)
+    // and, on Windows, NV12 textures when the adapter has them (frames without a copy).
+    // Anything that fails leaves Slint to choose as before.
+    let config =
+        manual_wgpu(&settings).unwrap_or(slint::wgpu_30::WGPUConfiguration::Automatic(settings));
     selector
-        .require_wgpu_30(slint::wgpu_30::WGPUConfiguration::Automatic(settings))
+        .require_wgpu_30(config)
         // The card after a capture (ZK-41) must not take the focus or show in the taskbar.
         .with_winit_window_attributes_hook(|attrs| {
             if attrs.title != pill::TITLE

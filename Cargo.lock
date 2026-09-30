@@ -6801,6 +6801,7 @@ dependencies = [
  "objc2-app-kit 0.3.2",
  "objc2-foundation 0.3.2",
  "png",
+ "pollster",
  "redb",
  "rfd",
  "slint",
@@ -6819,6 +6820,7 @@ dependencies = [
  "znimok-mac",
  "znimok-models",
  "znimok-platform",
+ "znimok-play",
  "znimok-render",
  "znimok-settings",
  "znimok-stitch",
@@ -7040,6 +7042,27 @@ dependencies = [
  "schemars",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "znimok-play"
+version = "0.0.0"
+dependencies = [
+ "objc2 0.6.4",
+ "objc2-av-foundation",
+ "objc2-core-foundation",
+ "objc2-core-media",
+ "objc2-core-video",
+ "objc2-foundation 0.3.2",
+ "objc2-metal 0.3.2",
+ "pollster",
+ "wgpu",
+ "windows",
+ "windows-core",
+ "znimok-core",
+ "znimok-format",
+ "znimok-video",
+ "znimok-video-win",
 ]
 
 [[package]]

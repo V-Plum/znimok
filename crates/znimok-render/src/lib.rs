@@ -162,6 +162,8 @@ pub struct Renderer {
     /// A tile for partial repaints (ZK-130), kept between frames.
     scratch: Pixmap,
     threads: u16,
+    /// Draw the picture under the marks (false: a video shows through, ZK-92).
+    picture: bool,
 }
 
 impl Default for Renderer {
@@ -201,11 +203,23 @@ impl Renderer {
             settings,
             scratch: Pixmap::new(1, 1),
             threads,
+            picture: true,
         }
     }
 
     pub fn threads(&self) -> u16 {
         self.threads
+    }
+
+    /// Whether the picture is drawn under the marks. Off for a playing video (ZK-92): its frames
+    /// are shown on the GPU under a transparent canvas, and the marks are drawn over them. Hide
+    /// marks still sample the document's source bank.
+    pub fn set_picture(&mut self, on: bool) {
+        self.picture = on;
+    }
+
+    pub fn picture(&self) -> bool {
+        self.picture
     }
 
     /// Size of a text mark in document pixels, for creating and resizing text objects.
@@ -263,16 +277,18 @@ impl Renderer {
 
         // Source image, cropped to the frame.
         let frame = doc.frame();
-        let (_, src) = self.developed(doc);
         self.ctx.set_transform(base);
         self.ctx.push_clip_layer(&irect(frame).to_path(0.1));
-        let (iw, ih) = doc.image_size();
-        self.draw_pixmap(
-            src,
-            Rect::new(0.0, 0.0, iw as f64, ih as f64),
-            ImageQuality::Medium,
-            1.0,
-        );
+        if self.picture {
+            let (_, src) = self.developed(doc);
+            let (iw, ih) = doc.image_size();
+            self.draw_pixmap(
+                src,
+                Rect::new(0.0, 0.0, iw as f64, ih as f64),
+                ImageQuality::Medium,
+                1.0,
+            );
+        }
 
         for (i, obj) in doc.objects.iter().enumerate() {
             if obj.hidden {
