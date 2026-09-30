@@ -4535,10 +4535,12 @@ export component AppWindow inherits Window {
             }
         }
         Rectangle {
-            width: min(840px, root.width - 32px);
-            height: min(exp-lay.preferred-height, root.height - 32px);
-            x: (parent.width - self.width) / 2;
-            y: (parent.height - self.height) / 2 - 12px;
+            // Whole physical pixels (ZK-201): a sheet at a fractional position is drawn through
+            // a layer (clip with rounded corners) that the GPU then resamples — soft text.
+            width: round(min(840px, root.width - 32px) / 1phx) * 1phx;
+            height: round(min(exp-lay.preferred-height, root.height - 32px) / 1phx) * 1phx;
+            x: round((parent.width - self.width) / 2 / 1phx) * 1phx;
+            y: round(((parent.height - self.height) / 2 - 12px) / 1phx) * 1phx;
             border-radius: 16px;
             background: Theme.panel;
             border-width: 1px;
@@ -4726,10 +4728,11 @@ export component AppWindow inherits Window {
             }
         }
         Rectangle {
-            width: min(440px, root.width - 32px);
-            height: dialog-lay.preferred-height;
-            x: (parent.width - self.width) / 2;
-            y: (parent.height - self.height) / 2 - 20px;
+            // Whole physical pixels, as the export sheet (ZK-201).
+            width: round(min(440px, root.width - 32px) / 1phx) * 1phx;
+            height: round(dialog-lay.preferred-height / 1phx) * 1phx;
+            x: round((parent.width - self.width) / 2 / 1phx) * 1phx;
+            y: round(((parent.height - self.height) / 2 - 20px) / 1phx) * 1phx;
             border-radius: 14px;
             background: Theme.panel;
             border-width: 1px;
