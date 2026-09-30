@@ -72,13 +72,7 @@ pub type Picture = (u32, u32, Vec<u8>, (i32, i32));
 
 /// A part `r` (document coordinates) of a frame picture `w`×`h` whose top-left is `origin`:
 /// the pixels and the part's own top-left, or `None` when it misses the picture.
-pub fn crop(
-    w: u32,
-    h: u32,
-    rgba: &[u8],
-    origin: (i32, i32),
-    r: IRect,
-) -> Option<Picture> {
+pub fn crop(w: u32, h: u32, rgba: &[u8], origin: (i32, i32), r: IRect) -> Option<Picture> {
     let r = r.normalized();
     let x0 = (r.x - origin.0).clamp(0, w as i32);
     let y0 = (r.y - origin.1).clamp(0, h as i32);
