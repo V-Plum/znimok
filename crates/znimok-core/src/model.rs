@@ -662,6 +662,10 @@ pub struct Timeline {
     pub parts: Vec<TimelinePart>,
     pub in_point: i64,
     pub out_point: i64,
+    /// When each mark shows (ZK-94): source frames `[a, b)` by object id. A mark without an entry
+    /// shows all the time (the app gives a new mark three seconds from the current frame).
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub marks: BTreeMap<ObjectId, (i64, i64)>,
 }
 
 impl Timeline {
@@ -675,6 +679,7 @@ impl Timeline {
             }],
             in_point: 0,
             out_point: frames,
+            marks: BTreeMap::new(),
         }
     }
 
@@ -695,6 +700,15 @@ impl Timeline {
             && 0 <= self.in_point
             && self.in_point < self.out_point
             && self.out_point <= at
+            && self
+                .marks
+                .values()
+                .all(|&(a, b)| 0 <= a && a < b && b <= at)
+    }
+
+    /// Whether mark `id` shows on source frame `f`.
+    pub fn mark_live(&self, id: ObjectId, f: i64) -> bool {
+        self.marks.get(&id).is_none_or(|&(a, b)| a <= f && f < b)
     }
 }
 
@@ -722,6 +736,9 @@ pub struct Document {
     pub next_id: ObjectId,
     /// A video document's timeline edits; `None` for a screenshot.
     pub timeline: Option<Timeline>,
+    /// The frame a video shows now (ZK-94; the app sets it, it is not saved and not undone): marks
+    /// whose time does not cover it are neither drawn nor picked.
+    pub shown_frame: Option<i64>,
 }
 
 impl Document {
@@ -739,6 +756,15 @@ impl Document {
             group_names: BTreeMap::new(),
             next_id: 1,
             timeline: None,
+            shown_frame: None,
+        }
+    }
+
+    /// The mark shows now: not a video, no frame set, or its time covers the frame (ZK-94).
+    pub fn live(&self, o: &Object) -> bool {
+        match (&self.timeline, self.shown_frame) {
+            (Some(t), Some(f)) => t.mark_live(o.id, f),
+            _ => true,
         }
     }
 
@@ -931,6 +957,29 @@ impl Document {
 
 #[cfg(test)]
 mod tests {
+
+    /// ZK-94: the marks' times are part of a valid timeline, inside the video.
+    #[test]
+    fn marks_times_are_checked() {
+        let mut t = Timeline::whole(100);
+        assert!(t.is_valid());
+        t.marks.insert(1, (10, 40));
+        assert!(t.is_valid() && t.mark_live(1, 10) && !t.mark_live(1, 40) && t.mark_live(2, 99));
+        t.marks.insert(2, (40, 40));
+        assert!(!t.is_valid(), "an empty time");
+        t.marks.insert(2, (90, 101));
+        assert!(!t.is_valid(), "past the end");
+        t.marks.remove(&2);
+        let json = serde_json::to_string(&t).unwrap();
+        assert!(json.contains("marks"));
+        let back: Timeline = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, t);
+        // A timeline without marks reads as before.
+        let old: Timeline =
+            serde_json::from_str(r#"{"parts":[{"a":0,"b":100}],"in_point":0,"out_point":100}"#)
+                .unwrap();
+        assert!(old.marks.is_empty() && old.is_valid());
+    }
     use super::*;
 
     fn counter(seq: u32, group: u32, start: i32) -> Object {

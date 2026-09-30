@@ -221,6 +221,14 @@ microphone / both), the crop, tone and size (the tone applies to the video as it
 and shows the video — on Windows and macOS, without copying frames through the processor; the marks
 are drawn over it.
 
+**Marks in time.** Any mark on a video (frame, arrow, text, hide, marker…) appears from the frame it
+was drawn on and lasts 3 seconds. Its bar is on the timeline's "marks" track: drag the bar to move
+its time, or an end of it to make it longer or shorter; a click on a bar selects the mark and takes
+the video into its time. Outside its time a mark is neither seen nor selectable. While the video
+plays, a hide shows as a hatched plate and a marker as a translucent one; paused, they work on the
+frame's pixels again. "Frame as screenshot" takes that frame's marks along, editable. Changes of
+time undo like everything else.
+
 ## Sharing the result
 
 - **Copy** (Ctrl+C) — the image to the clipboard. The Copy button can be dragged into a chat or a

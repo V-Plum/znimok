@@ -171,6 +171,7 @@ impl VideoEdit {
                 .collect(),
             in_point: self.in_point,
             out_point: self.out_point,
+            marks: Default::default(),
         }
     }
 

@@ -180,7 +180,7 @@ impl Editor {
                     .doc
                     .objects
                     .iter()
-                    .filter(|o| !o.hidden)
+                    .filter(|o| !o.hidden && self.doc.live(o))
                     .map(|o| o.id)
                     .collect();
                 self.history.break_series();

@@ -118,7 +118,7 @@ pub fn pick(doc: &Document, p: (f64, f64), px_per_doc: f64) -> Option<usize> {
         .iter()
         .enumerate()
         .rev()
-        .find(|(_, o)| !o.hidden && hits(o, p, px_per_doc))
+        .find(|(_, o)| !o.hidden && doc.live(o) && hits(o, p, px_per_doc))
         .map(|(i, _)| i)
 }
 
@@ -130,7 +130,12 @@ pub fn pick_in_rect(doc: &Document, r: IRect) -> Vec<usize> {
         .enumerate()
         .filter(|(_, o)| {
             let b = o.bounds();
-            !o.hidden && b.x < r.right() && b.right() > r.x && b.y < r.bottom() && b.bottom() > r.y
+            !o.hidden
+                && doc.live(o)
+                && b.x < r.right()
+                && b.right() > r.x
+                && b.y < r.bottom()
+                && b.bottom() > r.y
         })
         .map(|(i, _)| i)
         .collect()
@@ -359,6 +364,36 @@ fn resize_local(o: &mut Object, handle: usize, orig: IRect, dx: i32, dy: i32, m:
 
 #[cfg(test)]
 mod tests {
+
+    /// ZK-94: a video's mark is picked only on the frames of its time.
+    #[test]
+    fn a_marks_time_decides_where_it_is_picked() {
+        let mut d = doc();
+        let id = d.objects[0].id;
+        let at = {
+            let b = d.objects[0].bounds();
+            // On its left edge (a frame is picked by its line).
+            (b.x as f64, b.y as f64 + b.h as f64 / 2.0)
+        };
+        let before = pick(&d, at, 1.0);
+        assert!(before.is_some());
+        let mut t = crate::Timeline::whole(300);
+        t.marks.insert(id, (100, 190));
+        d.timeline = Some(t);
+        d.shown_frame = Some(50);
+        assert_ne!(pick(&d, at, 1.0), Some(0), "not live on frame 50");
+        assert!(
+            pick_in_rect(&d, d.objects[0].bounds())
+                .iter()
+                .all(|i| *i != 0)
+        );
+        d.shown_frame = Some(100);
+        assert_eq!(pick(&d, at, 1.0), before, "live from its first frame");
+        d.shown_frame = Some(190);
+        assert_ne!(pick(&d, at, 1.0), Some(0), "gone at its end");
+        d.shown_frame = None;
+        assert_eq!(pick(&d, at, 1.0), before, "no frame set: all live");
+    }
     use super::*;
     use crate::model::{Head, Raster, Rgb};
 

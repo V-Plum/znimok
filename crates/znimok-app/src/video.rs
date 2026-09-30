@@ -15,7 +15,9 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use znimok_core::{Raster, Timeline};
+use std::collections::BTreeMap;
+
+use znimok_core::{Object, ObjectId, Raster, Rgb, Timeline};
 use znimok_video::edit::{EditTimeline, Selection, TimelineView, VideoEdit};
 
 /// What the timeline draws, in pixels of its track area (Slint positions it).
@@ -59,6 +61,10 @@ pub struct Vid {
     pub thumbs: HashMap<i64, Raster>,
     pub thumbs_job: Option<znimok_play::Thumbs>,
     pub strip_key: Option<(i32, i64, u64, usize)>,
+    /// A press on a mark's bar (ZK-94): the mark, what is dragged, where it started, its span then.
+    pub mark_press: Option<MarkPress>,
+    /// The marks live on the frame last shown (a new set repaints the canvas).
+    pub live_sig: u64,
     pub speed_i: usize,
     pub looping: bool,
     pub muted: bool,
@@ -99,6 +105,8 @@ impl Vid {
             thumbs: HashMap::new(),
             thumbs_job: None,
             strip_key: None,
+            mark_press: None,
+            live_sig: 0,
             speed_i: 1,
             looping: false,
             muted: false,
@@ -121,7 +129,8 @@ impl Vid {
 
     /// The document's timeline changed under us (undo, redo, a load): the timeline follows.
     pub fn adopt(&mut self, t: &Timeline) {
-        if self.tl.edit().to_timeline() != *t
+        let mine = self.tl.edit().to_timeline();
+        if (&mine.parts, mine.in_point, mine.out_point) != (&t.parts, t.in_point, t.out_point)
             && let Some(e) = VideoEdit::from_timeline(t)
         {
             self.tl = EditTimeline::with_edit(e);
@@ -338,6 +347,128 @@ pub fn fmt_time(secs: f64) -> String {
 pub fn fmt_time_short(secs: f64) -> String {
     let secs = secs.max(0.0).round() as i64;
     format!("{}:{:02}", secs / 60, secs % 60)
+}
+
+// ------------------------------------------------------------------ marks in time (ZK-94)
+
+/// A new mark shows this long from the frame it was made on (LH `kEvMarkSec`).
+pub const MARK_SECONDS: f64 = 3.0;
+/// Lanes of the marks track; more overlapping marks share the last one (LH: up to 4 visible).
+pub const LANES: usize = 4;
+/// Where the lanes are in the track area, pixels: the first one's top, a lane's step and height.
+pub const LANE_TOP: i32 = 106;
+pub const LANE_STEP: i32 = 12;
+pub const LANE_H: i32 = 10;
+/// How close to a bar's end a press takes that end, pixels.
+const GRIP_PX: i32 = 6;
+
+/// A mark's bar on the marks track.
+#[derive(Clone, Debug, PartialEq)]
+pub struct MarkBar {
+    pub id: ObjectId,
+    pub x: i32,
+    pub w: i32,
+    pub lane: usize,
+    pub colour: Rgb,
+    pub selected: bool,
+}
+
+/// What a press on a bar drags.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Grip {
+    Move,
+    Start,
+    End,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct MarkPress {
+    pub id: ObjectId,
+    pub grip: Grip,
+    pub x0: i32,
+    pub span0: (i64, i64),
+    pub moved: bool,
+    /// The drag's undo step: every move of one drag merges into it.
+    pub step: u64,
+}
+
+impl Vid {
+    /// The span a new mark gets: from the frame shown, three seconds (inside the video).
+    pub fn new_span(&self) -> (i64, i64) {
+        let n = self.frames.max(1);
+        let a = self.frame.clamp(0, n - 1);
+        let b = (a + (MARK_SECONDS * self.fps).round() as i64).clamp(a + 1, n);
+        (a, b)
+    }
+
+    /// The bars of the marks with a span, in lanes that do not overlap (the first free lane by
+    /// start; the last lane takes what does not fit).
+    pub fn mark_bars(
+        &self,
+        spans: &BTreeMap<ObjectId, (i64, i64)>,
+        objects: &[Object],
+        selected: &[ObjectId],
+    ) -> Vec<MarkBar> {
+        let mut items: Vec<(i64, i64, &Object)> = objects
+            .iter()
+            .filter_map(|o| spans.get(&o.id).map(|&(a, b)| (a, b, o)))
+            .collect();
+        items.sort_by_key(|(a, b, o)| (*a, *b, o.id));
+        let mut ends = [i64::MIN; LANES];
+        items
+            .into_iter()
+            .map(|(a, b, o)| {
+                let lane = (0..LANES).find(|l| ends[*l] <= a).unwrap_or(LANES - 1);
+                ends[lane] = ends[lane].max(b);
+                let x = self.view.edge_to_x(a);
+                MarkBar {
+                    id: o.id,
+                    x,
+                    w: (self.view.edge_to_x(b) - x).max(2),
+                    lane,
+                    colour: o.style.color,
+                    selected: selected.contains(&o.id),
+                }
+            })
+            .collect()
+    }
+
+    /// The bar under a point of the track area and what a press there drags.
+    pub fn bar_at(bars: &[MarkBar], x: i32, y: i32) -> Option<(ObjectId, Grip)> {
+        let lane = ((y - LANE_TOP + (LANE_STEP - LANE_H) / 2) / LANE_STEP)
+            .clamp(0, LANES as i32 - 1) as usize;
+        // The top one first (drawn last).
+        bars.iter()
+            .rev()
+            .find(|b| b.lane == lane && x >= b.x - GRIP_PX / 2 && x <= b.x + b.w + GRIP_PX / 2)
+            .map(|b| {
+                let grip = if b.w > 3 * GRIP_PX && x <= b.x + GRIP_PX {
+                    Grip::Start
+                } else if b.w > 3 * GRIP_PX && x >= b.x + b.w - GRIP_PX {
+                    Grip::End
+                } else {
+                    Grip::Move
+                };
+                (b.id, grip)
+            })
+    }
+
+    /// The span while a bar is dragged to `x`.
+    pub fn dragged_span(&self, p: &MarkPress, x: i32) -> (i64, i64) {
+        let n = self.frames.max(1);
+        let f0 = self.view.x_to_edge(p.x0);
+        let df = self.view.x_to_edge(x) - f0;
+        let (a, b) = p.span0;
+        match p.grip {
+            Grip::Move => {
+                let len = b - a;
+                let a = (a + df).clamp(0, n - len);
+                (a, a + len)
+            }
+            Grip::Start => ((a + df).clamp(0, b - 1), b),
+            Grip::End => (a, (b + df).clamp(a + 1, n)),
+        }
+    }
 }
 
 // ------------------------------------------------------------------ the film strip

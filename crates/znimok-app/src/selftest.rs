@@ -3565,6 +3565,86 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
             one_more && matches!(&shot, Some(((160, 100), true, name)) if name.contains("кадр 45")),
             format!("one more window {one_more} · {shot:?}"),
         );
+        // ZK-94: marks in time. A new mark shows three seconds from the frame (45 → the end, 90);
+        // on frame 10 it is neither drawn nor picked; its bar on the marks track drags its time
+        // (one undo step); the time is saved; «Кадр як знімок» takes the marks live on the frame.
+        let (cx, cy) = centre(ui);
+        app.borrow_mut().set_tool(ui, crate::app::tool::RECT);
+        drag(app, ui, (cx - 40.0, cy - 25.0), (cx + 40.0, cy + 25.0));
+        app.borrow_mut().set_tool(ui, crate::app::tool::SELECT);
+        let span_of = |app: &Shared| {
+            app.borrow().s.as_ref().and_then(|s| {
+                let o = s.ed.doc.objects.last()?;
+                s.ed.doc.timeline.as_ref()?.marks.get(&o.id).copied()
+            })
+        };
+        let made = span_of(app);
+        let bars = ui.get_tl_marks().row_count();
+        {
+            let mut a = app.borrow_mut();
+            a.tl_pointer(ui, 0, 100, 10, false);
+            a.tl_pointer(ui, 2, 100, 10, false);
+        }
+        let live_at_10 = app.borrow().s.as_ref().map(|s| {
+            s.ed.doc.objects.iter().filter(|o| s.ed.doc.live(o)).count()
+        });
+        // Press on the bar (frame 60 = 600 px, the first lane), drag 100 px (10 frames) left.
+        {
+            let mut a = app.borrow_mut();
+            a.tl_pointer(ui, 0, 600, 111, false);
+            a.tl_pointer(ui, 1, 550, 111, false);
+            a.tl_pointer(ui, 1, 500, 111, false);
+            a.tl_pointer(ui, 2, 500, 111, false);
+        }
+        let moved = span_of(app);
+        let selected = app.borrow().s.as_ref().map(|s| s.ed.selection().len());
+        ui.invoke_undo();
+        let undone_span = span_of(app);
+        let saved3 = app.borrow_mut().save_now(ui);
+        let spans_in_file = std::fs::read(&path)
+            .ok()
+            .and_then(|b| znimok_format::read_any(&b).ok())
+            .and_then(|l| match l {
+                znimok_format::Loaded::Video(v) => {
+                    Some(v.video.mark_spans.values().copied().collect::<Vec<_>>())
+                }
+                _ => None,
+            });
+        {
+            let mut a = app.borrow_mut();
+            a.tl_pointer(ui, 0, 500, 10, false);
+            a.tl_pointer(ui, 2, 500, 10, false);
+        }
+        ui.invoke_vid_action("frame-shot".into(), 0);
+        let (shot2_app, shot2_ui) = current(app, ui);
+        let shot_marks = shot2_app.borrow().s.as_ref().map(|s| s.ed.doc.objects.len());
+        if !Rc::ptr_eq(&shot2_app, app) {
+            shot2_app.borrow_mut().close_document(&shot2_ui);
+        }
+        r.check(
+            "marks in time: a new mark shows three seconds from the frame, with a bar on the marks track",
+            made == Some((45, 90)) && bars == 1,
+            format!("{made:?} · {bars} bars"),
+        );
+        r.check(
+            "marks in time: outside its time a mark is neither drawn nor picked",
+            live_at_10 == Some(0),
+            format!("live on frame 10: {live_at_10:?}"),
+        );
+        r.check(
+            "marks in time: its bar drags its time, one undo step; the time is saved",
+            moved == Some((35, 80))
+                && selected == Some(1)
+                && undone_span == Some((45, 90))
+                && saved3
+                && spans_in_file.as_deref() == Some(&[(45u32, 90u32)][..]),
+            format!("moved {moved:?} · selected {selected:?} · undone {undone_span:?} · saved {saved3} · in the file {spans_in_file:?}"),
+        );
+        r.check(
+            "marks in time: «Кадр як знімок» takes the marks live on that frame",
+            shot_marks == Some(1),
+            format!("{shot_marks:?}"),
+        );
         app.borrow_mut().close_document(ui);
         let _ = std::fs::remove_file(&path);
     }));
@@ -3688,6 +3768,12 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
                 copy == Some(frame) && thumbs > 0,
                 format!("frame {frame} · copy of {copy:?} · {lit} lit pixels · {thumbs} thumbnails"),
             );
+            // A mark on the paused frame, its bar on the marks track (ZK-94).
+            let (cx, cy) = centre(ui);
+            app.borrow_mut().set_tool(ui, crate::app::tool::RECT);
+            drag(app, ui, (cx - 120.0, cy - 60.0), (cx + 60.0, cy + 40.0));
+            app.borrow_mut().set_tool(ui, crate::app::tool::SELECT);
+            r.snapshot(ui, "42-video-marks");
             // Backwards from here (J).
             ui.invoke_vid_transport("reverse".into());
             REAL_FROM.with(|f| f.set(frame));

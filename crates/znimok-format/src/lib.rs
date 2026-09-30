@@ -843,6 +843,16 @@ pub fn save_same_kind(
     {
         video.edit = e;
     }
+    // The marks' times (ZK-94) — only for marks that are there, inside the video.
+    if let Some(t) = &doc.timeline {
+        let n = i64::from(video.info.frames);
+        video.mark_spans = t
+            .marks
+            .iter()
+            .filter(|(id, (a, b))| doc.index_of(**id).is_some() && 0 <= *a && a < b && *b <= n)
+            .map(|(id, (a, b))| (*id, (*a as u32, *b as u32)))
+            .collect();
+    }
     save_video(path, doc, &video, reader, len, opts)?;
     match open(path)? {
         Loaded::Video(n) => Ok(Some(VideoPart {
@@ -928,7 +938,13 @@ impl Parsed {
             None => Loaded::Image(self.doc),
             Some((video, payload)) => {
                 let mut doc = self.doc;
-                doc.timeline = Some(video.edit.to_timeline());
+                let mut t = video.edit.to_timeline();
+                t.marks = video
+                    .mark_spans
+                    .iter()
+                    .map(|(id, (a, b))| (*id, (i64::from(*a), i64::from(*b))))
+                    .collect();
+                doc.timeline = Some(t);
                 Loaded::Video(VideoDocument {
                     doc,
                     video,
