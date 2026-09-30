@@ -3548,10 +3548,10 @@ about-privacy = Приватність
 # @max: 16
 about-licence = Ліцензія
 
-# @where: About page: copyright line; the name stays as it is
+# @where: About page: copyright line; the name in the language's script (uk: Вадим Слива), «Plum» as is
 # @kind: body
 # @max: 70
-about-copyright = © 2026 Vadym Slyva (Plum). Усі права захищено.
+about-copyright = © 2026 Вадим Слива (Plum). Усі права захищено.
 
 # @where: About page: under the copyright; what the public source means
 # @kind: body
