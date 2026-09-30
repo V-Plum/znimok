@@ -353,6 +353,31 @@ doc-other-ways = Інші способи
 # @max: 40
 doc-untitled = Знімок { $date } { $time }
 
+# @where: Question: the document clicked in the library is open in another window
+# @kind: heading
+# @max: 80
+open-twice-title = «{ $name }» уже відкрито в іншому вікні
+
+# @where: Question body: why a copy, not a second window on the same file
+# @kind: body
+# @max: 200
+open-twice-body = Два вікна, що зберігають один документ, затиратимуть зміни одне одного. Перейдіть до того вікна або відкрийте копію — вона збережеться як новий документ.
+
+# @where: Button: bring the window with the document to the front
+# @kind: button
+# @max: 24
+open-twice-go = Перейти до вікна
+
+# @where: Button: open a copy that saves as a new document
+# @kind: button
+# @max: 24
+open-twice-copy = Відкрити копію
+
+# @where: The name of a copy of a document
+# @kind: label
+# @max: 80
+doc-copy-name = { $name } (копія)
+
 ## Open menu
 ## The "Open ▾" menu in the title bar and on the home screen.
 

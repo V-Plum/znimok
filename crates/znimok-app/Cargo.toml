@@ -36,6 +36,7 @@ znimok-settings = { path = "../znimok-settings" }
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp", "gif", "bmp"] }
 rfd = "0.17"
 arboard = "3"
+uuid = { version = "1", features = ["v4"] }
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 redb = "4"
 

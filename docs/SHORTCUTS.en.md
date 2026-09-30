@@ -56,6 +56,7 @@ Settings → Screenshots; the hint strip at the bottom of the overlay shows the 
 | Select all | Ctrl+A | ⌘A |
 | Add to the selection / take out of it | Shift- or Ctrl-click | ⇧- or ⌘-click |
 | Select one member of a group | Alt-click | ⌥-click |
+| Open a library card in a new window | Alt-click | ⌥-click |
 | Select several with a band | drag over empty space | drag over empty space |
 | Duplicate | Ctrl+D | ⌘D |
 | Delete | Delete or Backspace | Delete |

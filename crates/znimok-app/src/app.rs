@@ -335,6 +335,9 @@ pub struct App {
     eyedrop: Option<String>,
     /// For the self-test: Alt held (the real one is read from the system, ZK-167).
     pub test_alt: bool,
+    /// The next document opens in this very window, the library's too (ZK-192): a card clicked
+    /// in the library opens where it was clicked — library and editor are one window.
+    open_here: bool,
     /// Text found on the picture (ZK-184); the panel is open while this is `Some`.
     text: Option<TextFind>,
     /// The export sheet while it is open (ZK-187).
@@ -557,6 +560,7 @@ impl App {
             digit: None,
             eyedrop: None,
             test_alt: false,
+            open_here: false,
             text: None,
             exp: None,
             exp_last: None,
@@ -1856,10 +1860,20 @@ impl App {
                 }
                 self.pick_anchor = Some(anchor);
             }
-            _ if !self.trash_view => {
+            // Alt (⌥)+click: in a new window (ZK-192).
+            3 if !self.trash_view => {
                 self.clear_picks();
                 self.show_picks(ui);
                 self.open_path(ui, &path);
+                return;
+            }
+            // A plain click: in this window — the library and the editor are one (ZK-192).
+            _ if !self.trash_view => {
+                self.clear_picks();
+                self.show_picks(ui);
+                self.open_here = true;
+                self.open_path(ui, &path);
+                self.open_here = false;
                 return;
             }
             _ => {
@@ -2615,7 +2629,8 @@ impl App {
         fresh: bool,
         video: Option<znimok_format::VideoPart>,
     ) {
-        if self.takes_no_document() {
+        let here = std::mem::take(&mut self.open_here) && self.s.is_none();
+        if !here && self.takes_no_document() {
             if let Some((app, win)) = self.spawn_editor(ui) {
                 app.borrow_mut().open_session(&win, ed, path, fresh, video);
             }
@@ -2691,9 +2706,35 @@ impl App {
 
     /// Opens a `.znimok` in place, or makes a new library document from an image file.
     pub fn open_path(&mut self, ui: &AppWindow, path: &Path) {
-        // Already open: that window comes to the front, no second copy (ZK-107).
+        // Already open in another window: two windows autosaving one file would overwrite each
+        // other — go there, or open a copy that saves as a new document (ZK-192).
         if let Some((_, win)) = crate::wins::editor_of(path) {
-            crate::wins::focus(&win);
+            let here = self.open_here;
+            let me = self.me();
+            let path = path.to_path_buf();
+            let name = self.doc_title_of(&path);
+            crate::dialog::ask(
+                ui,
+                self.tr
+                    .tr_args("open-twice-title", &args(&[("name", name)])),
+                self.tr.tr("open-twice-body"),
+                vec![
+                    self.tr.tr("open-twice-go"),
+                    self.tr.tr("open-twice-copy"),
+                    self.tr.tr("common-cancel"),
+                ],
+                0,
+                Some(2),
+                move |_, answer| match answer {
+                    Some(0) => crate::wins::focus(&win),
+                    Some(1) => me.with(|a, ui| {
+                        a.open_here = here;
+                        a.open_copy(ui, &path);
+                        a.open_here = false;
+                    }),
+                    _ => {}
+                },
+            );
             return;
         }
         let name = path
@@ -2728,6 +2769,39 @@ impl App {
                 self.toast(ui, msg);
             }
         }
+    }
+
+    /// A document's title for a question: its name inside, else the file name.
+    fn doc_title_of(&self, path: &Path) -> String {
+        library::read_entry(path)
+            .map(|e| e.name)
+            .filter(|n| !n.is_empty())
+            .unwrap_or_else(|| {
+                path.file_stem()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_default()
+            })
+    }
+
+    /// A copy of a document open elsewhere (ZK-192): its own id and file in the library, named
+    /// «… (copy)», not saved until changed — the original is never touched from here.
+    pub fn open_copy(&mut self, ui: &AppWindow, path: &Path) {
+        match znimok_format::open_parts(path) {
+            Ok((mut doc, video)) => {
+                doc.id = uuid::Uuid::new_v4();
+                doc.name = self
+                    .tr
+                    .tr_args("doc-copy-name", &args(&[("name", doc.name.clone())]));
+                let copy = library::new_path(&self.lib_dir, &doc.id.simple().to_string());
+                self.open_session(ui, Editor::new(doc), copy, true, video);
+            }
+            Err(e) => self.toast(ui, e.to_string()),
+        }
+    }
+
+    /// For the self-test: the file of this window's document.
+    pub fn doc_path(&self) -> Option<PathBuf> {
+        self.s.as_ref().map(|s| s.path.clone())
     }
 
     /// A new document from the clipboard; false (and a message) when there is no picture.
