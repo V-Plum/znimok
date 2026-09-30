@@ -27,6 +27,8 @@ pub use win::fileassoc::{PROG_ID, WinFileAssoc};
 #[cfg(windows)]
 pub use win::raw;
 #[cfg(windows)]
+pub use win::session::on_session_end;
+#[cfg(windows)]
 pub use win::share::WinShare;
 #[cfg(windows)]
 pub use win::{Api, WinCapture, init_process};

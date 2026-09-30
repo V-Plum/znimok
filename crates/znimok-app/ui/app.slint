@@ -1764,7 +1764,8 @@ export component AppWindow inherits Window {
     // Counters and stamps (ZK-51).
     in property <int> counter-shape;
     in property <int> digit-index: -1;
-    in property <int> pin-rot;
+    // Size step of the counter (S M L XL; -1 = none of them), ZK-166.
+    in property <int> counter-size;
     in-out property <string> counter-start;
     in property <string> counter-next;
     in property <int> stamp-id;
@@ -3025,7 +3026,7 @@ export component AppWindow inherits Window {
                                     // between the two rows it swaps
                                     HorizontalLayout {
                                         height: 22px;
-                                        Text { text: root.prop-kind == 4 ? @tr("ctx-text-outline" => "Outline colour") : @tr("insp-stroke" => "Stroke"); color: Theme.text3; font-size: 11px; font-weight: 600; letter-spacing: 0.4px; vertical-alignment: center; horizontal-stretch: 1; }
+                                        Text { text: root.prop-kind == 4 ? @tr("ctx-text-outline" => "Outline colour") : (root.prop-kind == 7 ? @tr("counter-colour" => "Colour") : @tr("insp-stroke" => "Stroke")); color: Theme.text3; font-size: 11px; font-weight: 600; letter-spacing: 0.4px; vertical-alignment: center; horizontal-stretch: 1; }
                                         if root.prop-kind <= 1 || root.prop-kind == 4: IconButton {
                                             width: 22px;
                                             height: 22px;
@@ -3050,6 +3051,26 @@ export component AppWindow inherits Window {
                                         with-none: root.prop-kind <= 1;
                                         none-tip: @tr("insp-stroke-none" => "No outline");
                                         picked(i) => { root.set-prop(i < 0 ? "stroke-none" : "color", i); }
+                                    }
+                                    // A counter: its number's colour under its own, the swap between (ZK-166).
+                                    if root.prop-kind == 7: HorizontalLayout {
+                                        height: 22px;
+                                        Text { text: @tr("counter-digit-colour" => "Number"); color: Theme.text3; font-size: 11px; font-weight: 600; letter-spacing: 0.4px; vertical-alignment: center; horizontal-stretch: 1; }
+                                        IconButton {
+                                            width: 22px;
+                                            height: 22px;
+                                            icon: "M7 4 L3 8 l4 4 M3 8 h13 a4 4 0 0 1 4 4 M17 20 l4 -4 -4 -4 M21 16 H8 a4 4 0 0 1 -4 -4";
+                                            label: @tr("counter-swap" => "Swap the colour and the number");
+                                            clicked => { root.set-prop("swap-digit", 0); }
+                                        }
+                                    }
+                                    if root.prop-kind == 7: ColourRow {
+                                        selected: root.digit-index;
+                                        key: "digit";
+                                        current: root.digit-rgb;
+                                        with-none: true;
+                                        none-tip: @tr("counter-digit-auto" => "Auto: black or white, whichever reads better");
+                                        picked(i) => { root.set-prop("digit", i); }
                                     }
                                     if root.prop-kind <= 3: PropRow {
                                         label: @tr("insp-thickness" => "Thickness");
@@ -3166,25 +3187,13 @@ export component AppWindow inherits Window {
                                             SegOption { icon: "M12 21 C7 15 5 12 5 9 a7 7 0 1 1 14 0 c0 3 -2 6 -7 12 z"; on: root.counter-shape == 2; tip: @tr("counter-pin" => "Pin"); clicked => { root.set-prop("counter-shape", 2); } }
                                         }
                                     }
-                                    // A pin points where it matters: four directions.
-                                    if root.counter-shape == 2 && root.prop-for-selection: PropRow {
-                                        label: "";
+                                    // Fixed sizes; a pin turns by the rotation handle, any way (ZK-166).
+                                    PropRow {
+                                        label: @tr("counter-size" => "Size");
                                         HorizontalLayout {
                                             spacing: 2px;
-                                            SegOption { icon: "M12 5 v14 M6 13 l6 6 6 -6"; on: root.pin-rot == 0; clicked => { root.set-prop("pin-rot", 0); } }
-                                            SegOption { icon: "M19 12 H5 M11 6 l-6 6 6 6"; on: root.pin-rot == 1; clicked => { root.set-prop("pin-rot", 1); } }
-                                            SegOption { icon: "M12 19 V5 M6 11 l6 -6 6 6"; on: root.pin-rot == 2; clicked => { root.set-prop("pin-rot", 2); } }
-                                            SegOption { icon: "M5 12 h14 M13 6 l6 6 -6 6"; on: root.pin-rot == 3; clicked => { root.set-prop("pin-rot", 3); } }
+                                            for t[i] in ["S", "M", "L", "XL"]: SegOption { text: t; on: root.counter-size == i; clicked => { root.set-prop("counter-size", i); } }
                                         }
-                                    }
-                                    Text { height: 22px; text: @tr("counter-digit-colour" => "Number"); color: Theme.text3; font-size: 11px; font-weight: 600; letter-spacing: 0.4px; vertical-alignment: center; }
-                                    ColourRow {
-                                        selected: root.digit-index;
-                                        key: "digit";
-                                        current: root.digit-rgb;
-                                        with-none: true;
-                                        none-tip: @tr("counter-digit-auto" => "Auto: black or white, whichever reads better");
-                                        picked(i) => { root.set-prop("digit", i); }
                                     }
                                     HorizontalLayout {
                                         spacing: 8px;

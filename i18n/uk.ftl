@@ -1262,6 +1262,21 @@ counter-digit-colour = Цифра
 # @max: 60
 counter-digit-auto = Авто: чорна чи біла — що краще читається
 
+# @where: Inspector, Counter: caption of the counter's own colour row
+# @kind: label
+# @max: 20
+counter-colour = Колір
+
+# @where: Inspector, Counter: the button between the colour and the number rows
+# @kind: tooltip
+# @max: 48
+counter-swap = Поміняти колір і цифру
+
+# @where: Inspector, Counter: the row of fixed sizes S M L XL
+# @kind: label
+# @max: 12
+counter-size = Розмір
+
 # @where: Counter context menu
 # @kind: menu
 # @max: 32

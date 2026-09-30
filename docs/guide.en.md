@@ -112,7 +112,7 @@ shape, size, effects for all at once), "Delete group" and "New numbering group";
 group: "Counter — Group 1".
 
 **Turning.** A selected mark has a round handle on a stem above it: drag it to turn the mark about
-its centre; Shift turns in 15° steps. Several selected marks turn about the middle of their shared
+its centre; Shift turns in 45° steps. Several selected marks turn about the middle of their shared
 box. The angle shows beside the pointer and can be typed into the "∠" field of the inspector. A
 turned mark resizes in its own frame — the opposite corner stays where it is.
 

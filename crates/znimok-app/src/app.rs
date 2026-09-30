@@ -295,6 +295,8 @@ pub struct App {
     /// New counters and stamps (ZK-51): shape, numbering group, digit colour (None = auto
     /// black or white), which stamp or emoji.
     counter_shape: CounterShape,
+    /// Size step of new counters (ZK-166), an index into [`COUNTER_SIZES`].
+    counter_size_i: usize,
     counter_group: u32,
     digit: Option<Rgb>,
     /// The eyedropper is armed for this colour control ("color", "fill", "outline", "digit"):
@@ -459,6 +461,7 @@ impl App {
             italic: false,
             align: Align::Left,
             counter_shape: CounterShape::Circle,
+            counter_size_i: 1,
             counter_group: 1,
             digit: None,
             eyedrop: None,
@@ -2281,6 +2284,19 @@ impl App {
             .unwrap_or_default()
     }
 
+    /// The automatic size of counters and stamps: ~3.6 % of the picture's short side (LH).
+    fn badge(&self) -> i32 {
+        let side = self
+            .s
+            .as_ref()
+            .map(|s| {
+                let f = s.ed.doc.frame();
+                f.w.min(f.h)
+            })
+            .unwrap_or(1000);
+        ((side as f64 * 0.036).round() as i32).clamp(28, 96)
+    }
+
     fn style_for(&self, t: usize) -> Style {
         let shape = matches!(t, tool::RECT | tool::ELLIPSE);
         // Without an outline a shape is a plate of the fill colour (ZK-161).
@@ -2321,16 +2337,7 @@ impl App {
             glow: if fx_tool(t) { self.glow } else { Effect::None },
             ..Style::default()
         };
-        let side = self
-            .s
-            .as_ref()
-            .map(|s| {
-                let f = s.ed.doc.frame();
-                f.w.min(f.h)
-            })
-            .unwrap_or(1000);
-        // Counters and stamps are sized to the picture (LH: ~3.6 % of the short side).
-        let badge = ((side as f64 * 0.036).round() as i32).clamp(28, 96);
+        let badge = self.badge();
         match t {
             tool::MARKER => Style {
                 // The red default reads badly as a highlighter: yellow unless a colour was picked.
@@ -2343,7 +2350,7 @@ impl App {
                 ..base
             },
             tool::COUNTER => Style {
-                thick: badge,
+                thick: counter_size(badge, self.counter_size_i),
                 ..base
             },
             tool::STAMP => Style {
@@ -2811,9 +2818,10 @@ impl App {
                 let pd = self.view.to_doc(out.x, out.y);
                 let mut delta = hit::angle_from_up(center, (pd.x, pd.y)) - ang0;
                 let single = orig.len() == 1;
-                // Shift: steps of 15° — of the mark's own angle alone, of the turn for several.
+                // Shift: steps of 45° — of the mark's own angle alone, of the turn for several
+                // (owner, 30.09: 15° steps were too fine).
                 if shift && !single {
-                    delta = (delta / 15.0).round() * 15.0;
+                    delta = (delta / 45.0).round() * 45.0;
                 }
                 let norm = |a: f64| (a.round() as i32).rem_euclid(360) as u16;
                 for (id, c0, rot0, turns) in orig {
@@ -2841,7 +2849,7 @@ impl App {
                     if turns {
                         let mut a = rot0 as f64 + delta;
                         if shift && single {
-                            a = (a / 15.0).round() * 15.0;
+                            a = (a / 45.0).round() * 45.0;
                         }
                         self.apply(
                             ui,
@@ -4284,22 +4292,61 @@ impl App {
                 }
                 self.set_tool(ui, tool::COUNTER);
             }
-            "pin-rot" => {
-                let rot = ((v.rem_euclid(4)) * 90) as u16;
-                let ids = self.selected_where(|o| o.kind() == Kind::Counter);
-                if !ids.is_empty() {
+            // Fixed sizes instead of the pin arrows — the rotation handle turns a pin any way
+            // (ZK-166). Sizes are steps of the automatic one, so they fit any screenshot; a
+            // selected counter keeps its centre.
+            "counter-size" => {
+                self.counter_size_i = (v.max(0) as usize).min(COUNTER_SIZES.len() - 1);
+                let d = counter_size(self.badge(), self.counter_size_i);
+                let items: Vec<(ObjectId, IRect)> = {
+                    let Some(s) = self.s.as_ref() else { return };
+                    s.ed.selection()
+                        .iter()
+                        .filter_map(|id| s.ed.doc.get(*id))
+                        .filter(|o| o.kind() == Kind::Counter)
+                        .map(|o| {
+                            let (cx, cy) = o.bounds().center();
+                            let h = o.rect.h * d / o.rect.w.max(1);
+                            let r = IRect::new(
+                                (cx - d as f64 / 2.0).round() as i32,
+                                (cy - h as f64 / 2.0).round() as i32,
+                                d,
+                                h,
+                            );
+                            (o.id, r)
+                        })
+                        .collect()
+                };
+                let merge = (items.len() > 1).then(|| self.merge_key());
+                for (id, rect) in items {
                     self.apply(
                         ui,
                         Command::UpdateObjects {
-                            ids,
+                            ids: vec![id],
                             patch: ObjectPatch {
-                                rot: Some(rot),
+                                rect: Some(rect),
                                 ..Default::default()
                             },
-                            merge: None,
+                            merge: merge.clone(),
                         },
                     );
                 }
+            }
+            // The counter's colour ⇄ its number's (ZK-166); an automatic number swaps as the
+            // colour it shows.
+            "swap-digit" => {
+                let auto = znimok_render::on_color;
+                let digit = self.digit.unwrap_or_else(|| auto(self.color));
+                (self.color, self.digit) = (digit, Some(self.color));
+                let items = self.style_each(
+                    |o| o.kind() == Kind::Counter,
+                    |o| StylePatch {
+                        color: Some(o.style.color2.unwrap_or_else(|| auto(o.style.color))),
+                        color2: Some(Some(o.style.color)),
+                        ..Default::default()
+                    },
+                );
+                self.apply_each(ui, items);
             }
             "stamp" => {
                 self.stamp_id = v.max(0) as u32;
@@ -6155,7 +6202,12 @@ impl App {
                     let (i, c) = colour_shown(st.color2);
                     ui.set_digit_index(i);
                     ui.set_digit_rgb(c);
-                    ui.set_pin_rot((o.rot / 90) as i32);
+                    let badge = self.badge();
+                    ui.set_counter_size(
+                        (0..COUNTER_SIZES.len())
+                            .find(|i| counter_size(badge, *i) == o.rect.w)
+                            .map_or(-1, |i| i as i32),
+                    );
                 }
                 if let Data::Stamp { id } = o.data {
                     ui.set_stamp_id(id as i32);
@@ -6219,6 +6271,7 @@ impl App {
                 ui.set_text_align(align_index(self.align));
                 ui.set_text_box("".into());
                 ui.set_counter_shape(shape_index(self.counter_shape));
+                ui.set_counter_size(self.counter_size_i as i32);
                 let (i, c) = colour_shown(self.digit);
                 ui.set_digit_index(i);
                 ui.set_digit_rgb(c);
@@ -7068,6 +7121,14 @@ pub fn build_id() -> String {
         env!("CARGO_PKG_VERSION"),
         option_env!("GITHUB_SHA").unwrap_or("local")
     )
+}
+
+/// Counter sizes of the inspector's S / M / L / XL (ZK-166), as parts of the automatic size.
+pub const COUNTER_SIZES: [f64; 4] = [0.75, 1.0, 1.4, 2.0];
+
+/// A counter's width at size step `i` for an automatic size `badge`.
+pub fn counter_size(badge: i32, i: usize) -> i32 {
+    ((badge as f64 * COUNTER_SIZES[i.min(COUNTER_SIZES.len() - 1)]).round() as i32).max(8)
 }
 
 /// A point in screenshot coordinates.

@@ -355,6 +355,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ui.show()?;
         frame::after_show(&ui);
     }
+    // An installer updating Znimok (an MSI started by hand) or a log-off asks the process to end:
+    // leave the loop and go out the usual way below; Windows starts Znimok again, to the tray,
+    // once the installer is done (ZK-170).
+    #[cfg(windows)]
+    if selftest_dir.is_none() {
+        let _ = znimok_win::on_session_end(
+            || {
+                let _ = slint::quit_event_loop();
+            },
+            znimok_win::BACKGROUND_ARG,
+        );
+    }
     slint::run_event_loop_until_quit()?;
     drop(timer);
     drop(tray_ui);
