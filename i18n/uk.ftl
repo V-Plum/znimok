@@ -2395,6 +2395,51 @@ codes-open = Відкрити
 # @max: 28
 img-read-codes = Зчитати QR-коди й штрихкоди
 
+# @where: Image tab: button that reads the text on the screenshot (on the device, no AI)
+# @kind: button
+# @max: 32
+img-read-text = Текст зі знімка
+
+# @where: Title of the panel with the text found on the screenshot
+# @kind: heading
+# @max: 32
+text-title = Текст на знімку
+
+# @where: Text panel status while the text is being read
+# @kind: status
+# @max: 40
+text-busy = Розпізнаю текст…
+
+# @where: Text panel status: how many lines were found (read on this device)
+# @kind: status
+# @max: 48
+text-count = Рядків: { $n } · розпізнано на цьому пристрої
+
+# @where: Text panel status: nothing was found
+# @kind: status
+# @max: 40
+text-none = Тексту не знайдено
+
+# @where: Text panel status: languages the system cannot read yet
+# @kind: status
+# @max: 80
+text-missing = не встановлено для розпізнавання: { $langs }
+
+# @where: Text panel status: the reading failed
+# @kind: error
+# @max: 96
+text-error = Не вдалося розпізнати текст: { $error }
+
+# @where: Text panel: copies the whole text as shown (after any corrections)
+# @kind: button
+# @max: 20
+text-copy-all = Копіювати все
+
+# @where: Text panel: hint under the text
+# @kind: hint
+# @max: 120
+text-hint = Протягніть рамку по знімку — розпізнаю лише її; клік по рядку — скопіюю його.
+
 # @where: Toast when the clipboard is locked or fails
 # @kind: error
 # @max: 80

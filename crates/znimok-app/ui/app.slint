@@ -1794,6 +1794,14 @@ export component AppWindow inherits Window {
     // The angle of the selected mark and whether its kind turns (ZK-164).
     in-out property <string> geom-rot;
     in property <bool> prop-can-turn;
+    // Text on the picture (ZK-184): the panel, a reading running, the text (editable), a status.
+    in property <bool> text-open;
+    in property <bool> text-busy;
+    in-out property <string> text-result;
+    in property <string> text-status;
+    callback text-start();
+    callback text-close();
+    callback text-copy-all();
     // The angle beside the pointer while turning (ZK-164); empty = hidden.
     in property <string> rot-hint;
     in property <float> rot-hint-x;
@@ -3082,6 +3090,49 @@ export component AppWindow inherits Window {
                             if (self.enabled) { self.focus(); }
                         }
                     }
+                    // The text found on the picture (ZK-184): what was read, editable, and how to
+                    // read only a part. Opens with a quick fade and slide (owner: tactile motion).
+                    if root.text-open: Rectangle {
+                        property <bool> shown;
+                        init => { self.shown = true; }
+                        opacity: self.shown ? 1 : 0;
+                        animate opacity { duration: 150ms; easing: ease-out; }
+                        width: min(360px, parent.width - 32px);
+                        height: min(440px, parent.height - 32px);
+                        x: parent.width - self.width - 16px + (self.shown ? 0px : 12px);
+                        animate x { duration: 180ms; easing: cubic-bezier(0.2, 0.8, 0.2, 1); }
+                        y: 16px;
+                        border-radius: 12px;
+                        background: Theme.panel;
+                        border-width: 1px;
+                        border-color: Theme.swatch-rim;
+                        drop-shadow-blur: 18px;
+                        drop-shadow-offset-y: 6px;
+                        drop-shadow-color: #00000060;
+                        // The panel keeps its clicks to itself: the canvas under it reads frames.
+                        TouchArea { }
+                        VerticalLayout {
+                            padding: 12px;
+                            spacing: 8px;
+                            HorizontalLayout {
+                                height: 24px;
+                                Text { text: @tr("text-title" => "Text on the screenshot"); color: Theme.text; font-size: 14px; font-weight: 700; vertical-alignment: center; horizontal-stretch: 1; }
+                                IconButton { width: 24px; height: 24px; icon: "M6 6 l12 12 M18 6 l-12 12"; label: @tr("common-close" => "Close") + "  Esc"; clicked => { root.text-close(); } }
+                            }
+                            Text { text: root.text-status; color: root.text-busy ? Theme.accent : Theme.text3; font-size: 12px; wrap: word-wrap; }
+                            TextEdit {
+                                vertical-stretch: 1;
+                                text <=> root.text-result;
+                                wrap: word-wrap;
+                                font-size: 13px;
+                            }
+                            Text { text: @tr("text-hint" => "Drag a frame over the picture to read only that part; click a line to copy it."); color: Theme.text3; font-size: 11px; wrap: word-wrap; }
+                            HorizontalLayout {
+                                alignment: end;
+                                TextButton { primary: true; enabled: root.text-result != ""; text: @tr("text-copy-all" => "Copy all"); clicked => { root.text-copy-all(); } }
+                            }
+                        }
+                    }
                     // The angle beside the pointer while a mark turns (ZK-164).
                     if root.rot-hint != "": Rectangle {
                         x: min(root.rot-hint-x * 1px + 18px, parent.width - self.width - 4px);
@@ -3756,13 +3807,25 @@ export component AppWindow inherits Window {
                             VerticalLayout {
                                 spacing: 18px;
                                 alignment: start;
-                                // ZK-119: QR codes and barcodes on the picture (on the device).
-                                HorizontalLayout {
+                                // ZK-119: QR codes and barcodes; ZK-184: the text — both on the device.
+                                VerticalLayout {
+                                    spacing: 8px;
                                     alignment: start;
-                                    TextButton {
-                                        icon: "M4 4 h6 v6 H4 z M14 4 h6 v6 h-6 z M4 14 h6 v6 H4 z M14 14 h2 v2 h-2 z M18 18 h2 v2 h-2 z M14 18 h2 M18 14 h2";
-                                        text: @tr("img-read-codes" => "Read QR codes and barcodes");
-                                        clicked => { root.read-codes(); }
+                                    HorizontalLayout {
+                                        alignment: start;
+                                        TextButton {
+                                            icon: "M4 4 h6 v6 H4 z M14 4 h6 v6 h-6 z M4 14 h6 v6 H4 z M14 14 h2 v2 h-2 z M18 18 h2 v2 h-2 z M14 18 h2 M18 14 h2";
+                                            text: @tr("img-read-codes" => "Read QR codes and barcodes");
+                                            clicked => { root.read-codes(); }
+                                        }
+                                    }
+                                    HorizontalLayout {
+                                        alignment: start;
+                                        TextButton {
+                                            icon: "M4 7 V5 h16 v2 M12 5 v14 M9 19 h6 M3 3 h3 M3 3 v3 M21 3 h-3 M21 3 v3 M3 21 h3 M3 21 v-3 M21 21 h-3 M21 21 v-3";
+                                            text: @tr("img-read-text" => "Text from the screenshot") + "  X";
+                                            clicked => { root.text-start(); }
+                                        }
                                     }
                                 }
                                 // Crop: the panel while the Crop tool is on, a button otherwise.

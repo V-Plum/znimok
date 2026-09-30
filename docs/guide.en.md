@@ -137,6 +137,11 @@ mirror, tone (exposure, gamma, contrast; hold "Compare" to see the original), im
 Crop, rotation and tone are a recipe over the original: each change undoes in one step and the
 original is never lost.
 
+**Text from the screenshot.** The button on the Image tab or X: Znimok reads the text of the
+screenshot itself (not your marks; what is hidden stays hidden) — on this device, no AI, no
+internet. The lines light up on the canvas, the text goes to a panel (correct it, "Copy all");
+drag a frame to read only that part; click a line to copy it; Esc closes.
+
 **Layers.** The list of marks on the right: drag a row between others (a new order) or onto another
 row (a group); groups fold, the eye hides a mark or a whole group.
 

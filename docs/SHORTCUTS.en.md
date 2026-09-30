@@ -41,6 +41,7 @@ Settings → Screenshots; the hint strip at the bottom of the overlay shows the 
 | Counter | N |
 | Stamp | S |
 | Picture from a file (as a mark) | I |
+| Text from the screenshot (read on the device) | X |
 | Crop | C |
 | Select for as long as the key is held | Ctrl (⌘) |
 
