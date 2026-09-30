@@ -61,6 +61,8 @@ export struct CardData {
 // 1 outside in/out, 2 the selected part, 3 the selected range), a sound track's row.
 export struct TlTick { x: length, label: string }
 export struct TlPiece { x: length, w: length, kind: int }
+// A mark's bar on the marks track (ZK-94): its time in track pixels, lane, colour.
+export struct TlMark { x: length, w: length, lane: int, colour: color, selected: bool }
 export struct VidTrack { label: string, colour: color, muted: bool, volume: int }
 
 // A group title in the library grid (ZK-177): titles and card rows above it.
@@ -1876,6 +1878,7 @@ export component AppWindow inherits Window {
     in property <bool> tl-focus;
     in property <[TlTick]> tl-ticks;
     in property <[TlPiece]> tl-pieces;
+    in property <[TlMark]> tl-marks;
     in property <length> tl-in;
     in property <length> tl-out;
     in property <length> tl-playhead;
@@ -3641,9 +3644,21 @@ export component AppWindow inherits Window {
                             }
                             // sound: one line per track (the waveform comes with ZK-189)
                             for t[i] in root.vid-tracks: Rectangle { x: 8px; y: 86px + i * 10px; width: parent.width - 16px; height: 2px; background: t.muted ? Theme.line : t.colour; }
-                            // marks lanes (ZK-94)
+                            // marks lanes (ZK-94): a bar per mark, dragged by its body or its ends
                             Rectangle { y: 104px; height: 1px; background: Theme.line; }
                             Rectangle { y: 156px; height: 1px; background: Theme.line; }
+                            for m in root.tl-marks: Rectangle {
+                                x: 8px + m.x;
+                                y: 106px + m.lane * 12px;
+                                width: m.w;
+                                height: 10px;
+                                border-radius: 3px;
+                                background: m.colour.with-alpha(m.selected ? 0.95 : 0.7);
+                                border-width: m.selected ? 1.5px : 0;
+                                border-color: Theme.text;
+                                if m.selected && m.w > 18px: Rectangle { x: 1px; width: 3px; height: 6px; border-radius: 1px; background: Theme.canvas; }
+                                if m.selected && m.w > 18px: Rectangle { x: parent.width - 4px; width: 3px; height: 6px; border-radius: 1px; background: Theme.canvas; }
+                            }
                             // playhead
                             Rectangle { x: 8px + root.tl-playhead; y: 0; width: 1px; height: parent.height; background: Theme.text; }
                             Rectangle { x: 8px + root.tl-playhead - 6px; y: 0; width: 13px; height: 8px; background: Theme.text; border-radius: 2px; }

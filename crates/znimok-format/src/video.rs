@@ -121,6 +121,7 @@ impl Edit {
                 .collect(),
             in_point: self.in_frame as i64,
             out_point: self.out_frame as i64,
+            marks: Default::default(),
         }
     }
 

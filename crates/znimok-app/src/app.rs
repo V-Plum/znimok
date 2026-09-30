@@ -2512,7 +2512,27 @@ impl App {
         source: &str,
         name: Option<String>,
     ) {
-        let (doc, path) = self.build_document(raster, source, name);
+        self.new_document_with(ui, raster, source, name, Vec::new());
+    }
+
+    /// Like [`Self::new_document`], with marks already on it (a video frame's, ZK-94); a
+    /// picture mark's pixels go into the new document's bank.
+    pub fn new_document_with(
+        &mut self,
+        ui: &AppWindow,
+        raster: Raster,
+        source: &str,
+        name: Option<String>,
+        marks: Vec<(Object, Option<Raster>)>,
+    ) {
+        let (mut doc, path) = self.build_document(raster, source, name);
+        for (mut o, px) in marks {
+            if let (znimok_core::Data::Image { bank, .. }, Some(px)) = (&mut o.data, px) {
+                *bank = doc.add_bank(px);
+            }
+            o.id = 0;
+            doc.push(o);
+        }
         // Not on disk yet: `fresh` makes the first autosave write it.
         self.open_session(ui, Editor::new(doc), path, true, None);
         self.apply_retention(ui);
@@ -8041,9 +8061,16 @@ impl App {
         // A video (ZK-92): while the player shows its frames on the GPU the canvas leaves the
         // picture out (the marks are drawn over the video layer); the CPU copy of the paused
         // frame stands in for the poster, for Hide marks that sample it.
-        let live = s.vid.as_ref().is_some_and(|v| v.shown.is_some());
+        // Resting on a frame whose CPU copy is here, the canvas draws the frame itself (Hide and
+        // the marker work on its pixels, LH `EvFreezeNow`); playing or waiting for the copy, the
+        // GPU layer shows it and those two are plates (ZK-94).
+        let live = s.vid.as_ref().is_some_and(|v| {
+            v.shown.is_some()
+                && (v.playing || v.raster.as_ref().is_none_or(|(f, _)| *f != v.frame))
+        });
         if self.renderer.picture() == live {
             self.renderer.set_picture(!live);
+            self.renderer.set_plain_effects(live);
             self.frame_changed = true;
         }
         let frame = s
@@ -8157,6 +8184,7 @@ impl App {
                 .iter()
                 .filter(|id| Some(**id) != typing)
                 .filter_map(|id| s.ed.doc.get(*id))
+                .filter(|o| s.ed.doc.live(o))
                 .collect();
         let mut overlay: Vec<IRect> = Vec::new();
         if let Some((c, sel)) = &caret {
@@ -9424,8 +9452,69 @@ impl App {
         self.video_strip(ui);
     }
 
+    /// Marks without a time get one (ZK-94, LH `EvAdoptMarks`): three seconds from the frame
+    /// shown. Straight into the document, not an undo step of its own — undoing the mark's
+    /// creation takes the time with it.
+    fn adopt_marks(&mut self) {
+        let Some(s) = self.s.as_mut() else { return };
+        let Some(v) = s.vid.as_ref() else { return };
+        let span = v.new_span();
+        let ids: Vec<ObjectId> = s.ed.doc.objects.iter().map(|o| o.id).collect();
+        let Some(t) = s.ed.doc.timeline.as_mut() else {
+            return;
+        };
+        for id in ids {
+            t.marks.entry(id).or_insert(span);
+        }
+    }
+
+    /// The frame shown goes to the document (the marks live on it are drawn and picked); a new
+    /// set of live marks repaints the canvas.
+    fn set_shown_frame(&mut self) {
+        let Some(s) = self.s.as_mut() else { return };
+        let Some(v) = s.vid.as_mut() else { return };
+        s.ed.doc.shown_frame = Some(v.frame);
+        let sig = {
+            use std::hash::{Hash, Hasher};
+            let mut h = std::hash::DefaultHasher::new();
+            for o in &s.ed.doc.objects {
+                if s.ed.doc.live(o) {
+                    o.id.hash(&mut h);
+                }
+            }
+            h.finish()
+        };
+        if sig != v.live_sig {
+            v.live_sig = sig;
+            self.frame_changed = true;
+            self.dirty = true;
+        }
+    }
+
+    /// A mark's new time from its bar (a drag is one undo step).
+    fn set_mark_span(&mut self, ui: &AppWindow, id: ObjectId, span: (i64, i64), step: u64) {
+        let Some(mut t) = self.s.as_ref().and_then(|s| s.ed.doc.timeline.clone()) else {
+            return;
+        };
+        if t.marks.get(&id) == Some(&span) {
+            return;
+        }
+        t.marks.insert(id, span);
+        self.apply(
+            ui,
+            Command::SetTimeline {
+                timeline: t,
+                merge: Some(MergeKey::Drag { id: step }),
+            },
+        );
+        self.sync(ui);
+        ui.window().request_redraw();
+    }
+
     /// Everything the video bars and the «Відео» tab show.
     fn sync_video(&mut self, ui: &AppWindow) {
+        self.adopt_marks();
+        self.set_shown_frame();
         let Some(s) = self.s.as_mut() else { return };
         let Some(v) = s.vid.as_mut() else { return };
         if let Some(t) = s.ed.doc.timeline.as_ref() {
@@ -9507,6 +9596,25 @@ impl App {
         ui.set_tl_out(g.out_x as f32);
         ui.set_tl_playhead(g.playhead_x as f32);
         ui.set_tl_has_range(v.selected_range().is_some());
+        // Marks in time (ZK-94): a bar per mark on the marks track.
+        let bars = s
+            .ed
+            .doc
+            .timeline
+            .as_ref()
+            .map(|t| v.mark_bars(&t.marks, &s.ed.doc.objects, s.ed.selection()))
+            .unwrap_or_default();
+        let rows: Vec<crate::TlMark> = bars
+            .iter()
+            .map(|b| crate::TlMark {
+                x: b.x as f32,
+                w: b.w as f32,
+                lane: b.lane as i32,
+                colour: slint::Color::from_rgb_u8(b.colour.r, b.colour.g, b.colour.b),
+                selected: b.selected,
+            })
+            .collect();
+        ui.set_tl_marks(std::rc::Rc::new(VecModel::from(rows)).into());
         // Sound: the tracks of the recording, and the choice they make together (ZK-189).
         let tracks = s
             .video
@@ -9570,7 +9678,7 @@ impl App {
     /// A finished edit of the timeline: one command of the core editor (one undo step with the
     /// marks, ZK-144); the player learns the new cuts.
     fn tl_commit(&mut self, ui: &AppWindow, merge: Option<MergeKey>) {
-        let Some(t) = self
+        let Some(mut t) = self
             .s
             .as_ref()
             .and_then(|s| s.vid.as_ref())
@@ -9578,6 +9686,10 @@ impl App {
         else {
             return;
         };
+        // The marks' times stay as they are (ZK-94).
+        if let Some(cur) = self.s.as_ref().and_then(|s| s.ed.doc.timeline.as_ref()) {
+            t.marks = cur.marks.clone();
+        }
         self.apply(ui, Command::SetTimeline { timeline: t, merge });
         if let Some(v) = self.s.as_ref().and_then(|s| s.vid.as_ref())
             && let Some(p) = &v.player
@@ -9698,9 +9810,67 @@ impl App {
         const RULER: i32 = 22;
         const STRIP_TOP: i32 = 26;
         const STRIP_BOTTOM: i32 = 78;
+        const MARKS_TOP: i32 = 104;
+        const MARKS_BOTTOM: i32 = 156;
+        // A bar being dragged (ZK-94): its new time, one undo step.
+        if kind != 0 && v.mark_press.is_some() {
+            let mut p = v.mark_press.unwrap();
+            if kind == 1 && (x - p.x0).abs() >= 3 {
+                p.moved = true;
+            }
+            let span = v.dragged_span(&p, x);
+            if kind == 2 {
+                v.mark_press = None;
+            } else {
+                v.mark_press = Some(p);
+            }
+            if p.moved {
+                // The frame follows the dragged end, so the mark stays in sight.
+                let f = match p.grip {
+                    crate::video::Grip::End => span.1 - 1,
+                    _ => span.0,
+                };
+                if let Some(pl) = &v.player {
+                    pl.seek(f);
+                }
+                v.frame = f;
+                self.set_mark_span(ui, p.id, span, p.step);
+            }
+            return;
+        }
         match kind {
             0 => {
                 v.focus = true;
+                if (MARKS_TOP..MARKS_BOTTOM).contains(&y) {
+                    let hit = s_bars(self, x, y);
+                    self.next_merge += 1;
+                    let step = self.next_merge;
+                    let v = self.s.as_mut().and_then(|s| s.vid.as_mut()).unwrap();
+                    match hit {
+                        Some((id, grip, span)) => {
+                            v.mark_press = Some(crate::video::MarkPress {
+                                id,
+                                grip,
+                                x0: x,
+                                span0: span,
+                                moved: false,
+                                step,
+                            });
+                            // The mark is selected; the frame moves into its time when outside.
+                            let f = v.frame;
+                            if f < span.0 || f >= span.1 {
+                                self.vid_seek(ui, span.0);
+                            }
+                            self.apply(ui, Command::Select { ids: vec![id], add: false });
+                        }
+                        None => {
+                            self.apply(ui, Command::ClearSelection);
+                        }
+                    }
+                    self.sync(ui);
+                    ui.window().request_redraw();
+                    return;
+                }
                 if y < RULER {
                     v.scrubbing = true;
                     let f = v.frame_at_x(x);
@@ -9744,6 +9914,7 @@ impl App {
     }
 
     /// The wheel over the timeline: Ctrl — zoom about the pointer, else pan.
+
     pub fn tl_wheel(&mut self, ui: &AppWindow, x: i32, dy: f32, ctrl: bool) {
         let Some(v) = self.s.as_mut().and_then(|s| s.vid.as_mut()) else {
             return;
@@ -9870,7 +10041,25 @@ impl App {
         let mut a = count_args("n", v.frame);
         a.set("name", s.ed.doc.name.clone());
         let name = self.tr.tr_args("vid-frame-doc-name", &a);
-        self.new_document(ui, raster, "video-frame", Some(name));
+        // The marks live on this frame come along, editable (LH `EvFrameToShot`); a picture mark
+        // brings its pixels.
+        let marks: Vec<(Object, Option<Raster>)> = s
+            .ed
+            .doc
+            .objects
+            .iter()
+            .filter(|o| !o.hidden && s.ed.doc.live(o))
+            .map(|o| {
+                let px = match &o.data {
+                    znimok_core::Data::Image { bank, .. } => {
+                        s.ed.doc.banks.get(*bank as usize).map(|r| (**r).clone())
+                    }
+                    _ => None,
+                };
+                (o.clone(), px)
+            })
+            .collect();
+        self.new_document_with(ui, raster, "video-frame", Some(name), marks);
     }
 
     /// Keys of the video mode. Space and the transport work everywhere in the editor; I / O / S /
@@ -9963,4 +10152,14 @@ impl App {
         }
         None
     }
+}
+
+/// The mark's bar under a point of the marks track: its id, what a press drags, its span.
+fn s_bars(a: &App, x: i32, y: i32) -> Option<(ObjectId, crate::video::Grip, (i64, i64))> {
+    let s = a.s.as_ref()?;
+    let v = s.vid.as_ref()?;
+    let t = s.ed.doc.timeline.as_ref()?;
+    let bars = v.mark_bars(&t.marks, &s.ed.doc.objects, s.ed.selection());
+    let (id, grip) = crate::video::Vid::bar_at(&bars, x, y)?;
+    Some((id, grip, *t.marks.get(&id)?))
 }

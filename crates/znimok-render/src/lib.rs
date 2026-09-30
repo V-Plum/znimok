@@ -164,6 +164,9 @@ pub struct Renderer {
     threads: u16,
     /// Draw the picture under the marks (false: a video shows through, ZK-92).
     picture: bool,
+    /// Effects that need the pixels below as plates (ZK-94, a playing video): a Hide is a hatched
+    /// plate, a marker a translucent one — there are no pixels below on the CPU then.
+    plain_effects: bool,
 }
 
 impl Default for Renderer {
@@ -204,6 +207,7 @@ impl Renderer {
             scratch: Pixmap::new(1, 1),
             threads,
             picture: true,
+            plain_effects: false,
         }
     }
 
@@ -220,6 +224,15 @@ impl Renderer {
 
     pub fn picture(&self) -> bool {
         self.picture
+    }
+
+    /// Hide and marker as plates instead of effects on the pixels below (ZK-94).
+    pub fn set_plain_effects(&mut self, on: bool) {
+        self.plain_effects = on;
+    }
+
+    pub fn plain_effects(&self) -> bool {
+        self.plain_effects
     }
 
     /// Size of a text mark in document pixels, for creating and resizing text objects.
@@ -291,7 +304,8 @@ impl Renderer {
         }
 
         for (i, obj) in doc.objects.iter().enumerate() {
-            if obj.hidden {
+            // Hidden, or a video's mark whose time does not cover the frame shown (ZK-94).
+            if obj.hidden || !doc.live(obj) {
                 continue;
             }
             if fx_on(obj) {
@@ -655,6 +669,25 @@ impl Renderer {
             Data::Hide { mode, strength } => {
                 let region = b.normalized();
                 match mode {
+                    // A playing video (ZK-94): a hatched plate says «hidden here» — no live blur.
+                    HideMode::Blur | HideMode::Pixelate if self.plain_effects => {
+                        self.ctx.set_paint(rgba(Rgb::new(78, 82, 92), alpha));
+                        self.ctx.fill_rect(&rect);
+                        self.ctx.push_clip_layer(&rect.to_path(0.1));
+                        self.ctx.set_stroke(Stroke::new(3.0));
+                        self.ctx.set_paint(rgba(Rgb::new(120, 126, 138), alpha));
+                        let (w, h) = (rect.width(), rect.height());
+                        let mut d = -h;
+                        while d < w {
+                            let line = znimok_render_line(
+                                Point::new(rect.x0 + d, rect.y1),
+                                Point::new(rect.x0 + d + h, rect.y0),
+                            );
+                            self.ctx.stroke_path(&line);
+                            d += 12.0;
+                        }
+                        self.ctx.pop_layer();
+                    }
                     HideMode::Plate => {
                         self.ctx.set_paint(rgba(st.color, alpha));
                         self.ctx.fill_rect(&rect);
@@ -698,11 +731,17 @@ impl Renderer {
             }
             Data::Mark => {
                 // Marker: multiply with the pixels below, colour channels 0/255 → AND (§7 п.29).
-                self.ctx
-                    .push_blend_layer(BlendMode::new(Mix::Multiply, Compose::SrcOver));
-                self.ctx.set_paint(rgba(st.color, alpha));
-                self.ctx.fill_rect(&rect);
-                self.ctx.pop_layer();
+                // Over a playing video there are no pixels below: a translucent plate (ZK-94).
+                if self.plain_effects {
+                    self.ctx.set_paint(rgba(st.color, alpha * 0.45));
+                    self.ctx.fill_rect(&rect);
+                } else {
+                    self.ctx
+                        .push_blend_layer(BlendMode::new(Mix::Multiply, Compose::SrcOver));
+                    self.ctx.set_paint(rgba(st.color, alpha));
+                    self.ctx.fill_rect(&rect);
+                    self.ctx.pop_layer();
+                }
             }
             Data::Counter { shape, .. } => {
                 let n = doc.counter_number(index).unwrap_or(0);
@@ -1025,7 +1064,7 @@ impl Renderer {
             .iter()
             .enumerate()
         {
-            if !o.hidden && meets(self.covered_box(o), region) {
+            if !o.hidden && doc.live(o) && meets(self.covered_box(o), region) {
                 any = true;
                 i.hash(&mut h);
                 o.hash(&mut h);
@@ -1330,4 +1369,12 @@ mod tests {
         let p = cardinal_spline(&pts, 0.3);
         assert_eq!(p.elements().len(), 3);
     }
+}
+
+/// A straight segment as a path (the hatching of a Hide over a playing video).
+fn znimok_render_line(a: Point, b: Point) -> BezPath {
+    let mut p = BezPath::new();
+    p.move_to(a);
+    p.line_to(b);
+    p
 }

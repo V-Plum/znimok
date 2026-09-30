@@ -118,7 +118,7 @@ pub fn pick(doc: &Document, p: (f64, f64), px_per_doc: f64) -> Option<usize> {
         .iter()
         .enumerate()
         .rev()
-        .find(|(_, o)| !o.hidden && hits(o, p, px_per_doc))
+        .find(|(_, o)| !o.hidden && doc.live(o) && hits(o, p, px_per_doc))
         .map(|(i, _)| i)
 }
 
@@ -130,7 +130,12 @@ pub fn pick_in_rect(doc: &Document, r: IRect) -> Vec<usize> {
         .enumerate()
         .filter(|(_, o)| {
             let b = o.bounds();
-            !o.hidden && b.x < r.right() && b.right() > r.x && b.y < r.bottom() && b.bottom() > r.y
+            !o.hidden
+                && doc.live(o)
+                && b.x < r.right()
+                && b.right() > r.x
+                && b.y < r.bottom()
+                && b.bottom() > r.y
         })
         .map(|(i, _)| i)
         .collect()
