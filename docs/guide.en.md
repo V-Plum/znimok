@@ -132,7 +132,13 @@ original is never lost.
 row (a group); groups fold, the eye hides a mark or a whole group.
 
 **Undo.** Ctrl+Z / Ctrl+Shift+Z undo and redo any action. Esc takes off one layer at a time: a drag,
-the crop, the selection, the tool — and only then goes back to the library.
+the crop, the selection, the tool — and only then closes the window and goes back to the library.
+
+**Windows.** Every document has a window of its own: a new shot, a file or a library card opens one
+more, so two shots can sit side by side or on different displays, and marks and pictures can be
+dragged between them. The card of a document that is already open raises its window instead of
+opening a copy. «Library» or Esc save the document, close its window and show the library; the
+window's close button just closes it. The window's title is the document's name.
 
 **View.** Ctrl+0 — fit, Ctrl+1 — 100 %, Ctrl+wheel or pinch — zoom, the held wheel — pan.
 

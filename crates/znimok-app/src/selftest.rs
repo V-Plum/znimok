@@ -101,6 +101,8 @@ fn ten_clicks_on_applied(ui: &AppWindow) {
             button: PointerEventButton::Left,
         });
     }
+}
+
 /// The window a step works in: the newest editor with a document, else the library (ZK-107).
 fn current(lib_app: &Shared, lib_ui: &AppWindow) -> (Shared, AppWindow) {
     crate::wins::newest_editor().unwrap_or_else(|| (lib_app.clone(), lib_ui.clone_strong()))
