@@ -1326,6 +1326,14 @@ pub fn pixmap_to_rgba(p: &Pixmap) -> Vec<u8> {
         .collect()
 }
 
+/// A straight segment as a path (the hatching of a Hide over a playing video).
+fn znimok_render_line(a: Point, b: Point) -> BezPath {
+    let mut p = BezPath::new();
+    p.move_to(a);
+    p.line_to(b);
+    p
+}
+
 #[cfg(test)]
 mod tests {
 
@@ -1411,12 +1419,4 @@ mod tests {
         let p = cardinal_spline(&pts, 0.3);
         assert_eq!(p.elements().len(), 3);
     }
-}
-
-/// A straight segment as a path (the hatching of a Hide over a playing video).
-fn znimok_render_line(a: Point, b: Point) -> BezPath {
-    let mut p = BezPath::new();
-    p.move_to(a);
-    p.line_to(b);
-    p
 }
