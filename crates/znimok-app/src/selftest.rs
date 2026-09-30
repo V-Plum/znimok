@@ -1060,7 +1060,7 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
         key(app, ui, "z", true, false);
         ui.invoke_tool_chosen(0);
     }));
-    // ZK-164: the rotation handle — one mark turns about its centre (Shift: 15° steps), several
+    // ZK-164: the rotation handle — one mark turns about its centre (Shift: 45° steps), several
     // turn about the middle of their box; one undo step; the angle field.
     steps.push(Box::new(|app, ui, r| {
         use znimok_core::Kind;
@@ -1121,14 +1121,14 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
         quarter(true);
         let snapped = obj(rect).map(|o| o.rot);
         r.check(
-            "rotation handle: a quarter turn about the centre, one undo step, typed angle, Shift snaps to 15°",
+            "rotation handle: a quarter turn about the centre, one undo step, typed angle, Shift snaps to 45°",
             turned
                 && cursor == Some(10)
                 && a1.is_some_and(|a| (88..=92).contains(&a))
                 && c0 == c1
                 && back == Some(0)
                 && typed == Some(33)
-                && snapped.is_some_and(|a| a % 15 == 0 && (120..=125).contains(&a)),
+                && snapped == Some(135),
             format!(
                 "cursor {cursor:?} · {a1:?} centre {c0:?}→{c1:?} · undo {back:?} · typed {typed:?} · Shift {snapped:?}"
             ),
@@ -1258,6 +1258,54 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
                     && centred.h == o0.h,
                 format!("{o0:?} · Shift {shifted:?} · Alt {centred:?}"),
             );
+        }
+        key(app, ui, "\u{1b}", false, false);
+    }));
+    // ZK-166: a counter's size buttons, the colour ⇄ number swap, the number upright when turned.
+    steps.push(Box::new(|app, ui, r| {
+        use znimok_core::Kind;
+        let first = app.borrow().s.as_ref().and_then(|s| {
+            s.ed.doc
+                .objects
+                .iter()
+                .find(|o| o.kind() == Kind::Counter)
+                .map(|o| o.id)
+        });
+        let Some(c) = first else {
+            r.check("counter: one to test", false, String::new());
+            return;
+        };
+        let obj = |id: u32| {
+            app.borrow()
+                .s
+                .as_ref()
+                .and_then(|s| s.ed.doc.get(id).cloned())
+        };
+        ui.invoke_tool_chosen(0);
+        app.borrow_mut().layer_click(ui, c as i32, false);
+        ui.invoke_set_prop("counter-shape".into(), 2);
+        let centre0 = obj(c).map(|o| o.bounds().center());
+        ui.invoke_set_prop("counter-size".into(), 3);
+        let big = obj(c).map(|o| (o.rect.w, o.rect.h, o.bounds().center()));
+        let shown = ui.get_counter_size();
+        let before = obj(c).map(|o| (o.style.color, o.style.color2));
+        ui.invoke_set_prop("swap-digit".into(), 0);
+        let after = obj(c).map(|o| (o.style.color, o.style.color2));
+        ui.invoke_set_geom("rot".into(), "120".into());
+        r.snapshot(ui, "37-counter-turned");
+        let near =
+            |a: (f64, f64), b: (f64, f64)| (a.0 - b.0).abs() <= 1.0 && (a.1 - b.1).abs() <= 1.0;
+        r.check(
+            "counter: XL keeps the centre and the pin's proportions; swap trades colour and number",
+            big.is_some_and(|(w, h, ce)| {
+                w > 40 && h == (w * 13 + 5) / 10 && centre0.is_some_and(|c0| near(c0, ce))
+            }) && shown == 3
+                && matches!((before, after), (Some((col, d)), Some((col2, d2)))
+                    if d2 == Some(col) && Some(col2) == d.or(Some(col2))),
+            format!("{big:?} centre {centre0:?} · size {shown} · {before:?} → {after:?}"),
+        );
+        for _ in 0..5 {
+            key(app, ui, "z", true, false);
         }
         key(app, ui, "\u{1b}", false, false);
     }));

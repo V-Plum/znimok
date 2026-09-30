@@ -722,6 +722,14 @@ impl Renderer {
                 } else {
                     rect.center()
                 };
+                // The number stays upright however the counter turns (ZK-166): turned back
+                // about its own centre, it still sits where the turned head is.
+                let upright = obj.kind().can_rotate() && obj.rot != 0;
+                if upright {
+                    self.ctx.set_transform(
+                        t * Affine::rotate_about(-(obj.rot as f64).to_radians(), head),
+                    );
+                }
                 text::draw_text_centered(
                     &mut self.ctx,
                     &mut self.res,
@@ -732,6 +740,9 @@ impl Renderer {
                     rgba(digit, 1.0),
                     alpha,
                 );
+                if upright {
+                    self.ctx.set_transform(t);
+                }
             }
             Data::Stamp { id } => {
                 if *id >= 100 {
@@ -1169,7 +1180,7 @@ fn stroke_for(st: &Style, pw: f64) -> Stroke {
 }
 
 /// Digit colour for a counter without an explicit second colour (LH `EdOnColor`).
-fn on_color(c: Rgb) -> Rgb {
+pub fn on_color(c: Rgb) -> Rgb {
     let lum = (c.r as u32 * 299 + c.g as u32 * 587 + c.b as u32 * 114) / 1000;
     if lum > 140 {
         Rgb::new(24, 24, 28)
