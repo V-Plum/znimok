@@ -2,7 +2,7 @@
 
 [Українська](guide.md) · **English**
 
-Znimok takes screenshots on Windows and macOS (screen recording comes in the next version). Marks
+Znimok takes screenshots on Windows and macOS (screen recording is in preview — see "Video"). Marks
 on a screenshot stay editable: an arrow, a caption or a hidden area can be fixed a week later.
 Everything stays on your computer, in the library, in the open `.znimok` format.
 

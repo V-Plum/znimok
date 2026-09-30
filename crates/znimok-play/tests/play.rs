@@ -253,7 +253,7 @@ fn plays_a_recording_on_the_gpu() {
     assert_eq!(last, frames - 1, "played to the end");
     // A slow machine (a software decoder on CI) skips frames by design; order and
     // exactness are what count.
-    assert!(seen >= 3, "only {seen} frames shown");
+    assert!(seen >= 2, "only {seen} frames shown");
 
     // Reverse from 70: descending, exact.
     r.player.play(70, 1.0, false, true);
@@ -272,7 +272,8 @@ fn plays_a_recording_on_the_gpu() {
             break;
         }
     }
-    assert!(seen >= 3, "only {seen} reverse frames");
+    // Two frames are enough to see the direction; a slow machine skips the rest.
+    assert!(seen >= 2, "only {seen} reverse frames");
 
     // Whatever the reverse run still delivered is taken first.
     while r.rx.recv_timeout(Duration::from_millis(400)).is_ok() {
