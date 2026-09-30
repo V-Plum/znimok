@@ -12,8 +12,7 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::sync::mpsc::{Receiver, Sender, TryRecvError};
-use std::time::{Duration, Instant};
+use std::sync::mpsc::{Receiver, Sender};
 
 use znimok_core::{Raster, Timeline};
 use znimok_video::edit::{EditTimeline, Selection, TimelineView, VideoEdit};
@@ -326,6 +325,8 @@ pub struct Delivered {
     pub playing: bool,
 }
 
+// The player runs on Windows only for now (ZK-92 brings macOS): elsewhere nothing reads these.
+#[cfg_attr(not(windows), allow(dead_code))]
 enum Cmd {
     Seek(i64),
     Play {
@@ -431,6 +432,8 @@ fn extract_stream(part: &znimok_format::VideoPart) -> Result<PathBuf, String> {
 
 #[cfg(windows)]
 fn run(rx: Receiver<Cmd>, mp4: &Path, fps: f64, frames: i64, on_frame: impl Fn(Delivered)) {
+    use std::sync::mpsc::TryRecvError;
+    use std::time::{Duration, Instant};
     use znimok_video::traits::{Decoded, VideoDecoder, frames_of_sample, seek_time_for_frame};
     let mut dec = match znimok_video_win::MfDecoder::open(mp4) {
         Ok(d) => d,
