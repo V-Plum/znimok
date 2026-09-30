@@ -299,6 +299,38 @@ impl Editor {
                 if object.group != 0 && !self.doc.objects.iter().any(|o| o.group == object.group) {
                     object.group = 0;
                 }
+                // Counters of one numbering group are one group of marks too (ZK-169): a new
+                // counter joins the group its numbering-mates are in, and the second counter of a
+                // numbering group makes that group — in this one undo step.
+                if object.group == 0
+                    && let Data::Counter {
+                        group: numbering, ..
+                    } = object.data
+                {
+                    let mates: Vec<usize> = self
+                        .doc
+                        .objects
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, o)| {
+                            matches!(o.data, Data::Counter { group, .. } if group == numbering)
+                        })
+                        .map(|(i, _)| i)
+                        .collect();
+                    if !mates.is_empty() {
+                        let g = mates
+                            .iter()
+                            .map(|i| self.doc.objects[*i].group)
+                            .find(|g| *g != 0)
+                            .unwrap_or_else(|| self.doc.next_group_id());
+                        for i in mates {
+                            if self.doc.objects[i].group == 0 {
+                                self.doc.objects[i].group = g;
+                            }
+                        }
+                        object.group = g;
+                    }
+                }
                 let i = self.doc.push(object);
                 let id = self.doc.objects[i].id;
                 let mut changes = vec![Change::Added { id }];
@@ -1074,6 +1106,57 @@ mod tests {
             unreachable!()
         };
         assert_eq!(info.counter_number, Some(10));
+    }
+
+    #[test]
+    fn counters_of_one_numbering_group_form_one_group_in_one_undo_step() {
+        let mut e = Editor::new(Document::from_raster(
+            "t",
+            Raster::solid(200, 200, Rgb::WHITE),
+        ));
+        let counter = |numbering: u32| {
+            Object::new(
+                IRect::new(10, 10, 28, 28),
+                Data::Counter {
+                    seq: 0,
+                    group: numbering,
+                    start: 1,
+                    shape: crate::model::CounterShape::Circle,
+                },
+            )
+        };
+        let add = |e: &mut Editor, o: Object| {
+            e.apply(Command::AddObject {
+                object: o,
+                select: true,
+                merge: None,
+            })
+            .unwrap()
+            .created
+            .unwrap()
+        };
+        let a = add(&mut e, counter(1));
+        assert_eq!(e.doc.get(a).unwrap().group, 0, "alone, it is no group yet");
+        let b = add(&mut e, counter(1));
+        let g = e.doc.get(a).unwrap().group;
+        assert!(g != 0 && e.doc.get(b).unwrap().group == g);
+        assert_eq!(e.selection(), &[b], "only the new counter is selected");
+        let c = add(&mut e, counter(1));
+        assert_eq!(e.doc.get(c).unwrap().group, g);
+        let other = add(&mut e, counter(2));
+        assert_eq!(
+            e.doc.get(other).unwrap().group,
+            0,
+            "another numbering group stays apart"
+        );
+        e.apply(Command::Undo).unwrap();
+        e.apply(Command::Undo).unwrap();
+        e.apply(Command::Undo).unwrap();
+        assert_eq!(
+            e.doc.get(a).unwrap().group,
+            0,
+            "one undo takes the grouping back too"
+        );
     }
 
     #[test]

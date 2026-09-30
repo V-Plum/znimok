@@ -553,6 +553,16 @@ tool-counter = Counter (N)
 # @max: 20
 tool-counter-name = Counter
 
+# @where: Inspector title of a selected counter: its numbering group
+# @kind: heading
+# @max: 32
+counter-group-title = Counter — Group { $n }
+
+# @where: Inspector, Counter: button that selects the whole numbering group (tooltip says more)
+# @kind: button
+# @max: 24
+counter-edit-group-short = Edit the whole group
+
 # @where: Tool rail button tooltip and accessible name; (S) is its shortcut
 # @kind: tooltip
 # @max: 28
