@@ -9918,7 +9918,6 @@ impl App {
     }
 
     /// The wheel over the timeline: Ctrl — zoom about the pointer, else pan.
-
     pub fn tl_wheel(&mut self, ui: &AppWindow, x: i32, dy: f32, ctrl: bool) {
         let Some(v) = self.s.as_mut().and_then(|s| s.vid.as_mut()) else {
             return;
