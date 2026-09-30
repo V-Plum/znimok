@@ -6786,6 +6786,7 @@ dependencies = [
  "rfd",
  "slint",
  "slint-build",
+ "uuid",
  "windows",
  "windows-core",
  "znimok-agents",

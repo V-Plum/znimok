@@ -1075,12 +1075,13 @@ component CardView inherits Rectangle {
         property <int> mode;
         pointer-event(e) => {
             if (e.kind == PointerEventKind.down) {
-                self.mode = e.modifiers.shift ? 2 : (e.modifiers.control ? 1 : 0);
+                // Alt (⌥): open in a new window (ZK-192).
+                self.mode = e.modifiers.shift ? 2 : (e.modifiers.control ? 1 : (e.modifiers.alt ? 3 : 0));
             }
         }
         clicked => {
             if (!root.renaming) {
-                if (self.mode == 0 && !root.in-trash) { root.open(); } else { root.pick(self.mode); }
+                if (self.mode == 0 && !root.in-trash) { root.open(); } else if (self.mode == 3 && root.in-trash) { root.pick(0); } else { root.pick(self.mode); }
             }
         }
     }

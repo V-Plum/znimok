@@ -114,6 +114,12 @@ fn opened(app: &Shared, ui: &AppWindow) -> (Shared, AppWindow) {
     current(app, ui)
 }
 
+/// Whether Znimok's own text reader is here (it reads Ukrainian; the system's fallback on
+/// Windows may read only English).
+fn uk_reader() -> bool {
+    cfg!(target_os = "macos") || znimok_models::ocr::helper::find().is_some()
+}
+
 /// ZK-184/185: a clean page with real text in its pixels — Ukrainian and English.
 fn text_page() -> znimok_core::Raster {
     use znimok_core::{Align, Data, Document, IRect, Object, Raster, Rgb, Style};
@@ -2803,6 +2809,7 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
             r.check("over the screen: the library window", false, String::new());
             return;
         };
+        let page0 = lib_ui.get_page();
         lib.borrow_mut()
             .over_open(&lib_ui, raster.clone(), frame, "region", display);
         let (o1, o1_ui) = current(&lib, &lib_ui);
@@ -2814,14 +2821,14 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
         let (o2, o2_ui) = current(&lib, &lib_ui);
         o2.borrow_mut().over_finish(&o2_ui, false, true);
         let n2 = count(&dir);
-        let back = !lib_ui.get_over_screen() && lib_ui.get_page() == 0;
+        let back = !lib_ui.get_over_screen() && lib_ui.get_page() == page0;
         // What follows expects a document in the editor.
         lib.borrow_mut()
             .new_document(&lib_ui, raster, "region", None);
         r.check(
             "over the screen: Esc keeps nothing, Ctrl+S saves to the library",
             over1 && n1 == n0 && n2 == n0 + 1 && back,
-            format!("own window {over1} · {n0} → {n1} → {n2} · library page 0: {back}"),
+            format!("own window {over1} · {n0} → {n1} → {n2} · library window stays: {back}"),
         );
         crate::pill::close();
     }));
@@ -2973,7 +2980,7 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
                 && !busy
                 && lines.len() == 2
                 && all.contains("Znimok reads text 2026")
-                && all.contains("Привіт"),
+                && (!uk_reader() || all.contains("Привіт")),
             format!(
                 "{} lines, busy {busy}: «{}»",
                 lines.len(),
@@ -3021,7 +3028,7 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
         let lines = app.borrow().text_lines();
         r.check(
             "text: a frame reads only that part",
-            lines.len() == 1 && lines[0].0.contains("Привіт"),
+            lines.len() == 1 && (!uk_reader() || lines[0].0.contains("Привіт")),
             format!("{lines:?}"),
         );
         key(app, ui, "\u{1b}", false, false);
@@ -3088,7 +3095,7 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
             "text: X in the capture overlay copies the screen's text and says so",
             !crate::overlay::is_open()
                 && copied.contains("Znimok reads text 2026")
-                && copied.contains("Привіт")
+                && (!uk_reader() || copied.contains("Привіт"))
                 && clip == copied
                 && said,
             format!("«{}» · dialog {said}", copied.replace('\n', " / ")),
@@ -3154,9 +3161,75 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
         });
         r.check(
             "text: the text mode (hotkey, tray) reads the frame on release",
-            !crate::overlay::is_open() && copied.contains("Привіт") && !copied.contains("Znimok"),
+            !crate::overlay::is_open()
+                && (!uk_reader() || copied.contains("Привіт"))
+                && !copied.contains("Znimok"),
             format!("«{}»", copied.replace('\n', " / ")),
         );
+    }));
+
+    // ZK-192: a card opens in the window it was clicked in (the library and the editor are one
+    // window); Alt+click opens a new window; a document open elsewhere asks, and «Open a copy»
+    // gives a new document with a file of its own.
+    steps.push(Box::new(|_, _, r| {
+        // Only the library window: the editors of earlier steps go.
+        for (a, w) in crate::wins::editors() {
+            a.borrow_mut().close_document(&w);
+        }
+        let Some((lib, lw)) = crate::wins::library() else {
+            r.check("open in place: the library window", false, String::new());
+            return;
+        };
+        if lib.borrow().doc_path().is_some() {
+            lib.borrow_mut().close_document(&lw);
+        }
+        let dir = lib.borrow().lib_dir.clone();
+        let cards: Vec<std::path::PathBuf> = crate::library::scan(&dir, None)
+            .into_iter()
+            .map(|e| e.path)
+            .collect();
+        if cards.len() < 2 {
+            r.check(
+                "open in place: two cards",
+                false,
+                format!("{} cards", cards.len()),
+            );
+            return;
+        }
+        let before = crate::wins::editors().len();
+        lib.borrow_mut().card_click(&lw, &cards[0], 0);
+        let here = lib.borrow().doc_path() == Some(cards[0].clone())
+            && crate::wins::editors().len() == before
+            && lw.get_page() == 1;
+        lib.borrow_mut().close_document(&lw);
+        lib.borrow_mut().card_click(&lw, &cards[1], 3);
+        let alt_new =
+            crate::wins::editors().len() == before + 1 && lib.borrow().doc_path().is_none();
+        r.check(
+            "open in place: a card opens in this window, Alt+click in a new one",
+            here && alt_new,
+            format!("here {here} · Alt new window {alt_new}"),
+        );
+        // The second card is open in the new window: asked for again from the library, it asks.
+        lib.borrow_mut().card_click(&lw, &cards[1], 0);
+        let asked = lw.get_dialog_open();
+        lw.invoke_dialog_answer(1);
+        let copy = lib.borrow().doc_path();
+        let copy_name = lib
+            .borrow()
+            .s
+            .as_ref()
+            .map(|s| s.ed.doc.name.clone())
+            .unwrap_or_default();
+        r.check(
+            "open in place: a document open elsewhere asks; «Open a copy» is a new document",
+            asked && copy.as_ref().is_some_and(|c| *c != cards[1]) && copy_name.contains("(копія)"),
+            format!("asked {asked} · {copy:?} «{copy_name}»"),
+        );
+        lib.borrow_mut().close_document(&lw);
+        for (a, w) in crate::wins::editors() {
+            a.borrow_mut().close_document(&w);
+        }
     }));
 
     // ZK-141: a scrolling capture over a synthetic page (a fake screen and a fake wheel): the
