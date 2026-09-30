@@ -2385,6 +2385,51 @@ codes-open = Open
 # @max: 28
 img-read-codes = Read QR codes and barcodes
 
+# @where: Image tab: button that reads the text on the screenshot (on the device, no AI)
+# @kind: button
+# @max: 32
+img-read-text = Text from the screenshot
+
+# @where: Title of the panel with the text found on the screenshot
+# @kind: heading
+# @max: 32
+text-title = Text on the screenshot
+
+# @where: Text panel status while the text is being read
+# @kind: status
+# @max: 40
+text-busy = Reading the text…
+
+# @where: Text panel status: how many lines were found (read on this device)
+# @kind: status
+# @max: 48
+text-count = { $n } lines · read on this device
+
+# @where: Text panel status: nothing was found
+# @kind: status
+# @max: 40
+text-none = No text found
+
+# @where: Text panel status: languages the system cannot read yet
+# @kind: status
+# @max: 80
+text-missing = not installed for reading: { $langs }
+
+# @where: Text panel status: the reading failed
+# @kind: error
+# @max: 96
+text-error = Could not read the text: { $error }
+
+# @where: Text panel: copies the whole text as shown (after any corrections)
+# @kind: button
+# @max: 20
+text-copy-all = Copy all
+
+# @where: Text panel: hint under the text
+# @kind: hint
+# @max: 120
+text-hint = Drag a frame over the picture to read only that part; click a line to copy it.
+
 # @where: Toast when the clipboard is locked or fails
 # @kind: error
 # @max: 80

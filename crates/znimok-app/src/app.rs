@@ -178,6 +178,12 @@ enum Drag {
         start: (i32, i32),
         start_out: Point,
     },
+    /// A frame dragged over the picture while the text panel is open: read only that part; a
+    /// click without a drag copies the line under it (ZK-184).
+    TextRegion {
+        start: (i32, i32),
+        start_out: Point,
+    },
     /// Selecting in the text being typed with the mouse (ZK-49).
     TextSelect {
         anchor: usize,
@@ -325,6 +331,8 @@ pub struct App {
     eyedrop: Option<String>,
     /// For the self-test: Alt held (the real one is read from the system, ZK-167).
     pub test_alt: bool,
+    /// Text found on the picture (ZK-184); the panel is open while this is `Some`.
+    text: Option<TextFind>,
     stamp_id: u32,
     /// Size step of new stamps (ZK-173), an index into [`COUNTER_SIZES`] like the counter's.
     stamp_size_i: usize,
@@ -540,6 +548,7 @@ impl App {
             digit: None,
             eyedrop: None,
             test_alt: false,
+            text: None,
             stamp_id: 0,
             stamp_size_i: 1,
             alpha_merge: None,
@@ -3164,6 +3173,15 @@ impl App {
         if button != 0 {
             return;
         }
+        // With the text panel open the canvas reads text: a frame = only that part, a click =
+        // copy the line under it (ZK-184).
+        if self.text.is_some() {
+            self.drag = Some(Drag::TextRegion {
+                start: p,
+                start_out: out,
+            });
+            return;
+        }
         // The eyedropper takes the colour under the click, nothing else happens (ZK-160).
         if let Some(key) = self.eyedrop.clone() {
             self.eyedrop_cancel(ui);
@@ -3387,6 +3405,14 @@ impl App {
                 let merge = self.merge_key();
                 self.drag = Some(Drag::Move { last: start, merge });
                 self.pointer_move(ui, out, p, shift);
+            }
+            Drag::TextRegion { start, start_out } => {
+                if (out - start_out).hypot() >= 3.0 * self.dpr {
+                    self.marquee = Some(
+                        IRect::new(start.0, start.1, p.0 - start.0, p.1 - start.1).normalized(),
+                    );
+                    self.dirty = true;
+                }
             }
             Drag::TextSelect { anchor } => {
                 if let Some(o) = self.edited_object().cloned() {
@@ -3683,6 +3709,36 @@ impl App {
         if matches!(self.drag, Some(Drag::Rotate { .. })) {
             ui.set_rot_hint(SharedString::new());
         }
+        if let Some(Drag::TextRegion { start, .. }) = self.drag {
+            self.drag = None;
+            match self.marquee.take() {
+                Some(r) if r.w >= 4 && r.h >= 4 => self.text_read(ui, Some(r)),
+                _ => {
+                    // A click: the line under it goes to the clipboard.
+                    let line = self.text.as_ref().and_then(|t| {
+                        t.lines
+                            .iter()
+                            .find(|l| {
+                                let r = l.rect.normalized();
+                                start.0 >= r.x - 2
+                                    && start.0 <= r.right() + 2
+                                    && start.1 >= r.y - 2
+                                    && start.1 <= r.bottom() + 2
+                            })
+                            .map(|l| l.text.clone())
+                    });
+                    if let Some(line) = line {
+                        let msg = if crate::text::copy(&line) {
+                            self.tr.tr("clipboard-copied")
+                        } else {
+                            self.tr.tr("clipboard-error")
+                        };
+                        self.toast(ui, msg);
+                    }
+                }
+            }
+            self.dirty = true;
+        }
         if let Some(Drag::Toggle {
             id, was_selected, ..
         }) = self.drag
@@ -3836,7 +3892,7 @@ impl App {
         let Some(s) = self.s.as_ref() else {
             return ARROW;
         };
-        if self.eyedrop.is_some() {
+        if self.eyedrop.is_some() || self.text.is_some() {
             return CROSS;
         }
         let doc = &s.ed.doc;
@@ -4464,7 +4520,7 @@ impl App {
     /// Keys of the canvas. Letters are matched on both the Latin and the Ukrainian layout, so a
     /// tool key works whatever layout is on (the physical-key API comes with ZK-35's hotkeys).
     pub fn key(&mut self, ui: &AppWindow, text: &str, ctrl: bool, shift: bool) -> KeyAction {
-        const PAIRS: [(char, char); 20] = [
+        const PAIRS: [(char, char); 21] = [
             ('d', 'в'),
             ('g', 'п'),
             ('[', 'х'),
@@ -4482,6 +4538,7 @@ impl App {
             ('z', 'я'),
             ('y', 'н'),
             ('c', 'с'),
+            ('x', 'ч'),
             ('o', 'щ'),
             ('a', 'ф'),
             ('i', 'ш'),
@@ -4541,6 +4598,15 @@ impl App {
             return KeyAction::None;
         }
         // I: a picture from a file (a dialog — so not over the screen, ZK-163).
+        // X: the text on the picture (ZK-184).
+        if latin == Some('x') {
+            if self.text.is_some() {
+                self.text_close(ui);
+            } else {
+                self.text_open(ui);
+            }
+            return KeyAction::None;
+        }
         if latin == Some('i') {
             return if self.over.is_some() {
                 KeyAction::None
@@ -4606,7 +4672,10 @@ impl App {
                         KeyAction::Copy
                     };
                 }
-                // The eyedropper goes first (ZK-160).
+                // The text panel goes first (ZK-184), then the eyedropper (ZK-160).
+                "\u{1b}" if self.text.is_some() => {
+                    self.text_close(ui);
+                }
                 "\u{1b}" if self.eyedrop.is_some() => {
                     self.eyedrop_cancel(ui);
                 }
@@ -4778,6 +4847,132 @@ impl App {
         let v = ((c.r as i32) << 16) | ((c.g as i32) << 8) | c.b as i32;
         self.set_prop(ui, &format!("{key}-rgb"), v);
         true
+    }
+
+    /// «Text from the screenshot» (ZK-184): opens the panel and reads the whole picture (as it
+    /// looks, marks included) on a worker thread, on the device.
+    pub fn text_open(&mut self, ui: &AppWindow) {
+        if self.s.is_none() {
+            return;
+        }
+        self.text = Some(TextFind {
+            lines: Vec::new(),
+            busy: false,
+        });
+        ui.set_text_open(true);
+        ui.set_text_result(SharedString::new());
+        self.text_read(ui, None);
+    }
+
+    /// Reads the whole frame, or only `region` (document coordinates).
+    fn text_read(&mut self, ui: &AppWindow, region: Option<IRect>) {
+        let Some(frame) = self.s.as_ref().map(|s| s.ed.doc.frame()) else {
+            return;
+        };
+        // The picture itself, not the marks drawn on it (they only add noise) — but a Hide stays:
+        // what was hidden must not come back as text.
+        let Some((w, h, rgba)) = self.s.as_ref().map(|s| {
+            let mut doc = s.ed.doc.clone();
+            doc.objects.retain(|o| o.kind() == Kind::Hide);
+            let mut pix = Pixmap::new(1, 1);
+            self.renderer.render(&doc, View::one_to_one(&doc), &mut pix);
+            (
+                pix.width() as u32,
+                pix.height() as u32,
+                znimok_render::pixmap_to_rgba(&pix),
+            )
+        }) else {
+            return;
+        };
+        let origin = (frame.x, frame.y);
+        let job = match region {
+            Some(r) => match crate::text::crop(w, h, &rgba, origin, r) {
+                Some(part) => part,
+                None => return,
+            },
+            None => (w, h, rgba, origin),
+        };
+        if let Some(t) = self.text.as_mut() {
+            t.busy = true;
+        }
+        ui.set_text_busy(true);
+        ui.set_text_status(self.tr.tr("text-busy").into());
+        let me = self.me();
+        std::thread::spawn(move || {
+            let (w, h, rgba, at) = job;
+            let reading = crate::text::recognize(w, h, rgba, at);
+            let _ = slint::invoke_from_event_loop(move || {
+                me.with(|a, ui| a.text_done(ui, reading));
+            });
+        });
+    }
+
+    fn text_done(&mut self, ui: &AppWindow, reading: crate::text::Reading) {
+        let Some(t) = self.text.as_mut() else { return };
+        t.busy = false;
+        ui.set_text_busy(false);
+        let status = match reading {
+            Ok((lines, missing)) => {
+                let mut status = if lines.is_empty() {
+                    self.tr.tr("text-none")
+                } else {
+                    self.tr
+                        .tr_args("text-count", &args(&[("n", lines.len().to_string())]))
+                };
+                if !missing.is_empty() {
+                    status = format!(
+                        "{status} · {}",
+                        self.tr
+                            .tr_args("text-missing", &args(&[("langs", missing.join(", "))]))
+                    );
+                }
+                ui.set_text_result(crate::text::joined(&lines).into());
+                t.lines = lines;
+                status
+            }
+            Err(e) => {
+                t.lines.clear();
+                self.tr.tr_args("text-error", &args(&[("error", e)]))
+            }
+        };
+        ui.set_text_status(status.into());
+        self.dirty = true;
+        ui.window().request_redraw();
+    }
+
+    /// Closes the text panel and takes the lines off the canvas.
+    pub fn text_close(&mut self, ui: &AppWindow) {
+        if self.text.take().is_some() {
+            ui.set_text_open(false);
+            ui.set_text_busy(false);
+            self.marquee = None;
+            self.dirty = true;
+            ui.window().request_redraw();
+        }
+    }
+
+    /// «Copy all»: the panel's text as it is now (the user may have corrected it).
+    pub fn text_copy_all(&mut self, ui: &AppWindow) {
+        let text = ui.get_text_result().to_string();
+        let msg = if !text.is_empty() && crate::text::copy(&text) {
+            self.tr.tr("clipboard-copied")
+        } else {
+            self.tr.tr("clipboard-error")
+        };
+        self.toast(ui, msg);
+    }
+
+    /// For the self-test: the lines found, as (text, rect).
+    pub fn text_lines(&self) -> Vec<(String, IRect)> {
+        self.text
+            .as_ref()
+            .map(|t| t.lines.iter().map(|l| (l.text.clone(), l.rect)).collect())
+            .unwrap_or_default()
+    }
+
+    /// For the self-test: whether a reading is running.
+    pub fn text_busy(&self) -> bool {
+        self.text.as_ref().is_some_and(|t| t.busy)
     }
 
     /// Arms the eyedropper for a colour control: the next click on the canvas takes the colour
@@ -7407,6 +7602,20 @@ impl App {
             );
             overlay.push(out_box(&self.view, r, (8.0 * self.dpr).ceil() as i32 + 2));
         }
+        let text_boxes: Vec<IRect> = self
+            .text
+            .as_ref()
+            .map(|t| t.lines.iter().map(|l| l.rect).collect())
+            .unwrap_or_default();
+        for r in &text_boxes {
+            let k = znimok_render::vello_cpu::kurbo::Rect::new(
+                r.x as f64,
+                r.y as f64,
+                r.right() as f64,
+                r.bottom() as f64,
+            );
+            overlay.push(out_box(&self.view, k, 4));
+        }
         if let Some(m) = self.marquee {
             let r = znimok_render::vello_cpu::kurbo::Rect::new(
                 m.x as f64,
@@ -7465,6 +7674,9 @@ impl App {
         }
         if let Some((g, _, base)) = grip {
             draw_rotation_grip(&mut self.pixmap, &self.view, base, g, self.dpr);
+        }
+        for r in &text_boxes {
+            draw_text_box(&mut self.pixmap, &self.view, *r);
         }
         if let Some(m) = self.marquee {
             draw_marquee(&mut self.pixmap, &self.view, m);
@@ -7971,8 +8183,36 @@ pub fn counter_size(badge: i32, i: usize) -> i32 {
     ((badge as f64 * COUNTER_SIZES[i.min(COUNTER_SIZES.len() - 1)]).round() as i32).max(8)
 }
 
+/// The text panel's state (ZK-184): the lines found and whether a reading is running.
+struct TextFind {
+    lines: Vec<crate::text::Found>,
+    busy: bool,
+}
+
 /// A point in screenshot coordinates.
 type Pt = (f64, f64);
+
+/// A line of recognised text on the canvas (ZK-184): a light accent wash with an accent rim.
+fn draw_text_box(pix: &mut Pixmap, view: &View, r: IRect) {
+    let a = view.to_out(Point::new(r.x as f64, r.y as f64));
+    let b = view.to_out(Point::new(r.right() as f64, r.bottom() as f64));
+    let (x0, y0) = (a.x.floor() as i64 - 2, a.y.floor() as i64 - 2);
+    let (x1, y1) = (b.x.ceil() as i64 + 2, b.y.ceil() as i64 + 2);
+    let (w, h) = (pix.width() as i64, pix.height() as i64);
+    let data = pix.data_mut();
+    let accent = [0x3D as f32, 0x7B as f32, 0xF5 as f32];
+    for y in y0.max(0)..=y1.min(h - 1) {
+        for x in x0.max(0)..=x1.min(w - 1) {
+            let rim = x == x0 || x == x1 || y == y0 || y == y1;
+            let k = if rim { 0.9 } else { 0.16 };
+            let px = &mut data[(y * w + x) as usize];
+            let mix = |c: u8, t: f32| (c as f32 * (1.0 - k) + t * k).round() as u8;
+            px.r = mix(px.r, accent[0]);
+            px.g = mix(px.g, accent[1]);
+            px.b = mix(px.b, accent[2]);
+        }
+    }
+}
 
 /// The id of the first mark a rotation drag turns (for the angle shown beside the pointer).
 fn orig_first_id(d: &Option<Drag>) -> ObjectId {

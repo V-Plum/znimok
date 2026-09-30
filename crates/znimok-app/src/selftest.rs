@@ -2902,6 +2902,131 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
         }
     }));
 
+    // ZK-184: the text on the picture, read on the device. A clean page with real text in its
+    // pixels (the marks are not read, only the picture): the panel, the lines on the canvas, a
+    // click copies a line, a frame reads only a part, Esc closes.
+    steps.push(Box::new(|app, ui, _| {
+        use znimok_core::{Align, Data, Document, IRect, Object, Raster, Rgb, Style};
+        let mut page = Document::from_raster("text", Raster::solid(1400, 420, Rgb::WHITE));
+        for (i, t) in ["Znimok reads text 2026", "Привіт, світ зі знімка"]
+            .iter()
+            .enumerate()
+        {
+            page.push(
+                Object::new(
+                    IRect::new(60, 60 + i as i32 * 150, 1200, 90),
+                    Data::Text {
+                        text: t.to_string(),
+                        size: 64,
+                        bold: false,
+                        italic: false,
+                        align: Align::Left,
+                        box_w: 0,
+                    },
+                )
+                .with_style(Style {
+                    color: Rgb::new(20, 22, 26),
+                    ..Style::default()
+                }),
+            );
+        }
+        let mut renderer = znimok_render::Renderer::new();
+        let mut pix = znimok_render::vello_cpu::Pixmap::new(1, 1);
+        renderer.render(&page, znimok_render::View::one_to_one(&page), &mut pix);
+        let raster = Raster::new(
+            pix.width() as u32,
+            pix.height() as u32,
+            znimok_render::pixmap_to_rgba(&pix),
+        );
+        app.borrow_mut().new_document(ui, raster, "text", None);
+        let (_, ui) = opened(app, ui);
+        ui.invoke_tool_chosen(0);
+        ui.invoke_text_start();
+    }));
+    steps.push(Box::new(|_, _, _| {}));
+    steps.push(Box::new(|_, _, _| {}));
+    steps.push(Box::new(|_, _, _| {}));
+    steps.push(Box::new(|_, _, _| {}));
+    steps.push(Box::new(|_, _, _| {}));
+    steps.push(Box::new(|_, _, _| {}));
+    steps.push(Box::new(|_, _, _| {}));
+    steps.push(Box::new(|_, _, _| {}));
+    steps.push(Box::new(|_, _, _| {}));
+    steps.push(Box::new(|_, _, _| {}));
+    steps.push(Box::new(|_, _, _| {}));
+    steps.push(Box::new(|_, _, _| {}));
+    steps.push(Box::new(|_, _, _| {}));
+    steps.push(Box::new(|_, _, _| {}));
+    steps.push(Box::new(|app, ui, r| {
+        let lines = app.borrow().text_lines();
+        let busy = app.borrow().text_busy();
+        let all = ui.get_text_result().to_string();
+        r.snapshot(ui, "39-text");
+        r.check(
+            "text: read on the device, lines on the canvas and in the panel",
+            ui.get_text_open()
+                && !busy
+                && lines.len() == 2
+                && all.contains("Znimok reads text 2026")
+                && all.contains("Привіт"),
+            format!(
+                "{} lines, busy {busy}: «{}»",
+                lines.len(),
+                all.replace('\n', " / ")
+            ),
+        );
+        if let Some((text, rect)) = lines.first().cloned() {
+            let at = app.borrow().doc_to_logical(
+                rect.x as f64 + rect.w as f64 / 2.0,
+                rect.y as f64 + rect.h as f64 / 2.0,
+            );
+            click(app, ui, at);
+            let got = arboard::Clipboard::new()
+                .and_then(|mut c| c.get_text())
+                .unwrap_or_default();
+            r.check(
+                "text: a click on a line copies that line",
+                got == text,
+                format!("«{got}» vs «{text}»"),
+            );
+        }
+        // A frame around the second line only: the next reading has just it.
+        if let Some((_, rect)) = lines.get(1).cloned() {
+            let (a0, a1) = {
+                let a = app.borrow();
+                (
+                    a.doc_to_logical(rect.x as f64 - 10.0, rect.y as f64 - 10.0),
+                    a.doc_to_logical(rect.right() as f64 + 10.0, rect.bottom() as f64 + 10.0),
+                )
+            };
+            drag(app, ui, a0, a1);
+        }
+    }));
+    steps.push(Box::new(|_, _, _| {}));
+    steps.push(Box::new(|_, _, _| {}));
+    steps.push(Box::new(|_, _, _| {}));
+    steps.push(Box::new(|_, _, _| {}));
+    steps.push(Box::new(|_, _, _| {}));
+    steps.push(Box::new(|_, _, _| {}));
+    steps.push(Box::new(|_, _, _| {}));
+    steps.push(Box::new(|_, _, _| {}));
+    steps.push(Box::new(|_, _, _| {}));
+    steps.push(Box::new(|_, _, _| {}));
+    steps.push(Box::new(|app, ui, r| {
+        let lines = app.borrow().text_lines();
+        r.check(
+            "text: a frame reads only that part",
+            lines.len() == 1 && lines[0].0.contains("Привіт"),
+            format!("{lines:?}"),
+        );
+        key(app, ui, "\u{1b}", false, false);
+        r.check(
+            "text: Esc closes the panel",
+            !ui.get_text_open() && app.borrow().text_lines().is_empty(),
+            String::new(),
+        );
+    }));
+
     // ZK-141: a scrolling capture over a synthetic page (a fake screen and a fake wheel): the
     // stitched document has the whole page, with the sticky header and footer once.
     steps.push(Box::new(|_, _, _| {

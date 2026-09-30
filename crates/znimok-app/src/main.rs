@@ -28,6 +28,7 @@ mod pill;
 mod scroll;
 mod selftest;
 mod system;
+mod text;
 mod tray;
 #[cfg(test)]
 mod ui_tests;
@@ -1001,6 +1002,16 @@ fn wire(ui: &AppWindow, app: &Shared) {
     });
     on!(ui, app, on_over_close, |a, w| {
         a.over_finish(&w, false, false);
+    });
+    on!(ui, app, on_text_start, |a, w| {
+        a.text_open(&w);
+    });
+    on!(ui, app, on_text_close, |a, w| {
+        a.text_close(&w);
+        w.invoke_focus_canvas();
+    });
+    on!(ui, app, on_text_copy_all, |a, w| {
+        a.text_copy_all(&w);
     });
     on!(ui, app, on_read_codes, |a, _w| {
         if let Some((w, h, rgba)) = a.flatten() {
