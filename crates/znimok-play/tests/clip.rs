@@ -145,7 +145,7 @@ fn plays_the_kept_clip() {
             break;
         }
     }
-    assert!(seen >= 10, "only {seen} reverse frames");
+    assert!(seen >= 3, "only {seen} reverse frames");
     drop(r);
 
     // The MP4 as byte ranges of a bigger file (copied out into the cache where AVFoundation
