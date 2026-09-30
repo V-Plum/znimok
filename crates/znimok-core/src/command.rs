@@ -179,12 +179,18 @@ pub enum Command {
         merge: Option<MergeKey>,
     },
     /// Drags handle `handle` of one mark by (dx, dy) from `orig` (the rectangle when the drag began).
+    /// `keep_ratio` keeps the proportions (counters and stamps always keep them), `from_centre`
+    /// moves both sides so the centre stays.
     ResizeObject {
         id: ObjectId,
         handle: usize,
         orig: IRect,
         dx: i32,
         dy: i32,
+        #[serde(default)]
+        keep_ratio: bool,
+        #[serde(default)]
+        from_centre: bool,
         #[serde(default)]
         merge: Option<MergeKey>,
     },
@@ -625,6 +631,8 @@ pub fn examples() -> (Vec<Command>, Vec<Query>) {
             orig: IRect::new(10, 20, 100, 50),
             dx: 5,
             dy: 5,
+            keep_ratio: true,
+            from_centre: false,
             merge: Some(MergeKey::Drag { id: 42 }),
         },
         Command::Select {

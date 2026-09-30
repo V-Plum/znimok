@@ -1118,7 +1118,7 @@
     },
     {
       "additionalProperties": false,
-      "description": "Drags handle `handle` of one mark by (dx, dy) from `orig` (the rectangle when the drag began).",
+      "description": "Drags handle `handle` of one mark by (dx, dy) from `orig` (the rectangle when the drag began).\n`keep_ratio` keeps the proportions (counters and stamps always keep them), `from_centre`\nmoves both sides so the centre stays.",
       "properties": {
         "cmd": {
           "const": "resize_object",
@@ -1132,6 +1132,10 @@
           "format": "int32",
           "type": "integer"
         },
+        "from_centre": {
+          "default": false,
+          "type": "boolean"
+        },
         "handle": {
           "format": "uint",
           "minimum": 0,
@@ -1141,6 +1145,10 @@
           "format": "uint32",
           "minimum": 0,
           "type": "integer"
+        },
+        "keep_ratio": {
+          "default": false,
+          "type": "boolean"
         },
         "merge": {
           "anyOf": [

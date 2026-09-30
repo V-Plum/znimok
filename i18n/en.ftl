@@ -1250,6 +1250,21 @@ counter-digit-colour = Number
 # @max: 60
 counter-digit-auto = Auto: black or white, whichever reads better
 
+# @where: Inspector, Counter: caption of the counter's own colour row
+# @kind: label
+# @max: 20
+counter-colour = Colour
+
+# @where: Inspector, Counter: the button between the colour and the number rows
+# @kind: tooltip
+# @max: 48
+counter-swap = Swap the colour and the number
+
+# @where: Inspector, Counter: the row of fixed sizes S M L XL
+# @kind: label
+# @max: 12
+counter-size = Size
+
 # @where: Counter context menu
 # @kind: menu
 # @max: 32

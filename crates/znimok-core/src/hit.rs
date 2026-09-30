@@ -152,10 +152,36 @@ pub fn handles(o: &Object) -> Vec<(f64, f64)> {
 fn opposite(o: &Object, handle: usize) -> usize {
     match local_handles(o).len() {
         8 => (handle + 4) % 8,
+        4 => (handle + 2) % 4,
         2 => 1 - handle.min(1),
         _ => handle,
     }
 }
+
+/// How a handle drag resizes (ZK-167): `keep_ratio` — the proportions stay (Shift; counters
+/// and stamps always), `from_centre` — both sides move, the centre stays (Alt).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct ResizeMods {
+    pub keep_ratio: bool,
+    pub from_centre: bool,
+}
+
+/// Kinds that only ever scale as a whole: a counter or a stamp squashed is a different sign.
+pub fn scales_only(k: Kind) -> bool {
+    matches!(k, Kind::Counter | Kind::Stamp)
+}
+
+/// Which way a box handle moves each side: -1 the left / top, 1 the right / bottom, 0 neither.
+const MOVES: [(i32, i32); 8] = [
+    (-1, -1),
+    (0, -1),
+    (1, -1),
+    (1, 0),
+    (1, 1),
+    (0, 1),
+    (-1, 1),
+    (-1, 0),
+];
 
 /// Handles of the mark as if it were not turned.
 fn local_handles(o: &Object) -> Vec<(f64, f64)> {
@@ -172,7 +198,13 @@ fn local_handles(o: &Object) -> Vec<(f64, f64)> {
             let (_, cy) = b.center();
             vec![(b.x as f64, cy), (b.right() as f64, cy)]
         }
-        Kind::Counter | Kind::Stamp | Kind::Pen => vec![],
+        Kind::Pen => vec![],
+        // Counters and stamps: the four corners only, they scale as a whole (ZK-167).
+        Kind::Counter | Kind::Stamp => {
+            let b = o.bounds();
+            let (x0, y0, x1, y1) = (b.x as f64, b.y as f64, b.right() as f64, b.bottom() as f64);
+            vec![(x0, y0), (x1, y0), (x1, y1), (x0, y1)]
+        }
         _ => {
             let b = o.bounds();
             let (x0, y0, x1, y1) = (b.x as f64, b.y as f64, b.right() as f64, b.bottom() as f64);
@@ -204,29 +236,90 @@ pub fn hit_handle(o: &Object, p: (f64, f64), px_per_doc: f64) -> Option<usize> {
 /// A turned mark is resized in its own frame (the drag is turned back), and then shifted so the
 /// handle across from the dragged one stays where it was on the screenshot (ZK-164).
 pub fn resize(o: &mut Object, handle: usize, orig: IRect, dx: i32, dy: i32) {
+    resize_with(o, handle, orig, dx, dy, ResizeMods::default());
+}
+
+/// [`resize`] with Shift / Alt (ZK-167): proportional and / or about the centre. What stays in
+/// place is the handle across from the dragged one — or the centre with `from_centre`.
+pub fn resize_with(o: &mut Object, handle: usize, orig: IRect, dx: i32, dy: i32, m: ResizeMods) {
+    let m = ResizeMods {
+        keep_ratio: m.keep_ratio || scales_only(o.kind()),
+        ..m
+    };
     if !turned(o) {
-        resize_local(o, handle, orig, dx, dy);
+        resize_local(o, handle, orig, dx, dy, m);
         return;
     }
     let rot = o.rot as f64;
     let (ldx, ldy) = turn((dx as f64, dy as f64), (0.0, 0.0), -rot);
+    let fixed = |a: &Object| {
+        if m.from_centre {
+            a.bounds().center()
+        } else {
+            turn(
+                local_handles(a)[opposite(a, handle)],
+                a.bounds().center(),
+                rot,
+            )
+        }
+    };
     let before = {
         let mut a = o.clone();
         a.rect = orig;
-        let fixed = local_handles(&a)[opposite(&a, handle)];
-        turn(fixed, a.bounds().center(), rot)
+        fixed(&a)
     };
-    resize_local(o, handle, orig, ldx.round() as i32, ldy.round() as i32);
-    let after = turn(
-        local_handles(o)[opposite(o, handle)],
-        o.bounds().center(),
-        rot,
-    );
+    resize_local(o, handle, orig, ldx.round() as i32, ldy.round() as i32, m);
+    let after = fixed(o);
     o.rect.x += (before.0 - after.0).round() as i32;
     o.rect.y += (before.1 - after.1).round() as i32;
 }
 
-fn resize_local(o: &mut Object, handle: usize, orig: IRect, dx: i32, dy: i32) {
+/// A box resized by one of its eight handles (see [`MOVES`]), from the original.
+fn resize_box(orig: IRect, handle: usize, dx: i32, dy: i32, m: ResizeMods) -> IRect {
+    let n = orig.normalized();
+    let (ow, oh) = (n.w as f64, n.h as f64);
+    let (mx, my) = MOVES[handle % 8];
+    // About the centre both sides move, so the size changes twice as fast.
+    let k = if m.from_centre { 2.0 } else { 1.0 };
+    let mut w = ow + (mx * dx) as f64 * k;
+    let mut h = oh + (my * dy) as f64 * k;
+    if m.keep_ratio && ow > 0.0 && oh > 0.0 {
+        let s = match (mx, my) {
+            (0, _) => h / oh,
+            (_, 0) => w / ow,
+            _ if (w / ow).abs() >= (h / oh).abs() => w / ow,
+            _ => h / oh,
+        };
+        // Never through zero: a proportional drag stops at one pixel instead of flipping.
+        let s = s.max(1.0 / ow.min(oh));
+        w = ow * s;
+        h = oh * s;
+    }
+    let (cx, cy) = (n.x as f64 + ow / 2.0, n.y as f64 + oh / 2.0);
+    let x0 = if m.from_centre || mx == 0 {
+        cx - w / 2.0
+    } else if mx > 0 {
+        n.x as f64
+    } else {
+        n.right() as f64 - w
+    };
+    let y0 = if m.from_centre || my == 0 {
+        cy - h / 2.0
+    } else if my > 0 {
+        n.y as f64
+    } else {
+        n.bottom() as f64 - h
+    };
+    IRect::new(
+        x0.round() as i32,
+        y0.round() as i32,
+        w.round() as i32,
+        h.round() as i32,
+    )
+    .normalized()
+}
+
+fn resize_local(o: &mut Object, handle: usize, orig: IRect, dx: i32, dy: i32, m: ResizeMods) {
     match o.kind() {
         Kind::Line => {
             o.rect = if handle == 0 {
@@ -237,40 +330,30 @@ fn resize_local(o: &mut Object, handle: usize, orig: IRect, dx: i32, dy: i32) {
         }
         Kind::Text | Kind::Mark => {
             let n = orig.normalized();
-            let w = (if handle == 0 { n.w - dx } else { n.w + dx }).max(8);
-            let x = if handle == 0 { n.right() - w } else { n.x };
+            let k = if m.from_centre { 2 } else { 1 };
+            let w = (if handle == 0 {
+                n.w - dx * k
+            } else {
+                n.w + dx * k
+            })
+            .max(8);
+            let x = if m.from_centre {
+                n.x + (n.w - w) / 2
+            } else if handle == 0 {
+                n.right() - w
+            } else {
+                n.x
+            };
             o.rect = IRect::new(x, n.y, w, n.h);
             if let Data::Text { box_w, .. } = &mut o.data {
                 *box_w = w;
             }
         }
-        _ => {
-            let n = orig.normalized();
-            let (mut x0, mut y0, mut x1, mut y1) = (n.x, n.y, n.right(), n.bottom());
-            match handle {
-                0 => {
-                    x0 += dx;
-                    y0 += dy;
-                }
-                1 => y0 += dy,
-                2 => {
-                    x1 += dx;
-                    y0 += dy;
-                }
-                3 => x1 += dx,
-                4 => {
-                    x1 += dx;
-                    y1 += dy;
-                }
-                5 => y1 += dy,
-                6 => {
-                    x0 += dx;
-                    y1 += dy;
-                }
-                _ => x0 += dx,
-            }
-            o.rect = IRect::new(x0, y0, x1 - x0, y1 - y0).normalized();
+        // Counters and stamps have the four corners: box handles 0, 2, 4, 6.
+        Kind::Counter | Kind::Stamp => {
+            o.rect = resize_box(orig, [0, 2, 4, 6][handle % 4], dx, dy, m);
         }
+        _ => o.rect = resize_box(orig, handle, dx, dy, m),
     }
 }
 
@@ -318,6 +401,53 @@ mod tests {
             (now.0 - fixed.0).abs() <= 1.0 && (now.1 - fixed.1).abs() <= 1.0,
             "{fixed:?} → {now:?}"
         );
+    }
+
+    #[test]
+    fn shift_keeps_the_ratio_alt_keeps_the_centre_counters_always_scale() {
+        let mut o = Object::new(IRect::new(100, 100, 100, 50), Data::Rect);
+        let orig = o.rect;
+        // Shift on the bottom-right corner: 2:1 kept, the top-left corner stays.
+        let shift = ResizeMods {
+            keep_ratio: true,
+            from_centre: false,
+        };
+        resize_with(&mut o, 4, orig, 100, 5, shift);
+        assert_eq!(o.rect, IRect::new(100, 100, 200, 100));
+        // Alt on the right edge: both sides move, the centre stays.
+        let alt = ResizeMods {
+            keep_ratio: false,
+            from_centre: true,
+        };
+        resize_with(&mut o, 3, orig, 10, 0, alt);
+        assert_eq!(o.rect, IRect::new(90, 100, 120, 50));
+        // Both: the centre and the ratio.
+        resize_with(
+            &mut o,
+            4,
+            orig,
+            50,
+            0,
+            ResizeMods {
+                keep_ratio: true,
+                from_centre: true,
+            },
+        );
+        assert_eq!(o.rect, IRect::new(50, 75, 200, 100));
+        // A counter has four corner handles and never squashes.
+        let mut c = Object::new(
+            IRect::new(0, 0, 28, 28),
+            Data::Counter {
+                seq: 0,
+                group: 1,
+                start: 1,
+                shape: crate::model::CounterShape::Circle,
+            },
+        );
+        assert_eq!(handles(&c).len(), 4);
+        let co = c.rect;
+        resize(&mut c, 2, co, 28, 5);
+        assert_eq!((c.rect.w, c.rect.h), (56, 56));
     }
 
     #[test]

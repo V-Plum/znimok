@@ -61,7 +61,8 @@ Settings → Screenshots; the hint strip at the bottom of the overlay shows the 
 | Forward / backward | Ctrl+] / Ctrl+[ | ⌘] / ⌘[ |
 | To front / to back | Ctrl+Shift+] / Ctrl+Shift+[ | ⇧⌘] / ⇧⌘[ |
 | Paste a clipboard image as a mark | Ctrl+V | ⌘V |
-| Turn a mark | drag the handle above its box; Shift — 15° steps | drag the handle; ⇧ — 15° steps |
+| Resize proportionally / about the centre | Shift / Alt while dragging a handle | ⇧ / ⌥ while dragging a handle |
+| Turn a mark | drag the handle above its box; Shift — 45° steps | drag the handle; ⇧ — 45° steps |
 
 ## Crop
 

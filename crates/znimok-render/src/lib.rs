@@ -703,14 +703,15 @@ impl Renderer {
                     .stroke_path(&counter_path(rect.inset(inset), *shape));
                 let digit = st.color2.unwrap_or_else(|| on_color(st.color));
                 let label = n.to_string();
+                // The number grows with the counter (ZK-167): from its width, not a fixed size.
                 let fs = if *shape == CounterShape::Pin {
-                    st.thick * 42 / 100
+                    w * 0.42
                 } else {
-                    st.thick * 52 / 100
+                    w * 0.52
                 };
                 let spec = text::TextSpec {
                     text: &label,
-                    size_px: fs.max(4) as f32,
+                    size_px: fs.floor().max(4.0) as f32,
                     bold: true,
                     italic: false,
                     align: Align::Center,
@@ -721,6 +722,14 @@ impl Renderer {
                 } else {
                     rect.center()
                 };
+                // The number stays upright however the counter turns (ZK-166): turned back
+                // about its own centre, it still sits where the turned head is.
+                let upright = obj.kind().can_rotate() && obj.rot != 0;
+                if upright {
+                    self.ctx.set_transform(
+                        t * Affine::rotate_about(-(obj.rot as f64).to_radians(), head),
+                    );
+                }
                 text::draw_text_centered(
                     &mut self.ctx,
                     &mut self.res,
@@ -731,13 +740,16 @@ impl Renderer {
                     rgba(digit, 1.0),
                     alpha,
                 );
+                if upright {
+                    self.ctx.set_transform(t);
+                }
             }
             Data::Stamp { id } => {
                 if *id >= 100 {
                     let s = reference::emoji_for(*id);
                     let spec = text::TextSpec {
                         text: s,
-                        size_px: st.thick as f32,
+                        size_px: rect.width().max(4.0) as f32,
                         bold: false,
                         italic: false,
                         align: Align::Center,
@@ -1168,7 +1180,7 @@ fn stroke_for(st: &Style, pw: f64) -> Stroke {
 }
 
 /// Digit colour for a counter without an explicit second colour (LH `EdOnColor`).
-fn on_color(c: Rgb) -> Rgb {
+pub fn on_color(c: Rgb) -> Rgb {
     let lum = (c.r as u32 * 299 + c.g as u32 * 587 + c.b as u32 * 114) / 1000;
     if lum > 140 {
         Rgb::new(24, 24, 28)

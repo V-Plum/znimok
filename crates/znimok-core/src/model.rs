@@ -459,6 +459,28 @@ impl Object {
     pub fn sanitize(&mut self) {
         self.rect = self.rect.clamped();
         self.rot %= 360;
+        // A counter or a stamp is as tall as its shape says and its size is its width (ZK-167):
+        // a counter turned into a pin grows its point, a pin turned into a circle loses it.
+        match &self.data {
+            Data::Counter { shape, .. } => {
+                let n = self.rect.normalized();
+                let w = n.w.max(1);
+                let h = if *shape == CounterShape::Pin {
+                    (w * 13 + 5) / 10
+                } else {
+                    w
+                };
+                self.rect = IRect::new(n.x, n.y, w, h);
+                self.style.thick = w;
+            }
+            Data::Stamp { .. } => {
+                let n = self.rect.normalized();
+                let w = n.w.max(1);
+                self.rect = IRect::new(n.x, n.y, w, w);
+                self.style.thick = w;
+            }
+            _ => {}
+        }
         if let Data::Pen { points, .. } = &mut self.data {
             for p in points.iter_mut() {
                 *p = (clamp_coord(p.0), clamp_coord(p.1));
