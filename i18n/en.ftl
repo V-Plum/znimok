@@ -4389,6 +4389,11 @@ vid-frame-back = Frame back
 # @max: 16
 vid-play = Play
 
+# @where: Transport: plays the video backwards (J)
+# @kind: a11y
+# @max: 18
+vid-play-back = Play backwards
+
 # @where: Transport
 # @kind: a11y
 # @max: 16
@@ -4885,10 +4890,10 @@ vid-sound-both = Both
 # @max: 12
 vid-fit = Fit
 
-# @where: Video, Trim section: playback is not available on this machine
+# @where: Video, Trim section: the player could not start on this machine
 # @kind: body
 # @max: 160
-vid-poster-note = Playback is not available here yet: the first frame stands for the video; trimming works.
+vid-poster-note = The video could not be played here: the first frame stands for it; trimming works.
 
 # @where: Name of the screenshot made from a video frame; $name the video, $n the frame
 # @kind: label

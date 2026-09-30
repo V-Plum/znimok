@@ -157,7 +157,7 @@ fn open(gpu: &Gpu, source: Source, frames: i64) -> Rig {
         _ => panic!("no Opened first"),
     }
     Rig {
-        conv: Converter::new(gpu),
+        conv: Converter::new(gpu).unwrap(),
         player,
         rx,
     }

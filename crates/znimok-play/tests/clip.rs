@@ -72,7 +72,7 @@ impl Rig {
             _ => panic!("no Opened first"),
         }
         Rig {
-            conv: Converter::new(gpu),
+            conv: Converter::new(gpu).unwrap(),
             player,
             rx,
         }

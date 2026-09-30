@@ -188,7 +188,7 @@ enum Cmd {
     },
     Pause,
     Edit(VideoEdit),
-    Tone(Option<[u8; 256]>),
+    Tone(Option<Box<[u8; 256]>>),
     Quit,
 }
 
@@ -219,18 +219,20 @@ impl Player {
         let m = mail.clone();
         std::thread::Builder::new()
             .name("znimok-player".into())
-            .spawn(move || match open_decoder(&gpu, &source) {
-                Ok(dec) => {
-                    let (w, h) = dec.size();
-                    on_event(Event::Opened(Info {
-                        width: w,
-                        height: h,
-                        fps: dec.fps(),
-                        path: dec.path(),
-                    }));
-                    Engine::new(dec, Converter::new(&gpu), frames, m).run(rx, &on_event);
+            .spawn(move || {
+                match Converter::new(&gpu).and_then(|c| Ok((c, open_decoder(&gpu, &source)?))) {
+                    Ok((conv, dec)) => {
+                        let (w, h) = dec.size();
+                        on_event(Event::Opened(Info {
+                            width: w,
+                            height: h,
+                            fps: dec.fps(),
+                            path: dec.path(),
+                        }));
+                        Engine::new(dec, conv, frames, m).run(rx, &on_event);
+                    }
+                    Err(e) => on_event(Event::Failed(e)),
                 }
-                Err(e) => on_event(Event::Failed(e)),
             })
             .map_err(|e| e.to_string())?;
         Ok(Player { tx, mail })
@@ -268,7 +270,7 @@ impl Player {
     /// The picture's tone (`znimok_render::develop::tone_lut`), None for none: the frame shown
     /// is converted again.
     pub fn set_tone(&self, lut: Option<[u8; 256]>) {
-        let _ = self.tx.send(Cmd::Tone(lut));
+        let _ = self.tx.send(Cmd::Tone(lut.map(Box::new)));
     }
 }
 
@@ -562,7 +564,7 @@ impl Engine {
                     Cmd::Pause => playing = false,
                     Cmd::Edit(e) => self.edit = e,
                     Cmd::Tone(lut) => {
-                        self.conv.set_tone(lut);
+                        self.conv.set_tone(lut.map(|l| *l));
                         for s in &mut self.slots {
                             s.frames = None;
                         }
@@ -708,7 +710,13 @@ impl Thumbs {
                         return;
                     }
                 };
-                let mut conv = Converter::new(&gpu);
+                let mut conv = match Converter::new(&gpu) {
+                    Ok(c) => c,
+                    Err(e) => {
+                        eprintln!("thumbnails: {e}");
+                        return;
+                    }
+                };
                 conv.set_tone(tone);
                 let (w, h) = dec.size();
                 let th = height.clamp(8, h.max(8));

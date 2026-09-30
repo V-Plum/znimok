@@ -1818,6 +1818,22 @@ export component AppWindow inherits Window {
     in property <int> save-state: 0; // 0 saved, 1 unsaved, 2 saving
     in-out property <int> tool: 1;
     in property <image> canvas;
+    // ZK-92: the video's frame, shown under the canvas straight from the GPU (the canvas is
+    // see-through over the picture then); the whole picture at vid-x/y/w/h, clipped to the frame.
+    in property <image> vid-image;
+    in property <bool> vid-live;
+    in property <length> vid-x;
+    in property <length> vid-y;
+    in property <length> vid-w;
+    in property <length> vid-h;
+    in property <length> vid-clip-x;
+    in property <length> vid-clip-y;
+    in property <length> vid-clip-w;
+    in property <length> vid-clip-h;
+    in property <bool> vid-smooth: true;
+    in property <bool> vid-backward;
+    // The film strip's thumbnails, composed by Rust at the timeline's zoom.
+    in property <image> tl-strip;
     in property <string> image-size;
     in property <int> mark-count;
     in property <string> zoom-text: "100 %";
@@ -3238,6 +3254,22 @@ export component AppWindow inherits Window {
                     vertical-stretch: 1;
                     background: Theme.canvas;
                     clip: true;
+                    if root.vid-live && root.vid-mode: Rectangle {
+                        x: root.vid-clip-x;
+                        y: root.vid-clip-y;
+                        width: max(0px, root.vid-clip-w);
+                        height: max(0px, root.vid-clip-h);
+                        clip: true;
+                        Image {
+                            x: root.vid-x - root.vid-clip-x;
+                            y: root.vid-y - root.vid-clip-y;
+                            width: root.vid-w;
+                            height: root.vid-h;
+                            source: root.vid-image;
+                            image-fit: fill;
+                            image-rendering: root.vid-smooth ? smooth : pixelated;
+                        }
+                    }
                     Image {
                         x: 0;
                         y: 0;
@@ -3489,6 +3521,8 @@ export component AppWindow inherits Window {
                         alignment: start;
                         IconButton { y: 6px; icon: "M6 5 v14 M18 5 l-9 7 9 7 z"; label: @tr("vid-to-start" => "To start"); tip: self.label + "  Home"; clicked => { root.vid-transport("home"); } }
                         IconButton { y: 6px; icon: "M15 6 l-6 6 6 6"; label: @tr("vid-frame-back" => "Frame back"); tip: self.label + "  ←"; clicked => { root.vid-transport("back"); } }
+                        // ZK-92: backwards (J), as the key frames allow — decoded ahead into a cache.
+                        IconButton { y: 6px; icon: "M17 5 l-11 7 11 7 z"; label: root.vid-playing && root.vid-backward ? @tr("vid-pause" => "Pause") : @tr("vid-play-back" => "Play backwards"); tip: self.label + "  J"; clicked => { root.vid-transport("reverse"); } }
                         Rectangle {
                             y: 6px;
                             width: 40px;
@@ -3558,8 +3592,17 @@ export component AppWindow inherits Window {
                             Rectangle { y: 22px; height: 1px; background: Theme.line; }
                             for t in root.tl-ticks: Text { x: 8px + t.x + 3px; y: 4px; text: t.label; color: Theme.text3; font-family: "JetBrains Mono"; font-size: 10px; }
                             for t in root.tl-ticks: Rectangle { x: 8px + t.x; y: 16px; width: 1px; height: 6px; background: Theme.text3; }
-                            // the film strip (thumbnails come with ZK-92)
-                            Rectangle { x: 8px; y: 26px; width: parent.width - 16px; height: 52px; border-radius: 4px; background: Theme.control-on; }
+                            // the film strip: thumbnails from the key frames (ZK-92)
+                            Rectangle {
+                                x: 8px;
+                                y: 26px;
+                                width: parent.width - 16px;
+                                height: 52px;
+                                border-radius: 4px;
+                                background: Theme.control-on;
+                                clip: true;
+                                Image { width: parent.width; height: parent.height; source: root.tl-strip; image-fit: fill; }
+                            }
                             for p in root.tl-pieces: Rectangle {
                                 x: 8px + p.x;
                                 y: p.kind == 3 ? 24px : 26px;

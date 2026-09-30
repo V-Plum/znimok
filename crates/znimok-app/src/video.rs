@@ -2,17 +2,18 @@
 //! and hands frames to the canvas, the timeline's state (the edit list of `znimok-video`, the
 //! selection, the drag in progress, the view's zoom and offset) and what the timeline shows.
 //!
-//! The frames come from the CPU decoder of `znimok-video-win` for now (NV12 → RGBA here, then
-//! the canvas draws them like a screenshot's picture); the GPU path without copies is ZK-92.
-//! On macOS there is no player yet: the poster frame stands for the video, the timeline works.
+//! The frames come from `znimok-play` (ZK-92): decoded and converted on the GPU into a texture
+//! the window shows under a transparent canvas — the marks are drawn over it, and the canvas is
+//! not repainted for a new frame. A CPU copy of the paused frame comes a moment later (Hide marks
+//! sample it, «Кадр як знімок» takes it). The film strip's thumbnails come from the same player
+//! crate, averaged down on the GPU.
 //!
 //! The edits live in the document's timeline (ZK-144): every finished edit is one
 //! `SetTimeline` command of the core editor, so the marks and the cuts share one undo history.
 //! `EditTimeline` here only holds what is being dragged or selected.
 
-use std::path::{Path, PathBuf};
+use std::collections::HashMap;
 use std::sync::Arc;
-use std::sync::mpsc::{Receiver, Sender};
 
 use znimok_core::{Raster, Timeline};
 use znimok_video::edit::{EditTimeline, Selection, TimelineView, VideoEdit};
@@ -35,14 +36,29 @@ pub struct Geometry {
 pub struct Vid {
     pub fps: f64,
     pub frames: i64,
-    /// The player, when this machine can decode (Windows now).
-    pub player: Option<Player>,
-    /// Why there is no player (shown once).
+    /// The player (started once the window has its GPU device).
+    pub player: Option<znimok_play::Player>,
+    pub player_started: bool,
+    /// Why there is no player.
     pub player_error: Option<String>,
-    /// The frame on the canvas and its pixels (None: the poster).
+    /// How the frames reach the screen ("gpu", "upload", "software").
+    pub path: Option<&'static str>,
+    /// The frame shown, and its texture on the GPU (None: the poster, drawn by the canvas).
     pub frame: i64,
-    pub raster: Option<Arc<Raster>>,
+    pub shown: Option<znimok_play::Shown>,
+    /// A CPU copy of a paused frame: (frame, pixels).
+    pub raster: Option<(i64, Arc<Raster>)>,
+    /// «Кадр як знімок» waits for the CPU copy of the frame shown.
+    pub shot_pending: bool,
     pub playing: bool,
+    pub backward: bool,
+    /// The tone table last sent to the player (None: not sent yet).
+    pub tone_sent: Option<Option<[u8; 256]>>,
+    /// The film strip: thumbnails by frame, the worker making the missing ones, and what the
+    /// strip was last composed from (so it is composed again only when that changes).
+    pub thumbs: HashMap<i64, Raster>,
+    pub thumbs_job: Option<znimok_play::Thumbs>,
+    pub strip_key: Option<(i32, i64, u64, usize)>,
     pub speed_i: usize,
     pub looping: bool,
     pub muted: bool,
@@ -70,10 +86,19 @@ impl Vid {
             fps,
             frames,
             player: None,
+            player_started: false,
             player_error: None,
+            path: None,
             frame: 0,
+            shown: None,
             raster: None,
+            shot_pending: false,
             playing: false,
+            backward: false,
+            tone_sent: None,
+            thumbs: HashMap::new(),
+            thumbs_job: None,
+            strip_key: None,
             speed_i: 1,
             looping: false,
             muted: false,
@@ -315,291 +340,32 @@ pub fn fmt_time_short(secs: f64) -> String {
     format!("{}:{:02}", secs / 60, secs % 60)
 }
 
-// ------------------------------------------------------------------ the player
+// ------------------------------------------------------------------ the film strip
 
-/// A frame the player delivered.
-pub struct Delivered {
-    pub frame: i64,
-    pub raster: Arc<Raster>,
-    /// Still playing after this frame (false: the end was reached, or a pause was asked).
-    pub playing: bool,
-}
-
-// The player runs on Windows only for now (ZK-92 brings macOS): elsewhere nothing reads these.
-#[cfg_attr(not(windows), allow(dead_code))]
-enum Cmd {
-    Seek(i64),
-    Play {
-        from: i64,
-        speed: f64,
-        looping: bool,
-    },
-    Pause,
-    Edit(VideoEdit),
-    Quit,
-}
-
-/// Decodes on its own thread; frames come back on the UI thread through `on_frame`.
-pub struct Player {
-    tx: Sender<Cmd>,
-}
-
-impl Player {
-    /// Opens the recording of a document: the stream is copied out of the `.znimok` once, into
-    /// the cache (ZK-92 will read it in place), and decoded from there.
-    pub fn open(
-        part: &znimok_format::VideoPart,
-        on_frame: impl Fn(Delivered) + Send + 'static,
-    ) -> Result<Player, String> {
-        let mp4 = extract_stream(part)?;
-        let (tx, rx) = std::sync::mpsc::channel::<Cmd>();
-        let fps = part.video.info.fps();
-        let frames = part.video.info.frames as i64;
-        std::thread::Builder::new()
-            .name("znimok-player".into())
-            .spawn(move || run(rx, &mp4, fps, frames, on_frame))
-            .map_err(|e| e.to_string())?;
-        Ok(Player { tx })
+impl Vid {
+    /// Frames between two key frames — the thumbnails are taken at key frames (fast to decode).
+    pub fn key_step(&self) -> i64 {
+        ((self.fps / 4.0).round() as i64).max(1)
     }
 
-    pub fn seek(&self, frame: i64) {
-        let _ = self.tx.send(Cmd::Seek(frame));
-    }
-
-    pub fn play(&self, from: i64, speed: f64, looping: bool) {
-        let _ = self.tx.send(Cmd::Play {
-            from,
-            speed,
-            looping,
-        });
-    }
-
-    pub fn pause(&self) {
-        let _ = self.tx.send(Cmd::Pause);
-    }
-
-    pub fn set_edit(&self, e: VideoEdit) {
-        let _ = self.tx.send(Cmd::Edit(e));
+    /// The tiles of the film strip at this zoom: (x in track pixels, the frame shown there).
+    /// `tile_w` is a thumbnail's width in track pixels.
+    pub fn strip_tiles(&self, tile_w: i32) -> Vec<(i32, i64)> {
+        let tile_w = tile_w.max(8);
+        let k = self.key_step();
+        let mut out = Vec::new();
+        let mut x = 0;
+        while x < self.view.width {
+            let f = self.frame_at_x(x + tile_w / 2);
+            out.push((x, (f / k) * k));
+            x += tile_w;
+        }
+        out
     }
 }
 
-impl Drop for Player {
-    fn drop(&mut self) {
-        let _ = self.tx.send(Cmd::Quit);
-    }
-}
-
-/// The MP4 inside the document, copied to the cache under a name from the file's size and
-/// position (a re-saved document gets a new copy; old copies go with the cache).
-fn extract_stream(part: &znimok_format::VideoPart) -> Result<PathBuf, String> {
-    use std::io::{Read, Seek, Write};
-    let dir = crate::library::cache_dir().join("video");
-    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    let stem = part
-        .source
-        .file_stem()
-        .map(|s| s.to_string_lossy().into_owned())
-        .unwrap_or_else(|| "video".into());
-    let first = part.payload.ranges.first().map_or(0, |r| r.start);
-    let out = dir.join(format!("{stem}-{first}-{}.mp4", part.payload.len()));
-    if out.is_file() && std::fs::metadata(&out).map(|m| m.len()).unwrap_or(0) == part.payload.len()
-    {
-        return Ok(out);
-    }
-    let f = std::fs::File::open(&part.source).map_err(|e| e.to_string())?;
-    let mut reader =
-        znimok_format::video::PayloadReader::new(std::io::BufReader::new(f), &part.payload);
-    reader
-        .seek(std::io::SeekFrom::Start(0))
-        .map_err(|e| e.to_string())?;
-    let tmp = out.with_extension("part");
-    {
-        let mut w =
-            std::io::BufWriter::new(std::fs::File::create(&tmp).map_err(|e| e.to_string())?);
-        let mut buf = vec![0u8; 1 << 20];
-        loop {
-            let n = reader.read(&mut buf).map_err(|e| e.to_string())?;
-            if n == 0 {
-                break;
-            }
-            w.write_all(&buf[..n]).map_err(|e| e.to_string())?;
-        }
-        w.flush().map_err(|e| e.to_string())?;
-    }
-    std::fs::rename(&tmp, &out).map_err(|e| e.to_string())?;
-    Ok(out)
-}
-
-#[cfg(windows)]
-fn run(rx: Receiver<Cmd>, mp4: &Path, fps: f64, frames: i64, on_frame: impl Fn(Delivered)) {
-    use std::sync::mpsc::TryRecvError;
-    use std::time::{Duration, Instant};
-    use znimok_video::traits::{Decoded, VideoDecoder, frames_of_sample, seek_time_for_frame};
-    let mut dec = match znimok_video_win::MfDecoder::open(mp4) {
-        Ok(d) => d,
-        Err(e) => {
-            eprintln!("player: {e}");
-            return;
-        }
-    };
-    let fps = if fps > 0.0 {
-        fps
-    } else {
-        dec.info().fps.max(1.0)
-    };
-    let mut edit = VideoEdit::new(frames.max(1));
-    let mut playing = false;
-    let mut speed = 1.0f64;
-    let mut looping = false;
-    // The last frame decoded (the reader stands after it), and the one wanted next.
-    let mut cur: i64 = -1;
-    let mut want: Option<i64> = None;
-    let mut due = Instant::now();
-    // Decodes forward to frame `f` (seeking first when it is behind or far ahead); the frame's
-    // pixels, or None at the end of the stream.
-    let decode_to =
-        |dec: &mut znimok_video_win::MfDecoder, cur: &mut i64, f: i64| -> Option<Arc<Raster>> {
-            if f < *cur || f > *cur + 60 || *cur < 0 {
-                if dec.seek(seek_time_for_frame(f, fps)).is_err() {
-                    return None;
-                }
-                *cur = -1;
-            }
-            loop {
-                match dec.next() {
-                    Ok(Some(Decoded::Video {
-                        time_hns,
-                        duration_hns,
-                        frame,
-                    })) => {
-                        let (idx, n) = frames_of_sample(time_hns, duration_hns, fps);
-                        *cur = idx + n - 1;
-                        if idx + n > f {
-                            return Some(Arc::new(nv12_to_rgba(&frame)));
-                        }
-                    }
-                    Ok(Some(Decoded::Audio { .. })) => continue,
-                    Ok(None) => return None,
-                    Err(e) => {
-                        eprintln!("player: {e}");
-                        return None;
-                    }
-                }
-            }
-        };
-    loop {
-        // Commands: all that are waiting; when idle, wait for one.
-        let first = if playing || want.is_some() {
-            match rx.try_recv() {
-                Ok(c) => Some(c),
-                Err(TryRecvError::Empty) => None,
-                Err(TryRecvError::Disconnected) => return,
-            }
-        } else {
-            match rx.recv() {
-                Ok(c) => Some(c),
-                Err(_) => return,
-            }
-        };
-        let mut cmds: Vec<Cmd> = first.into_iter().collect();
-        while let Ok(c) = rx.try_recv() {
-            cmds.push(c);
-        }
-        for c in cmds {
-            match c {
-                Cmd::Seek(f) => {
-                    playing = false;
-                    want = Some(f.clamp(0, (frames - 1).max(0)));
-                }
-                Cmd::Play {
-                    from,
-                    speed: s,
-                    looping: l,
-                } => {
-                    speed = s;
-                    looping = l;
-                    playing = true;
-                    want = Some(from.clamp(0, (frames - 1).max(0)));
-                    due = Instant::now();
-                }
-                Cmd::Pause => playing = false,
-                Cmd::Edit(e) => edit = e,
-                Cmd::Quit => return,
-            }
-        }
-        if let Some(f) = want.take() {
-            match decode_to(&mut dec, &mut cur, f) {
-                Some(r) => on_frame(Delivered {
-                    frame: f,
-                    raster: r,
-                    playing,
-                }),
-                None => playing = false,
-            }
-            if playing {
-                due = Instant::now() + Duration::from_secs_f64(1.0 / (fps * speed));
-            }
-            continue;
-        }
-        if !playing {
-            continue;
-        }
-        // The next frame to play: the one after the last shown, skipping what is cut.
-        let shown = cur;
-        let mut next = shown + 1;
-        if !edit.is_kept(next) {
-            match edit.next_kept(next) {
-                Some(k) => next = k,
-                None => next = edit.out_point(),
-            }
-        }
-        if next >= edit.out_point() {
-            if looping {
-                want = Some(edit.next_kept(edit.in_point()).unwrap_or(edit.in_point()));
-                continue;
-            }
-            playing = false;
-            let last = (edit.out_point() - 1).max(0);
-            if let Some(r) = decode_to(&mut dec, &mut cur, last) {
-                on_frame(Delivered {
-                    frame: last,
-                    raster: r,
-                    playing: false,
-                });
-            }
-            continue;
-        }
-        let now = Instant::now();
-        if due > now {
-            std::thread::sleep(due - now);
-        }
-        // Far behind (a slow decode): the frames in between are skipped, not shown late.
-        let late = now.saturating_duration_since(due).as_secs_f64() * fps * speed;
-        if late > 2.0 {
-            let skip = late as i64;
-            next = (next + skip).min(edit.out_point() - 1);
-            due = Instant::now();
-        }
-        match decode_to(&mut dec, &mut cur, next) {
-            Some(r) => {
-                on_frame(Delivered {
-                    frame: next,
-                    raster: r,
-                    playing: true,
-                });
-                due += Duration::from_secs_f64(1.0 / (fps * speed));
-            }
-            None => playing = false,
-        }
-    }
-}
-
-#[cfg(not(windows))]
-fn run(_rx: Receiver<Cmd>, _mp4: &Path, _fps: f64, _frames: i64, _on_frame: impl Fn(Delivered)) {
-    // ZK-92: AVFoundation on macOS. Until then the poster frame stands for the video.
-}
-
-/// NV12 (BT.709, limited range) → RGBA, on the CPU (ZK-92 moves this to the GPU).
+/// NV12 (BT.709, limited range) → RGBA, on the CPU — for a recording's poster frame (the player
+/// converts on the GPU).
 #[cfg(windows)]
 pub fn nv12_to_rgba(f: &znimok_video_win::Nv12Frame) -> Raster {
     let (w, h) = (f.width as usize, f.height as usize);

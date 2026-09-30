@@ -26,8 +26,15 @@ pub struct Converter {
 }
 
 impl Converter {
-    pub fn new(gpu: &Gpu) -> Self {
+    /// The conversion pipelines on `gpu`; an error when the device cannot run them (a device
+    /// made without storage buffers or storage textures).
+    pub fn new(gpu: &Gpu) -> Result<Self, String> {
         let device = &gpu.device;
+        let l = device.limits();
+        if l.max_storage_textures_per_shader_stage < 1 || l.max_storage_buffers_per_shader_stage < 1
+        {
+            return Err("the GPU device allows no storage textures / buffers in a compute pass".into());
+        }
         let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("znimok nv12"),
             source: wgpu::ShaderSource::Wgsl(include_str!("nv12.wgsl").into()),
@@ -106,7 +113,7 @@ impl Converter {
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        Self {
+        Ok(Self {
             gpu: gpu.clone(),
             main: pipe("main"),
             thumb: pipe("thumb"),
@@ -114,7 +121,7 @@ impl Converter {
             params,
             lut,
             tone: false,
-        }
+        })
     }
 
     /// The picture's tone table (`znimok_render::develop::tone_lut`), or None for none.

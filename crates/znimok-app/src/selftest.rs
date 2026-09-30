@@ -3611,35 +3611,65 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
             );
             let written = std::fs::write(&path, out).is_ok();
             app.borrow_mut().open_path(ui, &path);
-            let (app, ui) = &opened(app, ui);
-            let has_player = app
-                .borrow()
-                .s
-                .as_ref()
-                .and_then(|s| s.vid.as_ref())
-                .is_some_and(|v| v.player.is_some());
+            let (_, ui) = &opened(app, ui);
+            let mode = ui.get_vid_mode();
             r.check(
-                "real video: wrapped into a document and opened with a player",
-                written && has_player,
+                "real video: wrapped into a document and opened in the «Відео» mode",
+                written && mode,
                 format!(
-                    "written {written} · {}×{} {fps} fps {frames} frames · player {has_player}",
+                    "written {written} · {}×{} {fps} fps {frames} frames · mode {mode}",
                     info.width, info.height
                 ),
             );
-            ui.invoke_vid_transport("play".into());
             REAL_VIDEO.with(|v| *v.borrow_mut() = Some(path));
+        }));
+        for _ in 0..3 {
+            steps.push(Box::new(|_, _, _| {}));
+        }
+        steps.push(Box::new(|app, ui, _| {
+            let (_, ui) = &current(app, ui);
+            ui.invoke_vid_transport("play".into());
         }));
         for _ in 0..4 {
             steps.push(Box::new(|_, _, _| {}));
         }
+        // Playing: the frames come from the GPU (the player's texture under a see-through canvas).
         steps.push(Box::new(|app, ui, r| {
-            let (frame, playing, has_frame, lit) = {
+            let (app, ui) = &current(app, ui);
+            let (frame, playing, live, path, picture) = {
                 let a = app.borrow();
                 let v = a.s.as_ref().and_then(|s| s.vid.as_ref());
-                let raster = v.and_then(|v| v.raster.clone());
-                let lit = raster
+                (
+                    v.map_or(0, |v| v.frame),
+                    v.is_some_and(|v| v.playing),
+                    v.is_some_and(|v| v.shown.is_some()),
+                    v.and_then(|v| v.path),
+                    a.picture_drawn(),
+                )
+            };
+            r.check(
+                "real video: frames are decoded on the GPU and shown while playing (ZK-92)",
+                live && frame > 5 && ui.get_vid_live() && !picture && path.is_some(),
+                format!(
+                    "frame {frame} · playing {playing} · on screen {live} · path {path:?} · canvas draws the picture {picture}"
+                ),
+            );
+            r.snapshot(ui, "40-video-playing");
+            ui.invoke_vid_transport("play".into());
+        }));
+        // Paused: a CPU copy of the frame arrives a moment later.
+        for _ in 0..6 {
+            steps.push(Box::new(|_, _, _| {}));
+        }
+        steps.push(Box::new(|app, ui, r| {
+            let (app, ui) = &current(app, ui);
+            let (frame, copy, lit, thumbs) = {
+                let a = app.borrow();
+                let v = a.s.as_ref().and_then(|s| s.vid.as_ref());
+                let copy = v.and_then(|v| v.raster.clone());
+                let lit = copy
                     .as_ref()
-                    .map(|r| {
+                    .map(|(_, r)| {
                         r.rgba
                             .chunks(4)
                             .filter(|p| p[0] as u32 + p[1] as u32 + p[2] as u32 > 60)
@@ -3648,23 +3678,62 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
                     .unwrap_or(0);
                 (
                     v.map_or(0, |v| v.frame),
-                    v.is_some_and(|v| v.playing),
-                    raster.is_some(),
+                    copy.map(|(f, _)| f),
                     lit,
+                    v.map_or(0, |v| v.thumbs.len()),
                 )
             };
             r.check(
-                "real video: frames are decoded and shown while playing",
-                has_frame && frame > 5,
-                format!(
-                    "frame {frame} · playing {playing} · has frame {has_frame} · {lit} lit pixels"
-                ),
+                "real video: paused, the frame shown comes back to the CPU; the film strip has thumbnails",
+                copy == Some(frame) && thumbs > 0,
+                format!("frame {frame} · copy of {copy:?} · {lit} lit pixels · {thumbs} thumbnails"),
             );
-            r.snapshot(ui, "40-video-playing");
-            ui.invoke_vid_transport("play".into());
+            // Backwards from here (J).
+            ui.invoke_vid_transport("reverse".into());
+            REAL_FROM.with(|f| f.set(frame));
+        }));
+        for _ in 0..4 {
+            steps.push(Box::new(|_, _, _| {}));
+        }
+        steps.push(Box::new(|app, ui, r| {
+            let (app, ui) = &current(app, ui);
+            let from = REAL_FROM.with(|f| f.get());
+            let (frame, playing, backward) = {
+                let a = app.borrow();
+                let v = a.s.as_ref().and_then(|s| s.vid.as_ref());
+                (
+                    v.map_or(0, |v| v.frame),
+                    v.is_some_and(|v| v.playing),
+                    v.is_some_and(|v| v.backward),
+                )
+            };
+            r.check(
+                "real video: J plays backwards",
+                (frame < from || from == 0) && backward,
+                format!("from {from} to {frame} · playing {playing} · backward {backward}"),
+            );
+            ui.invoke_vid_transport("pause".into());
+        }));
+        for _ in 0..6 {
+            steps.push(Box::new(|_, _, _| {}));
+        }
+        steps.push(Box::new(|app, ui, r| {
+            let (app, ui) = &current(app, ui);
             // Trim on a real stream, then a frame as a screenshot with the decoded pixels.
             ui.invoke_vid_action("in".into(), 0);
             ui.invoke_vid_action("frame-shot".into(), 0);
+            let lit = {
+                let a = app.borrow();
+                a.s.as_ref()
+                    .and_then(|s| s.vid.as_ref())
+                    .and_then(|v| v.raster.as_ref().filter(|(f, _)| *f == v.frame))
+                    .map(|(_, r)| {
+                        r.rgba
+                            .chunks(4)
+                            .filter(|p| p[0] as u32 + p[1] as u32 + p[2] as u32 > 60)
+                            .count()
+                    })
+            };
             let (shot_app, shot_ui) = current(app, ui);
             let shot_lit = shot_app.borrow().s.as_ref().map(|s| {
                 s.ed.doc
@@ -3674,6 +3743,7 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
                     .filter(|p| p[0] as u32 + p[1] as u32 + p[2] as u32 > 60)
                     .count()
             });
+            let lit = lit.unwrap_or(usize::MAX);
             r.check(
                 "real video: the frame as a screenshot carries the decoded pixels",
                 shot_lit.is_some_and(|n| n > 0) && shot_lit == Some(lit),
@@ -3827,9 +3897,9 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
                 .s
                 .as_ref()
                 .and_then(|s| s.vid.as_ref())
-                .is_some_and(|v| v.player.is_some());
+                .is_some_and(|v| v.player.is_some() || !v.player_started);
             r.check(
-                "recording: the new video opens in the «Відео» mode with a player",
+                "recording: the new video opens in the «Відео» mode with a player (or one waiting for the window's GPU)",
                 vui.get_vid_mode() && playing_ok,
                 format!("mode {} · player {playing_ok}", vui.get_vid_mode()),
             );
@@ -4459,6 +4529,8 @@ thread_local! {
     static OVERLAY_DISPLAY: std::cell::Cell<Option<(i32, i32)>> = const { std::cell::Cell::new(None) };
     /// The document made from ZNIMOK_SELFTEST_VIDEO, removed at the end (ZK-181).
     static REAL_VIDEO: std::cell::RefCell<Option<PathBuf>> = const { std::cell::RefCell::new(None) };
+    /// The frame the real video's reverse run started from (ZK-92).
+    static REAL_FROM: std::cell::Cell<i64> = const { std::cell::Cell::new(0) };
     static MULTI_WINDOWS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
     /// ZK-107: editor windows before the two-window step opened its second one.
     static WINDOWS_BEFORE: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
