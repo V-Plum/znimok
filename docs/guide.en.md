@@ -205,8 +205,8 @@ in the settings), Space — the whole screen. While it records, a thin red edge 
 time is in the tray too. The same key or "Stop" ends it: the video is in the library at once, with ▶
 and its length on the card, and the card in the corner offers to open it. Settings → "Recording":
 30/60 frames, quality, how a clicked window is recorded, sound (the choice is kept; sound itself
-comes with the next update). A window that did not change for the whole recording gives an empty
-recording — Znimok says so. On macOS recording comes with the next update.
+comes with the next update). A window that stands still is recorded too: its first frame is taken
+at once and repeated until the window changes. On macOS recording comes with the next update.
 
 **Editor.** A video document opens in the "Video" mode: the same tools, and under the canvas a transport (Space —
 play / pause, ◁ — play backwards, ← → — a frame, Shift+← → — a second, Home / End, speed 0.5–2×) and a
