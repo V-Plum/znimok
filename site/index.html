@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Znimok — знімки екрана з редагованими позначками</title>
+<meta name="description" content="Znimok — знімки екрана для Windows і macOS з редактором, у якому позначки лишаються редагованими. Без телеметрії, усе на вашому комп'ютері.">
+<link rel="icon" type="image/png" href="assets/img/favicon.png">
+<link rel="alternate" hreflang="en" href="en/">
+<link rel="stylesheet" href="assets/site.css">
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <a class="brand" href="./"><img src="assets/img/icon.png" alt=""><span class="wordmark">Znimok</span></a>
+    <nav>
+      <a href="https://github.com/V-Plum/znimok/blob/main/docs/guide.md">Посібник</a>
+      <a href="https://github.com/V-Plum/znimok">GitHub</a>
+      <a class="lang" href="en/" hreflang="en">English</a>
+    </nav>
+  </header>
+
+  <main>
+    <div class="hero">
+      <img class="icon" src="assets/img/icon.png" alt="Znimok">
+      <span class="status">Попередня версія · Windows 11 і macOS 15+</span>
+      <h1>Знімки екрана, у яких позначки лишаються живими</h1>
+      <p class="lead">Стрілку, напис чи приховану ділянку можна поправити й через тиждень. Знімки лежать
+        у бібліотеці на вашому комп'ютері, результат іде в буфер, у файл або одразу людині чи AI-агенту.</p>
+      <div class="downloads">
+        <a class="btn primary" id="dl-windows" href="https://github.com/V-Plum/znimok/releases/latest">
+          <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M3 5.5 10.5 4.5v7H3zM11.5 4.4 21 3v8.5h-9.5zM3 12.5h7.5v7L3 18.5zM11.5 12.5H21V21l-9.5-1.4z"/></svg>
+          Завантажити для Windows <small>.msi</small></a>
+        <a class="btn" id="dl-macos" href="https://github.com/V-Plum/znimok/releases/latest">
+          <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M16.4 12.6c0-2.5 2-3.7 2.1-3.8-1.2-1.7-3-1.9-3.6-2-1.5-.2-3 .9-3.8.9-.8 0-2-.9-3.3-.8-1.7 0-3.3 1-4.2 2.5-1.8 3.1-.5 7.7 1.3 10.2.9 1.2 1.9 2.6 3.2 2.6 1.3-.1 1.8-.8 3.3-.8 1.6 0 2 .8 3.4.8 1.4 0 2.3-1.3 3.1-2.5 1-1.4 1.4-2.8 1.4-2.9 0 0-2.8-1.1-2.9-4.2zM13.9 5.1c.7-.9 1.2-2 1.1-3.1-1 0-2.2.7-2.9 1.5-.6.7-1.2 1.9-1 3 1.1.1 2.2-.6 2.8-1.4z"/></svg>
+          Завантажити для macOS <small>.dmg · Apple silicon</small></a>
+      </div>
+      <p class="note" id="dl-note">&nbsp;</p>
+      <img class="shot" src="assets/img/editor-dark.webp" width="1360" height="860" alt="Редактор Znimok зі стрілками, рамками, лічильниками й текстом на знімку">
+    </div>
+
+    <section>
+      <h2>Що вміє</h2>
+      <div class="grid">
+        <div class="card"><h3>Знімок як треба</h3><p>Ділянка, вікно без того, що його перекриває, або весь екран — на кількох дисплеях, з лупою, відліком 3-2-1 і прокруткою довгих сторінок.</p></div>
+        <div class="card"><h3>Три дії на відпускання</h3><p>Відкрити в редакторі, одразу в буфер і бібліотеку або правити просто поверх екрана. Що робить кожен жест, вирішуєте ви.</p></div>
+        <div class="card"><h3>Редактор без втрат</h3><p>Рамки, стрілки, текст, лічильники, штампи, маркер, приховування, поворот позначок, будь-який колір з піпеткою. Скасовується все.</p></div>
+        <div class="card"><h3>Бібліотека</h3><p>Мініатюри, пошук, кошик. Тека — ваша: можна покласти на хмарний диск, Znimok побачить зміни.</p></div>
+        <div class="card"><h3>Для людей і агентів</h3><p>Копіювати, перетягнути в чат, експорт у PNG/JPEG/WebP з метаданими. Для AI-агентів — сервер MCP і команда <code>znimok</code>.</p></div>
+        <div class="card"><h3>Нікуди не дзвонить</h3><p>Без телеметрії й реклами. Сам Znimok ходить у мережу лише перевірити оновлення — і це вимикається.</p></div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Як виглядає</h2>
+      <div class="gallery">
+        <figure><img src="assets/img/over-screen.webp" width="1600" height="1000" loading="lazy" alt="Правка просто поверх екрана"><figcaption>Alt при відпусканні — правити просто поверх екрана</figcaption></figure>
+        <figure><img src="assets/img/colours.webp" width="1360" height="860" loading="lazy" alt="Палітра кольорів з піпеткою"><figcaption>Будь-який колір: відтінок, HEX, піпетка, недавні</figcaption></figure>
+        <figure><img src="assets/img/rotate.webp" width="1360" height="860" loading="lazy" alt="Поворот позначки ручкою"><figcaption>Поворот ручкою; Shift — кроком 15°</figcaption></figure>
+      </div>
+    </section>
+
+    <section>
+      <h2>Встановлення</h2>
+      <div class="install">
+        <div class="card"><h3>Windows 11</h3>
+          <ol>
+            <li>Запустіть <code>.msi</code> — права адміністратора не потрібні.</li>
+            <li>Поки інсталятор не підписаний, SmartScreen скаже «Windows захистила ваш ПК»: «Докладніше» → «Все одно запустити».</li>
+            <li>Знімок — <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>4</kbd> або «Новий знімок» у треї.</li>
+          </ol>
+        </div>
+        <div class="card"><h3>macOS 15+</h3>
+          <ol>
+            <li>Відкрийте <code>.dmg</code> і перетягніть Znimok у «Програми».</li>
+            <li>Поки Znimok не нотаризований: спробуйте відкрити, потім «Системні параметри» → «Конфіденційність і безпека» → «Все одно відкрити».</li>
+            <li>Дайте дозвіл «Запис екрана»; знімок — <kbd>⌃</kbd><kbd>⇧</kbd><kbd>4</kbd>.</li>
+          </ol>
+        </div>
+      </div>
+      <p class="note">Докладно — у <a href="https://github.com/V-Plum/znimok/blob/main/docs/guide.md">посібнику</a>; усі клавіші — у <a href="https://github.com/V-Plum/znimok/blob/main/docs/SHORTCUTS.md">таблиці</a>.</p>
+    </section>
+  </main>
+
+  <footer>
+    <div class="foot">
+      <div>
+        <nav>
+          <a href="https://github.com/V-Plum/znimok/blob/main/docs/guide.md">Посібник</a>
+          <a href="https://github.com/V-Plum/znimok/blob/main/docs/privacy.md">Приватність</a>
+          <a href="https://github.com/V-Plum/znimok/releases">Релізи</a>
+          <a href="https://github.com/V-Plum/znimok/issues">Питання й помилки</a>
+          <a href="https://github.com/V-Plum/znimok/blob/main/LICENSE">Ліцензія</a>
+        </nav>
+        <p>Znimok — наступник функцій знімків і відео з Little Helpers. Код відкритий для читання. Шрифти Onest і Unbounded — SIL OFL 1.1.</p>
+      </div>
+      <a class="slint" href="https://slint.dev" title="Made with Slint">
+        <img class="light" src="assets/img/MadeWithSlint-logo-light.svg" width="150" height="69" alt="Made with Slint">
+        <img class="dark" src="assets/img/MadeWithSlint-logo-dark.svg" width="150" height="69" alt="Made with Slint">
+      </a>
+    </div>
+  </footer>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>

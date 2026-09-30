@@ -8,7 +8,8 @@ look at the draft. Nothing here is automatic past the draft.
 - [ ] `main` is green (ci, supply-chain, ipc-security).
 - [ ] `version` in `Cargo.toml` (`[workspace.package]`) is the new version — the workflow refuses
       a tag that does not match it.
-- [ ] README.md **and** README.en.md describe every change in behaviour of this release.
+- [ ] README.md **and** README.en.md, and the guide `docs/guide.md` **and** `docs/guide.en.md`,
+      describe every change in behaviour of this release; `docs/SHORTCUTS*.md` list new keys.
 - [ ] `docs/AGENTS.md`, `docs/CLI.md` are up to date (their consistency tests pass).
 - [ ] Jira: every ticket of the release is Done and has the release in its comment.
 

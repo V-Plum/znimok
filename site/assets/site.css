@@ -1,0 +1,148 @@
+/* Znimok download page (ZK-83). One stylesheet for both languages; light and dark follow the
+   system. Fonts are the app's own (SIL OFL 1.1), served from here — the page loads nothing from
+   third parties except the GitHub API call for the latest release. */
+
+@font-face {
+  font-family: "Onest";
+  src: url("fonts/Onest.ttf") format("truetype");
+  font-weight: 100 900;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Unbounded";
+  src: url("fonts/Unbounded.ttf") format("truetype");
+  font-weight: 100 900;
+  font-display: swap;
+}
+
+:root {
+  --bg: #F4F5F8;
+  --panel: #FFFFFF;
+  --elevated: #EEF0F4;
+  --line: #DDE1E8;
+  --text: #14161A;
+  --text2: #3B414B;
+  --text3: #6A717D;
+  --accent: #3D7BF5;
+  --accent-text: #FFFFFF;
+  --shadow: 0 18px 50px rgba(20, 22, 26, 0.14);
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0E0F12;
+    --panel: #16181D;
+    --elevated: #1E2128;
+    --line: #2A2E36;
+    --text: #F2F3F5;
+    --text2: #C4C8D0;
+    --text3: #8C929D;
+    --accent: #4C86F7;
+    --shadow: 0 18px 60px rgba(0, 0, 0, 0.55);
+    color-scheme: dark;
+  }
+}
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 400 17px/1.55 "Onest", system-ui, sans-serif;
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+img { max-width: 100%; height: auto; display: block; }
+
+.wrap { max-width: 1120px; margin: 0 auto; padding: 0 24px; }
+
+/* ---- top bar */
+.top {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 18px 0;
+}
+.brand { display: flex; align-items: center; gap: 10px; color: var(--text); }
+.brand:hover { text-decoration: none; }
+.brand img { width: 32px; height: 32px; }
+.wordmark { font: 700 20px/1 "Unbounded", "Onest", sans-serif; letter-spacing: -0.01em; }
+.top nav { display: flex; gap: 20px; font-size: 15px; }
+.top nav a { color: var(--text2); }
+.lang { border: 1px solid var(--line); border-radius: 8px; padding: 3px 10px; }
+
+/* ---- hero */
+.hero { text-align: center; padding: 48px 0 32px; }
+.hero .icon { width: 112px; height: 112px; margin: 0 auto 22px; }
+.hero h1 {
+  font: 700 clamp(30px, 5vw, 48px)/1.12 "Onest", sans-serif;
+  letter-spacing: -0.02em; margin: 0 auto 16px; max-width: 820px;
+}
+.hero p.lead { font-size: 19px; color: var(--text2); max-width: 700px; margin: 0 auto 30px; }
+.status {
+  display: inline-block; margin-bottom: 22px; padding: 5px 12px; border-radius: 999px;
+  background: var(--elevated); color: var(--text2); font-size: 14px;
+}
+
+.downloads { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; }
+.btn {
+  display: inline-flex; align-items: center; gap: 10px;
+  padding: 13px 22px; border-radius: 12px; font-weight: 600; font-size: 16px;
+  border: 1px solid var(--line); background: var(--panel); color: var(--text);
+  transition: transform 140ms cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 140ms ease-out;
+}
+.btn:hover { text-decoration: none; transform: translateY(-1px); box-shadow: var(--shadow); }
+.btn:active { transform: scale(0.97); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+.btn svg { width: 18px; height: 18px; flex: none; }
+.btn small { font-weight: 400; opacity: 0.8; font-size: 13px; }
+.note { color: var(--text3); font-size: 14px; margin-top: 14px; }
+
+/* ---- screenshots: the one matching the system theme */
+.shot {
+  margin: 44px auto 0; width: 100%; max-width: min(1040px, 100%); height: auto;
+  border-radius: 14px; overflow: hidden;
+  box-shadow: var(--shadow); border: 1px solid var(--line);
+}
+
+/* ---- features */
+section { padding: 56px 0 8px; }
+section h2 { font: 700 28px/1.2 "Onest", sans-serif; letter-spacing: -0.01em; margin: 0 0 22px; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 16px; }
+.card {
+  background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 20px;
+}
+.card h3 { margin: 0 0 6px; font-size: 17px; }
+.card p { margin: 0; color: var(--text2); font-size: 15px; }
+
+.gallery { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 18px; }
+.gallery figure { margin: 0; }
+.gallery img { border-radius: 12px; border: 1px solid var(--line); }
+.gallery figcaption { color: var(--text3); font-size: 14px; margin-top: 8px; }
+
+.install { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+.install ol { margin: 8px 0 0; padding-left: 20px; color: var(--text2); font-size: 15px; }
+.install li { margin: 4px 0; }
+kbd, code {
+  font: 13px/1 ui-monospace, "JetBrains Mono", monospace; background: var(--elevated);
+  border: 1px solid var(--line); border-radius: 5px; padding: 2px 5px;
+}
+
+/* ---- footer */
+footer { margin-top: 64px; border-top: 1px solid var(--line); padding: 28px 0 40px; }
+.foot { display: flex; flex-wrap: wrap; gap: 24px; align-items: center; justify-content: space-between; }
+.foot nav { display: flex; flex-wrap: wrap; gap: 18px; font-size: 15px; }
+.foot p { color: var(--text3); font-size: 13px; margin: 10px 0 0; max-width: 620px; }
+.slint { display: block; }
+.slint img { width: 150px; height: auto; }
+.slint .dark { display: none; }
+@media (prefers-color-scheme: dark) {
+  .slint .light { display: none; }
+  .slint .dark { display: block; }
+}
+
+@media (max-width: 640px) {
+  .top nav a:not(.lang) { display: none; }
+  .hero { padding-top: 24px; }
+  .btn { width: 100%; justify-content: center; }
+  .btn small { display: none; }
+}
