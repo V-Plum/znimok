@@ -460,7 +460,8 @@ pub fn open(frozen: Frozen, editor_was_visible: bool) -> Result<(), slint::Platf
         ui.set_act_plain(action_code(g.plain));
         ui.set_act_shift(action_code(g.shift));
         ui.set_act_alt(action_code(g.alt));
-        ui.set_show_hints(hints);
+        // The text mode has one gesture: no strip about the others (ZK-185).
+        ui.set_show_hints(hints && !TEXT_MODE.with(|m| m.get()));
         // Switching to another program (Cmd+Tab, Alt+Tab) cancels — once the overlay has had
         // the focus (it may never get it when a global hotkey leaves another program in front).
         // Focus moving between our own windows (another display) is not a switch.
@@ -697,7 +698,20 @@ enum Outcome {
     Codes(PxRect),
     /// S: a scrolling capture of this part of the display (ZK-141).
     Scroll(PxRect),
+    /// X: the text of this part of the frame, to the clipboard (ZK-185).
+    Text(PxRect),
     Cancel,
+}
+
+thread_local! {
+    /// The next overlay chooses a part for its text (the hotkey or the tray, ZK-185): releasing
+    /// the mouse reads the text instead of keeping a shot.
+    static TEXT_MODE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Opens the next overlay in its text mode (ZK-185).
+pub fn set_text_mode(on: bool) {
+    TEXT_MODE.with(|m| m.set(on));
 }
 
 /// Runs `f` on the open session; finishes the capture when it returns an outcome.
@@ -755,6 +769,11 @@ fn with_session(f: impl FnOnce(&mut Session) -> Option<Outcome>) {
 
 /// What the choice becomes: the editor, the clipboard, over the screen — or nothing.
 fn finish(frozen: Frozen, outcome: Outcome, editor_was_visible: bool) {
+    // In the text mode what was chosen is read for its text, whatever the gesture (ZK-185).
+    let outcome = match (TEXT_MODE.with(|m| m.replace(false)), outcome) {
+        (true, Outcome::Keep(rect, ..)) => Outcome::Text(rect),
+        (_, o) => o,
+    };
     let display = frozen.bounds;
     // The card after the capture goes to the display with the choice (ZK-139).
     let card = |r: PxRect| frozen.part_at(r).bounds;
@@ -762,6 +781,14 @@ fn finish(frozen: Frozen, outcome: Outcome, editor_was_visible: bool) {
         Outcome::Codes(rect) => {
             if let Some(r) = frozen.crop(rect) {
                 crate::codes::read_and_show(r, crate::wins::WeakCtx::LIBRARY);
+            }
+        }
+        Outcome::Text(rect) => {
+            if let Some(r) = frozen.crop(rect) {
+                crate::text::read_to_clipboard(r, crate::wins::WeakCtx::LIBRARY);
+            }
+            if editor_was_visible {
+                let _ = slint::invoke_from_event_loop(crate::wins::come_back);
             }
         }
         Outcome::Scroll(rect) => {
@@ -1243,6 +1270,11 @@ impl Session {
             "\u{1b}" => Some(Outcome::Cancel),
             // Q (Й in the Ukrainian layout): codes in the highlighted part, or on the whole screen.
             "q" | "Q" | "й" | "Й" => Some(Outcome::Codes(
+                self.sel.unwrap_or_else(|| self.frozen.whole()),
+            )),
+            // X (Ч in the Ukrainian layout): the text of the highlighted part, or of the whole
+            // screen, to the clipboard (ZK-185).
+            "x" | "X" | "ч" | "Ч" => Some(Outcome::Text(
                 self.sel.unwrap_or_else(|| self.frozen.whole()),
             )),
             // S (І in the Ukrainian layout): the highlighted window or region, with scrolling.

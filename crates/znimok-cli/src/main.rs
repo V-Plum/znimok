@@ -46,6 +46,9 @@ enum Cmd {
     /// QR codes and barcodes on a document (as rendered) or a PNG / JPEG / WebP picture, read on
     /// this device (ZK-119).
     Codes { file: PathBuf },
+    /// The text on a document (the picture, without the marks) or a PNG / JPEG / WebP picture,
+    /// read on this device — no AI, no network (ZK-185).
+    Text { file: PathBuf },
     /// Renders the document with its marks to a PNG (the crop, 1:1 unless --scale).
     Render {
         file: PathBuf,
@@ -437,6 +440,48 @@ fn run(cli: Cli) -> Result<(), Fail> {
             out(
                 json!({ "output": output.display().to_string(), "id": doc.id.to_string(), "width": w, "height": h }),
                 format!("created {} ({w}×{h})", output.display()),
+            );
+        }
+        Cmd::Text { file } => {
+            let (w, h, rgba) =
+                if znimok_format::is_znimok(&std::fs::read(&file).map_err(io(&file))?) {
+                    // The picture itself; a Hide stays so what was hidden is not read back.
+                    let mut doc = load(&file)?;
+                    doc.objects.retain(|o| o.kind() == znimok_core::Kind::Hide);
+                    let pix = render(&doc, 1.0);
+                    (
+                        pix.width() as u32,
+                        pix.height() as u32,
+                        znimok_render::pixmap_to_rgba(&pix),
+                    )
+                } else {
+                    let img = image::open(&file)
+                        .map_err(|e| Fail(3, format!("{}: {e}", file.display())))?
+                        .to_rgba8();
+                    let (w, h) = img.dimensions();
+                    (w, h, img.into_raw())
+                };
+            let img = znimok_models::Rgba::new(w, h, rgba)
+                .ok_or_else(|| Fail(3, format!("{}: empty picture", file.display())))?;
+            let engine = znimok_models::ocr::system()
+                .ok_or_else(|| Fail(1, "no text recognition on this system".into()))?;
+            let r = engine
+                .recognize(&img, &[])
+                .map_err(|e| Fail(1, e.to_string()))?;
+            let lines: Vec<serde_json::Value> = r
+                .lines
+                .iter()
+                .map(|l| {
+                    json!({
+                        "text": l.text,
+                        "bounds": [l.rect.x.round() as i64, l.rect.y.round() as i64,
+                                   l.rect.w.round() as i64, l.rect.h.round() as i64],
+                    })
+                })
+                .collect();
+            out(
+                json!({ "lines": lines, "languages": r.languages, "missing": r.missing }),
+                r.text(),
             );
         }
         Cmd::Codes { file } => {

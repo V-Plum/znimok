@@ -1611,6 +1611,7 @@ export component AppTray inherits SystemTrayIcon {
 
     callback shot();
     callback read-codes();
+    callback read-text();
     callback open-window();
     callback quit();
     // ZK-44: all global hotkeys released until resumed.
@@ -1629,6 +1630,11 @@ export component AppTray inherits SystemTrayIcon {
             title: @tr("tray-read-codes" => "Read a QR code from the screen");
             enabled: root.capture-available;
             activated => { root.read-codes(); }
+        }
+        MenuItem {
+            title: @tr("tray-read-text" => "Copy text from the screen");
+            enabled: root.capture-available;
+            activated => { root.read-text(); }
         }
         MenuItem {
             title: @tr("tray-open" => "Open Znimok");
@@ -2530,6 +2536,7 @@ export component AppWindow inherits Window {
                                     @tr("keys-clipboard" => "Clipboard image → editor"),
                                     @tr("keys-blank" => "Blank editor"),
                                     @tr("keys-read-codes" => "Read QR codes on the screen"),
+                                    @tr("keys-read-text" => "Copy text from the screen"),
                                 ]: VerticalLayout {
                                     spacing: 2px;
                                     HorizontalLayout {

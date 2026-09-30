@@ -59,6 +59,8 @@ pointer. Then:
   itself, scroll by hand;
 - **Q** — read QR codes and barcodes. A link opens only after a separate question showing the
   whole address;
+- **X** — the text of the highlighted part (or of the whole screen) straight to the clipboard, read
+  on this device, no AI; Znimok shows what was copied;
 - **the wheel** turns the loupe on and changes its zoom; **Esc** cancels.
 
 Only the keys held at the moment the button is released count — whether they went down before the
@@ -68,8 +70,9 @@ assignment; it can be turned off there too. The overlay covers every display at 
 can be dragged across the seam between screens; switching to another app closes the overlay.
 
 Separate hotkeys (changeable in the settings): the whole screen straight into the editor, the image
-on the clipboard, an empty editor, QR codes (Alt+Shift+Q, ⌃⇧Q on a Mac). The tray has "Pause
-hotkeys".
+on the clipboard, an empty editor, QR codes (Alt+Shift+Q, ⌃⇧Q on a Mac), "Copy text from the
+screen" (Alt+Shift+T, ⌃⇧T on a Mac — the overlay opens for text: choose a part and its text is on
+the clipboard; the tray does the same). The tray has "Pause hotkeys".
 
 ### Over the screen
 

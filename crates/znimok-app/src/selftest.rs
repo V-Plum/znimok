@@ -114,6 +114,42 @@ fn opened(app: &Shared, ui: &AppWindow) -> (Shared, AppWindow) {
     current(app, ui)
 }
 
+/// ZK-184/185: a clean page with real text in its pixels — Ukrainian and English.
+fn text_page() -> znimok_core::Raster {
+    use znimok_core::{Align, Data, Document, IRect, Object, Raster, Rgb, Style};
+    let mut page = Document::from_raster("text", Raster::solid(1400, 420, Rgb::WHITE));
+    for (i, t) in ["Znimok reads text 2026", "Привіт, світ зі знімка"]
+        .iter()
+        .enumerate()
+    {
+        page.push(
+            Object::new(
+                IRect::new(60, 60 + i as i32 * 150, 1200, 90),
+                Data::Text {
+                    text: t.to_string(),
+                    size: 64,
+                    bold: false,
+                    italic: false,
+                    align: Align::Left,
+                    box_w: 0,
+                },
+            )
+            .with_style(Style {
+                color: Rgb::new(20, 22, 26),
+                ..Style::default()
+            }),
+        );
+    }
+    let mut renderer = znimok_render::Renderer::new();
+    let mut pix = znimok_render::vello_cpu::Pixmap::new(1, 1);
+    renderer.render(&page, znimok_render::View::one_to_one(&page), &mut pix);
+    Raster::new(
+        pix.width() as u32,
+        pix.height() as u32,
+        znimok_render::pixmap_to_rgba(&pix),
+    )
+}
+
 fn click(app: &Shared, ui: &AppWindow, at: (f32, f32)) {
     let mut a = app.borrow_mut();
     a.pointer(ui, 0, at.0, at.1, 0, false, false);
@@ -2906,38 +2942,7 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
     // pixels (the marks are not read, only the picture): the panel, the lines on the canvas, a
     // click copies a line, a frame reads only a part, Esc closes.
     steps.push(Box::new(|app, ui, _| {
-        use znimok_core::{Align, Data, Document, IRect, Object, Raster, Rgb, Style};
-        let mut page = Document::from_raster("text", Raster::solid(1400, 420, Rgb::WHITE));
-        for (i, t) in ["Znimok reads text 2026", "Привіт, світ зі знімка"]
-            .iter()
-            .enumerate()
-        {
-            page.push(
-                Object::new(
-                    IRect::new(60, 60 + i as i32 * 150, 1200, 90),
-                    Data::Text {
-                        text: t.to_string(),
-                        size: 64,
-                        bold: false,
-                        italic: false,
-                        align: Align::Left,
-                        box_w: 0,
-                    },
-                )
-                .with_style(Style {
-                    color: Rgb::new(20, 22, 26),
-                    ..Style::default()
-                }),
-            );
-        }
-        let mut renderer = znimok_render::Renderer::new();
-        let mut pix = znimok_render::vello_cpu::Pixmap::new(1, 1);
-        renderer.render(&page, znimok_render::View::one_to_one(&page), &mut pix);
-        let raster = Raster::new(
-            pix.width() as u32,
-            pix.height() as u32,
-            znimok_render::pixmap_to_rgba(&pix),
-        );
+        let raster = text_page();
         app.borrow_mut().new_document(ui, raster, "text", None);
         let (_, ui) = opened(app, ui);
         ui.invoke_tool_chosen(0);
@@ -3024,6 +3029,133 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
             "text: Esc closes the panel",
             !ui.get_text_open() && app.borrow().text_lines().is_empty(),
             String::new(),
+        );
+    }));
+
+    // ZK-185: X in the capture overlay — the text of the screen straight to the clipboard, with
+    // a word about it; the page also goes to a PNG for the `znimok text` check.
+    steps.push(Box::new(|_, ui, r| {
+        if ui.get_dialog_open() {
+            ui.invoke_dialog_answer(0);
+        }
+        let raster = text_page();
+        let png = r.dir.join("text-page.png");
+        let _ = image::RgbaImage::from_raw(raster.width, raster.height, raster.rgba.clone())
+            .map(|i| i.save(&png));
+        let frozen = crate::capture::Frozen {
+            displays: Vec::new(),
+            bounds: znimok_platform::Rect {
+                x: 0,
+                y: 0,
+                width: raster.width,
+                height: raster.height,
+            },
+            windows: Vec::new(),
+            raster,
+        };
+        if crate::overlay::open(frozen, false).is_ok()
+            && let Some(ov) = crate::overlay::handle()
+        {
+            ov.invoke_key("x".into(), false, false);
+        }
+    }));
+    steps.push(Box::new(|_, _, _| {}));
+    steps.push(Box::new(|_, _, _| {}));
+    steps.push(Box::new(|_, _, _| {}));
+    steps.push(Box::new(|_, _, _| {}));
+    steps.push(Box::new(|_, _, _| {}));
+    steps.push(Box::new(|_, _, _| {}));
+    steps.push(Box::new(|_, _, _| {}));
+    steps.push(Box::new(|_, _, _| {}));
+    steps.push(Box::new(|_, _, _| {}));
+    steps.push(Box::new(|_, _, _| {}));
+    steps.push(Box::new(|_, _, _| {}));
+    steps.push(Box::new(|_, _, _| {}));
+    steps.push(Box::new(|_, ui, r| {
+        let copied = crate::text::last().unwrap_or_default();
+        let clip = arboard::Clipboard::new()
+            .and_then(|mut c| c.get_text())
+            .unwrap_or_default();
+        // The word about it is in the library window (the overlay has no editor behind it).
+        let mut said = false;
+        crate::wins::WeakCtx::LIBRARY.with(|_, lib| {
+            said = lib.get_dialog_open();
+            if said {
+                lib.invoke_dialog_answer(0);
+            }
+        });
+        r.check(
+            "text: X in the capture overlay copies the screen's text and says so",
+            !crate::overlay::is_open()
+                && copied.contains("Znimok reads text 2026")
+                && copied.contains("Привіт")
+                && clip == copied
+                && said,
+            format!("«{}» · dialog {said}", copied.replace('\n', " / ")),
+        );
+        let _ = ui;
+    }));
+
+    // ZK-185: the hotkey / tray open the overlay in its text mode — releasing a frame reads it.
+    steps.push(Box::new(|_, _, _| {
+        let raster = text_page();
+        let frozen = crate::capture::Frozen {
+            displays: Vec::new(),
+            bounds: znimok_platform::Rect {
+                x: 0,
+                y: 0,
+                width: raster.width,
+                height: raster.height,
+            },
+            windows: Vec::new(),
+            raster,
+        };
+        crate::overlay::set_text_mode(true);
+        if crate::overlay::open(frozen, false).is_ok()
+            && let Some(ov) = crate::overlay::handle()
+        {
+            let osf = ov.window().scale_factor();
+            let lw = ov.window().size().width as f32 / osf;
+            let lh = ov.window().size().height as f32 / osf;
+            let (kx, ky) = (1400.0 / lw.max(1.0), 420.0 / lh.max(1.0));
+            // A frame round the second line only (frame pixels 40,200 → 1000,320).
+            ov.invoke_pointer(0, 40.0 / kx, 200.0 / ky, false, false);
+            for i in 1..=8 {
+                let t = i as f32 / 8.0;
+                ov.invoke_pointer(
+                    1,
+                    (40.0 + 960.0 * t) / kx,
+                    (200.0 + 120.0 * t) / ky,
+                    false,
+                    false,
+                );
+            }
+            ov.invoke_pointer(2, 1000.0 / kx, 320.0 / ky, false, false);
+        }
+    }));
+    steps.push(Box::new(|_, _, _| {}));
+    steps.push(Box::new(|_, _, _| {}));
+    steps.push(Box::new(|_, _, _| {}));
+    steps.push(Box::new(|_, _, _| {}));
+    steps.push(Box::new(|_, _, _| {}));
+    steps.push(Box::new(|_, _, _| {}));
+    steps.push(Box::new(|_, _, _| {}));
+    steps.push(Box::new(|_, _, _| {}));
+    steps.push(Box::new(|_, _, _| {}));
+    steps.push(Box::new(|_, _, _| {}));
+    steps.push(Box::new(|_, _, _| {}));
+    steps.push(Box::new(|_, _, _| {}));
+    steps.push(Box::new(|_, _, r| {
+        let copied = crate::text::last().unwrap_or_default();
+        crate::wins::WeakCtx::LIBRARY.with(|_, lib| {
+            if lib.get_dialog_open() {
+                lib.invoke_dialog_answer(0);
+            }
+        });
+        r.check(
+            "text: the text mode (hotkey, tray) reads the frame on release",
+            !crate::overlay::is_open() && copied.contains("Привіт") && !copied.contains("Znimok"),
+            format!("«{}»", copied.replace('\n', " / ")),
         );
     }));
 

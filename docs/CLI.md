@@ -14,6 +14,8 @@ Add `--json` to any command for machine-readable output (errors go to stderr as
 | `znimok apply FILE -c JSON [-c JSON…] [--stdin] [-o OUT]` | applies commands in order and saves; all or nothing — nothing is saved if any command fails |
 | `znimok query FILE JSON` | answers a query, always as JSON |
 | `znimok library list [--dir D]` | documents in a folder, newest first; recognised by content, not by extension. Default folder: `$ZNIMOK_LIBRARY`, else `%LOCALAPPDATA%\Znimok\Library` / `~/Library/Application Support/Znimok/Library` |
+| `znimok codes FILE` | QR codes and barcodes on a document (as drawn) or a PNG / JPEG / WebP picture, read on this device |
+| `znimok text FILE` | the text on a document (the picture itself, not the marks; what is hidden stays hidden) or a picture, read on this device — no AI, no network; `--json` adds each line's box and the languages used |
 | `znimok schema [command\|query]` | JSON Schema of commands or queries |
 
 Commands and queries are the ones the app itself uses (`crates/znimok-core/schema/`). Examples:

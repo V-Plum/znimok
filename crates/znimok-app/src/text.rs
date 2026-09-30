@@ -60,6 +60,70 @@ pub fn joined(lines: &[Found]) -> String {
         .join("\n")
 }
 
+/// X in the capture overlay, the hotkey, the tray (ZK-185): reads `raster` on a worker thread,
+/// puts the text on the clipboard and says so in the app's window, with what was copied.
+pub fn read_to_clipboard(raster: znimok_core::Raster, me: crate::wins::WeakCtx) {
+    std::thread::spawn(move || {
+        let reading = recognize(raster.width, raster.height, raster.rgba, (0, 0));
+        let _ = slint::invoke_from_event_loop(move || {
+            me.with(|a, ui| {
+                let (title, body) = match &reading {
+                    Ok((lines, _)) if !lines.is_empty() => {
+                        let text = joined(lines);
+                        let copied = copy(&text);
+                        LAST.with(|l| *l.borrow_mut() = Some(text.clone()));
+                        let title = if copied {
+                            a.tr.tr_args(
+                                "text-copied-title",
+                                &crate::app::fargs(&[("n", lines.len().to_string())]),
+                            )
+                        } else {
+                            a.tr.tr("clipboard-error")
+                        };
+                        // The first lines of what went, so it can be checked at a glance.
+                        let mut shown: Vec<&str> = text.lines().take(12).collect();
+                        if text.lines().count() > 12 {
+                            shown.push("…");
+                        }
+                        (title, shown.join("\n"))
+                    }
+                    Ok(_) => {
+                        LAST.with(|l| *l.borrow_mut() = Some(String::new()));
+                        (a.tr.tr("text-none"), String::new())
+                    }
+                    Err(e) => {
+                        LAST.with(|l| *l.borrow_mut() = None);
+                        (
+                            a.tr.tr_args("text-error", &crate::app::fargs(&[("error", e.clone())])),
+                            String::new(),
+                        )
+                    }
+                };
+                crate::show_window(ui);
+                crate::dialog::ask(
+                    ui,
+                    title,
+                    body,
+                    vec![a.tr.tr("common-close")],
+                    0,
+                    Some(0),
+                    |_, _| {},
+                );
+            })
+        });
+    });
+}
+
+thread_local! {
+    /// What the last quick reading copied (for the self-test): `None` = failed.
+    static LAST: std::cell::RefCell<Option<String>> = const { std::cell::RefCell::new(None) };
+}
+
+/// For the self-test: the text the last quick reading copied.
+pub fn last() -> Option<String> {
+    LAST.with(|l| l.borrow().clone())
+}
+
 /// Puts `text` on the clipboard.
 pub fn copy(text: &str) -> bool {
     arboard::Clipboard::new()
