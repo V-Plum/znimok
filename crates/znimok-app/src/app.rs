@@ -1185,6 +1185,7 @@ impl App {
         ui.set_pref_gesture_shift(code(g.shift));
         ui.set_pref_gesture_alt(code(g.alt));
         ui.set_pref_show_hints(p.capture.show_hints);
+        ui.set_pref_dev_page(p.general.developer_page.as_deref() == Some(build_id().as_str()));
         ui.set_pref_keep_tool(p.editor.keep_tool);
         ui.set_pref_autosave(p.editor.autosave);
         ui.set_pref_metadata(p.editor.write_metadata);
@@ -1239,6 +1240,17 @@ impl App {
             }
             "quick-library" => self.save_prefs(ui, |p| p.capture.quick_save_to_library = on),
             "show-hints" => self.save_prefs(ui, |p| p.capture.show_hints = on),
+            // Ten clicks on «Changes apply immediately» (ZK-140): the developer page shows for
+            // this build, or hides again.
+            "dev-toggle" => {
+                let id = build_id();
+                let shown = self.prefs().general.developer_page.as_deref() == Some(id.as_str());
+                self.save_prefs(ui, |p| p.general.developer_page = (!shown).then_some(id));
+                if shown && ui.get_settings_page() == 7 {
+                    ui.set_settings_page(6);
+                }
+                self.settings_sync(ui);
+            }
             // A gesture gets an action; the gesture that had it takes the old one (ZK-155).
             "gesture-plain" | "gesture-shift" | "gesture-alt" => {
                 use znimok_settings::{CaptureAction as A, Gesture as G};
@@ -6857,6 +6869,16 @@ fn clip_rect(r: IRect, to: IRect) -> Option<IRect> {
     let x1 = r.right().min(to.right());
     let y1 = r.bottom().min(to.bottom());
     (x1 > x0 && y1 > y0).then(|| IRect::new(x0, y0, x1 - x0, y1 - y0))
+}
+
+/// This build (ZK-140): the version and, for builds made by CI, the commit — so a newly
+/// installed build differs even while every preview is 0.0.0.
+pub fn build_id() -> String {
+    format!(
+        "{}+{}",
+        env!("CARGO_PKG_VERSION"),
+        option_env!("GITHUB_SHA").unwrap_or("local")
+    )
 }
 
 /// A point in screenshot coordinates.

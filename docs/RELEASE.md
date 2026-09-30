@@ -11,6 +11,10 @@ look at the draft. Nothing here is automatic past the draft.
 - [ ] README.md **and** README.en.md describe every change in behaviour of this release.
 - [ ] `docs/AGENTS.md`, `docs/CLI.md` are up to date (their consistency tests pass).
 - [ ] Jira: every ticket of the release is Done and has the release in its comment.
+- [ ] Settings → «For developers» is hidden in a fresh install (it opens only after ten clicks
+      on «Changes apply immediately» and hides again in a new build — ZK-140).
+- [ ] «Support» on the About page has the owner's donation link, or stays off (ZK-165) — never
+      a made-up one.
 
 ## Tag and draft
 
