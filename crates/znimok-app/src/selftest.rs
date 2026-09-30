@@ -1286,6 +1286,74 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
         }
         key(app, ui, "\u{1b}", false, false);
     }));
+    // ZK-169: counters of one numbering group are one group of marks; drawing selects only the
+    // new one; Alt+click takes one member; the title names the group; edit / delete the group.
+    steps.push(Box::new(|app, ui, r| {
+        use znimok_core::Data;
+        ui.invoke_set_prop("counter-group-new".into(), 0);
+        let n0 = count(app);
+        let spots = [(300.0, 800.0), (420.0, 800.0)];
+        for (x, y) in spots {
+            let at = app.borrow().doc_to_logical(x, y);
+            click(app, ui, at);
+        }
+        let new: Vec<(u32, u32, u32)> = app
+            .borrow()
+            .s
+            .as_ref()
+            .map(|s| {
+                s.ed.doc.objects[n0..]
+                    .iter()
+                    .filter_map(|o| match o.data {
+                        Data::Counter { group, .. } => Some((o.id, o.group, group)),
+                        _ => None,
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        let sel_after_draw: Vec<u32> = app
+            .borrow()
+            .s
+            .as_ref()
+            .map(|s| s.ed.selection().to_vec())
+            .unwrap_or_default();
+        let grouped = new.len() == 2 && new[0].1 != 0 && new[0].1 == new[1].1;
+        let last_only = new.len() == 2 && sel_after_draw == vec![new[1].0];
+        ui.invoke_tool_chosen(0);
+        let first_at = app.borrow().doc_to_logical(spots[0].0, spots[0].1);
+        click(app, ui, first_at);
+        let whole = ui.get_selection_count();
+        app.borrow_mut().test_alt = true;
+        click(app, ui, first_at);
+        app.borrow_mut().test_alt = false;
+        let one = ui.get_selection_count();
+        let title = ui.get_prop_title().to_string();
+        ui.invoke_set_prop("counter-edit-group".into(), 0);
+        let edit_all = ui.get_selection_count();
+        let before_delete = count(app);
+        ui.invoke_set_prop("counter-delete-group".into(), 0);
+        let deleted = before_delete - count(app);
+        key(app, ui, "z", true, false);
+        let restored = count(app) == before_delete;
+        r.check(
+            "counter groups: one group of marks, drawing selects the new one, Alt+click one member, title, edit / delete the group",
+            grouped
+                && last_only
+                && whole == 2
+                && one == 1
+                && title.contains(&new.first().map_or(0, |c| c.2).to_string())
+                && edit_all == 2
+                && deleted == 2
+                && restored,
+            format!(
+                "{new:?} · selected after drawing {sel_after_draw:?} · click {whole}, Alt+click {one} · «{title}» · edit {edit_all} · deleted {deleted} · undo {restored}"
+            ),
+        );
+        r.snapshot(ui, "38-counter-group");
+        key(app, ui, "z", true, false);
+        key(app, ui, "z", true, false);
+        key(app, ui, "\u{1b}", false, false);
+    }));
     // ZK-166: a counter's size buttons, the colour ⇄ number swap, the number upright when turned.
     steps.push(Box::new(|app, ui, r| {
         use znimok_core::Kind;

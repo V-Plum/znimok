@@ -2562,7 +2562,20 @@ impl App {
                     });
                 }
                 Some(id) => {
-                    if !sel.contains(&id) {
+                    // Alt (⌥)+click: this one member alone, the group stays (ZK-169).
+                    let alt = self.test_alt
+                        || crate::overlay::held_modifiers().is_some_and(|(_, alt)| alt);
+                    if alt {
+                        if sel != [id] {
+                            self.apply(
+                                ui,
+                                Command::Select {
+                                    ids: vec![id],
+                                    add: false,
+                                },
+                            );
+                        }
+                    } else if !sel.contains(&id) {
                         // A member of a group brings the whole group (ZK-159).
                         let ids = self.with_groups(vec![id]);
                         self.apply(ui, Command::Select { ids, add: false });
@@ -4233,6 +4246,33 @@ impl App {
                     }),
                     None,
                 );
+            }
+            // The whole numbering group of the selected counter (ZK-169): selected, so every
+            // change of colour, shape, size or effects goes to all of it — or deleted.
+            "counter-edit-group" | "counter-delete-group" => {
+                let ids: Vec<ObjectId> = {
+                    let Some(s) = self.s.as_ref() else { return };
+                    let numbering =
+                        s.ed.selection()
+                            .iter()
+                            .find_map(|id| match s.ed.doc.get(*id)?.data {
+                                Data::Counter { group, .. } => Some(group),
+                                _ => None,
+                            });
+                    let Some(n) = numbering else { return };
+                    s.ed.doc
+                        .objects
+                        .iter()
+                        .filter(|o| matches!(o.data, Data::Counter { group, .. } if group == n))
+                        .map(|o| o.id)
+                        .collect()
+                };
+                let cmd = if name == "counter-edit-group" {
+                    Command::Select { ids, add: false }
+                } else {
+                    Command::DeleteObjects { ids }
+                };
+                self.apply(ui, cmd);
             }
             "counter-group-new" => {
                 // The next counters number themselves from 1 in a group of their own.
@@ -6098,7 +6138,13 @@ impl App {
         };
         match primary {
             Some(o) => {
-                let title = o.name.clone().unwrap_or_else(|| tool_name(kind));
+                // A counter says which numbering group it is in (ZK-169).
+                let title = o.name.clone().unwrap_or_else(|| match o.data {
+                    Data::Counter { group, .. } => self
+                        .tr
+                        .tr_args("counter-group-title", &args(&[("n", group.to_string())])),
+                    _ => tool_name(kind),
+                });
                 ui.set_prop_title(title.into());
                 let st = &o.style;
                 let plate = matches!(o.kind(), Kind::Rect | Kind::Ellipse) && st.no_main;

@@ -3200,6 +3200,13 @@ export component AppWindow inherits Window {
                                         Text { text: @tr("counter-start-from" => "Start numbering from…"); color: Theme.text3; font-size: 11px; vertical-alignment: center; horizontal-stretch: 1; wrap: word-wrap; }
                                         NumField { width: 90px; label: ""; value <=> root.counter-start; committed(v) => { root.set-counter-start(v); } }
                                     }
+                                    // The whole numbering group at once (ZK-169).
+                                    if root.prop-for-selection: VerticalLayout {
+                                        spacing: 6px;
+                                        alignment: start;
+                                        TextButton { text: @tr("counter-edit-group-short" => "Edit the whole group"); clicked => { root.set-prop("counter-edit-group", 0); } }
+                                        TextButton { text: @tr("counter-delete-group" => "Delete group"); clicked => { root.set-prop("counter-delete-group", 0); } }
+                                    }
                                     HorizontalLayout {
                                         spacing: 8px;
                                         TextButton { text: @tr("counter-new-group" => "New numbering group"); clicked => { root.set-prop("counter-group-new", 0); } }

@@ -555,6 +555,16 @@ tool-counter = Лічильник (N)
 # @max: 20
 tool-counter-name = Лічильник
 
+# @where: Inspector title of a selected counter: its numbering group
+# @kind: heading
+# @max: 32
+counter-group-title = Лічильник — Група { $n }
+
+# @where: Inspector, Counter: button that selects the whole numbering group (tooltip says more)
+# @kind: button
+# @max: 24
+counter-edit-group-short = Редагувати всю групу
+
 # @where: Tool rail button tooltip and accessible name; (S) is its shortcut
 # @kind: tooltip
 # @max: 28

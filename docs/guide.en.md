@@ -103,8 +103,13 @@ on the rotation handle, a crosshair for drawing.
 
 **Selection and order.** A band over empty space, Shift- or Ctrl-click; Ctrl+D duplicates;
 Ctrl+] / Ctrl+[ — forward / backward; Ctrl+G groups, Ctrl+Shift+G ungroups. On the canvas a group
-is one: a click on a member selects the whole group and a drag moves all of it. Align and
-distribute are in the inspector.
+is one: a click on a member selects the whole group and a drag moves all of it; Alt+click (⌥-click)
+selects that member alone. Align and distribute are in the inspector.
+
+**Counters.** Counters of one numbering are one group (in Layers too); the one just placed stays
+selected on its own, to turn or move it at once. The inspector has "Edit the whole group" (colour,
+shape, size, effects for all at once), "Delete group" and "New numbering group"; its title names the
+group: "Counter — Group 1".
 
 **Turning.** A selected mark has a round handle on a stem above it: drag it to turn the mark about
 its centre; Shift turns in 45° steps. Several selected marks turn about the middle of their shared
