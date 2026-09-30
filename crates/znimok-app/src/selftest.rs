@@ -3352,9 +3352,223 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
                 && card.as_deref().is_some_and(|m| m.starts_with("▶ 0:03")),
             format!("written {written} · video {opened_as_video} · saved {saved} · still {still} · {card:?}"),
         );
+        // ZK-181: the «Відео» mode — transport, trimming on the timeline, one undo history with
+        // the marks, the edits saved into the file. (The stream here is not decodable: the
+        // poster stands for the video, as it does where there is no player yet.)
+        let mode = (ui.get_vid_mode(), ui.get_insp_tab(), ui.get_vid_time().to_string(), ui.get_vid_total().to_string());
+        ui.invoke_tl_layout(900.0);
+        ui.invoke_vid_transport("fwd".into());
+        ui.invoke_vid_transport("fwd".into());
+        let stepped = ui.get_vid_time().to_string();
+        // in at frame 15, out at frame 75 (the frame after End is not kept)
+        {
+            let mut a = app.borrow_mut();
+            a.tl_pointer(ui, 0, 150, 10, false); // the ruler: frame 15 of 90 over 900 px
+            a.tl_pointer(ui, 2, 150, 10, false);
+        }
+        ui.invoke_vid_action("in".into(), 0);
+        {
+            let mut a = app.borrow_mut();
+            a.tl_pointer(ui, 0, 755, 10, false);
+            a.tl_pointer(ui, 2, 755, 10, false);
+        }
+        ui.invoke_vid_action("out".into(), 0);
+        let trimmed = app.borrow().s.as_ref().and_then(|s| s.ed.doc.timeline.clone());
+        // a range on the strip: press at frame 30, drag to frame 59, release → Del cuts it
+        {
+            let mut a = app.borrow_mut();
+            a.tl_pointer(ui, 0, 300, 50, false);
+            a.tl_pointer(ui, 1, 450, 50, false);
+            a.tl_pointer(ui, 1, 595, 50, false);
+            a.tl_pointer(ui, 2, 595, 50, false);
+        }
+        let had_range = ui.get_tl_has_range();
+        ui.invoke_vid_action("cut".into(), 0);
+        let cut = app.borrow().s.as_ref().and_then(|s| s.ed.doc.timeline.clone());
+        let left_after_cut = ui.get_vid_total().to_string();
+        ui.invoke_undo();
+        let undone = app.borrow().s.as_ref().and_then(|s| s.ed.doc.timeline.clone());
+        ui.invoke_redo();
+        // «Повернути» on the cut piece brings it back; «Скинути» forgets everything
+        ui.invoke_vid_action("restore".into(), 400);
+        let restored = app.borrow().s.as_ref().and_then(|s| s.ed.doc.timeline.clone());
+        {
+            // to frame 45 from the ruler, for the split, the trim and the screenshot below
+            let mut a = app.borrow_mut();
+            a.tl_pointer(ui, 0, 450, 10, false);
+            a.tl_pointer(ui, 2, 450, 10, false);
+        }
+        ui.invoke_vid_action("split".into(), 0);
+        ui.invoke_vid_action("reset".into(), 0);
+        let reset = app.borrow().s.as_ref().and_then(|s| s.ed.doc.timeline.clone());
+        // the trim again, saved into the file's CUTS
+        ui.invoke_vid_action("in".into(), 0);
+        let saved2 = app.borrow_mut().save_now(ui);
+        let in_file = std::fs::read(&path)
+            .ok()
+            .and_then(|b| znimok_format::read_any(&b).ok())
+            .and_then(|l| match l {
+                znimok_format::Loaded::Video(v) => Some(v.video.edit.in_frame),
+                _ => None,
+            });
+        // the frame as a screenshot: a new window with a document of the poster's size
+        let windows = crate::wins::editors().len();
+        ui.invoke_vid_action("frame-shot".into(), 0);
+        let (shot_app, shot_ui) = current(app, ui);
+        let shot = shot_app.borrow().s.as_ref().map(|s| (s.ed.doc.image_size(), s.video.is_none(), s.ed.doc.name.clone()));
+        let one_more = crate::wins::editors().len() == windows + 1 && !Rc::ptr_eq(&shot_app, app);
+        shot_app.borrow_mut().close_document(&shot_ui);
+        let parts_of = |t: &Option<znimok_core::Timeline>| {
+            t.as_ref().map(|t| (t.in_point, t.out_point, t.parts.iter().filter(|p| p.off).map(|p| (p.a, p.b)).collect::<Vec<_>>()))
+        };
+        r.check(
+            "video mode: the «Відео» tab, the transport counts frames, in / out from the ruler",
+            mode == (true, 2, "0:00.00".into(), "0:03.00".into())
+                && stepped == "0:00.07"
+                && parts_of(&trimmed) == Some((15, 76, vec![])),
+            format!("{mode:?} · after 2 steps {stepped} · {:?}", parts_of(&trimmed)),
+        );
+        r.check(
+            "video mode: a range on the strip is cut, undone, restored, reset; the trim is saved",
+            had_range
+                && parts_of(&cut) == Some((15, 76, vec![(30, 60)]))
+                && left_after_cut == "0:01.03"
+                && parts_of(&undone) == Some((15, 76, vec![]))
+                && parts_of(&restored) == Some((15, 76, vec![]))
+                && parts_of(&reset) == Some((0, 90, vec![]))
+                && saved2
+                && in_file == Some(45),
+            format!(
+                "range {had_range} · cut {:?} · left {left_after_cut} · undone {:?} · restored {:?} · reset {:?} · saved {saved2} · in the file {in_file:?}",
+                parts_of(&cut), parts_of(&undone), parts_of(&restored), parts_of(&reset)
+            ),
+        );
+        r.check(
+            "video mode: «Кадр як знімок» opens the frame as a screenshot in a window of its own",
+            one_more && matches!(&shot, Some(((160, 100), true, name)) if name.contains("кадр 45")),
+            format!("one more window {one_more} · {shot:?}"),
+        );
         app.borrow_mut().close_document(ui);
         let _ = std::fs::remove_file(&path);
     }));
+
+    // ZK-181, a live check on Windows: ZNIMOK_SELFTEST_VIDEO=<file.mp4> wraps the recording into
+    // a video document, opens it, plays a moment and expects decoded frames to reach the canvas.
+    #[cfg(windows)]
+    if let Some(mp4) = std::env::var_os("ZNIMOK_SELFTEST_VIDEO").map(PathBuf::from) {
+        steps.push(Box::new(move |app, ui, r| {
+            use znimok_video::traits::VideoDecoder;
+            let dir = app.borrow().lib_dir.clone();
+            let path = dir.join("Znimok-selftest-real-video.znimok");
+            let info = match znimok_video_win::MfDecoder::open(&mp4) {
+                Ok(d) => d.info().clone(),
+                Err(e) => {
+                    r.check("real video: the file decodes", false, e.to_string());
+                    return;
+                }
+            };
+            let fps = if info.fps > 0.0 { info.fps } else { 30.0 };
+            let frames = ((info.duration_hns as f64 / 10_000_000.0) * fps)
+                .round()
+                .max(1.0) as u32;
+            let poster = znimok_core::Raster::solid(
+                info.width,
+                info.height,
+                znimok_core::Rgb::new(40, 40, 40),
+            );
+            let doc = znimok_core::Document::from_raster(String::from("Справжній запис"), poster);
+            let vinfo = znimok_format::VideoInfo {
+                width: info.width,
+                height: info.height,
+                fps_milli: (fps * 1000.0).round() as u32,
+                frames,
+                duration_hns: info.duration_hns,
+                codec: znimok_format::video::CODEC_H264,
+            };
+            let bytes = std::fs::read(&mp4).unwrap_or_default();
+            let out = znimok_format::write_video(
+                &doc,
+                &znimok_format::Video::new(vinfo),
+                &bytes,
+                &znimok_format::WriteOptions::default(),
+            );
+            let written = std::fs::write(&path, out).is_ok();
+            app.borrow_mut().open_path(ui, &path);
+            let (app, ui) = &opened(app, ui);
+            let has_player = app
+                .borrow()
+                .s
+                .as_ref()
+                .and_then(|s| s.vid.as_ref())
+                .is_some_and(|v| v.player.is_some());
+            r.check(
+                "real video: wrapped into a document and opened with a player",
+                written && has_player,
+                format!(
+                    "written {written} · {}×{} {fps} fps {frames} frames · player {has_player}",
+                    info.width, info.height
+                ),
+            );
+            ui.invoke_vid_transport("play".into());
+            REAL_VIDEO.with(|v| *v.borrow_mut() = Some(path));
+        }));
+        for _ in 0..4 {
+            steps.push(Box::new(|_, _, _| {}));
+        }
+        steps.push(Box::new(|app, ui, r| {
+            let (frame, playing, has_frame, lit) = {
+                let a = app.borrow();
+                let v = a.s.as_ref().and_then(|s| s.vid.as_ref());
+                let raster = v.and_then(|v| v.raster.clone());
+                let lit = raster
+                    .as_ref()
+                    .map(|r| {
+                        r.rgba
+                            .chunks(4)
+                            .filter(|p| p[0] as u32 + p[1] as u32 + p[2] as u32 > 60)
+                            .count()
+                    })
+                    .unwrap_or(0);
+                (
+                    v.map_or(0, |v| v.frame),
+                    v.is_some_and(|v| v.playing),
+                    raster.is_some(),
+                    lit,
+                )
+            };
+            r.check(
+                "real video: frames are decoded and shown while playing",
+                has_frame && frame > 5,
+                format!(
+                    "frame {frame} · playing {playing} · has frame {has_frame} · {lit} lit pixels"
+                ),
+            );
+            r.snapshot(ui, "40-video-playing");
+            ui.invoke_vid_transport("play".into());
+            // Trim on a real stream, then a frame as a screenshot with the decoded pixels.
+            ui.invoke_vid_action("in".into(), 0);
+            ui.invoke_vid_action("frame-shot".into(), 0);
+            let (shot_app, shot_ui) = current(app, ui);
+            let shot_lit = shot_app.borrow().s.as_ref().map(|s| {
+                s.ed.doc
+                    .source()
+                    .rgba
+                    .chunks(4)
+                    .filter(|p| p[0] as u32 + p[1] as u32 + p[2] as u32 > 60)
+                    .count()
+            });
+            r.check(
+                "real video: the frame as a screenshot carries the decoded pixels",
+                shot_lit.is_some_and(|n| n > 0) && shot_lit == Some(lit),
+                format!("{shot_lit:?} vs {lit}"),
+            );
+            shot_app.borrow_mut().close_document(&shot_ui);
+            app.borrow_mut().close_document(ui);
+            if let Some(p) = REAL_VIDEO.with(|v| v.borrow_mut().take()) {
+                let _ = std::fs::remove_file(p);
+            }
+        }));
+    }
 
     // ZK-107: one window per document — a second document opens in a window of its own, marks
     // do not mix, a PNG from one dropped on the other becomes a mark there, opening a document
@@ -3412,10 +3626,18 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
     steps.push(Box::new(|app, _, r| {
         let n = crate::wins::editors().len();
         let before = WINDOWS_BEFORE.with(|w| w.get());
+        let names: Vec<Option<String>> = crate::wins::editors()
+            .iter()
+            .map(|(a, _)| {
+                a.try_borrow()
+                    .ok()
+                    .and_then(|a| a.s.as_ref().map(|s| s.ed.doc.name.clone()))
+            })
+            .collect();
         r.check(
             "a closed document's window is gone; the first is current again",
             n == before && app.borrow().s.is_some(),
-            format!("{n} windows, {before} before"),
+            format!("{n} windows, {before} before · {names:?}"),
         );
     }));
 
@@ -3862,6 +4084,8 @@ thread_local! {
 }
 
 thread_local! {
+    /// The document made from ZNIMOK_SELFTEST_VIDEO, removed at the end (ZK-181).
+    static REAL_VIDEO: std::cell::RefCell<Option<PathBuf>> = const { std::cell::RefCell::new(None) };
     static MULTI_WINDOWS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
     /// ZK-107: editor windows before the two-window step opened its second one.
     static WINDOWS_BEFORE: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };

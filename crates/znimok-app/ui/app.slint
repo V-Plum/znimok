@@ -57,6 +57,12 @@ export struct CardData {
     col: int,
 }
 
+// The video timeline (ZK-181): a ruler label, a piece of the film strip (kind 0 cut out,
+// 1 outside in/out, 2 the selected part, 3 the selected range), a sound track's row.
+export struct TlTick { x: length, label: string }
+export struct TlPiece { x: length, w: length, kind: int }
+export struct VidTrack { label: string, colour: color, muted: bool, volume: int }
+
 // A group title in the library grid (ZK-177): titles and card rows above it.
 export struct LibHeader {
     title: string,
@@ -1762,6 +1768,37 @@ export component AppWindow inherits Window {
     in property <int> selection-count;
     // inspector (ZK-54)
     in-out property <int> insp-tab: 0;
+    // The «Відео» mode (ZK-181): the transport, the timeline and the «Відео» tab.
+    in property <bool> vid-mode;
+    in property <bool> vid-playing;
+    in property <bool> vid-can-play: true;
+    in property <string> vid-time: "0:00.00";
+    in property <string> vid-total: "0:00.00";
+    // The recording's full length while it is trimmed (shown struck out), else empty.
+    in property <string> vid-total-full;
+    in property <string> vid-frame-label;
+    in property <string> vid-speed: "1×";
+    in property <bool> vid-loop;
+    in property <bool> vid-muted;
+    in property <bool> vid-edited;
+    in property <string> vid-trim-in;
+    in property <string> vid-trim-out;
+    in property <string> vid-trim-cut;
+    in property <string> vid-trim-left;
+    in property <string> vid-note;
+    in property <[VidTrack]> vid-tracks;
+    // 0 no sound, 1 system, 2 microphone, 3 both — and which tracks the recording has.
+    in property <int> vid-sound-mode;
+    in property <bool> vid-has-system;
+    in property <bool> vid-has-mic;
+    // The timeline has the keys (the last press was on it).
+    in property <bool> tl-focus;
+    in property <[TlTick]> tl-ticks;
+    in property <[TlPiece]> tl-pieces;
+    in property <length> tl-in;
+    in property <length> tl-out;
+    in property <length> tl-playhead;
+    in property <bool> tl-has-range;
     // macOS: shortcuts shown with ⌘ ⇧ ⌥, and the cursor image sized for points (winit maps an
     // image's pixels to points there).
     in property <bool> mac;
@@ -1953,6 +1990,15 @@ export component AppWindow inherits Window {
     callback lib-action(string, string);
     // ZK-177: the grid's columns (the places are computed in Rust); ZK-179: a key in the grid.
     callback lib-layout(int);
+    // ZK-181: play/pause/back/fwd/home/end/loop/mute/speed/fit/zoom-in/zoom-out; the timeline's
+    // actions (cut, keep, split, in, out, restore <frame>, reset, deselect, frame-shot, sound
+    // <mode>, track-mute/unmute <i>); the pointer over the tracks (0 down, 1 move, 2 up), the
+    // wheel (x, delta, Ctrl) and the track area's width.
+    callback vid-transport(string);
+    callback vid-action(string, int);
+    callback tl-pointer(int, length, length, bool);
+    callback tl-wheel(length, float, bool);
+    callback tl-layout(length);
     callback lib-key(string, bool);
     // The keyboard's card came into view: title rows and card rows above it.
     public function lib-scroll-to(hb: int, rb: int) {
@@ -2872,7 +2918,7 @@ export component AppWindow inherits Window {
                             width: kind-text.preferred-width + 16px;
                             border-radius: 6px;
                             background: #3D7BF524;
-                            kind-text := Text { text: @tr("doc-kind-screenshot" => "Screenshot"); color: Theme.accent-text; font-size: 12px; font-weight: 600; horizontal-alignment: center; vertical-alignment: center; width: parent.width; height: parent.height; }
+                            kind-text := Text { text: root.vid-mode ? @tr("doc-kind-video" => "Video") : @tr("doc-kind-screenshot" => "Screenshot"); color: Theme.accent-text; font-size: 12px; font-weight: 600; horizontal-alignment: center; vertical-alignment: center; width: parent.width; height: parent.height; }
                         }
                     }
                     Text { text: root.doc-name; color: Theme.text; font-size: 14px; font-weight: 600; vertical-alignment: center; overflow: elide; max-width: 360px; horizontal-stretch: 0; }
@@ -3017,9 +3063,13 @@ export component AppWindow inherits Window {
                     ToolRail { tool: root.tool; ctrl-held: root.ctrl-held; chosen(i) => { root.tool-chosen(i); } insert-image => { root.insert-image(); } }
                 }
                 Rectangle { width: root.over-screen ? 0px : 1px; background: Theme.line; }
-                // ---- canvas
+                // ---- canvas, and under it the video's transport and timeline (ZK-181)
+                VerticalLayout {
+                horizontal-stretch: 1;
+                // The bars must not widen the column past what the window gives it.
+                min-width: 0px;
                 canvas-area := Rectangle {
-                    horizontal-stretch: 1;
+                    vertical-stretch: 1;
                     background: Theme.canvas;
                     clip: true;
                     Image {
@@ -3260,6 +3310,152 @@ export component AppWindow inherits Window {
                         }
                     }
                 }
+                // ---- transport (ZK-181)
+                if root.vid-mode && !root.over-screen: Rectangle {
+                    height: 44px;
+                    min-width: 0px;
+                    clip: true;
+                    background: Theme.panel;
+                    HorizontalLayout {
+                        padding-left: 10px;
+                        padding-right: 10px;
+                        spacing: 4px;
+                        alignment: start;
+                        IconButton { y: 6px; icon: "M6 5 v14 M18 5 l-9 7 9 7 z"; label: @tr("vid-to-start" => "To start"); tip: self.label + "  Home"; clicked => { root.vid-transport("home"); } }
+                        IconButton { y: 6px; icon: "M15 6 l-6 6 6 6"; label: @tr("vid-frame-back" => "Frame back"); tip: self.label + "  ←"; clicked => { root.vid-transport("back"); } }
+                        Rectangle {
+                            y: 6px;
+                            width: 40px;
+                            height: 32px;
+                            border-radius: 8px;
+                            background: root.vid-can-play ? Theme.accent : Theme.control-on;
+                            Icon { d: root.vid-playing ? "M8 5 v14 M16 5 v14" : "M7 4 l13 8 -13 8 z"; tint: #FFFFFF; }
+                            TipTouch { tip: (root.vid-playing ? @tr("vid-pause" => "Pause") : @tr("vid-play" => "Play")) + "  Space"; enabled: root.vid-can-play; clicked => { root.vid-transport("play"); } }
+                        }
+                        IconButton { y: 6px; icon: "M9 6 l6 6 -6 6"; label: @tr("vid-frame-forward" => "Frame forward"); tip: self.label + "  →"; clicked => { root.vid-transport("fwd"); } }
+                        IconButton { y: 6px; icon: "M18 5 v14 M6 5 l9 7 -9 7 z"; label: @tr("vid-to-end" => "To end"); tip: self.label + "  End"; clicked => { root.vid-transport("end"); } }
+                        Rectangle { width: 6px; }
+                        Text { text: root.vid-time; color: Theme.text; font-family: "JetBrains Mono"; font-size: 14px; font-weight: 600; vertical-alignment: center; }
+                        Text { text: " / " + root.vid-total; color: Theme.text3; font-family: "JetBrains Mono"; font-size: 13px; vertical-alignment: center; }
+                        if root.vid-total-full != "": Rectangle {
+                            width: full-text.preferred-width;
+                            full-text := Text { text: root.vid-total-full; color: Theme.text3; font-family: "JetBrains Mono"; font-size: 11px; vertical-alignment: center; height: parent.height; }
+                            Rectangle { y: parent.height / 2; height: 1px; width: parent.width; background: Theme.text3; }
+                        }
+                        Rectangle { width: 8px; }
+                        Text { text: root.vid-frame-label; color: Theme.text2; font-family: "JetBrains Mono"; font-size: 12px; vertical-alignment: center; }
+                        Rectangle { width: 1px; height: 22px; y: 11px; background: Theme.line; }
+                        SmallButton { y: 8px; text: root.vid-speed; clicked => { root.vid-transport("speed"); } }
+                        IconButton { y: 6px; active: root.vid-loop; icon: "M17 4 l3 3 -3 3 M20 7 H8 a4 4 0 0 0 -4 4 v1 M7 20 l-3 -3 3 -3 M4 17 h12 a4 4 0 0 0 4 -4 v-1"; label: @tr("vid-loop" => "Loop"); tip: self.label + "  " + Keys.k("Ctrl+L", "⌘L"); clicked => { root.vid-transport("loop"); } }
+                        IconButton { y: 6px; active: root.vid-muted; icon: root.vid-muted ? "M4 10 v4 h4 l5 4 V6 L8 10 z M17 9 l4 6 M21 9 l-4 6" : "M4 10 v4 h4 l5 4 V6 L8 10 z M16 9 a4 4 0 0 1 0 6 M18.5 6.5 a8 8 0 0 1 0 11"; label: @tr("vid-sound" => "Sound"); tip: self.label + "  M"; clicked => { root.vid-transport("mute"); } }
+                        Rectangle { horizontal-stretch: 1; }
+                        // The timeline's own actions, next to what they act on.
+                        SmallButton { y: 8px; text: @tr("vid-in-here" => "Start here"); tip: "I"; clicked => { root.vid-action("in", 0); } }
+                        SmallButton { y: 8px; text: @tr("vid-out-here" => "End here"); tip: "O"; clicked => { root.vid-action("out", 0); } }
+                        SmallButton { y: 8px; text: @tr("vid-split-here" => "Split here"); tip: "S"; clicked => { root.vid-action("split", 0); } }
+                        Rectangle { width: 1px; height: 22px; y: 11px; background: Theme.line; }
+                        TextButton { y: 6px; text: @tr("vid-frame-as-shot" => "Frame as screenshot"); icon: "M4 6 a2 2 0 0 1 2 -2 h12 a2 2 0 0 1 2 2 v12 a2 2 0 0 1 -2 2 H6 a2 2 0 0 1 -2 -2 z M14 4 v6 h6"; clicked => { root.vid-action("frame-shot", 0); } }
+                        Rectangle { width: 1px; height: 22px; y: 11px; background: Theme.line; }
+                        IconButton { y: 6px; icon: "M6 12 h12"; label: @tr("vid-zoom-out" => "Timeline: zoom out"); clicked => { root.vid-transport("zoom-out"); } }
+                        IconButton { y: 6px; icon: "M6 12 h12 M12 6 v12"; label: @tr("vid-zoom-in" => "Timeline: zoom in"); clicked => { root.vid-transport("zoom-in"); } }
+                        SmallButton { y: 8px; text: @tr("vid-fit" => "Fit"); clicked => { root.vid-transport("fit"); } }
+                    }
+                }
+                if root.vid-mode && !root.over-screen: Rectangle { height: 1px; background: Theme.line; }
+                // ---- timeline (ZK-181): lane labels, then the tracks Rust lays out in pixels
+                if root.vid-mode && !root.over-screen: Rectangle {
+                    height: 196px;
+                    min-width: 0px;
+                    clip: true;
+                    background: Theme.panel;
+                    HorizontalLayout {
+                        Rectangle {
+                            width: 64px;
+                            VerticalLayout {
+                                Rectangle { height: 22px; }
+                                Text { height: 56px; text: @tr("vid-lane-video" => "video"); color: Theme.text3; font-size: 11px; font-weight: 600; horizontal-alignment: center; vertical-alignment: center; }
+                                Text { height: 26px; text: @tr("vid-lane-sound" => "sound"); color: Theme.text3; font-size: 11px; font-weight: 600; horizontal-alignment: center; vertical-alignment: center; }
+                                Text { height: 52px; text: @tr("vid-lane-marks" => "marks"); color: Theme.text3; font-size: 11px; font-weight: 600; horizontal-alignment: center; vertical-alignment: center; }
+                                Text { height: 40px; text: @tr("vid-devtools" => "DevTools log"); color: Theme.disabled; font-size: 10px; font-weight: 600; horizontal-alignment: center; vertical-alignment: center; wrap: word-wrap; }
+                            }
+                        }
+                        Rectangle { width: 1px; background: Theme.line; }
+                        tracks := Rectangle {
+                            horizontal-stretch: 1;
+                            clip: true;
+                            changed width => { root.tl-layout(self.width - 16px); }
+                            init => { root.tl-layout(self.width - 16px); }
+                            // A thin ring while the timeline has the keys.
+                            Rectangle { border-width: root.tl-focus ? 1px : 0; border-color: Theme.accent; }
+                            // ruler
+                            Rectangle { y: 0; height: 22px; background: Theme.canvas; }
+                            Rectangle { y: 22px; height: 1px; background: Theme.line; }
+                            for t in root.tl-ticks: Text { x: 8px + t.x + 3px; y: 4px; text: t.label; color: Theme.text3; font-family: "JetBrains Mono"; font-size: 10px; }
+                            for t in root.tl-ticks: Rectangle { x: 8px + t.x; y: 16px; width: 1px; height: 6px; background: Theme.text3; }
+                            // the film strip (thumbnails come with ZK-92)
+                            Rectangle { x: 8px; y: 26px; width: parent.width - 16px; height: 52px; border-radius: 4px; background: Theme.control-on; }
+                            for p in root.tl-pieces: Rectangle {
+                                x: 8px + p.x;
+                                y: p.kind == 3 ? 24px : 26px;
+                                width: max(2px, p.w);
+                                height: p.kind == 3 ? 56px : 52px;
+                                border-radius: 4px;
+                                background: p.kind == 0 ? #FF5A5F33 : (p.kind == 1 ? #0F1115CC : (p.kind == 2 ? #FF5A5F55 : #3D7BF533));
+                                border-width: p.kind >= 2 ? 2px : 0;
+                                border-color: p.kind == 3 ? Theme.accent : #FF5A5F;
+                                if p.kind == 0: HorizontalLayout {
+                                    alignment: center;
+                                    VerticalLayout {
+                                        alignment: center;
+                                        SmallButton { text: @tr("vid-restore" => "Restore"); clicked => { root.vid-action("restore", (p.x / 1px)); } }
+                                    }
+                                }
+                            }
+                            // trim handles
+                            Rectangle { x: 8px + root.tl-in - 10px; y: 26px; width: 10px; height: 52px; border-top-left-radius: 4px; border-bottom-left-radius: 4px; background: Theme.text; Rectangle { width: 2px; height: 16px; border-radius: 1px; background: Theme.canvas; } }
+                            Rectangle { x: 8px + root.tl-out; y: 26px; width: 10px; height: 52px; border-top-right-radius: 4px; border-bottom-right-radius: 4px; background: Theme.text; Rectangle { width: 2px; height: 16px; border-radius: 1px; background: Theme.canvas; } }
+                            // the actions over a selected range
+                            if root.tl-has-range: Rectangle {
+                                x: 8px;
+                                y: 82px;
+                                height: 26px;
+                                width: range-bar.preferred-width;
+                                border-radius: 8px;
+                                background: Theme.elevated;
+                                range-bar := HorizontalLayout {
+                                    padding: 2px;
+                                    spacing: 4px;
+                                    SmallButton { text: @tr("vid-cut" => "Cut") + "  Del"; clicked => { root.vid-action("cut", 0); } }
+                                    SmallButton { text: @tr("vid-keep-only" => "Keep only this") + "  ⇧Del"; clicked => { root.vid-action("keep", 0); } }
+                                    SmallButton { text: "Esc"; clicked => { root.vid-action("deselect", 0); } }
+                                }
+                            }
+                            // sound: one line per track (the waveform comes with ZK-189)
+                            for t[i] in root.vid-tracks: Rectangle { x: 8px; y: 86px + i * 10px; width: parent.width - 16px; height: 2px; background: t.muted ? Theme.line : t.colour; }
+                            // marks lanes (ZK-94)
+                            Rectangle { y: 104px; height: 1px; background: Theme.line; }
+                            Rectangle { y: 156px; height: 1px; background: Theme.line; }
+                            // playhead
+                            Rectangle { x: 8px + root.tl-playhead; y: 0; width: 1px; height: parent.height; background: Theme.text; }
+                            Rectangle { x: 8px + root.tl-playhead - 6px; y: 0; width: 13px; height: 8px; background: Theme.text; border-radius: 2px; }
+                            TouchArea {
+                                x: 8px;
+                                width: parent.width - 16px;
+                                mouse-cursor: MouseCursor.default;
+                                pointer-event(e) => {
+                                    if (e.kind == PointerEventKind.down) { root.tl-pointer(0, self.mouse-x, self.mouse-y, e.modifiers.shift); }
+                                    if (e.kind == PointerEventKind.up || e.kind == PointerEventKind.cancel) { root.tl-pointer(2, self.mouse-x, self.mouse-y, e.modifiers.shift); }
+                                }
+                                moved => { if (self.pressed) { root.tl-pointer(1, self.mouse-x, self.mouse-y, false); } }
+                                scroll-event(e) => {
+                                    root.tl-wheel(self.mouse-x, e.delta-y / 1px, e.modifiers.control);
+                                    return accept;
+                                }
+                            }
+                        }
+                    }
+                }
+                }
                 Rectangle { width: root.over-screen ? 0px : 1px; background: Theme.line; }
                 // ---- inspector (ZK-54): Object · Layers · Image · Meta
                 Rectangle {
@@ -3279,7 +3475,7 @@ export component AppWindow inherits Window {
                                 spacing: 2px;
                                 SegOption { text: @tr("insp-tab-object" => "Object"); on: root.insp-tab == 0; clicked => { root.insp-tab = 0; } }
                                 SegOption { text: @tr("insp-tab-layers" => "Layers"); on: root.insp-tab == 1; clicked => { root.insp-tab = 1; } }
-                                SegOption { text: @tr("insp-tab-shot" => "Image"); on: root.insp-tab == 2; clicked => { root.insp-tab = 2; } }
+                                SegOption { text: root.vid-mode ? @tr("insp-tab-video" => "Video") : @tr("insp-tab-shot" => "Image"); on: root.insp-tab == 2; clicked => { root.insp-tab = 2; } }
                                 SegOption { text: @tr("insp-tab-meta" => "Meta"); on: root.insp-tab == 3; clicked => { root.insp-tab = 3; } }
                             }
                         }
@@ -3849,6 +4045,37 @@ export component AppWindow inherits Window {
                                         }
                                     }
                                 }
+                                // ---- video (ZK-181/188/189): what is left after the trimming, and the sound
+                                if root.vid-mode: PropSection {
+                                    title: @tr("vid-trim" => "Trim");
+                                    HorizontalLayout { Text { text: @tr("vid-from" => "From"); color: Theme.text2; font-size: 12px; horizontal-stretch: 1; } Text { text: root.vid-trim-in; color: Theme.text; font-family: "JetBrains Mono"; font-size: 12px; } }
+                                    HorizontalLayout { Text { text: @tr("vid-to" => "To"); color: Theme.text2; font-size: 12px; horizontal-stretch: 1; } Text { text: root.vid-trim-out; color: Theme.text; font-family: "JetBrains Mono"; font-size: 12px; } }
+                                    HorizontalLayout { Text { text: @tr("vid-cut" => "Cut"); color: Theme.text2; font-size: 12px; horizontal-stretch: 1; } Text { text: root.vid-trim-cut; color: Theme.text; font-family: "JetBrains Mono"; font-size: 12px; } }
+                                    Rectangle { height: 1px; background: Theme.line; }
+                                    HorizontalLayout { Text { text: @tr("vid-left" => "Left"); color: Theme.text; font-size: 12px; font-weight: 600; horizontal-stretch: 1; } Text { text: root.vid-trim-left; color: Theme.text; font-family: "JetBrains Mono"; font-size: 12px; font-weight: 600; } }
+                                    Text { text: @tr("vid-trim-note" => "The recording is never changed: what is cut can come back, and the file is rewritten only on export."); color: Theme.text3; font-size: 11px; wrap: word-wrap; }
+                                    Text { text: @tr("vid-tl-hint" => "Drag on the strip to pick a piece · Del cuts it · Shift+Del keeps only it · S splits"); color: Theme.text3; font-size: 11px; wrap: word-wrap; }
+                                    if root.vid-edited: HorizontalLayout { alignment: start; TextButton { text: @tr("vid-reset-trim" => "Reset trimming"); clicked => { root.vid-action("reset", 0); } } }
+                                    if root.vid-note != "": Text { text: root.vid-note; color: Theme.attention; font-size: 11px; wrap: word-wrap; }
+                                }
+                                if root.vid-mode: PropSection {
+                                    title: @tr("vid-sound" => "Sound");
+                                    HorizontalLayout {
+                                        spacing: 2px;
+                                        SegOption { text: @tr("vid-no-sound" => "No sound"); on: root.vid-sound-mode == 0; clicked => { root.vid-action("sound", 0); } }
+                                        SegOption { text: @tr("vid-track-system" => "System"); enabled: root.vid-has-system; on: root.vid-sound-mode == 1; clicked => { root.vid-action("sound", 1); } }
+                                        SegOption { text: @tr("vid-track-mic" => "Microphone"); enabled: root.vid-has-mic; on: root.vid-sound-mode == 2; clicked => { root.vid-action("sound", 2); } }
+                                        SegOption { text: @tr("vid-sound-both" => "Both"); enabled: root.vid-has-system && root.vid-has-mic; on: root.vid-sound-mode == 3; clicked => { root.vid-action("sound", 3); } }
+                                    }
+                                    for t[i] in root.vid-tracks: HorizontalLayout {
+                                        spacing: 8px;
+                                        Rectangle { y: 6px; width: 8px; height: 8px; border-radius: 2px; background: t.colour; }
+                                        Text { text: t.label; color: t.muted ? Theme.text3 : Theme.text; font-size: 12px; horizontal-stretch: 1; vertical-alignment: center; }
+                                        Text { text: t.volume + " %"; color: Theme.text3; font-family: "JetBrains Mono"; font-size: 11px; vertical-alignment: center; }
+                                        SmallButton { text: t.muted ? @tr("vid-track-on" => "Turn on") : @tr("vid-track-off" => "Turn off"); clicked => { root.vid-action(t.muted ? "track-unmute" : "track-mute", i); } }
+                                    }
+                                    Text { text: @tr("vid-tracks-note" => "Tracks are separate; export mixes them into one."); color: Theme.text3; font-size: 11px; wrap: word-wrap; }
+                                }
                                 // Crop: the panel while the Crop tool is on, a button otherwise.
                                 if root.tool == 10: PropSection {
                                     title: @tr("crop-title" => "Crop");
@@ -3881,7 +4108,7 @@ export component AppWindow inherits Window {
                                         Text { text: root.crop-text; color: Theme.text3; font-size: 11px; vertical-alignment: center; overflow: elide; horizontal-stretch: 1; }
                                     }
                                 }
-                                PropSection {
+                                if !root.vid-mode: PropSection {
                                     title: @tr("shot-rotate-mirror" => "Rotate and mirror");
                                     HorizontalLayout {
                                         spacing: 2px;
