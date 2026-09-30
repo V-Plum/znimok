@@ -237,8 +237,9 @@ fn plays_a_recording_on_the_gpu() {
     assert_eq!(still.0, 7);
     assert_eq!(read_rgba(&still.1.rgba, W, H), Some(7));
 
-    // Forward at 2×: the frames come in order, each carrying its own number.
-    r.player.play(20, 2.0, false, false);
+    // Forward at 0.5× (slow enough for a software decoder on a CI machine without a GPU,
+    // which skips frames it cannot keep up with — by design): in order, each exact.
+    r.player.play(60, 0.5, false, false);
     let mut last = -1;
     let mut seen = 0;
     while let Some((f, bar, playing)) = r.shown() {
@@ -251,12 +252,10 @@ fn plays_a_recording_on_the_gpu() {
         }
     }
     assert_eq!(last, frames - 1, "played to the end");
-    // A slow machine (a software decoder on CI) skips frames by design; order and
-    // exactness are what count.
-    assert!(seen >= 2, "only {seen} frames shown");
+    assert!(seen >= 5, "only {seen} frames shown");
 
-    // Reverse from 70: descending, exact.
-    r.player.play(70, 1.0, false, true);
+    // Reverse from 70 at 0.25×: descending, exact.
+    r.player.play(70, 0.25, false, true);
     let mut last = i64::MAX;
     let mut seen = 0;
     while let Some((f, bar, playing)) = r.shown() {
@@ -267,13 +266,12 @@ fn plays_a_recording_on_the_gpu() {
         assert_eq!(bar, Some(f as u32), "reverse frame {f}");
         last = f;
         seen += 1;
-        if f < 40 {
+        if f < 60 {
             r.player.pause();
             break;
         }
     }
-    // Two frames are enough to see the direction; a slow machine skips the rest.
-    assert!(seen >= 2, "only {seen} reverse frames");
+    assert!(seen >= 4, "only {seen} reverse frames");
 
     // Whatever the reverse run still delivered is taken first.
     while r.rx.recv_timeout(Duration::from_millis(400)).is_ok() {

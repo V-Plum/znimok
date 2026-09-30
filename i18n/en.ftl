@@ -2555,6 +2555,11 @@ text-none = No text found
 # @max: 80
 text-missing = not installed for reading: { $langs }
 
+# @where: Text panel status (Windows): no reader for Ukrainian — neither Znimok's helper nor the Windows language pack
+# @kind: status
+# @max: 200
+text-missing-uk = Ukrainian cannot be read here, Cyrillic may come out wrong: reinstall Znimok (its text reader comes with it) or add the Ukrainian language pack to Windows
+
 # @where: Text panel status: the reading failed
 # @kind: error
 # @max: 96

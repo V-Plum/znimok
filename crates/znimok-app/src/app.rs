@@ -5132,7 +5132,10 @@ impl App {
                     self.tr
                         .tr_args("text-count", &args(&[("n", lines.len().to_string())]))
                 };
-                if !missing.is_empty() {
+                if missing.iter().any(|l| l == "uk") {
+                    // ZK-202: Cyrillic read by another language's model is nonsense — say so.
+                    status = format!("{status} · {}", self.tr.tr("text-missing-uk"));
+                } else if !missing.is_empty() {
                     status = format!(
                         "{status} · {}",
                         self.tr
