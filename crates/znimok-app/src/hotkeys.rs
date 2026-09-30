@@ -23,16 +23,19 @@ pub enum Action {
     Editor,
     /// QR codes and barcodes on the screen (ZK-146).
     ReadCodes,
+    /// The text of a part of the screen, to the clipboard (ZK-185).
+    ReadText,
 }
 
 impl Action {
     /// In the order of the rows on the Hotkeys page.
-    pub const ALL: [Action; 5] = [
+    pub const ALL: [Action; 6] = [
         Action::Region,
         Action::Screen,
         Action::Clipboard,
         Action::Editor,
         Action::ReadCodes,
+        Action::ReadText,
     ];
 
     pub fn of(h: &znimok_settings::Hotkeys, a: Action) -> Option<KeyCombo> {
@@ -42,6 +45,7 @@ impl Action {
             Action::Clipboard => h.clipboard,
             Action::Editor => h.editor,
             Action::ReadCodes => h.read_codes,
+            Action::ReadText => h.read_text,
         }
     }
 
@@ -52,6 +56,7 @@ impl Action {
             Action::Clipboard => h.clipboard = c,
             Action::Editor => h.editor = c,
             Action::ReadCodes => h.read_codes = c,
+            Action::ReadText => h.read_text = c,
         }
     }
 }

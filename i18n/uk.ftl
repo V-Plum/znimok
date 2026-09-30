@@ -2440,6 +2440,21 @@ text-copy-all = Копіювати все
 # @max: 120
 text-hint = Протягніть рамку по знімку — розпізнаю лише її; клік по рядку — скопіюю його.
 
+# @where: Tray menu item: choose a part of the screen, its text goes to the clipboard
+# @kind: menu
+# @max: 40
+tray-read-text = Скопіювати текст з екрана
+
+# @where: Hotkeys settings row: choose a part of the screen, its text goes to the clipboard
+# @kind: label
+# @max: 40
+keys-read-text = Скопіювати текст з екрана
+
+# @where: Question after a quick text reading: the text is on the clipboard; the body shows it
+# @kind: heading
+# @max: 48
+text-copied-title = Текст скопійовано — рядків: { $n }
+
 # @where: Toast when the clipboard is locked or fails
 # @kind: error
 # @max: 80

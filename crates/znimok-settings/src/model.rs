@@ -207,6 +207,8 @@ pub struct Hotkeys {
     pub video: Option<KeyCombo>,
     /// Read QR codes and barcodes from the screen (ZK-146).
     pub read_codes: Option<KeyCombo>,
+    /// Copy the text of a part of the screen (ZK-185): the overlay opens to choose it.
+    pub read_text: Option<KeyCombo>,
 }
 
 impl Hotkeys {
@@ -223,6 +225,7 @@ impl Hotkeys {
                 editor: k("Ctrl+Alt+E"),
                 video: k("Ctrl+Shift+5"),
                 read_codes: k("Ctrl+Shift+Q"),
+                read_text: k("Ctrl+Shift+T"),
             },
             znimok_platform::Os::Windows => Self {
                 region: k("Alt+Shift+4"),
@@ -231,12 +234,13 @@ impl Hotkeys {
                 editor: k("Ctrl+Alt+E"),
                 video: k("Alt+Shift+5"),
                 read_codes: k("Alt+Shift+Q"),
+                read_text: k("Alt+Shift+T"),
             },
         }
     }
 
     /// `(name, combo)` in a fixed order — the settings page, conflict checks.
-    pub fn iter(&self) -> [(&'static str, Option<KeyCombo>); 6] {
+    pub fn iter(&self) -> [(&'static str, Option<KeyCombo>); 7] {
         [
             ("region", self.region),
             ("screen", self.screen),
@@ -244,6 +248,7 @@ impl Hotkeys {
             ("editor", self.editor),
             ("video", self.video),
             ("read_codes", self.read_codes),
+            ("read_text", self.read_text),
         ]
     }
 
@@ -254,6 +259,7 @@ impl Hotkeys {
             "clipboard" => &mut self.clipboard,
             "editor" => &mut self.editor,
             "read_codes" => &mut self.read_codes,
+            "read_text" => &mut self.read_text,
             _ => &mut self.video,
         }
     }
@@ -764,7 +770,7 @@ mod tests {
         for os in [Os::Windows, Os::MacOs] {
             let h = Hotkeys::for_os(os);
             let all: Vec<_> = h.iter().into_iter().filter_map(|(_, c)| c).collect();
-            assert_eq!(all.len(), 6);
+            assert_eq!(all.len(), 7);
             for (i, a) in all.iter().enumerate() {
                 assert!(!all[i + 1..].contains(a), "{os:?}: {a} twice");
             }

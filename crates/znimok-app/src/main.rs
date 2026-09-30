@@ -238,6 +238,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 codes::from_screen();
             }
         });
+        // ZK-185: the overlay in its text mode — the chosen part's text to the clipboard.
+        {
+            let app = app.clone();
+            let weak = ui.as_weak();
+            t.on_read_text(move || {
+                if let Some(ui) = weak.upgrade()
+                    && capture::available()
+                    && !overlay::is_open()
+                {
+                    overlay::set_text_mode(true);
+                    new_shot(&app, &ui);
+                }
+            });
+        }
         {
             let weak = ui.as_weak();
             t.on_open_window(move || {
@@ -442,6 +456,13 @@ fn hotkey_pressed(a: hotkeys::Action) {
         hotkeys::Action::ReadCodes => {
             if !overlay::is_open() && capture::available() {
                 codes::from_screen();
+            }
+        }
+        // The overlay, to choose the part whose text goes to the clipboard (ZK-185).
+        hotkeys::Action::ReadText => {
+            if !overlay::is_open() && capture::available() {
+                overlay::set_text_mode(true);
+                new_shot(&app, &ui);
             }
         }
     }
