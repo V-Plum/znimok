@@ -3493,6 +3493,66 @@ about-made-with = Зроблено з Slint · шрифти Onest, JetBrains Mon
 # @max: 90
 about-fonts = Шрифти: Onest, JetBrains Mono, Unbounded — SIL Open Font License 1.1
 
+# @where: About page, under the Znimok wordmark: what the program is
+# @kind: body
+# @max: 70
+about-tagline = Знімки й відео екрана з позначками
+
+# @where: About page, next to the version: copies the version and build for a bug report
+# @kind: button
+# @max: 14
+about-copy-version = Скопіювати
+
+# @where: Toast after «Copy» on the About page
+# @kind: body
+# @max: 50
+about-copied = Версію скопійовано
+
+# @where: About page, after the version: $commit is 7 hex characters or «about-build-local»; $platform like «Windows x86_64»
+# @kind: value
+# @max: 60
+about-build = збірка { $commit } · { $platform }
+
+# @where: About page: a build made on a developer's machine, not by the release pipeline
+# @kind: value
+# @max: 20
+about-build-local = локальна
+
+# @where: About page: what Znimok does, first paragraph
+# @kind: body
+# @max: 320
+about-description = Znimok знімає екран — ділянку, вікно, увесь екран або довгу сторінку з прокручуванням — і записує відео. Стрілки, текст, лічильники, розмиття та інші позначки лишаються редагованими після збереження, текст зі знімка можна скопіювати як текст, а кожен знімок потрапляє в локальну бібліотеку.
+
+# @where: About page: privacy in short, second paragraph (must match docs/privacy.md)
+# @kind: body
+# @max: 220
+about-local = Усе лишається на вашому комп'ютері: без облікового запису, телеметрії й реклами. Без вашої дії нічого нікуди не йде; сама програма лише перевіряє оновлення, і це можна вимкнути.
+
+# @where: About page: link button to the website
+# @kind: button
+# @max: 16
+about-site = Сайт
+
+# @where: About page: link button to the privacy policy
+# @kind: button
+# @max: 16
+about-privacy = Приватність
+
+# @where: About page: link button to the licence
+# @kind: button
+# @max: 16
+about-licence = Ліцензія
+
+# @where: About page: copyright line; the name stays as it is
+# @kind: body
+# @max: 70
+about-copyright = © 2026 Vadym Slyva (Plum). Усі права захищено.
+
+# @where: About page: under the copyright; what the public source means
+# @kind: body
+# @max: 200
+about-licence-note = Вихідний код опубліковано, щоб кожен міг перевірити, що робить програма; це не дозвіл на його повторне використання. Умови — у «Ліцензії».
+
 # @where: About: donation link
 # @kind: button
 # @max: 16

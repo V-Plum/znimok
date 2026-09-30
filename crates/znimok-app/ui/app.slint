@@ -4,7 +4,7 @@
 // inspector and a status bar. Strings come from i18n/*.ftl through @tr (ZK-29).
 // Not yet here: tabs, overlay editor, full inspector, settings (see the tickets of Phase 4).
 
-import { AboutSlint, LineEdit, ScrollView, TextEdit } from "std-widgets.slint";
+import { AboutSlint, LineEdit, Palette as StdPalette, ScrollView, TextEdit } from "std-widgets.slint";
 // Bundled faces (ZK-34, SIL OFL 1.1): Onest for the interface and the marks, JetBrains Mono for
 // numbers and key combinations, Unbounded for the Znimok wordmark only.
 import "../../znimok-render/fonts/Onest.ttf";
@@ -2116,6 +2116,8 @@ export component AppWindow inherits Window {
     in property <string> pref-lib-dir;
     in property <string> pref-file;
     in property <string> pref-version;
+    // The commit and the platform on the About page (ZK-198).
+    in property <string> pref-build;
     // Start at login (ZK-57 / ZK-77) and the first-run guide.
     in property <bool> pref-autostart;
     in property <bool> pref-autostart-ok: true;
@@ -2958,26 +2960,53 @@ export component AppWindow inherits Window {
                                 }
                                 Text { text: root.pref-file; color: Theme.text3; font-size: 10px; wrap: word-wrap; }
                             }
-                            // ---- About
+                            // ---- About (ZK-198): what Znimok is, its version and build, the author, links,
+                            // the fonts' and Slint's licences.
                             if root.settings-page == 6: VerticalLayout {
-                                spacing: 14px;
+                                spacing: 18px;
+                                // AboutSlint colours its captions by Slint's palette, which follows the
+                                // system; our theme may be chosen otherwise.
+                                init => { StdPalette.color-scheme = Theme.dark ? ColorScheme.dark : ColorScheme.light; }
                                 HorizontalLayout {
                                     alignment: start;
-                                    spacing: 16px;
-                                    Image { width: 72px; height: 72px; source: @image-url("../icons/app-256.png"); }
+                                    spacing: 18px;
+                                    Image { width: 80px; height: 80px; source: @image-url("../icons/app-256.png"); }
                                     VerticalLayout {
                                         alignment: center;
                                         spacing: 4px;
-                                        Text { text: "Znimok"; color: Theme.text; font-family: "Unbounded"; font-size: 20px; font-weight: 600; }
-                                        Text { text: root.pref-version; color: Theme.text2; font-size: 13px; }
+                                        Text { text: "Znimok"; color: Theme.text; font-family: "Unbounded"; font-size: 24px; font-weight: 600; }
+                                        Text { text: @tr("about-tagline" => "Screenshots and screen video with annotations"); color: Theme.text2; font-size: 13px; wrap: word-wrap; }
+                                        HorizontalLayout {
+                                            alignment: start;
+                                            spacing: 8px;
+                                            Text { text: root.pref-version; color: Theme.text; font-size: 13px; font-weight: 600; vertical-alignment: center; }
+                                            Text { text: root.pref-build; color: Theme.text3; font-family: "JetBrains Mono"; font-size: 11px; vertical-alignment: center; }
+                                            TextButton { text: @tr("about-copy-version" => "Copy"); clicked => { root.setting("about-copy", 0); } }
+                                        }
                                     }
                                 }
-                                Text { text: @tr("about-fonts" => "Fonts: Onest, JetBrains Mono, Unbounded — SIL Open Font License 1.1"); color: Theme.text3; font-size: 12px; wrap: word-wrap; }
-                                HorizontalLayout { alignment: start; AboutSlint { height: 160px; } }
+                                Rectangle { height: 1px; background: Theme.line; }
+                                VerticalLayout {
+                                    spacing: 8px;
+                                    Text { text: @tr("about-description" => "Znimok captures the screen — a region, a window, the whole screen or a long scrolling page — and records video. Arrows, text, counters, blur and the other marks stay editable after saving, text on a picture can be copied as text, and every capture goes into a local library."); color: Theme.text; font-size: 13px; wrap: word-wrap; }
+                                    Text { text: @tr("about-local" => "Everything stays on your computer: no account, no telemetry, no ads. Nothing leaves it without your action; the only request the program makes by itself is the update check, and it can be turned off."); color: Theme.text2; font-size: 12px; wrap: word-wrap; }
+                                }
                                 HorizontalLayout {
                                     alignment: start;
-                                    TextButton { text: @tr("about-support" => "Support"); enabled: false; }
+                                    spacing: 8px;
+                                    TextButton { text: @tr("about-site" => "Website"); clicked => { root.setting("about-link", 0); } }
+                                    TextButton { text: "GitHub"; clicked => { root.setting("about-link", 1); } }
+                                    TextButton { text: @tr("about-privacy" => "Privacy"); clicked => { root.setting("about-link", 2); } }
+                                    TextButton { text: @tr("about-licence" => "Licence"); clicked => { root.setting("about-link", 3); } }
                                 }
+                                Rectangle { height: 1px; background: Theme.line; }
+                                VerticalLayout {
+                                    spacing: 6px;
+                                    Text { text: @tr("about-copyright" => "© 2026 Vadym Slyva (Plum). All rights reserved."); color: Theme.text; font-size: 12px; font-weight: 600; wrap: word-wrap; }
+                                    Text { text: @tr("about-licence-note" => "The source code is published so that anyone can check what the program does; that is not permission to reuse it. The terms are under «Licence»."); color: Theme.text2; font-size: 12px; wrap: word-wrap; }
+                                    Text { text: @tr("about-fonts" => "Fonts: Onest, JetBrains Mono, Unbounded — SIL Open Font License 1.1"); color: Theme.text3; font-size: 11px; wrap: word-wrap; }
+                                }
+                                HorizontalLayout { alignment: start; AboutSlint { height: 140px; } }
                             }
                         }
                     }
