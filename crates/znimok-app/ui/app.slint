@@ -1768,6 +1768,7 @@ export component AppWindow inherits Window {
     in property <int> digit-index: -1;
     // Size step of the counter (S M L XL; -1 = none of them), ZK-166.
     in property <int> counter-size;
+    in property <int> stamp-size: 1;
     in-out property <string> counter-start;
     in property <string> counter-next;
     in property <int> stamp-id;
@@ -3221,6 +3222,14 @@ export component AppWindow inherits Window {
                                 // ---- Stamp (ZK-51): six drawn signs and emoji
                                 if root.prop-kind == 8: PropSection {
                                     title: @tr("stamp-picker" => "Stamps and emoji");
+                                    // Fixed sizes, no W / H fields (ZK-173).
+                                    PropRow {
+                                        label: @tr("counter-size" => "Size");
+                                        HorizontalLayout {
+                                            spacing: 2px;
+                                            for t[i] in ["S", "M", "L", "XL"]: SegOption { text: t; on: root.stamp-size == i; clicked => { root.set-prop("stamp-size", i); } }
+                                        }
+                                    }
                                     Text { height: 18px; text: @tr("stamp-stamps" => "Stamps"); color: Theme.text3; font-size: 11px; font-weight: 600; vertical-alignment: center; }
                                     HorizontalLayout {
                                         spacing: 2px;
@@ -3303,14 +3312,17 @@ export component AppWindow inherits Window {
                                         Rectangle { horizontal-stretch: 1; }
                                     }
                                 }
-                                if root.prop-for-selection && root.selection-count == 1 && root.prop-kind != 2: PropSection {
-                                    title: @tr("insp-position" => "Position and size");
+                                if root.prop-for-selection && root.selection-count == 1 && root.prop-kind != 2: pos-sec := PropSection {
+                                    // W / H in pixels only for boxes whose size is free (owner 30.09, ZK-173):
+                                    // rectangle, ellipse, hide, image. The rest have fixed sizes or their own.
+                                    property <bool> sized: root.prop-kind == 0 || root.prop-kind == 1 || root.prop-kind == 5 || root.prop-kind == 9;
+                                    title: self.sized ? @tr("insp-position" => "Position and size") : @tr("insp-place" => "Position");
                                     HorizontalLayout {
                                         spacing: 8px;
                                         NumField { label: @tr("insp-x" => "X"); value: root.geom-x; committed(v) => { root.set-geom("x", v); } }
                                         NumField { label: @tr("insp-y" => "Y"); value: root.geom-y; committed(v) => { root.set-geom("y", v); } }
                                     }
-                                    HorizontalLayout {
+                                    if pos-sec.sized: HorizontalLayout {
                                         spacing: 8px;
                                         NumField { label: @tr("insp-w" => "W"); value: root.geom-w; committed(v) => { root.set-geom("w", v); } }
                                         NumField { label: @tr("insp-h" => "H"); value: root.geom-h; committed(v) => { root.set-geom("h", v); } }

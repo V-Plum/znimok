@@ -1011,6 +1011,34 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
             matches!(stamp, Some(Data::Stamp { id: 105 })) && ui.get_tool() == 9,
             format!("{stamp:?}"),
         );
+
+        // ZK-173: fixed stamp sizes — XL is twice M, square, and the row shows it.
+        let side = |app: &Shared| {
+            app.borrow().s.as_ref().and_then(|s| {
+                s.ed.doc
+                    .objects
+                    .iter()
+                    .rev()
+                    .find(|o| o.kind() == Kind::Stamp)
+                    .map(|o| (o.rect.w, o.rect.h))
+            })
+        };
+        let m = side(app);
+        ui.invoke_set_prop("stamp-size".into(), 3);
+        click(app, ui, (cx - 150.0, cy + 250.0));
+        let xl = side(app);
+        let shown = ui.get_stamp_size();
+        // The XL one goes (before the size is reset: with it selected, the reset resizes it);
+        // the emoji stamp stays for the snapshot.
+        key(app, ui, "z", true, false);
+        ui.invoke_set_prop("stamp-size".into(), 1);
+        r.check(
+            "stamp sizes: XL is twice M, square",
+            matches!((m, xl), (Some((mw, mh)), Some((xw, xh)))
+                if mw == mh && xw == xh && (xw as f64 / mw as f64 - 2.0).abs() < 0.1)
+                && shown == 3,
+            format!("M {m:?} · XL {xl:?} · shown {shown}"),
+        );
     }));
     steps.push(Box::new(|app, ui, r| {
         r.snapshot(ui, "26-stamps");
@@ -2435,7 +2463,11 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
         r.check(
             "over the screen: the properties bar is above the frame when it fits there",
             !room_above || !ui.get_ov_bar_down(),
-            format!("frame top {:.0} · bar under {}", ui.get_ov_y(), ui.get_ov_bar_down()),
+            format!(
+                "frame top {:.0} · bar under {}",
+                ui.get_ov_y(),
+                ui.get_ov_bar_down()
+            ),
         );
         r.snapshot(ui, "28-over-screen");
     }));

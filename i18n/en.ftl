@@ -886,6 +886,11 @@ insp-stroke-none = No outline
 # @max: 24
 insp-position = Position and size
 
+# @where: Object panel: section with X / Y of an annotation whose size is not typed (text, pen, marker, counter, stamp)
+# @kind: label
+# @max: 24
+insp-place = Position
+
 # @where: Fill section: button that swaps the stroke and fill colours (text: letters and outline)
 # @kind: tooltip
 # @max: 40

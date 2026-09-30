@@ -93,7 +93,7 @@ Tools are on the left; the letters work on the Ukrainian layout too.
 | Hide | B | pixelate, blur or a plate |
 | Highlighter | H | a translucent band |
 | Counter | N | a numbered circle, square or pin |
-| Stamp | S | 6 signs and 24 emoji |
+| Stamp | S | 6 signs and 24 emoji; sizes S–XL |
 | Image | I | a picture from a file as a mark |
 | Crop | C | cut the screenshot |
 

@@ -305,6 +305,8 @@ pub struct App {
     /// For the self-test: Alt held (the real one is read from the system, ZK-167).
     pub test_alt: bool,
     stamp_id: u32,
+    /// Size step of new stamps (ZK-173), an index into [`COUNTER_SIZES`] like the counter's.
+    stamp_size_i: usize,
     /// One undo step per drag of the opacity slider.
     alpha_merge: Option<MergeKey>,
     /// Crop being edited (Crop tool), picture pixels. The document gets it as one `SetCrop`
@@ -467,6 +469,7 @@ impl App {
             eyedrop: None,
             test_alt: false,
             stamp_id: 0,
+            stamp_size_i: 1,
             alpha_merge: None,
             crop: None,
             crop_lock: false,
@@ -2359,7 +2362,7 @@ impl App {
                 } else {
                     self.color
                 },
-                thick: badge + 8,
+                thick: stamp_size(badge, self.stamp_size_i),
                 ..base
             },
             _ => base,
@@ -4337,6 +4340,44 @@ impl App {
                     );
                 }
             }
+            // Fixed stamp sizes instead of W / H fields (ZK-173, owner 30.09); a selected stamp
+            // keeps its centre and stays square.
+            "stamp-size" => {
+                self.stamp_size_i = (v.max(0) as usize).min(COUNTER_SIZES.len() - 1);
+                let d = stamp_size(self.badge(), self.stamp_size_i);
+                let items: Vec<(ObjectId, IRect)> = {
+                    let Some(s) = self.s.as_ref() else { return };
+                    s.ed.selection()
+                        .iter()
+                        .filter_map(|id| s.ed.doc.get(*id))
+                        .filter(|o| o.kind() == Kind::Stamp)
+                        .map(|o| {
+                            let (cx, cy) = o.bounds().center();
+                            let h = (d as f64 / 2.0).round() as i32;
+                            let r = IRect::new(cx.round() as i32 - h, cy.round() as i32 - h, d, d);
+                            (o.id, r)
+                        })
+                        .collect()
+                };
+                let merge = (items.len() > 1).then(|| self.merge_key());
+                for (id, rect) in items {
+                    self.apply(
+                        ui,
+                        Command::UpdateObjects {
+                            ids: vec![id],
+                            patch: ObjectPatch {
+                                rect: Some(rect),
+                                style: Some(StylePatch {
+                                    thick: Some(d),
+                                    ..Default::default()
+                                }),
+                                ..Default::default()
+                            },
+                            merge: merge.clone(),
+                        },
+                    );
+                }
+            }
             // The counter's colour ⇄ its number's (ZK-166); an automatic number swaps as the
             // colour it shows.
             "swap-digit" => {
@@ -6216,6 +6257,12 @@ impl App {
                 }
                 if let Data::Stamp { id } = o.data {
                     ui.set_stamp_id(id as i32);
+                    let badge = self.badge();
+                    ui.set_stamp_size(
+                        (0..COUNTER_SIZES.len())
+                            .find(|i| stamp_size(badge, *i) == o.rect.w)
+                            .map_or(-1, |i| i as i32),
+                    );
                 }
                 if let Data::Text { align, box_w, .. } = o.data {
                     ui.set_text_align(align_index(align));
@@ -6281,6 +6328,7 @@ impl App {
                 ui.set_digit_index(i);
                 ui.set_digit_rgb(c);
                 ui.set_stamp_id(self.stamp_id as i32);
+                ui.set_stamp_size(self.stamp_size_i as i32);
                 // What the next counter will say.
                 let (start, n) = doc
                     .objects
@@ -7130,6 +7178,12 @@ pub fn build_id() -> String {
 
 /// Counter sizes of the inspector's S / M / L / XL (ZK-166), as parts of the automatic size.
 pub const COUNTER_SIZES: [f64; 4] = [0.75, 1.0, 1.4, 2.0];
+
+/// A stamp's side at size step `i` (ZK-173): the counter's steps, a little larger (LH: stamps
+/// 28 / 40 / 56 next to counters of 24 / 32 / 44).
+pub fn stamp_size(badge: i32, i: usize) -> i32 {
+    counter_size(badge + 8, i)
+}
 
 /// A counter's width at size step `i` for an automatic size `badge`.
 pub fn counter_size(badge: i32, i: usize) -> i32 {
