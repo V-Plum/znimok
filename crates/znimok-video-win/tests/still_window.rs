@@ -154,3 +154,102 @@ fn a_still_window_is_recorded() {
     }
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// ZK-90: a press is drawn into the video — a yellow ring around it in the frames right after,
+/// none in the frames before.
+#[test]
+fn a_click_ring_is_drawn() {
+    use znimok_video::events::Button;
+    use znimok_video_win::{MouseInput, MouseOpts};
+    let (tx, rx) = mpsc::channel();
+    let ui = std::thread::spawn(move || red_window(tx));
+    let h = rx.recv().unwrap();
+    if h == 0 {
+        return;
+    }
+    std::thread::sleep(Duration::from_millis(300));
+    let dir = std::env::temp_dir().join(format!("znimok-ring-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("ring.mp4");
+    let mouse = MouseInput::start();
+    let req = RecordRequest {
+        fps: 30,
+        api: Api::Wgc,
+        events: Some(mouse.queue()),
+        overlay: Some(mouse.overlay(MouseOpts {
+            cursor: false,
+            clicks: true,
+            color: [1.0, 0.82, 0.25],
+        })),
+        ..RecordRequest::new(
+            Target::Window {
+                id: WindowId(h as u64),
+            },
+            path.clone(),
+        )
+    };
+    let close = || {
+        // SAFETY: a window of this test; the message ends its thread's loop.
+        let _ = unsafe { PostMessageW(Some(HWND(h as *mut _)), WM_CLOSE, WPARAM(0), LPARAM(0)) };
+    };
+    let rec = match Recording::start(req) {
+        Ok(r) => r,
+        Err(e) => {
+            close();
+            let _ = ui.join();
+            eprintln!("пропущено: {e}");
+            return;
+        }
+    };
+    // The window's middle on the desktop: 120 + 240, 120 + 160.
+    let bounds = znimok_win::raw::dwm_bounds(HWND(h as *mut _)).unwrap();
+    let (cx, cy) = (
+        bounds.x + bounds.width as i32 / 2,
+        bounds.y + bounds.height as i32 / 2,
+    );
+    std::thread::sleep(Duration::from_millis(600));
+    mouse.note(cx, cy, Button::Left, true);
+    mouse.note(cx, cy, Button::Left, false);
+    std::thread::sleep(Duration::from_millis(900));
+    let fin = rec.stop();
+    close();
+    let _ = ui.join();
+    let out = fin.path.expect("committed");
+    let events = fin.result.events.len();
+    // Yellow on red: a pixel much greener than the red window (Y up, Cb down).
+    let mut dec = MfDecoder::open(&out).unwrap();
+    let mut frames = Vec::new();
+    while let Some(s) = dec.next().unwrap() {
+        if let Decoded::Video {
+            time_hns, frame, ..
+        } = s
+        {
+            let (w, h) = (frame.width, frame.height);
+            // Around the middle, at the radii the ring spreads through (6…26 px).
+            let yellow = (-30i32..=30)
+                .flat_map(|dy| (-30i32..=30).map(move |dx| (dx, dy)))
+                .filter(|&(dx, dy)| {
+                    let [y, cb, _] =
+                        frame.ycc((w as i32 / 2 + dx) as u32, (h as i32 / 2 + dy) as u32);
+                    y > 150 && cb < 110
+                })
+                .count();
+            frames.push((time_hns / 10_000, yellow));
+        }
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+    let with: Vec<_> = frames.iter().filter(|f| f.1 > 20).collect();
+    eprintln!(
+        "подій {events}; кадри з кільцем: {with:?} з {}",
+        frames.len()
+    );
+    assert_eq!(events, 2, "the press and the release are logged");
+    assert!(!with.is_empty(), "a ring is in the video");
+    assert!(
+        frames.first().is_some_and(|f| f.1 <= 20),
+        "no ring before the press"
+    );
+    let span = with.last().unwrap().0 - with.first().unwrap().0;
+    assert!(span <= 400, "the ring is gone after ~350 ms: {span} ms");
+}

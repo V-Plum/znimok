@@ -2935,7 +2935,7 @@ export component AppWindow inherits Window {
                                 }
                                 Text { text: @tr("rec-sound-tracks" => "Each source is a track of its own: in the editor it can be muted or made quieter. The system sound is what this computer plays; the microphone needs Windows' permission (Privacy → Microphone)."); color: Theme.text3; font-size: 11px; wrap: word-wrap; }
                                 SwitchRow { text: @tr("rec-cursor-clicks" => "Cursor and click highlight"); checked: root.pref-rec-cursor; toggled => { root.setting("rec-cursor", self.checked ? 1 : 0); } }
-                                Text { text: @tr("rec-cursor-later" => "The pointer is in the video as the system draws it; the click rings come with the next update."); color: Theme.text3; font-size: 11px; wrap: word-wrap; }
+                                Text { text: @tr("rec-cursor-hint" => "The pointer is drawn into the video, a click is a spreading ring and a held button a steady one; clicks on the recording bar are not recorded. The clicks are also kept as a log in the document."); color: Theme.text3; font-size: 11px; wrap: word-wrap; }
                             }
                             if root.settings-page == 9: VerticalLayout {
                                 spacing: 14px;
