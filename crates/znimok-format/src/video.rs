@@ -616,7 +616,12 @@ pub(crate) fn read_geom(b: &mut Reader<'_>, limits: &Limits) -> Result<Geom, For
     let side = |v: u32| v.clamp(1, limits.max_image_side);
     let out = (ow != 0 || oh != 0).then(|| (side(ow), side(oh)));
     let crop = if b.remaining() >= 16 {
-        Some(IRect::new(b.i32()?, b.i32()?, b.i32()?, b.i32()?).normalized())
+        // Clamped before it is normalised: a damaged file's extreme values would overflow.
+        Some(
+            IRect::new(b.i32()?, b.i32()?, b.i32()?, b.i32()?)
+                .clamped()
+                .normalized(),
+        )
     } else {
         None
     };
