@@ -462,6 +462,12 @@ pub fn open(frozen: Frozen, editor_was_visible: bool) -> Result<(), slint::Platf
         ui.set_act_alt(action_code(g.alt));
         // The text mode has one gesture: no strip about the others (ZK-185).
         ui.set_show_hints(hints && !TEXT_MODE.with(|m| m.get()));
+        // A recording's overlay has its own strip, with the sound choice under A (ZK-189).
+        let video = crate::rec::video_mode();
+        ui.set_video(video);
+        if video {
+            ui.set_sound_text(crate::rec::sound_text(crate::rec::sound_mode()).into());
+        }
         // Switching to another program (Cmd+Tab, Alt+Tab) cancels — once the overlay has had
         // the focus (it may never get it when a global hotkey leaves another program in front).
         // Focus moving between our own windows (another display) is not a switch.
@@ -1298,6 +1304,15 @@ impl Session {
     }
 
     fn key(&mut self, text: &str, g: Gesture) -> Option<Outcome> {
+        // A (Ф in the Ukrainian layout) in a recording's overlay: the next sound choice, kept
+        // (ZK-189); every display's strip says it.
+        if crate::rec::video_mode() && matches!(text, "a" | "A" | "ф" | "Ф") {
+            let label: slint::SharedString = crate::rec::sound_text(crate::rec::cycle_sound()).into();
+            for p in &self.parts {
+                p.ui.set_sound_text(label.clone());
+            }
+            return None;
+        }
         match text {
             "\u{1b}" => Some(Outcome::Cancel),
             // Q (Й in the Ukrainian layout): codes in the highlighted part, or on the whole screen.

@@ -4032,6 +4032,24 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
         if crate::overlay::open(frozen, false).is_ok()
             && let Some(ov) = crate::overlay::handle()
         {
+            // ZK-189: A cycles the sound, the strip says it, the choice is kept (then put back).
+            let before = crate::rec::sound_mode();
+            let shown = ov.get_sound_text().to_string();
+            ov.invoke_key("a".into(), false, false);
+            let next = crate::rec::sound_mode();
+            let now_shown = ov.get_sound_text().to_string();
+            ov.invoke_key("ф".into(), false, false);
+            let again = crate::rec::sound_mode();
+            r.check(
+                "recording overlay: A (Ф) cycles the sound, the strip says it, the settings keep it",
+                ov.get_video()
+                    && next == (before + 1) % 4
+                    && again == (before + 2) % 4
+                    && !shown.is_empty()
+                    && now_shown != shown,
+                format!("{before} → {next} → {again} · «{shown}» → «{now_shown}»"),
+            );
+            crate::with_ctx(|a, ui| a.setting(ui, "rec-sound", before));
             let osf = ov.window().scale_factor();
             let lw = ov.window().size().width as f32 / osf;
             let lh = ov.window().size().height as f32 / osf;

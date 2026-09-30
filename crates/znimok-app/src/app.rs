@@ -1383,6 +1383,26 @@ impl App {
         ui.set_pref_rec_sound(
             i32::from(p.video.audio.system) | (i32::from(p.video.audio.microphone) << 1),
         );
+        // The devices of the sound choice (ZK-189): «default» first, then what is plugged in now.
+        let devices = |kind, chosen: &Option<String>| {
+            let found = audio_devices(kind);
+            let mut names: Vec<SharedString> = vec![self.tr.tr("rec-default-device").into()];
+            names.extend(found.iter().map(|d| SharedString::from(d.1.as_str())));
+            let at = chosen
+                .as_ref()
+                .and_then(|id| found.iter().position(|d| &d.0 == id))
+                .map_or(0, |i| i as i32 + 1);
+            (std::rc::Rc::new(slint::VecModel::from(names)).into(), at)
+        };
+        let (names, at) = devices(znimok_video::traits::AudioKind::System, &p.video.audio.system_device);
+        ui.set_rec_sys_devices(names);
+        ui.set_rec_sys_device(at);
+        let (names, at) = devices(
+            znimok_video::traits::AudioKind::Microphone,
+            &p.video.audio.microphone_device,
+        );
+        ui.set_rec_mic_devices(names);
+        ui.set_rec_mic_device(at);
         ui.set_pref_rec_cursor(p.video.cursor);
         ui.set_pref_lib_dir(self.lib_dir.display().to_string().into());
         ui.set_pref_file(
@@ -1569,6 +1589,24 @@ impl App {
                 p.video.audio.system = value & 1 != 0;
                 p.video.audio.microphone = value & 2 != 0;
             }),
+            // A device of the sound choice (ZK-189): 0 = the default one.
+            "rec-sys-device" | "rec-mic-device" => {
+                let kind = if key == "rec-sys-device" {
+                    znimok_video::traits::AudioKind::System
+                } else {
+                    znimok_video::traits::AudioKind::Microphone
+                };
+                let id = (value > 0)
+                    .then(|| audio_devices(kind).get(value as usize - 1).map(|d| d.0.clone()))
+                    .flatten();
+                self.save_prefs(ui, |p| match kind {
+                    znimok_video::traits::AudioKind::System => p.video.audio.system_device = id,
+                    znimok_video::traits::AudioKind::Microphone => {
+                        p.video.audio.microphone_device = id
+                    }
+                });
+                self.settings_sync(ui);
+            }
             "rec-cursor" => self.save_prefs(ui, |p| {
                 p.video.cursor = on;
                 p.video.clicks = on;
@@ -8791,6 +8829,20 @@ fn clip_rect(r: IRect, to: IRect) -> Option<IRect> {
 
 /// This build (ZK-140): the version and, for builds made by CI, the commit — so a newly
 /// installed build differs even while every preview is 0.0.0.
+/// Sound devices as (id, name), the default first (ZK-189); none where recording is not here.
+fn audio_devices(kind: znimok_video::traits::AudioKind) -> Vec<(String, String)> {
+    #[cfg(windows)]
+    return znimok_video_win::audio_devices(kind)
+        .into_iter()
+        .map(|d| (d.id, d.name))
+        .collect();
+    #[cfg(not(windows))]
+    {
+        let _ = kind;
+        Vec::new()
+    }
+}
+
 /// The About page's links (ZK-198), in the order of its buttons.
 const ABOUT_LINKS: [&str; 4] = [
     "https://v-plum.github.io/znimok/",
