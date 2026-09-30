@@ -8,13 +8,23 @@ Ukrainian layout (V/м, R/к, E/у, L/д and so on).
 
 | Action | Windows | macOS |
 |---|---|---|
-| New screenshot: freeze the screen under the pointer | Ctrl+Shift+4 | ⌃⇧4 |
+| New screenshot: freeze the screen under the pointer | Alt+Shift+4 | ⌃⇧4 |
 | Region | drag | drag |
 | Window | click | click |
 | Whole screen | Space | Space |
+| Open in the editor | release | release |
 | Straight to the clipboard and the library, no editor | Shift on release | ⇧ on release |
+| Edit right over the screen | Alt on release | ⌥ on release |
+| Capture in 3 seconds | double click, or click and drag at once | the same |
+| Scrolling capture | S | S |
+| Read QR codes and barcodes | Q | Q |
 | Loupe zoom | wheel | wheel or trackpad |
 | Cancel | Esc | Esc |
+
+Only the keys held at the moment the mouse button is released count — whether they went down
+before the click or after it. What each gesture does (release / Shift / Alt) can be reassigned in
+Settings → Screenshots; the hint strip at the bottom of the overlay shows the current assignment
+(and can be turned off there too).
 
 ## Tools
 
@@ -30,6 +40,7 @@ Ukrainian layout (V/м, R/к, E/у, L/д and so on).
 | Highlighter | H |
 | Counter | N |
 | Stamp | S |
+| Picture from a file (as a mark) | I |
 | Crop | C |
 | Select for as long as the key is held | Ctrl (⌘) |
 
@@ -50,6 +61,7 @@ Ukrainian layout (V/м, R/к, E/у, L/д and so on).
 | Forward / backward | Ctrl+] / Ctrl+[ | ⌘] / ⌘[ |
 | To front / to back | Ctrl+Shift+] / Ctrl+Shift+[ | ⇧⌘] / ⇧⌘[ |
 | Paste a clipboard image as a mark | Ctrl+V | ⌘V |
+| Turn a mark | drag the handle above its box; Shift — 15° steps | drag the handle; ⇧ — 15° steps |
 
 ## Crop
 

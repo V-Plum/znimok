@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Znimok — screenshots with marks that stay editable</title>
+<meta name="description" content="Znimok — screenshots for Windows and macOS with an editor that keeps marks editable. No telemetry; everything stays on your computer.">
+<link rel="icon" type="image/png" href="../assets/img/favicon.png">
+<link rel="alternate" hreflang="uk" href="../">
+<link rel="stylesheet" href="../assets/site.css">
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <a class="brand" href="./"><img src="../assets/img/icon.png" alt=""><span class="wordmark">Znimok</span></a>
+    <nav>
+      <a href="https://github.com/V-Plum/znimok/blob/main/docs/guide.en.md">Guide</a>
+      <a href="https://github.com/V-Plum/znimok">GitHub</a>
+      <a class="lang" href="../" hreflang="uk">Українська</a>
+    </nav>
+  </header>
+
+  <main>
+    <div class="hero">
+      <img class="icon" src="../assets/img/icon.png" alt="Znimok">
+      <span class="status">Preview · Windows 11 and macOS 15+</span>
+      <h1>Screenshots whose marks stay alive</h1>
+      <p class="lead">An arrow, a caption or a hidden area can be fixed a week later. Shots live in a library
+        on your computer; the result goes to the clipboard, to a file, or straight to a person or an AI agent.</p>
+      <div class="downloads">
+        <a class="btn primary" id="dl-windows" href="https://github.com/V-Plum/znimok/releases/latest">
+          <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M3 5.5 10.5 4.5v7H3zM11.5 4.4 21 3v8.5h-9.5zM3 12.5h7.5v7L3 18.5zM11.5 12.5H21V21l-9.5-1.4z"/></svg>
+          Download for Windows <small>.msi</small></a>
+        <a class="btn" id="dl-macos" href="https://github.com/V-Plum/znimok/releases/latest">
+          <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M16.4 12.6c0-2.5 2-3.7 2.1-3.8-1.2-1.7-3-1.9-3.6-2-1.5-.2-3 .9-3.8.9-.8 0-2-.9-3.3-.8-1.7 0-3.3 1-4.2 2.5-1.8 3.1-.5 7.7 1.3 10.2.9 1.2 1.9 2.6 3.2 2.6 1.3-.1 1.8-.8 3.3-.8 1.6 0 2 .8 3.4.8 1.4 0 2.3-1.3 3.1-2.5 1-1.4 1.4-2.8 1.4-2.9 0 0-2.8-1.1-2.9-4.2zM13.9 5.1c.7-.9 1.2-2 1.1-3.1-1 0-2.2.7-2.9 1.5-.6.7-1.2 1.9-1 3 1.1.1 2.2-.6 2.8-1.4z"/></svg>
+          Download for macOS <small>.dmg · Apple silicon</small></a>
+      </div>
+      <p class="note" id="dl-note">&nbsp;</p>
+      <img class="shot" src="../assets/img/editor-dark.webp" width="1360" height="860" alt="The Znimok editor with arrows, boxes, counters and text on a screenshot">
+    </div>
+
+    <section>
+      <h2>What it does</h2>
+      <div class="grid">
+        <div class="card"><h3>The right capture</h3><p>A region, a window without what covers it, or the whole screen — across several displays, with a loupe, a 3-2-1 countdown and scrolling capture of long pages.</p></div>
+        <div class="card"><h3>Three actions on release</h3><p>Open in the editor, straight to the clipboard and the library, or edit right over the screen. You decide what each gesture does.</p></div>
+        <div class="card"><h3>An editor that loses nothing</h3><p>Boxes, arrows, text, counters, stamps, highlighter, hiding, turning marks, any colour with an eyedropper. Everything undoes.</p></div>
+        <div class="card"><h3>Library</h3><p>Thumbnails, search, a trash. The folder is yours: put it on a cloud drive and Znimok sees the changes.</p></div>
+        <div class="card"><h3>For people and agents</h3><p>Copy, drag into a chat, export to PNG/JPEG/WebP with metadata. For AI agents — an MCP server and the <code>znimok</code> command.</p></div>
+        <div class="card"><h3>Calls no one</h3><p>No telemetry, no ads. By itself Znimok goes online only to check for updates — and that can be turned off.</p></div>
+      </div>
+    </section>
+
+    <section>
+      <h2>How it looks</h2>
+      <div class="gallery">
+        <figure><img src="../assets/img/over-screen.webp" width="1600" height="1000" loading="lazy" alt="Editing right over the screen"><figcaption>Alt on release — edit right over the screen</figcaption></figure>
+        <figure><img src="../assets/img/colours.webp" width="1360" height="860" loading="lazy" alt="The colour picker with an eyedropper"><figcaption>Any colour: hue, HEX, eyedropper, recent</figcaption></figure>
+        <figure><img src="../assets/img/rotate.webp" width="1360" height="860" loading="lazy" alt="Turning a mark by its handle"><figcaption>Turn by the handle; Shift — 15° steps</figcaption></figure>
+      </div>
+    </section>
+
+    <section>
+      <h2>Installing</h2>
+      <div class="install">
+        <div class="card"><h3>Windows 11</h3>
+          <ol>
+            <li>Run the <code>.msi</code> — no administrator rights needed.</li>
+            <li>Until the installer is signed, SmartScreen says "Windows protected your PC": "More info" → "Run anyway".</li>
+            <li>Take a shot with <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>4</kbd> or "New screenshot" in the tray.</li>
+          </ol>
+        </div>
+        <div class="card"><h3>macOS 15+</h3>
+          <ol>
+            <li>Open the <code>.dmg</code> and drag Znimok to Applications.</li>
+            <li>Until Znimok is notarised: try to open it, then System Settings → Privacy &amp; Security → "Open Anyway".</li>
+            <li>Allow Screen Recording; take a shot with <kbd>⌃</kbd><kbd>⇧</kbd><kbd>4</kbd>.</li>
+          </ol>
+        </div>
+      </div>
+      <p class="note">More in the <a href="https://github.com/V-Plum/znimok/blob/main/docs/guide.en.md">guide</a>; every key in the <a href="https://github.com/V-Plum/znimok/blob/main/docs/SHORTCUTS.en.md">table</a>.</p>
+    </section>
+  </main>
+
+  <footer>
+    <div class="foot">
+      <div>
+        <nav>
+          <a href="https://github.com/V-Plum/znimok/blob/main/docs/guide.en.md">Guide</a>
+          <a href="https://github.com/V-Plum/znimok/blob/main/docs/privacy.en.md">Privacy</a>
+          <a href="https://github.com/V-Plum/znimok/releases">Releases</a>
+          <a href="https://github.com/V-Plum/znimok/issues">Questions and bugs</a>
+          <a href="https://github.com/V-Plum/znimok/blob/main/LICENSE">License</a>
+        </nav>
+        <p>Znimok succeeds the screenshot and video features of Little Helpers. The code is open for reading. Fonts Onest and Unbounded — SIL OFL 1.1.</p>
+      </div>
+      <a class="slint" href="https://slint.dev" title="Made with Slint">
+        <img class="light" src="../assets/img/MadeWithSlint-logo-light.svg" width="150" height="69" alt="Made with Slint">
+        <img class="dark" src="../assets/img/MadeWithSlint-logo-dark.svg" width="150" height="69" alt="Made with Slint">
+      </a>
+    </div>
+  </footer>
+</div>
+<script src="../assets/site.js"></script>
+</body>
+</html>
