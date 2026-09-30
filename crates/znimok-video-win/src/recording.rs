@@ -7,7 +7,6 @@ use std::rc::Rc;
 use std::sync::mpsc;
 use std::thread::JoinHandle;
 
-use znimok_video::clock::MonotonicClock;
 use znimok_video::events::EventQueue;
 use znimok_video::recorder::{
     Recorder, RecorderConfig, RecordingControl, RecordingResult, commit_part, part_path,
@@ -245,7 +244,7 @@ fn run(
         Ok(s)
     };
     let rec = Recorder::open(
-        MonotonicClock::new(),
+        crate::clock::QpcClock::new(),
         source,
         open_sink,
         std::mem::take(&mut req.audio),

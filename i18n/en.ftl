@@ -4947,11 +4947,6 @@ tray-stop-record = Stop recording
 # @max: 240
 rec-how = The recording hotkey or «Record video» in the tray opens the same overlay as for screenshots: drag — a region, click — a window, Space — the whole screen. The same key or «Stop» ends it; the video goes to the library.
 
-# @where: Settings → Recording: sound is not captured yet
-# @kind: body
-# @max: 160
-rec-sound-later = The choice is kept; sound is recorded from the next update (for now videos are silent).
-
 # @where: Settings → Recording: what the cursor switch does for now
 # @kind: body
 # @max: 160
@@ -4966,6 +4961,26 @@ rec-error-start = Could not start recording: { $reason }
 # @kind: toast
 # @max: 160
 rec-error-save = The recording could not be saved: { $reason }
+
+# @where: Settings → Recording, under the sound choice
+# @kind: hint
+# @max: 220
+rec-sound-tracks = Each source is a track of its own: in the editor it can be muted or made quieter. The system sound is what this computer plays; the microphone needs Windows' permission (Privacy → Microphone).
+
+# @where: Toast after a recording: Windows privacy settings deny the microphone
+# @kind: status
+# @max: 200
+rec-warn-mic-denied = Recorded without the microphone: Windows does not allow it (Settings → Privacy → Microphone → desktop apps).
+
+# @where: Toast after a recording: another program holds the sound device exclusively
+# @kind: status
+# @max: 200
+rec-warn-audio-busy = Recorded without some sound: another program holds the sound device.
+
+# @where: Toast after a recording: a sound source could not be opened (no device, or the encoder took no audio)
+# @kind: status
+# @max: 200
+rec-warn-audio-none = Recorded without some sound: the sound device could not be opened.
 
 # @where: Name of a new recording in the library; $date, $time
 # @kind: label

@@ -4989,11 +4989,6 @@ tray-stop-record = Зупинити запис
 # @max: 240
 rec-how = Клавіша запису або «Записати відео» в треї відкривають ту саму накладку, що й для знімків: потягнути — ділянка, клік — вікно, Пробіл — увесь екран. Та сама клавіша або «Стоп» завершують; відео йде в бібліотеку.
 
-# @where: Settings → Recording: sound is not captured yet
-# @kind: body
-# @max: 160
-rec-sound-later = Вибір запам'ятовується; звук записуватиметься з наступного оновлення (поки відео без звуку).
-
 # @where: Settings → Recording: what the cursor switch does for now
 # @kind: body
 # @max: 160
@@ -5008,6 +5003,26 @@ rec-error-start = Не вдалося почати запис: { $reason }
 # @kind: toast
 # @max: 160
 rec-error-save = Не вдалося зберегти запис: { $reason }
+
+# @where: Settings → Recording, under the sound choice
+# @kind: hint
+# @max: 220
+rec-sound-tracks = Кожне джерело — окрема доріжка: у редакторі її можна вимкнути чи зробити тихішою. Системний звук — те, що відтворює цей комп'ютер; мікрофону потрібен дозвіл Windows (Конфіденційність → Мікрофон).
+
+# @where: Toast after a recording: Windows privacy settings deny the microphone
+# @kind: status
+# @max: 200
+rec-warn-mic-denied = Записано без мікрофона: Windows його не дозволяє (Параметри → Конфіденційність → Мікрофон → класичні програми).
+
+# @where: Toast after a recording: another program holds the sound device exclusively
+# @kind: status
+# @max: 200
+rec-warn-audio-busy = Записано без частини звуку: пристрій звуку зайняла інша програма.
+
+# @where: Toast after a recording: a sound source could not be opened (no device, or the encoder took no audio)
+# @kind: status
+# @max: 200
+rec-warn-audio-none = Записано без частини звуку: не вдалося відкрити пристрій звуку.
 
 # @where: Name of a new recording in the library; $date, $time
 # @kind: label

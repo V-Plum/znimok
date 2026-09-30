@@ -119,6 +119,9 @@ pub struct RecordingResult {
     /// Clicks with video time.
     pub events: Vec<TimedEvent>,
     pub audio_tracks: usize,
+    /// What each written track is, in track order (separate layout): the source's kind and its
+    /// device name (ZK-89). Empty when the tracks are mixed or there are none.
+    pub audio_sources: Vec<(AudioKind, String)>,
     pub warning: Option<AudioWarning>,
     /// The first error; the file is still finalised when anything was written.
     pub error: Option<VideoError>,
@@ -319,6 +322,15 @@ impl<C: Clock, S: FrameSource, K: VideoSink<Frame = S::Frame>> Recorder<C, S, K>
             None
         };
         result.audio_tracks = tracks;
+        if config.audio_layout == AudioLayout::Separate
+            && let Some(c) = audio.as_ref().and_then(|a| a.capture.as_ref())
+        {
+            result.audio_sources = c
+                .inputs
+                .iter()
+                .map(|i| (i.source.kind(), i.source.label()))
+                .collect();
+        }
         Ok(Self {
             cfr: Cfr::new(config.fps, f),
             clock,

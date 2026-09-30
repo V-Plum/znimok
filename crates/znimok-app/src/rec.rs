@@ -167,6 +167,20 @@ fn start_inner(choice: &Choice) -> Result<(), String> {
         znimok_settings::Quality::Normal => znimok_video::settings::Quality::Normal,
         znimok_settings::Quality::High => znimok_video::settings::Quality::High,
     };
+    // Sound (ZK-89): each chosen source is a track of its own; a source that cannot open is
+    // left out and the recording says why when it ends.
+    if p.audio.system {
+        req.audio
+            .push(Box::new(znimok_video_win::WasapiSource::system(
+                p.audio.system_device.clone(),
+            )));
+    }
+    if p.audio.microphone {
+        req.audio
+            .push(Box::new(znimok_video_win::WasapiSource::microphone(
+                p.audio.microphone_device.clone(),
+            )));
+    }
     let rec = Recording::start(req).map_err(|e| e.to_string())?;
     let size = rec.started().size;
     let fps = if p.fps >= 45 { 60 } else { 30 };
@@ -246,6 +260,7 @@ pub fn stop() {
         std::thread::spawn(move || {
             let fin = rec.stop();
             LAST_FRAMES.store(fin.result.frames, std::sync::atomic::Ordering::SeqCst);
+            let warning = fin.result.warning;
             let r = match fin.path {
                 Some(p) => wrap(&p, &lib, &name, size, fps, source, &fin.result),
                 // Nothing came: WGC sends a window's frame only when it is drawn anew, so a
@@ -257,7 +272,10 @@ pub fn stop() {
                     .unwrap_or_else(|| NOTHING.into())),
             };
             let _ = std::fs::remove_file(&mp4);
-            let _ = slint::invoke_from_event_loop(move || saved(r, name, display));
+            let _ = slint::invoke_from_event_loop(move || {
+                saved(r, name, display);
+                sound_warning(warning);
+            });
         });
     }
     #[cfg(not(windows))]
@@ -318,7 +336,24 @@ fn wrap(
         duration_hns: result.duration_hns,
         codec: znimok_format::video::CODEC_H264,
     };
-    let video = znimok_format::Video::new(info);
+    let mut video = znimok_format::Video::new(info);
+    // The tracks as recorded, in the file's order (ZK-89).
+    video.audio = result
+        .audio_sources
+        .iter()
+        .map(|(kind, label)| znimok_format::video::AudioTrack {
+            source: match kind {
+                znimok_video::traits::AudioKind::System => {
+                    znimok_format::video::AudioSource::System
+                }
+                znimok_video::traits::AudioKind::Microphone => {
+                    znimok_format::video::AudioSource::Microphone
+                }
+            },
+            label: label.clone(),
+            ..Default::default()
+        })
+        .collect();
     doc.timeline = Some(video.edit.to_timeline());
     let opts = znimok_format::WriteOptions {
         app_version: format!("Znimok {}", env!("CARGO_PKG_VERSION")),
@@ -400,6 +435,22 @@ fn saved(r: Result<(PathBuf, znimok_core::Raster), String>, name: String, displa
             a.toast(ui, msg);
             crate::show_window(ui);
         }
+    });
+}
+
+/// A recording that went without some of its sound says why (ZK-89).
+#[cfg(windows)]
+fn sound_warning(w: Option<znimok_video::recorder::AudioWarning>) {
+    use znimok_video::recorder::AudioWarning as W;
+    let Some(w) = w else { return };
+    crate::with_ctx(|a, ui| {
+        let key = match w {
+            W::MicDenied => "rec-warn-mic-denied",
+            W::AudioBusy => "rec-warn-audio-busy",
+            W::AudioNone => "rec-warn-audio-none",
+        };
+        let msg = a.tr.tr(key);
+        a.toast(ui, msg);
     });
 }
 
