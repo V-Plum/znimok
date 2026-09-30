@@ -703,14 +703,15 @@ impl Renderer {
                     .stroke_path(&counter_path(rect.inset(inset), *shape));
                 let digit = st.color2.unwrap_or_else(|| on_color(st.color));
                 let label = n.to_string();
+                // The number grows with the counter (ZK-167): from its width, not a fixed size.
                 let fs = if *shape == CounterShape::Pin {
-                    st.thick * 42 / 100
+                    w * 0.42
                 } else {
-                    st.thick * 52 / 100
+                    w * 0.52
                 };
                 let spec = text::TextSpec {
                     text: &label,
-                    size_px: fs.max(4) as f32,
+                    size_px: fs.floor().max(4.0) as f32,
                     bold: true,
                     italic: false,
                     align: Align::Center,
@@ -737,7 +738,7 @@ impl Renderer {
                     let s = reference::emoji_for(*id);
                     let spec = text::TextSpec {
                         text: s,
-                        size_px: st.thick as f32,
+                        size_px: rect.width().max(4.0) as f32,
                         bold: false,
                         italic: false,
                         align: Align::Center,

@@ -111,6 +111,10 @@ its centre; Shift turns in 15° steps. Several selected marks turn about the mid
 box. The angle shows beside the pointer and can be typed into the "∠" field of the inspector. A
 turned mark resizes in its own frame — the opposite corner stays where it is.
 
+**Size.** Drag the handles; with Shift the size changes in proportion, with Alt (⌥) symmetrically
+about the centre. Counters and stamps have corner handles only and always scale as a whole — the
+number grows with the circle.
+
 **Colours.** Eight palette colours, "none" and the rainbow button: it opens a picker with a
 saturation/brightness square, a hue strip, a HEX field, an eyedropper (the next click on the
 screenshot takes its colour) and a row of recent colours. A shape without an outline is a solid
