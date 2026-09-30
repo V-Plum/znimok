@@ -8295,7 +8295,7 @@ impl App {
             for r in upload {
                 for y in r.y as usize..r.bottom() as usize {
                     let row = &mut data[(y * pw + r.x as usize) * 4..(y * pw + r.right() as usize) * 4];
-                    for px in row.chunks_exact_mut(4) {
+                    for px in row.as_chunks_mut::<4>().0 {
                         let a = px[3] as u32;
                         if a != 0 && a != 255 {
                             for c in &mut px[..3] {
@@ -9126,6 +9126,7 @@ fn head_index(h: Head) -> i32 {
 
 impl App {
     /// Whether the canvas draws the picture (false while a video plays on the GPU under it).
+    #[cfg_attr(not(windows), allow(dead_code))]
     pub fn picture_drawn(&self) -> bool {
         self.renderer.picture()
     }
