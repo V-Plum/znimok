@@ -52,6 +52,9 @@ pub struct General {
     pub theme: Theme,
     /// The first-run guide (library folder, permissions, hotkeys) is done.
     pub onboarding_done: bool,
+    /// The build the «For developers» page was revealed in (ZK-140): shown only while it is
+    /// still this build, so a newly installed version hides it again.
+    pub developer_page: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]

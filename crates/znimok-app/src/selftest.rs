@@ -84,6 +84,25 @@ fn same_as_full(app: &Shared, ui: &AppWindow, r: &mut Report, when: &str) {
     );
 }
 
+/// Ten real clicks on «Changes apply immediately» in the settings header (ZK-140).
+fn ten_clicks_on_applied(ui: &AppWindow) {
+    use slint::platform::{PointerEventButton, WindowEvent};
+    let win = ui.window();
+    let w = win.size().width as f32 / win.scale_factor();
+    let at = slint::LogicalPosition::new(w - 234.0, 26.0);
+    win.dispatch_event(WindowEvent::PointerMoved { position: at });
+    for _ in 0..10 {
+        win.dispatch_event(WindowEvent::PointerPressed {
+            position: at,
+            button: PointerEventButton::Left,
+        });
+        win.dispatch_event(WindowEvent::PointerReleased {
+            position: at,
+            button: PointerEventButton::Left,
+        });
+    }
+}
+
 fn click(app: &Shared, ui: &AppWindow, at: (f32, f32)) {
     let mut a = app.borrow_mut();
     a.pointer(ui, 0, at.0, at.1, 0, false, false);
@@ -2825,10 +2844,33 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
     }));
     steps.push(Box::new(|_, ui, r| {
         r.snapshot(ui, "L4-settings-light");
+        // ZK-140: «For developers» is hidden; ten real clicks on «Changes apply immediately»
+        // (fast pairs, as double clicks) reveal it and do not maximize the window.
+        let hidden = !ui.get_pref_dev_page();
+        ten_clicks_on_applied(ui);
+        r.check(
+            "developer page: hidden, ten clicks on the header note reveal it, no maximize",
+            hidden && ui.get_pref_dev_page() && !ui.get_win_maximized(),
+            format!(
+                "hidden {hidden} · shown {} · maximized {}",
+                ui.get_pref_dev_page(),
+                ui.get_win_maximized()
+            ),
+        );
         ui.set_settings_page(7);
     }));
     steps.push(Box::new(|_, ui, r| {
         r.snapshot(ui, "L7-developer-light");
+        ten_clicks_on_applied(ui);
+        r.check(
+            "developer page: ten more clicks hide it again (and leave the page)",
+            !ui.get_pref_dev_page() && ui.get_settings_page() == 6,
+            format!(
+                "shown {} · page {}",
+                ui.get_pref_dev_page(),
+                ui.get_settings_page()
+            ),
+        );
         ui.invoke_setting("onb-open".into(), 0);
     }));
     steps.push(Box::new(|app, ui, r| {

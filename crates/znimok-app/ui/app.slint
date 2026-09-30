@@ -1819,6 +1819,8 @@ export component AppWindow inherits Window {
     in property <int> pref-gesture-shift: 2;
     in property <int> pref-gesture-alt: 1;
     in property <bool> pref-show-hints: true;
+    // The «For developers» page is revealed for this build (ZK-140).
+    in property <bool> pref-dev-page;
     in property <bool> pref-keep-tool;
     in property <bool> pref-autosave;
     in property <bool> pref-metadata;
@@ -2180,7 +2182,27 @@ export component AppWindow inherits Window {
                         IconButton { y: (parent.height - self.height) / 2; icon: "M15 5 l-7 7 7 7"; label: @tr("common-close" => "Close") + "  Esc"; clicked => { root.setting("close", 0); } }
                         Text { text: @tr("set-title" => "Settings"); color: Theme.text; font-size: 15px; font-weight: 700; vertical-alignment: center; }
                         Rectangle { horizontal-stretch: 1; }
-                        Text { text: @tr("set-applied-now" => "Changes apply immediately"); color: Theme.text3; font-size: 12px; vertical-alignment: center; }
+                        // Ten clicks here show or hide «For developers» (ZK-140). Nothing about it
+                        // looks clickable, and it takes the clicks so a double one does not
+                        // maximize the window as the title bar would.
+                        Rectangle {
+                            width: applied-text.preferred-width;
+                            applied-text := Text { text: @tr("set-applied-now" => "Changes apply immediately"); color: Theme.text3; font-size: 12px; vertical-alignment: center; height: parent.height; }
+                            TouchArea {
+                                property <int> clicks;
+                                mouse-cursor: default;
+                                pointer-event(e) => {
+                                    if (e.kind == PointerEventKind.down && e.button == PointerEventButton.left) {
+                                        self.clicks += 1;
+                                        if (self.clicks >= 10) {
+                                            self.clicks = 0;
+                                            root.setting("dev-toggle", 0);
+                                        }
+                                    }
+                                }
+                                double-clicked => { }
+                            }
+                        }
                     }
                 }
                 Rectangle { height: 1px; background: Theme.line; }
@@ -2209,7 +2231,9 @@ export component AppWindow inherits Window {
                                 { p: 6, t: @tr("set-page-about" => "About Znimok") },
                                 { p: 7, t: @tr("dev-page" => "For developers") },
                             ]: Rectangle {
-                                height: 34px;
+                                // «For developers» only when revealed (ZK-140).
+                                visible: t.p != 7 || root.pref-dev-page;
+                                height: self.visible ? 34px : 0px;
                                 border-radius: 8px;
                                 background: t.p >= 0 && root.settings-page == t.p ? Theme.control-on : (nav-ta.has-hover && t.p >= 0 ? Theme.elevated : transparent);
                                 animate background { duration: 120ms; }
@@ -2468,7 +2492,7 @@ export component AppWindow inherits Window {
                                 }
                             }
                             // ---- For developers (temporary, owner 29.09): reset and replay things
-                            if root.settings-page == 7: VerticalLayout {
+                            if root.settings-page == 7 && root.pref-dev-page: VerticalLayout {
                                 spacing: 12px;
                                 Text { text: @tr("dev-intro" => "A temporary page for testing: reset state and show what normally appears only once."); color: Theme.text3; font-size: 12px; wrap: word-wrap; }
                                 for a[i] in [
