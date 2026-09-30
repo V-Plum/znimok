@@ -348,6 +348,8 @@ impl Editor {
                 orig,
                 dx,
                 dy,
+                keep_ratio,
+                from_centre,
                 ..
             } => {
                 let (orig, dx, dy) = (orig.clamped(), clamp_coord(dx), clamp_coord(dy));
@@ -357,7 +359,17 @@ impl Editor {
                         "object {id} has no handle {handle}"
                     )));
                 }
-                hit::resize(o, handle, orig, dx, dy);
+                hit::resize_with(
+                    o,
+                    handle,
+                    orig,
+                    dx,
+                    dy,
+                    hit::ResizeMods {
+                        keep_ratio,
+                        from_centre,
+                    },
+                );
                 o.sanitize();
                 Ok(changed(vec![id]))
             }

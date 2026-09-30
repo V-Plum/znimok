@@ -300,6 +300,8 @@ pub struct App {
     /// The eyedropper is armed for this colour control ("color", "fill", "outline", "digit"):
     /// the next click on the canvas picks the colour there (ZK-160).
     eyedrop: Option<String>,
+    /// For the self-test: Alt held (the real one is read from the system, ZK-167).
+    pub test_alt: bool,
     stamp_id: u32,
     /// One undo step per drag of the opacity slider.
     alpha_merge: Option<MergeKey>,
@@ -460,6 +462,7 @@ impl App {
             counter_group: 1,
             digit: None,
             eyedrop: None,
+            test_alt: false,
             stamp_id: 0,
             alpha_merge: None,
             crop: None,
@@ -2867,6 +2870,10 @@ impl App {
                     (pd.x - grab.0).round() as i32,
                     (pd.y - grab.1).round() as i32,
                 );
+                // Shift — proportional, Alt (⌥) — about the centre (ZK-167). Alt is read from the
+                // system: the canvas pointer event does not carry it.
+                let alt =
+                    self.test_alt || crate::overlay::held_modifiers().is_some_and(|(_, alt)| alt);
                 self.apply(
                     ui,
                     Command::ResizeObject {
@@ -2875,6 +2882,8 @@ impl App {
                         orig,
                         dx,
                         dy,
+                        keep_ratio: shift,
+                        from_centre: alt,
                         merge: Some(merge.clone()),
                     },
                 );
@@ -3126,6 +3135,9 @@ impl App {
                     Some(o) if matches!(o.kind(), Kind::Text | Kind::Mark) => {
                         BOX[(3 + turn8(o)) % 8]
                     }
+                    Some(o) if hit::scales_only(o.kind()) => {
+                        BOX[([0, 2, 4, 6][*handle % 4] + turn8(o)) % 8]
+                    }
                     Some(o) => BOX[(*handle + turn8(o)) % 8],
                     None => BOX[*handle % 8],
                 };
@@ -3171,6 +3183,7 @@ impl App {
             return match o.kind() {
                 Kind::Line => CROSS,
                 Kind::Text | Kind::Mark => BOX[(3 + turn8(o)) % 8],
+                k if hit::scales_only(k) => BOX[([0, 2, 4, 6][h % 4] + turn8(o)) % 8],
                 _ => BOX[(h + turn8(o)) % 8],
             };
         }

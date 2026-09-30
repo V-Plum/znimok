@@ -615,7 +615,7 @@ fn overlay_has_focus() -> bool {
 /// the key changes that happen while it has the focus: a Shift pressed before the overlay came
 /// up (or before its first click) never reached it, so its own modifier state said «no Shift».
 #[cfg(windows)]
-fn held_modifiers() -> Option<(bool, bool)> {
+pub(crate) fn held_modifiers() -> Option<(bool, bool)> {
     use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_MENU, VK_SHIFT};
     // SAFETY: plain state queries.
     let down = |k: windows::Win32::UI::Input::KeyboardAndMouse::VIRTUAL_KEY| unsafe {
@@ -625,7 +625,7 @@ fn held_modifiers() -> Option<(bool, bool)> {
 }
 
 #[cfg(target_os = "macos")]
-fn held_modifiers() -> Option<(bool, bool)> {
+pub(crate) fn held_modifiers() -> Option<(bool, bool)> {
     use objc2_app_kit::{NSEvent, NSEventModifierFlags};
     let f = NSEvent::modifierFlags_class();
     Some((
@@ -635,7 +635,7 @@ fn held_modifiers() -> Option<(bool, bool)> {
 }
 
 #[cfg(not(any(windows, target_os = "macos")))]
-fn held_modifiers() -> Option<(bool, bool)> {
+pub(crate) fn held_modifiers() -> Option<(bool, bool)> {
     None
 }
 

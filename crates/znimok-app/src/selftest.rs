@@ -1168,6 +1168,99 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
         }
         key(app, ui, "\u{1b}", false, false);
     }));
+    // ZK-167: handles — a counter scales as a whole by its corners and a pin is taller than a
+    // circle whatever the order of choices; Shift keeps a box's ratio, Alt its centre.
+    steps.push(Box::new(|app, ui, r| {
+        use znimok_core::Kind;
+        let first = |k: Kind| -> Option<u32> {
+            app.borrow().s.as_ref().and_then(|s| {
+                s.ed.doc
+                    .objects
+                    .iter()
+                    .find(|o| o.kind() == k)
+                    .map(|o| o.id)
+            })
+        };
+        let obj = |id: u32| {
+            app.borrow()
+                .s
+                .as_ref()
+                .and_then(|s| s.ed.doc.get(id).cloned())
+        };
+        // Drags handle `h` of the selected mark by (dx, dy) screenshot pixels.
+        let drag_handle = |id: u32, h: usize, dx: f64, dy: f64, shift: bool| {
+            let Some(o) = obj(id) else { return };
+            let (hx, hy) = znimok_core::hit::handles(&o)[h];
+            let (a0, a1) = {
+                let a = app.borrow();
+                (a.doc_to_logical(hx, hy), a.doc_to_logical(hx + dx, hy + dy))
+            };
+            let mut a = app.borrow_mut();
+            a.pointer(ui, 0, a0.0, a0.1, 0, shift, false);
+            for i in 1..=6 {
+                let t = i as f32 / 6.0;
+                a.pointer(
+                    ui,
+                    1,
+                    a0.0 + (a1.0 - a0.0) * t,
+                    a0.1 + (a1.1 - a0.1) * t,
+                    0,
+                    shift,
+                    false,
+                );
+            }
+            a.pointer(ui, 2, a1.0, a1.1, 0, shift, false);
+        };
+        ui.invoke_tool_chosen(0);
+        if let Some(c) = first(Kind::Counter) {
+            app.borrow_mut().layer_click(ui, c as i32, false);
+            // A circle first: a pin made one is square again.
+            ui.invoke_set_prop("counter-shape".into(), 0);
+            let before = obj(c).map(|o| (o.rect.w, o.rect.h));
+            // The bottom-right corner (3 of the four), dragged wide and barely down.
+            drag_handle(c, 2, 30.0, 4.0, false);
+            let after = obj(c).map(|o| (o.rect.w, o.rect.h, o.style.thick));
+            // The shape made a pin afterwards: the counter grows its point.
+            ui.invoke_set_prop("counter-shape".into(), 2);
+            let pin = obj(c).map(|o| (o.rect.w, o.rect.h));
+            r.check(
+                "counter: four corner handles, scales only as a whole; a pin is 1.3× as tall",
+                obj(c).is_some_and(|o| znimok_core::hit::handles(&o).len() == 4)
+                    && before.is_some_and(|(w, h)| w == h)
+                    && after
+                        .is_some_and(|(w, h, t)| w == h && w > before.map_or(0, |b| b.0) && t == w)
+                    && pin.is_some_and(|(w, h)| h == (w * 13 + 5) / 10),
+                format!("{before:?} → {after:?} → pin {pin:?}"),
+            );
+            key(app, ui, "z", true, false);
+            key(app, ui, "z", true, false);
+            key(app, ui, "z", true, false);
+        }
+        if let Some(rect) = first(Kind::Rect) {
+            app.borrow_mut().layer_click(ui, rect as i32, false);
+            let o0 = obj(rect).map(|o| o.rect).unwrap_or_default();
+            drag_handle(rect, 4, 60.0, 0.0, true);
+            let shifted = obj(rect).map(|o| o.rect).unwrap_or_default();
+            key(app, ui, "z", true, false);
+            app.borrow_mut().test_alt = true;
+            drag_handle(rect, 3, 20.0, 0.0, false);
+            app.borrow_mut().test_alt = false;
+            let centred = obj(rect).map(|o| o.rect).unwrap_or_default();
+            key(app, ui, "z", true, false);
+            let ratio = |r: znimok_core::IRect| r.w as f64 / r.h.max(1) as f64;
+            r.check(
+                "resize: Shift keeps the ratio, Alt keeps the centre",
+                (ratio(shifted) - ratio(o0)).abs() < 0.02
+                    && shifted.w > o0.w
+                    && shifted.x == o0.x
+                    && centred.w == o0.w + 40
+                    && centred.x == o0.x - 20
+                    && centred.h == o0.h,
+                format!("{o0:?} · Shift {shifted:?} · Alt {centred:?}"),
+            );
+        }
+        key(app, ui, "\u{1b}", false, false);
+    }));
     // Cursors (ZK-47) and dragging rows of the layers list (ZK-54).
     steps.push(Box::new(|app, ui, r| {
         let order = |app: &Shared| -> Vec<(u32, u32)> {
