@@ -435,8 +435,8 @@ impl Vid {
 
     /// The bar under a point of the track area and what a press there drags.
     pub fn bar_at(bars: &[MarkBar], x: i32, y: i32) -> Option<(ObjectId, Grip)> {
-        let lane = ((y - LANE_TOP + (LANE_STEP - LANE_H) / 2) / LANE_STEP).clamp(0, LANES as i32 - 1)
-            as usize;
+        let lane = ((y - LANE_TOP + (LANE_STEP - LANE_H) / 2) / LANE_STEP)
+            .clamp(0, LANES as i32 - 1) as usize;
         // The top one first (drawn last).
         bars.iter()
             .rev()

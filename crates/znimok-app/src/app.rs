@@ -8065,8 +8065,7 @@ impl App {
         // the marker work on its pixels, LH `EvFreezeNow`); playing or waiting for the copy, the
         // GPU layer shows it and those two are plates (ZK-94).
         let live = s.vid.as_ref().is_some_and(|v| {
-            v.shown.is_some()
-                && (v.playing || v.raster.as_ref().is_none_or(|(f, _)| *f != v.frame))
+            v.shown.is_some() && (v.playing || v.raster.as_ref().is_none_or(|(f, _)| *f != v.frame))
         });
         if self.renderer.picture() == live {
             self.renderer.set_picture(!live);
@@ -9597,13 +9596,12 @@ impl App {
         ui.set_tl_playhead(g.playhead_x as f32);
         ui.set_tl_has_range(v.selected_range().is_some());
         // Marks in time (ZK-94): a bar per mark on the marks track.
-        let bars = s
-            .ed
-            .doc
-            .timeline
-            .as_ref()
-            .map(|t| v.mark_bars(&t.marks, &s.ed.doc.objects, s.ed.selection()))
-            .unwrap_or_default();
+        let bars =
+            s.ed.doc
+                .timeline
+                .as_ref()
+                .map(|t| v.mark_bars(&t.marks, &s.ed.doc.objects, s.ed.selection()))
+                .unwrap_or_default();
         let rows: Vec<crate::TlMark> = bars
             .iter()
             .map(|b| crate::TlMark {
@@ -9861,7 +9859,13 @@ impl App {
                             if f < span.0 || f >= span.1 {
                                 self.vid_seek(ui, span.0);
                             }
-                            self.apply(ui, Command::Select { ids: vec![id], add: false });
+                            self.apply(
+                                ui,
+                                Command::Select {
+                                    ids: vec![id],
+                                    add: false,
+                                },
+                            );
                         }
                         None => {
                             self.apply(ui, Command::ClearSelection);
@@ -10043,22 +10047,21 @@ impl App {
         let name = self.tr.tr_args("vid-frame-doc-name", &a);
         // The marks live on this frame come along, editable (LH `EvFrameToShot`); a picture mark
         // brings its pixels.
-        let marks: Vec<(Object, Option<Raster>)> = s
-            .ed
-            .doc
-            .objects
-            .iter()
-            .filter(|o| !o.hidden && s.ed.doc.live(o))
-            .map(|o| {
-                let px = match &o.data {
-                    znimok_core::Data::Image { bank, .. } => {
-                        s.ed.doc.banks.get(*bank as usize).map(|r| (**r).clone())
-                    }
-                    _ => None,
-                };
-                (o.clone(), px)
-            })
-            .collect();
+        let marks: Vec<(Object, Option<Raster>)> =
+            s.ed.doc
+                .objects
+                .iter()
+                .filter(|o| !o.hidden && s.ed.doc.live(o))
+                .map(|o| {
+                    let px = match &o.data {
+                        znimok_core::Data::Image { bank, .. } => {
+                            s.ed.doc.banks.get(*bank as usize).map(|r| (**r).clone())
+                        }
+                        _ => None,
+                    };
+                    (o.clone(), px)
+                })
+                .collect();
         self.new_document_with(ui, raster, "video-frame", Some(name), marks);
     }
 

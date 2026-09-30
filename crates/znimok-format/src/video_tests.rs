@@ -709,7 +709,11 @@ fn marks_times_live_in_the_documents_timeline() {
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join("v.znimok");
-    std::fs::write(&path, write_video(&doc, &v, &fake_mp4(5000), &WriteOptions::default())).unwrap();
+    std::fs::write(
+        &path,
+        write_video(&doc, &v, &fake_mp4(5000), &WriteOptions::default()),
+    )
+    .unwrap();
     let vd = loaded_video(open(&path).unwrap());
     let t = vd.doc.timeline.clone().unwrap();
     assert_eq!(t.marks.get(&doc.objects[0].id), Some(&(0, 90)));
@@ -728,9 +732,15 @@ fn marks_times_live_in_the_documents_timeline() {
     };
     save_same_kind(&path, &d2, Some(&part), &WriteOptions::default()).unwrap();
     let back = loaded_video(open(&path).unwrap());
-    assert_eq!(back.video.mark_spans.get(&doc.objects[0].id), Some(&(30, 60)));
+    assert_eq!(
+        back.video.mark_spans.get(&doc.objects[0].id),
+        Some(&(30, 60))
+    );
     assert_eq!(back.video.mark_spans.get(&doc.objects[1].id), Some(&(5, 6)));
     assert!(!back.video.mark_spans.contains_key(&9999));
-    assert_eq!(back.doc.timeline.unwrap().marks.get(&doc.objects[0].id), Some(&(30, 60)));
+    assert_eq!(
+        back.doc.timeline.unwrap().marks.get(&doc.objects[0].id),
+        Some(&(30, 60))
+    );
     let _ = std::fs::remove_dir_all(&dir);
 }

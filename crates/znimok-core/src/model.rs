@@ -700,7 +700,10 @@ impl Timeline {
             && 0 <= self.in_point
             && self.in_point < self.out_point
             && self.out_point <= at
-            && self.marks.values().all(|&(a, b)| 0 <= a && a < b && b <= at)
+            && self
+                .marks
+                .values()
+                .all(|&(a, b)| 0 <= a && a < b && b <= at)
     }
 
     /// Whether mark `id` shows on source frame `f`.

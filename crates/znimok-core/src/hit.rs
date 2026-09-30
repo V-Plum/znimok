@@ -382,7 +382,11 @@ mod tests {
         d.timeline = Some(t);
         d.shown_frame = Some(50);
         assert_ne!(pick(&d, at, 1.0), Some(0), "not live on frame 50");
-        assert!(pick_in_rect(&d, d.objects[0].bounds()).iter().all(|i| *i != 0));
+        assert!(
+            pick_in_rect(&d, d.objects[0].bounds())
+                .iter()
+                .all(|i| *i != 0)
+        );
         d.shown_frame = Some(100);
         assert_eq!(pick(&d, at, 1.0), before, "live from its first frame");
         d.shown_frame = Some(190);

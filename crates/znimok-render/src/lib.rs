@@ -1349,9 +1349,19 @@ mod tests {
         r.render(&d, view, &mut with);
         d.shown_frame = Some(50);
         r.render(&d, view, &mut without);
-        assert_ne!(with.data_as_u8_slice(), without.data_as_u8_slice(), "drawn on frame 15");
+        assert_ne!(
+            with.data_as_u8_slice(),
+            without.data_as_u8_slice(),
+            "drawn on frame 15"
+        );
         let mut plain = Document::from_raster("v", Raster::solid(200, 100, Rgb::new(10, 200, 10)));
-        plain.push(Object::new(IRect::new(20, 20, 60, 40), Data::Hide { mode: HideMode::Blur, strength: 50 }));
+        plain.push(Object::new(
+            IRect::new(20, 20, 60, 40),
+            Data::Hide {
+                mode: HideMode::Blur,
+                strength: 50,
+            },
+        ));
         r.set_picture(false);
         r.set_plain_effects(true);
         let mut out = Pixmap::new(1, 1);
