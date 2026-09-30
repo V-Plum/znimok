@@ -166,6 +166,11 @@ closing). Cards show thumbnails; search looks at the name, description and tags.
 offers rename, show in folder, to the trash (with "Undo"). Shift+trash deletes for good after one
 question.
 
+**Opening.** A click on a card opens the document in this same window (the library and the editor
+are one window; "Library" goes back), Alt+click (⌥-click) in a new window, to compare shots side by
+side. A document already open in another window does not open twice: Znimok offers to go to that
+window or to open a copy — it is saved as a new document, so two windows never overwrite each other.
+
 **Groups and pins.** Cards are grouped by date: "Today", "Yesterday", "This week", "This month",
 then by month. The pin on a card (or "Pin" for the picked ones) puts the document into the
 "Pinned" group on top; the library's limit (count or size) never removes pinned documents nor counts
