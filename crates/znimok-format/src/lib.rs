@@ -997,7 +997,10 @@ fn parse_blocks(
                 .clamped();
             }
             b"CROP" => {
-                let c = IRect::new(b.i32()?, b.i32()?, b.i32()?, b.i32()?).normalized();
+                // Clamped first: extreme values in a damaged file would overflow.
+                let c = IRect::new(b.i32()?, b.i32()?, b.i32()?, b.i32()?)
+                    .clamped()
+                    .normalized();
                 crop = Some(c);
             }
             b"SCAL" => {
