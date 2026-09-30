@@ -4061,6 +4061,13 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
     }
     steps.push(Box::new(|_, ui, r| {
         r.snapshot(ui, "35-about");
+        // ZK-198: the version and the build (commit, platform) are on the page.
+        let (version, build) = (ui.get_pref_version(), ui.get_pref_build());
+        r.check(
+            "about: the version and the build are shown",
+            version.contains(env!("CARGO_PKG_VERSION")) && build.contains(std::env::consts::ARCH),
+            format!("{version} · {build}"),
+        );
         ui.invoke_setting("close".into(), 0);
     }));
 
@@ -4296,6 +4303,11 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
         r.snapshot(ui, "L3-layers-light");
         ui.set_insp_tab(0);
         ui.invoke_settings_open();
+        ui.set_settings_page(6);
+    }));
+    // ZK-198: the About page in the light theme (Slint's badge follows it too).
+    steps.push(Box::new(|_, ui, r| {
+        r.snapshot(ui, "L8-about-light");
         ui.set_settings_page(4);
     }));
     steps.push(Box::new(|_, ui, r| {

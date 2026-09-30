@@ -3478,6 +3478,66 @@ about-made-with = Made with Slint · fonts Onest, JetBrains Mono, Unbounded (OFL
 # @max: 90
 about-fonts = Fonts: Onest, JetBrains Mono, Unbounded — SIL Open Font License 1.1
 
+# @where: About page, under the Znimok wordmark: what the program is
+# @kind: body
+# @max: 70
+about-tagline = Screenshots and screen video with annotations
+
+# @where: About page, next to the version: copies the version and build for a bug report
+# @kind: button
+# @max: 14
+about-copy-version = Copy
+
+# @where: Toast after «Copy» on the About page
+# @kind: body
+# @max: 50
+about-copied = The version is copied
+
+# @where: About page, after the version: $commit is 7 hex characters or «about-build-local»; $platform like «Windows x86_64»
+# @kind: value
+# @max: 60
+about-build = build { $commit } · { $platform }
+
+# @where: About page: a build made on a developer's machine, not by the release pipeline
+# @kind: value
+# @max: 20
+about-build-local = local
+
+# @where: About page: what Znimok does, first paragraph
+# @kind: body
+# @max: 320
+about-description = Znimok captures the screen — a region, a window, the whole screen or a long scrolling page — and records video. Arrows, text, counters, blur and the other marks stay editable after saving, text on a picture can be copied as text, and every capture goes into a local library.
+
+# @where: About page: privacy in short, second paragraph (must match docs/privacy.md)
+# @kind: body
+# @max: 220
+about-local = Everything stays on your computer: no account, no telemetry, no ads. Nothing leaves it without your action; the only request the program makes by itself is the update check, and it can be turned off.
+
+# @where: About page: link button to the website
+# @kind: button
+# @max: 16
+about-site = Website
+
+# @where: About page: link button to the privacy policy
+# @kind: button
+# @max: 16
+about-privacy = Privacy
+
+# @where: About page: link button to the licence
+# @kind: button
+# @max: 16
+about-licence = Licence
+
+# @where: About page: copyright line; the name stays as it is
+# @kind: body
+# @max: 70
+about-copyright = © 2026 Vadym Slyva (Plum). All rights reserved.
+
+# @where: About page: under the copyright; what the public source means
+# @kind: body
+# @max: 200
+about-licence-note = The source code is published so that anyone can check what the program does; that is not permission to reuse it. The terms are under «Licence».
+
 # @where: About: donation link
 # @kind: button
 # @max: 16

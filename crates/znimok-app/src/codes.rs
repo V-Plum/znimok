@@ -140,7 +140,7 @@ fn confirm_open(ui: &AppWindow, url: String) {
 }
 
 /// Only http(s) ever gets here (`Kind::Link`); no shell is involved.
-fn open_url(url: &str) {
+pub(crate) fn open_url(url: &str) {
     #[cfg(windows)]
     let _ = std::process::Command::new("rundll32.exe")
         .arg("url.dll,FileProtocolHandler")

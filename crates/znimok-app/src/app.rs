@@ -1400,6 +1400,7 @@ impl App {
                 )
                 .into(),
         );
+        ui.set_pref_build(about_build(&self.tr).into());
     }
 
     /// One control of the settings page changed. Numbers come as `value`; texts are read from
@@ -1426,6 +1427,22 @@ impl App {
             "show-hints" => self.save_prefs(ui, |p| p.capture.show_hints = on),
             // Ten clicks on «Changes apply immediately» (ZK-140): the developer page shows for
             // this build, or hides again.
+            // The About page (ZK-198): its links, and the version for a bug report.
+            "about-link" => {
+                if let Some(url) = ABOUT_LINKS.get(value as usize) {
+                    crate::codes::open_url(url);
+                }
+            }
+            "about-copy" => {
+                let text = format!(
+                    "Znimok {} ({})",
+                    env!("CARGO_PKG_VERSION"),
+                    about_build(&self.tr)
+                );
+                let _ = arboard::Clipboard::new().and_then(|mut cb| cb.set_text(text));
+                let done = self.tr.tr("about-copied");
+                self.toast(ui, done);
+            }
             "dev-toggle" => {
                 let id = build_id();
                 let shown = self.prefs().general.developer_page.as_deref() == Some(id.as_str());
@@ -8701,6 +8718,35 @@ fn clip_rect(r: IRect, to: IRect) -> Option<IRect> {
 
 /// This build (ZK-140): the version and, for builds made by CI, the commit — so a newly
 /// installed build differs even while every preview is 0.0.0.
+/// The About page's links (ZK-198), in the order of its buttons.
+const ABOUT_LINKS: [&str; 4] = [
+    "https://v-plum.github.io/znimok/",
+    "https://github.com/V-Plum/znimok",
+    "https://github.com/V-Plum/znimok/blob/main/docs/privacy.md",
+    "https://github.com/V-Plum/znimok/blob/main/LICENSE",
+];
+
+/// «build 1a2b3c4 · Windows x86_64» (ZK-198): the commit the release was built from (CI sets
+/// GITHUB_SHA), or «local build».
+fn about_build(tr: &Localizer) -> String {
+    let commit = match option_env!("GITHUB_SHA") {
+        Some(sha) => sha.chars().take(7).collect(),
+        None => tr.tr("about-build-local"),
+    };
+    let os = match std::env::consts::OS {
+        "windows" => "Windows",
+        "macos" => "macOS",
+        other => other,
+    };
+    tr.tr_args(
+        "about-build",
+        &args(&[
+            ("commit", commit),
+            ("platform", format!("{os} {}", std::env::consts::ARCH)),
+        ]),
+    )
+}
+
 pub fn build_id() -> String {
     format!(
         "{}+{}",
