@@ -88,8 +88,16 @@ fn device_id(d: &IMMDevice) -> String {
     }
 }
 
-/// The active endpoints of a kind, the default one first.
+/// The active endpoints of a kind, the default one first. Runs on a thread of its own: the
+/// caller may be a UI thread whose apartment winit makes single-threaded for drag and drop
+/// (`OleInitialize`) — joining the MTA there first makes that fail.
 pub fn devices(kind: AudioKind) -> Vec<AudioDevice> {
+    std::thread::spawn(move || devices_here(kind))
+        .join()
+        .unwrap_or_default()
+}
+
+fn devices_here(kind: AudioKind) -> Vec<AudioDevice> {
     let Ok(en) = enumerator() else {
         return Vec::new();
     };
