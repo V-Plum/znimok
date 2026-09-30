@@ -200,7 +200,8 @@ Windows HEIC/AVIF need Microsoft's free extensions).
 
 **Recording (Windows).** Alt+Shift+5 or "Record video" in the tray opens the same overlay as for
 screenshots: drag — a region, click — a window (followed as it moves, or recorded "as a region" —
-in the settings), Space — the whole screen. While it records, a thin red edge runs round the part
+in the settings), Space — the whole screen, A — the sound (none / system / microphone / both; the
+choice is kept). While it records, a thin red edge runs round the part
 (outside it, so it is not in the video) and a bar next to it shows the time, "Pause" and "Stop"; the
 time is in the tray too. The same key or "Stop" ends it: the video is in the library at once, with ▶
 and its length on the card, and the card in the corner offers to open it. Settings → "Recording":
