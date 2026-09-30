@@ -143,3 +143,74 @@ fn exe_name(pid: u32) -> String {
         full.rsplit('\\').next().unwrap_or(&full).to_string()
     }
 }
+
+/// The window's picture as it would be on screen (`PrintWindow` with `PW_RENDERFULLCONTENT`,
+/// which also draws DirectComposition and GPU content), cut to its DWM bounds: `(w, h, BGRA)`,
+/// alpha opaque. For a recording that gets no frame from WGC because the window never
+/// repaints (ZK-193). `None` when the window is gone or the call fails.
+pub fn print_window(h: HWND) -> Option<(u32, u32, Vec<u8>)> {
+    use windows::Win32::Graphics::Gdi::{
+        BI_RGB, BITMAPINFO, BITMAPINFOHEADER, CreateCompatibleDC, CreateDIBSection, DIB_RGB_COLORS,
+        DeleteDC, DeleteObject, GetDC, ReleaseDC, SelectObject,
+    };
+    use windows::Win32::Storage::Xps::{PRINT_WINDOW_FLAGS, PrintWindow};
+    use windows::Win32::UI::WindowsAndMessaging::GetWindowRect;
+    const PW_RENDERFULLCONTENT: u32 = 2;
+    let bounds = dwm_bounds(h)?;
+    let mut wr = RECT::default();
+    // SAFETY: a valid out-pointer; a stale handle fails the call.
+    unsafe { GetWindowRect(h, &mut wr) }.ok()?;
+    let (ww, wh) = (wr.right - wr.left, wr.bottom - wr.top);
+    if ww <= 0 || wh <= 0 {
+        return None;
+    }
+    let bi = BITMAPINFO {
+        bmiHeader: BITMAPINFOHEADER {
+            biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
+            biWidth: ww,
+            biHeight: -wh,
+            biPlanes: 1,
+            biBitCount: 32,
+            biCompression: BI_RGB.0,
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    // SAFETY: GDI objects made here are released below on every path; `bits` points at
+    // `ww * wh * 4` bytes owned by the DIB section while it lives.
+    unsafe {
+        let screen = GetDC(None);
+        let dc = CreateCompatibleDC(Some(screen));
+        let mut bits = std::ptr::null_mut();
+        let bmp = CreateDIBSection(Some(dc), &bi, DIB_RGB_COLORS, &mut bits, None, 0).ok();
+        let mut out = None;
+        if let Some(bmp) = bmp
+            && !bits.is_null()
+        {
+            let old = SelectObject(dc, bmp.into());
+            if PrintWindow(h, dc, PRINT_WINDOW_FLAGS(PW_RENDERFULLCONTENT)).as_bool() {
+                let all = std::slice::from_raw_parts(bits as *const u8, (ww * wh * 4) as usize);
+                let (dx, dy) = (
+                    (bounds.x - wr.left).clamp(0, ww),
+                    (bounds.y - wr.top).clamp(0, wh),
+                );
+                let w = (bounds.width as i32).min(ww - dx).max(0) as u32;
+                let hh = (bounds.height as i32).min(wh - dy).max(0) as u32;
+                let mut v = Vec::with_capacity((w * hh * 4) as usize);
+                for y in 0..hh as i32 {
+                    let row = (((dy + y) * ww + dx) * 4) as usize;
+                    v.extend_from_slice(&all[row..row + (w * 4) as usize]);
+                }
+                for p in v.as_chunks_mut::<4>().0 {
+                    p[3] = 255;
+                }
+                out = (w > 0 && hh > 0).then_some((w, hh, v));
+            }
+            SelectObject(dc, old);
+            let _ = DeleteObject(bmp.into());
+        }
+        let _ = DeleteDC(dc);
+        ReleaseDC(None, screen);
+        out
+    }
+}

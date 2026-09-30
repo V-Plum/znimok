@@ -346,6 +346,11 @@ pub type OverlayFn = Box<dyn FnMut(i64) -> Overlay + Send>;
 /// How often a window's display (white level) and liveness are checked.
 const WINDOW_CHECK: Duration = Duration::from_millis(500);
 
+/// A window that sent no frame this long after the start gets one from `PrintWindow` (ZK-193):
+/// WGC sends a window's frame only when it presents, and a still window never does. The
+/// recorder repeats that frame until the window changes.
+const FIRST_FRAME_WAIT: Duration = Duration::from_millis(100);
+
 pub struct WgcSource {
     pool: SharedPool,
     item: GraphicsCaptureItem,
@@ -364,6 +369,12 @@ pub struct WgcSource {
     current: Option<GpuFrame>,
     last_check: Instant,
     overlay: Option<OverlayFn>,
+    opened: Instant,
+    /// The `PrintWindow` frame was tried (once, ZK-193).
+    printed: bool,
+    /// Tests only (`ZNIMOK_TEST_WGC_SILENT`): WGC's frames are ignored, as from a window that
+    /// never presents, so the `PrintWindow` path is what records.
+    silent: bool,
 }
 
 impl WgcSource {
@@ -475,6 +486,9 @@ impl WgcSource {
             current: None,
             last_check: Instant::now(),
             overlay: None,
+            opened: Instant::now(),
+            printed: false,
+            silent: std::env::var_os("ZNIMOK_TEST_WGC_SILENT").is_some(),
         })
     }
 
@@ -489,6 +503,12 @@ impl WgcSource {
 
     /// The newest frame of the pool, older ones closed.
     fn drain(&self) -> Option<windows::Graphics::Capture::Direct3D11CaptureFrame> {
+        if self.silent {
+            while let Ok(f) = self.frames.TryGetNextFrame() {
+                let _ = f.Close();
+            }
+            return None;
+        }
         let mut last = None;
         while let Ok(f) = self.frames.TryGetNextFrame() {
             if let Some(prev) = last.replace(f) {
@@ -531,6 +551,50 @@ impl WgcSource {
             Some(_) => (0, 0, cw, ch),
             None => self.plan.crop,
         };
+        self.set_current(slot, ready, crop);
+        Ok(())
+    }
+
+    /// The window's picture from `PrintWindow` as the first frame (ZK-193), in the pool's
+    /// format: a window's slots are FP16 scRGB, where SDR white is `white / 80`.
+    fn print(&mut self) -> Result<()> {
+        let h = self
+            .plan
+            .hwnd
+            .ok_or_else(|| VideoError::Screen("не вікно".into()))?;
+        let (w, hh, bgra) = znimok_win::raw::print_window(h)
+            .ok_or_else(|| VideoError::Screen("PrintWindow не дав картинки".into()))?;
+        let mut pool = self.pool.borrow_mut();
+        pool.ensure(w, hh)?;
+        let (data, bpp) = match pool.format {
+            PoolFormat::Rgba16F => {
+                let k = self.white / 80.0;
+                let lut: Vec<[u8; 2]> = (0..256)
+                    .map(|v| f16_bits(srgb_to_linear(v as f32 / 255.0) * k).to_le_bytes())
+                    .collect();
+                let one = f16_bits(1.0).to_le_bytes();
+                let mut d = Vec::with_capacity(bgra.len() * 2);
+                for p in bgra.as_chunks::<4>().0 {
+                    for c in [
+                        lut[p[2] as usize],
+                        lut[p[1] as usize],
+                        lut[p[0] as usize],
+                        one,
+                    ] {
+                        d.extend_from_slice(&c);
+                    }
+                }
+                (d, 8)
+            }
+            _ => (bgra, 4),
+        };
+        let (slot, ready) = pool.put_cpu(&data, w * bpp, w, hh);
+        drop(pool);
+        self.set_current(slot, ready, (0, 0, w, hh));
+        Ok(())
+    }
+
+    fn set_current(&mut self, slot: usize, ready: u64, crop: (i32, i32, u32, u32)) {
         let overlay = self.current.take().map(|c| c.overlay).unwrap_or_default();
         self.current = Some(GpuFrame {
             slot,
@@ -544,7 +608,6 @@ impl WgcSource {
             overlay,
         });
         self.have = true;
-        Ok(())
     }
 
     /// Every 500 ms: the window's display may have changed (its SDR white with it), the window
@@ -594,6 +657,17 @@ impl FrameSource for WgcSource {
             }
             if self.closed.load(Ordering::SeqCst) || !self.check_window() {
                 return Ok(Pulled::Closed);
+            }
+            // A window that has not presented since the start: its picture once, by other means.
+            if !self.have
+                && !self.printed
+                && self.plan.hwnd.is_some()
+                && self.opened.elapsed() >= FIRST_FRAME_WAIT
+            {
+                self.printed = true;
+                if self.print().is_ok() {
+                    return Ok(Pulled::Frame);
+                }
             }
             let now = Instant::now();
             if now >= deadline {
@@ -942,5 +1016,43 @@ pub fn open_source(
     match api {
         Api::Wgc => wgc(&mut overlay).or_else(|e| dda(&mut overlay).map_err(|_| e)),
         Api::Duplication => dda(&mut overlay).or_else(|e| wgc(&mut overlay).map_err(|_| e)),
+    }
+}
+
+/// The sRGB curve undone (for the `PrintWindow` frame in FP16 slots, ZK-193).
+fn srgb_to_linear(c: f32) -> f32 {
+    if c <= 0.04045 {
+        c / 12.92
+    } else {
+        ((c + 0.055) / 1.055).powf(2.4)
+    }
+}
+
+/// An `f32` as IEEE half bits (truncated; values here are 0 … a few, tiny ones become 0).
+fn f16_bits(v: f32) -> u16 {
+    let b = v.to_bits();
+    let sign = ((b >> 16) & 0x8000) as u16;
+    let exp = ((b >> 23) & 0xff) as i32 - 127 + 15;
+    if exp <= 0 {
+        return sign;
+    }
+    if exp >= 31 {
+        return sign | 0x7c00;
+    }
+    sign | ((exp as u16) << 10) | (((b & 0x7f_ffff) >> 13) as u16)
+}
+
+#[cfg(test)]
+mod print_tests {
+    use super::*;
+
+    #[test]
+    fn half_floats_and_the_srgb_curve() {
+        assert_eq!(f16_bits(0.0), 0);
+        assert_eq!(f16_bits(1.0), 0x3c00);
+        assert_eq!(f16_bits(0.5), 0x3800);
+        assert_eq!(f16_bits(2.0), 0x4000);
+        assert!((srgb_to_linear(1.0) - 1.0).abs() < 1e-6);
+        assert!((srgb_to_linear(0.5) - 0.214).abs() < 1e-3);
     }
 }
