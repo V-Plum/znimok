@@ -2430,6 +2430,13 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
         drop(a);
         ui.set_tool(1);
         ui.invoke_tool_chosen(1);
+        // ZK-172: the properties bar stands above the frame when there is room there.
+        let room_above = ui.get_ov_y() >= 48.0 + 12.0 + 8.0;
+        r.check(
+            "over the screen: the properties bar is above the frame when it fits there",
+            !room_above || !ui.get_ov_bar_down(),
+            format!("frame top {:.0} · bar under {}", ui.get_ov_y(), ui.get_ov_bar_down()),
+        );
         r.snapshot(ui, "28-over-screen");
     }));
     // ZK-157: the frame pulled to the left edge of the screen — the tool rail slides over to

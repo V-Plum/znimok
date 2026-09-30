@@ -1720,6 +1720,8 @@ export component AppWindow inherits Window {
     in property <length> ov-y;
     in property <length> ov-w;
     in property <length> ov-h;
+    // The properties bar over the screen stands under the frame (no room above it), ZK-172.
+    out property <bool> ov-bar-down: ov-panel.down;
     callback over-to-window();
     // ZK-119: QR codes and barcodes on the picture.
     callback read-codes();
@@ -2897,29 +2899,32 @@ export component AppWindow inherits Window {
                             chosen(i) => { root.tool-chosen(i); }
                         }
                     }
-                    if root.over-screen: Rectangle {
+                    // ZK-172 (owner, 30.09): the properties bar stands above the frame; under it only
+                    // when there is no room above (hysteresis as the rail's), inside the frame at its
+                    // bottom when there is room on neither side.
+                    ov-panel := Rectangle {
+                        visible: root.over-screen;
                         property <length> below: root.ov-y + root.ov-h + 12px;
                         property <length> above: root.ov-y - self.height - 12px;
-                        // Above the frame when there is no room below (hysteresis as the rail's).
-                        property <bool> up: false;
-                        property <float> t: self.up ? 1 : 0;
+                        property <bool> down: false;
+                        property <float> t: self.down ? 1 : 0;
                         property <bool> settled: false;
+                        // Tooltips open away from the frame.
+                        property <int> tips: self.down ? 0 : 2;
                         animate t { duration: self.settled ? 280ms : 0ms; easing: cubic-bezier(0.2, 0.8, 0.2, 1); }
-                        Timer { interval: 300ms; running: !parent.settled; triggered => { parent.settled = true; } }
-                        // Room left under the frame; recomputed as the frame moves and once the window
-                        // has its size (at creation the height is still zero).
-                        property <length> slack: parent.height - self.below - self.height;
-                        changed slack => {
-                            if (self.slack < 8px) { self.up = true; } else if (self.slack >= 48px) { self.up = false; }
+                        Timer { interval: 300ms; running: root.over-screen && !parent.settled; triggered => { parent.settled = true; } }
+                        init => { self.down = self.above < 8px; }
+                        changed above => {
+                            if (self.above < 8px) { self.down = true; } else if (self.above >= 48px) { self.down = false; }
                         }
-                        width: ov-bar.preferred-width;
-                        height: 48px;
+                        width: root.over-screen ? ov-bar.preferred-width : 0px;
+                        height: root.over-screen ? 48px : 0px;
                         // From the frame's left edge: the rail stands left of the frame, so the bar
-                        // under a narrow frame runs to the right instead of into the rail.
+                        // over a narrow frame runs to the right instead of into the rail.
                         x: max(8px, min(root.ov-x, parent.width - self.width - 8px));
-                        // No room above either: inside the frame, at its bottom.
-                        property <length> top: self.above >= 8px ? self.above : root.ov-y + root.ov-h - self.height - 8px;
-                        y: max(8px, min(self.below + (self.top - self.below) * self.t, parent.height - self.height - 8px));
+                        // Room below the frame, else inside it at its bottom.
+                        property <length> bottom: self.below + self.height + 8px <= parent.height ? self.below : root.ov-y + root.ov-h - self.height - 8px;
+                        y: max(8px, min(self.above + (self.bottom - self.above) * self.t, parent.height - self.height - 8px));
                         border-radius: 12px;
                         background: Theme.panel;
                         drop-shadow-blur: 18px;
@@ -2935,7 +2940,7 @@ export component AppWindow inherits Window {
                                 chip-text := Text { text: @tr("overlay-chip" => "Over the screen"); color: Theme.text2; font-size: 12px; font-weight: 600; horizontal-alignment: center; vertical-alignment: center; width: parent.width; height: parent.height; }
                                 TipTouch {
                                     mouse-cursor: MouseCursor.default;
-                                    tip-side: 2;
+                                    tip-side: ov-panel.tips;
                                     tip: @tr("overlay-hint-frame" => "drag the frame corners — that is the crop") + " · " + Keys.k("Ctrl+S", "⌘S") + " " + @tr("overlay-hint-save" => "to library") + " · Esc " + @tr("overlay-hint-close" => "close");
                                 }
                             }
@@ -2943,11 +2948,11 @@ export component AppWindow inherits Window {
                                 alignment: center;
                                 ColourRow { width: 270px; selected: root.color-index; key: "color"; current: root.color-rgb; picked(i) => { root.set-prop("color", i); } }
                             }
-                            IconButton { tip-side: 2; label: @tr("doc-undo" => "Undo"); tip: self.label + "  " + Keys.k("Ctrl+Z", "⌘Z"); icon: "M9 14 L4 9 l5 -5 M4 9 h11 a5 5 0 0 1 0 10 h-3"; enabled: root.can-undo; clicked => { root.undo(); } }
-                            IconButton { tip-side: 2; label: @tr("doc-redo" => "Redo"); tip: self.label + "  " + Keys.k("Ctrl+Shift+Z", "⇧⌘Z"); icon: "M15 14 l5 -5 -5 -5 M20 9 H9 a5 5 0 0 0 0 10 h3"; enabled: root.can-redo; clicked => { root.redo(); } }
-                            IconButton { tip-side: 2; label: @tr("overlay-open-window" => "Open in the editor window"); tip: @tr("overlay-open-window-tip" => "To the editor window — tone, size, library"); icon: "M4 6 a2 2 0 0 1 2 -2 h12 a2 2 0 0 1 2 2 v12 a2 2 0 0 1 -2 2 H6 a2 2 0 0 1 -2 -2 z M4 9 h16 M7 6.5 h.01 M9.5 6.5 h.01"; clicked => { root.over-to-window(); } }
+                            IconButton { tip-side: ov-panel.tips; label: @tr("doc-undo" => "Undo"); tip: self.label + "  " + Keys.k("Ctrl+Z", "⌘Z"); icon: "M9 14 L4 9 l5 -5 M4 9 h11 a5 5 0 0 1 0 10 h-3"; enabled: root.can-undo; clicked => { root.undo(); } }
+                            IconButton { tip-side: ov-panel.tips; label: @tr("doc-redo" => "Redo"); tip: self.label + "  " + Keys.k("Ctrl+Shift+Z", "⇧⌘Z"); icon: "M15 14 l5 -5 -5 -5 M20 9 H9 a5 5 0 0 0 0 10 h3"; enabled: root.can-redo; clicked => { root.redo(); } }
+                            IconButton { tip-side: ov-panel.tips; label: @tr("overlay-open-window" => "Open in the editor window"); tip: @tr("overlay-open-window-tip" => "To the editor window — tone, size, library"); icon: "M4 6 a2 2 0 0 1 2 -2 h12 a2 2 0 0 1 2 2 v12 a2 2 0 0 1 -2 2 H6 a2 2 0 0 1 -2 -2 z M4 9 h16 M7 6.5 h.01 M9.5 6.5 h.01"; clicked => { root.over-to-window(); } }
                             TextButton { primary: true; icon: "M11 9 h7 a2 2 0 0 1 2 2 v7 a2 2 0 0 1 -2 2 h-7 a2 2 0 0 1 -2 -2 v-7 a2 2 0 0 1 2 -2 z M5 15 V5 a2 2 0 0 1 2 -2 h10"; text: @tr("doc-copy" => "Copy"); clicked => { root.over-copy(); } }
-                            IconButton { tip-side: 2; label: @tr("common-close" => "Close"); tip: self.label + "  Esc"; icon: "M6 6 L18 18 M18 6 L6 18"; clicked => { root.over-close(); } }
+                            IconButton { tip-side: ov-panel.tips; label: @tr("common-close" => "Close"); tip: self.label + "  Esc"; icon: "M6 6 L18 18 M18 6 L6 18"; clicked => { root.over-close(); } }
                         }
                     }
                 }

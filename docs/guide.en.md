@@ -74,7 +74,7 @@ hotkeys".
 ### Over the screen
 
 After Alt (⌥) the editor window becomes a frame over the whole display: tools beside the frame,
-colours and actions below it. The corners and edges of the frame drag (it is the crop). When the
+colours and actions above it (below when there is no room above). The corners and edges of the frame drag (it is the crop). When the
 frame comes close to an edge of the screen, the panels glide over to the other side. Enter or
 "Copy" — to the clipboard and the library, Ctrl+S — to the library only, Esc — close without a
 trace, "Open in the editor window" — the same document with its marks and history.
