@@ -7265,7 +7265,11 @@ impl App {
             F::Webp => 2,
         };
         ui.set_exp_format(fi);
-        ui.set_exp_quality(p.jpeg_quality as i32);
+        ui.set_exp_quality(match p.format {
+            F::Webp => p.webp_quality,
+            _ => p.jpeg_quality,
+        } as i32);
+        ui.set_exp_lossless(p.webp_lossless);
         ui.set_exp_scale(match p.scale {
             S::Half => 0,
             S::Full => 1,
@@ -7327,6 +7331,7 @@ impl App {
     /// Size estimates on a worker thread: each format encoded on a small copy, scaled to the
     /// chosen size by the number of pixels. The newest request wins.
     fn export_estimate(&mut self) {
+        use znimok_settings::ExportFormat as F;
         let Some(e) = self.exp.as_mut() else { return };
         e.serial += 1;
         e.sizes = [None; 3];
@@ -7342,15 +7347,8 @@ impl App {
             let (sw, sh, small) = io::scaled(w, h, (*rgba).clone(), sw, sh);
             let ratio = (tw as f64 * th as f64) / (sw as f64 * sh as f64).max(1.0);
             let mut sizes = [0u64; 3];
-            for (i, f) in [io::Format::Png, io::Format::Jpeg, io::Format::Webp]
-                .into_iter()
-                .enumerate()
-            {
-                let opts = io::Encode {
-                    format: f,
-                    quality: prefs.jpeg_quality,
-                    white_bg: prefs.white_bg,
-                };
+            for (i, f) in [F::Png, F::Jpeg, F::Webp].into_iter().enumerate() {
+                let opts = export_encode(&prefs, f);
                 let n = io::encode(sw, sh, &small, opts, None).map_or(0, |b| b.len());
                 sizes[i] = (n as f64 * ratio) as u64;
             }
@@ -7389,7 +7387,14 @@ impl App {
                     _ => F::Png,
                 }
             }
-            "quality" => p.jpeg_quality = v.clamp(1, 100) as u8,
+            "quality" => {
+                let q = v.clamp(1, 100) as u8;
+                match p.format {
+                    F::Webp => p.webp_quality = q,
+                    _ => p.jpeg_quality = q,
+                }
+            }
+            "lossless" => p.webp_lossless = v != 0,
             "scale" => {
                 p.scale = match v {
                     0 => S::Half,
@@ -7547,11 +7552,7 @@ impl App {
                 }
             },
             (T::File, Some(path)) => {
-                let opts = io::Encode {
-                    format: export_io(prefs.format),
-                    quality: prefs.jpeg_quality,
-                    white_bg: prefs.white_bg,
-                };
+                let opts = export_encode(prefs, prefs.format);
                 let meta = self.file_meta();
                 let r = io::encode(tw, th, &rgba, opts, meta.as_ref())
                     .and_then(|b| std::fs::write(path, b).map_err(|e| e.to_string()));
@@ -8800,6 +8801,22 @@ fn export_ext(f: znimok_settings::ExportFormat) -> &'static str {
         znimok_settings::ExportFormat::Png => "png",
         znimok_settings::ExportFormat::Jpeg => "jpg",
         znimok_settings::ExportFormat::Webp => "webp",
+    }
+}
+
+/// How the sheet's choices write a picture in format `f` (ZK-197: WebP has its own quality
+/// and may be lossless).
+fn export_encode(p: &znimok_settings::ExportPrefs, f: znimok_settings::ExportFormat) -> io::Encode {
+    use znimok_settings::ExportFormat as F;
+    io::Encode {
+        format: export_io(f),
+        quality: if f == F::Webp {
+            p.webp_quality
+        } else {
+            p.jpeg_quality
+        },
+        lossless: p.webp_lossless,
+        white_bg: p.white_bg,
     }
 }
 

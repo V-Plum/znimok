@@ -129,6 +129,7 @@ pub fn write_image(
     let opts = Encode {
         format: Format::for_path(path),
         quality: 92,
+        lossless: true,
         white_bg: false,
     };
     let bytes = encode(w, h, &rgba, opts, meta)?;
@@ -139,12 +140,14 @@ pub fn write_image(
     Ok(())
 }
 
-/// How a picture is written (ZK-187): the format, JPEG's quality, transparency over white.
+/// How a picture is written (ZK-187): the format, its quality, transparency over white.
 #[derive(Clone, Copy, Debug)]
 pub struct Encode {
     pub format: Format,
-    /// JPEG only, 1–100.
+    /// JPEG, and WebP when not lossless (ZK-197): 1–100.
     pub quality: u8,
+    /// WebP only: without loss (image-webp) instead of libwebp's lossy coding.
+    pub lossless: bool,
     /// Transparent pixels over white (JPEG always, having no alpha).
     pub white_bg: bool,
 }
@@ -195,6 +198,18 @@ pub fn encode(
             wr.write_image_data(rgba).map_err(|e| e.to_string())?;
             wr.finish().map_err(|e| e.to_string())?;
         }
+        Format::Webp if !opts.lossless => {
+            // libwebp (ZK-197); alpha is kept (an ALPH chunk) unless flattened above.
+            let enc = webp::Encoder::from_rgba(rgba, w, h);
+            let q = opts.quality.clamp(1, 100) as f32;
+            let bytes = enc
+                .encode_simple(false, q)
+                .map_err(|e| format!("WebP: {e:?}"))?;
+            out = bytes.to_vec();
+            if let Some(m) = written {
+                out = webp_with_exif(&out, w, h, &m.exif()).unwrap_or(out);
+            }
+        }
         Format::Webp => {
             let mut enc = image::codecs::webp::WebPEncoder::new_lossless(&mut out);
             if let Some(m) = written {
@@ -222,6 +237,42 @@ pub fn encode(
         }
     }
     Ok(out)
+}
+
+/// libwebp's file with an EXIF chunk added (ZK-197; its simple encoder writes none): the
+/// extended header (VP8X) is added or gets the EXIF flag, the chunk goes last, the RIFF size
+/// follows. `None` for anything that is not a WebP this function understands.
+fn webp_with_exif(file: &[u8], w: u32, h: u32, exif: &[u8]) -> Option<Vec<u8>> {
+    if file.len() < 20 || &file[0..4] != b"RIFF" || &file[8..12] != b"WEBP" {
+        return None;
+    }
+    let chunk = |fourcc: &[u8], payload: &[u8]| {
+        let mut c = fourcc.to_vec();
+        c.extend_from_slice(&(payload.len() as u32).to_le_bytes());
+        c.extend_from_slice(payload);
+        if payload.len() % 2 == 1 {
+            c.push(0);
+        }
+        c
+    };
+    let mut body = file[12..].to_vec();
+    if &body[0..4] == b"VP8X" {
+        body[8] |= 0x08;
+    } else {
+        let (cw, ch) = (w.checked_sub(1)?, h.checked_sub(1)?);
+        let mut x = vec![0x08, 0, 0, 0];
+        x.extend_from_slice(&cw.to_le_bytes()[..3]);
+        x.extend_from_slice(&ch.to_le_bytes()[..3]);
+        let mut with = chunk(b"VP8X", &x);
+        with.extend_from_slice(&body);
+        body = with;
+    }
+    body.extend_from_slice(&chunk(b"EXIF", exif));
+    let mut out = b"RIFF".to_vec();
+    out.extend_from_slice(&((body.len() + 4) as u32).to_le_bytes());
+    out.extend_from_slice(b"WEBP");
+    out.extend_from_slice(&body);
+    Some(out)
 }
 
 /// The picture scaled to `w2`×`h2` (Lanczos down, Catmull–Rom up); the same size is returned as is.
@@ -268,6 +319,48 @@ pub const IMAGE_EXTENSIONS: &[&str] = &[
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// ZK-197: libwebp's WebP gets smaller with a lower quality and stays smaller than the
+    /// lossless one; transparency survives; the EXIF chunk is readable by another decoder.
+    #[test]
+    fn webp_with_quality() {
+        let (w, h) = (240u32, 160u32);
+        let mut rgba = Vec::with_capacity((w * h * 4) as usize);
+        for y in 0..h {
+            for x in 0..w {
+                let n = ((x * 7919 + y * 104_729) % 97) as u8;
+                let a = if x < 20 { 0 } else { 255 };
+                rgba.extend_from_slice(&[(x as u8).wrapping_add(n), (y as u8) ^ n, 128, a]);
+            }
+        }
+        let enc = |quality, lossless| {
+            let opts = Encode {
+                format: Format::Webp,
+                quality,
+                lossless,
+                white_bg: false,
+            };
+            encode(w, h, &rgba, opts, None).unwrap()
+        };
+        let (low, high, exact) = (enc(40, false), enc(90, false), enc(90, true));
+        assert!(
+            low.len() < high.len() && high.len() < exact.len(),
+            "{} {} {}",
+            low.len(),
+            high.len(),
+            exact.len()
+        );
+        let back = image::load_from_memory(&low).unwrap().to_rgba8();
+        assert_eq!(back.dimensions(), (w, h));
+        assert!(back.get_pixel(5, 5)[3] < 10 && back.get_pixel(100, 5)[3] > 245);
+
+        let exif = b"MM\0*\0\0\0\x08\0\0".to_vec();
+        let with = webp_with_exif(&low, w, h, &exif).unwrap();
+        use image::ImageDecoder;
+        let mut dec = image::codecs::webp::WebPDecoder::new(std::io::Cursor::new(&with)).unwrap();
+        assert_eq!(dec.exif_metadata().unwrap(), Some(exif));
+        assert_eq!(dec.dimensions(), (w, h));
+    }
 
     /// A 2 × 1 uncompressed RGB TIFF, written by hand: the `image` crate here has no TIFF, so
     /// this goes through the system decoder (ZK-65).

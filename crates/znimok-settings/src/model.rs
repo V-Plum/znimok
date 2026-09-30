@@ -303,6 +303,10 @@ pub struct ExportPrefs {
     pub format: ExportFormat,
     /// JPEG quality, 1–100.
     pub jpeg_quality: u8,
+    /// WebP quality, 1–100, when not lossless (ZK-197).
+    pub webp_quality: u8,
+    /// WebP without loss (larger; the only WebP before ZK-197).
+    pub webp_lossless: bool,
     pub scale: ExportScale,
     /// Width in pixels when `scale` is `Width`.
     pub width: u32,
@@ -318,6 +322,8 @@ impl Default for ExportPrefs {
         Self {
             format: ExportFormat::Png,
             jpeg_quality: 90,
+            webp_quality: 85,
+            webp_lossless: false,
             scale: ExportScale::Full,
             width: 1280,
             white_bg: false,

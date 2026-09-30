@@ -4431,6 +4431,8 @@ export component AppWindow inherits Window {
     in property <[ExportCard]> exp-cards;
     in property <int> exp-format;
     in property <int> exp-quality: 90;
+    // WebP without loss (ZK-197).
+    in property <bool> exp-lossless;
     in property <int> exp-scale: 1;
     in-out property <string> exp-width;
     in property <bool> exp-metadata;
@@ -4550,7 +4552,9 @@ export component AppWindow inherits Window {
                         horizontal-stretch: 1;
                         spacing: 10px;
                         alignment: start;
-                        if root.exp-format == 1: VerticalLayout {
+                        // WebP (ZK-197): lossless, or a quality like JPEG's.
+                        if root.exp-format == 2: SwitchRow { text: @tr("export-lossless" => "Lossless"); checked: root.exp-lossless; toggled => { root.exp-set("lossless", self.checked ? 1 : 0); } }
+                        if root.exp-format == 1 || (root.exp-format == 2 && !root.exp-lossless): VerticalLayout {
                             spacing: 8px;
                             HorizontalLayout {
                                 Text { text: @tr("export-quality" => "Quality"); color: Theme.text3; font-size: 11px; font-weight: 600; letter-spacing: 0.4px; horizontal-stretch: 1; }

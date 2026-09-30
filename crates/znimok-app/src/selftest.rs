@@ -2443,6 +2443,33 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
             q60 > 0 && q90 > q60,
             format!("{q60} vs {q90} bytes"),
         );
+        // ZK-197: WebP through libwebp with its own quality (JPEG's stays), or lossless.
+        let webp = |q: i32, lossless: bool, file: &str| {
+            ui.invoke_export();
+            ui.invoke_exp_set("format".into(), 2);
+            ui.invoke_exp_set("lossless".into(), lossless as i32);
+            ui.invoke_exp_set("quality".into(), q);
+            ui.invoke_exp_set("scale".into(), 1);
+            ui.invoke_exp_set("remember".into(), 0);
+            let shown = ui.get_exp_quality();
+            let path = dir.join(file);
+            app.borrow_mut().export_write(ui, &path);
+            let n = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+            let ok = image::open(&path).is_ok_and(|i| i.width() > 0);
+            (n, ok, shown)
+        };
+        let (w40, ok40, shown) = webp(40, false, "sheet-q40.webp");
+        let (w90, ok90, _) = webp(90, false, "sheet-q90.webp");
+        let (wll, okll, _) = webp(90, true, "sheet-lossless.webp");
+        ui.invoke_export();
+        ui.invoke_exp_set("format".into(), 1);
+        let jpeg_kept = ui.get_exp_quality() == 90;
+        ui.invoke_exp_close();
+        r.check(
+            "export sheet: WebP quality 40 < 90 < lossless, all readable; JPEG keeps its own quality",
+            ok40 && ok90 && okll && w40 < w90 && w90 < wll && shown == 40 && jpeg_kept,
+            format!("{w40} < {w90} < {wll} bytes · shown {shown} · JPEG kept {jpeg_kept}"),
+        );
         // 50 %: half the sides, PNG.
         ui.invoke_export();
         ui.invoke_exp_set("format".into(), 0);

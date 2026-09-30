@@ -224,7 +224,8 @@ video and trimming works.
 - **Copy** (Ctrl+C) — the image to the clipboard. The Copy button can be dragged into a chat or a
   folder — a PNG file goes there. Enter repeats the last action.
 - **Export** (Ctrl+E or Ctrl+Shift+S, or Other ways next to Copy) — a sheet: the format as a card
-  with a size estimate (PNG — lossless with transparency, JPEG — quality 1–100, WebP — lossless),
+  with a size estimate (PNG — lossless with transparency, JPEG — quality 1–100, WebP — the
+  smallest: quality 1–100 or Lossless, transparency kept),
   scale 50 / 100 / 200 % or a width in px, metadata, transparent → white, the name and where to: the
   clipboard, a file or a flat copy in the library. "Remember" keeps the choice; Ctrl+Shift+E (and
   Enter after an export) repeats the last export without the sheet.
