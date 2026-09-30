@@ -167,7 +167,11 @@ fn open(gpu: &Gpu, source: Source, frames: i64) -> Rig {
                 .contains(wgpu::Features::TEXTURE_FORMAT_NV12);
             // Without a D3D11 video device (WARP on CI) the decoder is the software one.
             let want = if nv12 { "gpu" } else { "upload" };
-            assert!(i.path == want || i.path == "software", "{} instead of {want}", i.path);
+            assert!(
+                i.path == want || i.path == "software",
+                "{} instead of {want}",
+                i.path
+            );
         }
         Event::Failed(e) => panic!("player failed: {e}"),
         _ => panic!("no Opened first"),
