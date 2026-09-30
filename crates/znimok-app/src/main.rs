@@ -32,6 +32,7 @@ mod tray;
 #[cfg(test)]
 mod ui_tests;
 mod update;
+mod wins;
 
 use std::cell::RefCell;
 use std::path::PathBuf;
@@ -48,10 +49,13 @@ slint::include_modules!();
 type Shared = Rc<RefCell<App>>;
 
 thread_local! {
-    /// For results that come back from worker threads through `invoke_from_event_loop`.
+    /// The library window — the hub (ZK-107): for results that come back from worker threads
+    /// through `invoke_from_event_loop` and for everything shared. The editor windows are in
+    /// `windows`.
     static CTX: RefCell<Option<(Shared, slint::Weak<AppWindow>)>> = const { RefCell::new(None) };
 }
 
+/// Runs `f` on the library window.
 fn with_ctx(f: impl FnOnce(&mut App, &AppWindow)) {
     CTX.with(|c| {
         if let Some((app, ui)) = c.borrow().as_ref()
@@ -91,13 +95,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let store = match &selftest_dir {
         Some(d) => Some(znimok_settings::Store::open(d.join("settings.json"))),
         None => znimok_settings::Store::open_default(),
-    };
+    }
+    .map(Rc::new);
     let prefs = store.as_ref().map(|s| s.get()).unwrap_or_default();
     let lang = znimok_i18n::choose_language(
         prefs.general.language.as_deref(),
         znimok_i18n::system_language().as_deref(),
     );
-    let tr = znimok_i18n::Localizer::new(lang);
+    let tr = Rc::new(znimok_i18n::Localizer::new(lang));
     let lib_dir = app::library_dir(&prefs);
 
     // Backend pinned per OS: letting wgpu probe every backend crashed natively on a machine
@@ -166,8 +171,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     ui.set_capture_key("".into());
 
     let app: Shared = Rc::new(RefCell::new(App::new(tr, lib_dir)));
-    app.borrow_mut().use_settings(&ui, store);
+    app.borrow_mut().bind(wins::WeakCtx::LIBRARY);
     CTX.with(|c| *c.borrow_mut() = Some((app.clone(), ui.as_weak())));
+    app.borrow_mut().use_settings(&ui, store);
     app.borrow_mut().refresh_library(&ui);
 
     wire(&ui, &app);
@@ -240,8 +246,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             });
         }
         {
-            let app = app.clone();
-            let weak = ui.as_weak();
             {
                 let weak = ui.as_weak();
                 let tw = t.as_weak();
@@ -260,14 +264,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 });
             }
-            t.on_quit(move || match weak.upgrade() {
-                Some(ui) => confirm_leave(&app, &ui, |_, _| {
-                    let _ = slint::quit_event_loop();
-                }),
-                None => {
-                    let _ = slint::quit_event_loop();
-                }
-            });
+            // Every editor window saves (or asks) first (ZK-107).
+            t.on_quit(wins::quit_all);
         }
         t.show()?;
         TRAY.with(|c| c.set(true));
@@ -312,31 +310,40 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 if instance.as_ref().is_some_and(|i| i.take_wake()) {
                     show_window(&ui);
                 }
-                // macOS: the Dock icon only while the editor window is open; the menu bar glyph
-                // stays a template (a no-op once it is one; heals an image replaced by Slint).
+                // macOS: the Dock icon only while a window is open; the menu bar glyph stays a
+                // template (a no-op once it is one; heals an image replaced by Slint).
                 #[cfg(target_os = "macos")]
                 if TRAY.with(|c| c.get()) {
-                    tray::dock(ui.window().is_visible());
+                    tray::dock(wins::any_visible());
                     tray::template_menu_icon();
                 }
-                let mut a = app.borrow_mut();
-                a.tick_toast(&ui);
-                a.lib_poll(&ui, false);
-                a.update_tick(&ui);
-                if let Some((path, doc, opts, video)) = a.autosave_job(&ui) {
-                    std::thread::spawn(move || {
-                        if let Some(dir) = path.parent() {
-                            let _ = std::fs::create_dir_all(dir);
-                        }
-                        let r = {
-                            let _guard = app::SAVE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-                            znimok_format::save_same_kind(&path, &doc, video.as_ref(), &opts)
-                                .map_err(|e| e.to_string())
-                        };
-                        let _ = slint::invoke_from_event_loop(move || {
-                            with_ctx(|a, ui| a.save_finished(ui, &path, r));
+                app.borrow_mut().lib_poll(&ui, false);
+                // Every window (ZK-107): its message, its autosave; the update check in the
+                // library and in a window that started one (editors first: they take Sparkle's
+                // events for the check they began).
+                for (app, ui) in wins::all().into_iter().rev() {
+                    let Ok(mut a) = app.try_borrow_mut() else {
+                        continue;
+                    };
+                    a.tick_toast(&ui);
+                    a.update_tick(&ui);
+                    if let Some((path, doc, opts, video)) = a.autosave_job(&ui) {
+                        let me = a.me();
+                        std::thread::spawn(move || {
+                            if let Some(dir) = path.parent() {
+                                let _ = std::fs::create_dir_all(dir);
+                            }
+                            let r = {
+                                let _guard =
+                                    app::SAVE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+                                znimok_format::save_same_kind(&path, &doc, video.as_ref(), &opts)
+                                    .map_err(|e| e.to_string())
+                            };
+                            let _ = slint::invoke_from_event_loop(move || {
+                                me.with(|a, ui| a.save_finished(ui, &path, r));
+                            });
                         });
-                    });
+                    }
                 }
             },
         );
@@ -409,16 +416,15 @@ fn hotkey_pressed(a: hotkeys::Action) {
             if overlay::is_open() || !capture::available() {
                 return;
             }
-            confirm_leave(&app, &ui, |app, ui| start_capture(app, ui, true));
+            start_capture(&app, &ui, true);
         }
+        // A window of its own (ZK-107); nothing in the clipboard: the library says so.
         hotkeys::Action::Clipboard => {
-            show_window(&ui);
-            confirm_leave(&app, &ui, |app, ui| app.borrow_mut().open_clipboard(ui));
+            if !app.borrow_mut().open_clipboard(&ui) {
+                show_window(&ui);
+            }
         }
-        hotkeys::Action::Editor => {
-            show_window(&ui);
-            confirm_leave(&app, &ui, |app, ui| app.borrow_mut().open_blank(ui));
-        }
+        hotkeys::Action::Editor => app.borrow_mut().open_blank(&ui),
         // As the tray's «Зчитати коди»: the screen under the pointer, the answer in the window.
         hotkeys::Action::ReadCodes => {
             if !overlay::is_open() && capture::available() {
@@ -475,6 +481,28 @@ fn confirm_leave(app: &Shared, ui: &AppWindow, then: impl FnOnce(&Shared, &AppWi
     );
 }
 
+/// The window's close button (ZK-107): an editor saves (or asks) and goes; the library hides.
+fn close_window(app: &Shared, ui: &AppWindow) {
+    if app.borrow().role == wins::Role::Editor {
+        confirm_leave(app, ui, |app, ui| app.borrow_mut().close_document(ui));
+        return;
+    }
+    let _ = ui.hide();
+    wins::maybe_quit();
+}
+
+/// «Бібліотека» / Esc in an editor (ZK-107): the document is saved (or asks), its window goes,
+/// the library comes to the front.
+fn back_to_library(app: &Shared, ui: &AppWindow) {
+    if app.borrow().role != wins::Role::Editor {
+        return;
+    }
+    confirm_leave(app, ui, |app, ui| {
+        app.borrow_mut().close_document(ui);
+        wins::show_library();
+    });
+}
+
 /// Unsaved changes with autosave off: the owner decides.
 fn must_ask(app: &Shared) -> bool {
     let a = app.borrow();
@@ -516,11 +544,9 @@ fn insert_image_with_dialog(app: &Shared, ui: &AppWindow) {
 }
 
 fn open_with_dialog(app: &Shared, ui: &AppWindow) {
-    confirm_leave(app, ui, |app, ui| {
-        if let Some(p) = pick_open(app) {
-            app.borrow_mut().open_path(ui, &p);
-        }
-    });
+    if let Some(p) = pick_open(app) {
+        app.borrow_mut().open_path(ui, &p);
+    }
 }
 
 fn export_with_dialog(app: &Shared, ui: &AppWindow) {
@@ -550,24 +576,19 @@ fn new_shot(app: &Shared, ui: &AppWindow) {
     if !capture::available() {
         return;
     }
-    confirm_leave(app, ui, start_shot);
-}
-
-fn start_shot(app: &Shared, ui: &AppWindow) {
     start_capture(app, ui, false);
 }
 
 /// Freezes the display under the pointer; `whole` = straight into the editor (the whole-screen
 /// hotkey), otherwise the overlay to choose what to keep.
-fn start_capture(app: &Shared, ui: &AppWindow, whole: bool) {
+fn start_capture(_app: &Shared, _ui: &AppWindow, whole: bool) {
     // Already editing over the screen (ZK-58): finish that first.
-    if app.try_borrow().map(|a| a.over.is_some()).unwrap_or(true) {
+    if wins::over_active() {
         return;
     }
-    // The editor steps aside so the frozen screen does not contain it (on macOS the capture
-    // filter would drop it anyway, but the overlay should not sit on top of it either).
-    let was_visible = ui.window().is_visible();
-    let _ = ui.hide();
+    // Every window steps aside so the frozen screen does not contain them (on macOS the capture
+    // filter would drop them anyway, but the overlay should not sit on top of them either).
+    let was_visible = wins::step_aside();
     // Windows: give DWM time to take the editor off the screen before the frame is grabbed.
     let delay = Duration::from_millis(if was_visible && cfg!(windows) { 250 } else { 0 });
     std::thread::spawn(move || {
@@ -577,11 +598,12 @@ fn start_capture(app: &Shared, ui: &AppWindow, whole: bool) {
             let _ = slint::invoke_from_event_loop(move || {
                 with_ctx(|a, ui| match r {
                     Ok(frozen) if whole => {
-                        show_window(ui);
+                        wins::come_back();
                         a.new_document(ui, frozen.raster, "screen", None);
                     }
                     Ok(frozen) => {
                         if let Err(e) = overlay::open(frozen, was_visible) {
+                            wins::come_back();
                             show_window(ui);
                             a.toast(ui, e.to_string());
                         }
@@ -589,6 +611,7 @@ fn start_capture(app: &Shared, ui: &AppWindow, whole: bool) {
                     // macOS without the Screen Recording permission (ZK-129): the permission, or
                     // the system picker now — without it, with macOS's sharing badge on the shot.
                     Err(capture::Fail::Permission) => {
+                        wins::come_back();
                         show_window(ui);
                         let (title, body, pick, close) = (
                             a.tr.tr("perm-missing-title"),
@@ -611,6 +634,7 @@ fn start_capture(app: &Shared, ui: &AppWindow, whole: bool) {
                         );
                     }
                     Err(e) => {
+                        wins::come_back();
                         show_window(ui);
                         let msg = match e {
                             capture::Fail::Permission => a.tr.tr("err-capture-mac-perm"),
@@ -635,7 +659,7 @@ fn pick_without_permission() {
         let _ = slint::invoke_from_event_loop(move || {
             with_ctx(|a, ui| match r {
                 Ok(Some(p)) => {
-                    show_window(ui);
+                    wins::come_back();
                     let raster = znimok_core::Raster::new(p.width, p.height, p.rgba);
                     a.new_document(ui, raster, "picker", None);
                 }
@@ -651,6 +675,8 @@ fn pick_without_permission() {
     });
 }
 
+/// Ties a window's callbacks to its state; the library window and every editor window get
+/// the same wiring (ZK-107) — what differs is decided by the `App`'s role.
 fn wire(ui: &AppWindow, app: &Shared) {
     // --- rendering: the canvas texture is filled right before Slint draws.
     {
@@ -683,22 +709,23 @@ fn wire(ui: &AppWindow, app: &Shared) {
     // --- drop files onto the window (any page): open them.
     {
         use slint::winit_030::{EventResult, WinitWindowAccessor, winit};
+        let app = app.clone();
+        let weak = ui.as_weak();
+        let me = app.borrow().me();
         ui.window().on_winit_window_event(move |_, ev| {
+            let Some(ui) = weak.upgrade() else {
+                return EventResult::Propagate;
+            };
             if let winit::event::WindowEvent::Resized(_) = ev {
-                let ctx = CTX.with(|c| c.borrow().clone());
-                if let Some((_, weak)) = ctx
-                    && let Some(ui) = weak.upgrade()
-                {
-                    frame::on_resized(&ui);
-                }
+                frame::on_resized(&ui);
             }
-            // The system switched light / dark (ZK-46): "as the system" follows at once.
-            // (The event's value is the window's own appearance on macOS — ours — so the system
-            // is asked directly.)
+            // The system switched light / dark (ZK-46): "as the system" follows at once, in
+            // every window. (The event's value is the window's own appearance on macOS — ours —
+            // so the system is asked directly.)
             if let winit::event::WindowEvent::ThemeChanged(_) = ev {
                 let dark = system::system_dark();
                 let _ = slint::invoke_from_event_loop(move || {
-                    with_ctx(|a, ui| a.system_theme(ui, dark));
+                    wins::for_each(|a, ui| a.system_theme(ui, dark));
                 });
             }
             // Settings → hotkeys: the next combination pressed, as physical keys (ZK-44).
@@ -715,7 +742,7 @@ fn wire(ui: &AppWindow, app: &Shared) {
                         let name = format!("{code:?}");
                         let mods = MODS.with(|c| c.get());
                         let _ = slint::invoke_from_event_loop(move || {
-                            with_ctx(|a, ui| a.hotkey_key(ui, &name, mods));
+                            me.with(|a, ui| a.hotkey_key(ui, &name, mods));
                         });
                     }
                     return EventResult::PreventDefault;
@@ -726,32 +753,31 @@ fn wire(ui: &AppWindow, app: &Shared) {
             match ev {
                 winit::event::WindowEvent::PinchGesture { delta, .. } => {
                     let delta = *delta;
-                    with_ctx(|a, ui| a.pinch(ui, delta));
+                    if let Ok(mut a) = app.try_borrow_mut() {
+                        a.pinch(&ui, delta);
+                    }
                     return EventResult::PreventDefault;
                 }
                 winit::event::WindowEvent::DoubleTapGesture { .. } => {
-                    with_ctx(|a, ui| a.smart_zoom(ui));
+                    if let Ok(mut a) = app.try_borrow_mut() {
+                        a.smart_zoom(&ui);
+                    }
                     return EventResult::PreventDefault;
                 }
                 _ => {}
             }
             if let winit::event::WindowEvent::DroppedFile(path) = ev {
                 let path = path.clone();
-                // Leave winit's handler first: the confirmation dialog runs a nested loop.
-                // (`invoke_from_event_loop` wakes the loop; a zero timer waits for the next event.)
+                // Leave winit's handler first (a message box or a new window from inside it
+                // is asking for trouble).
                 let _ = slint::invoke_from_event_loop(move || {
-                    let ctx = CTX.with(|c| c.borrow().clone());
-                    if let Some((app, weak)) = ctx
-                        && let Some(ui) = weak.upgrade()
-                    {
-                        // On an open document a picture becomes a mark; otherwise it opens.
-                        if app.borrow_mut().drop_image_mark(&ui, &path) {
-                            return;
+                    // On an open document a picture becomes a mark; otherwise it opens (in a
+                    // window of its own, ZK-107).
+                    me.with(|a, ui| {
+                        if !a.drop_image_mark(ui, &path) {
+                            a.open_path(ui, &path);
                         }
-                        confirm_leave(&app, &ui, move |app, ui| {
-                            app.borrow_mut().open_path(ui, &path);
-                        });
-                    }
+                    });
                 });
                 return EventResult::PreventDefault;
             }
@@ -759,7 +785,9 @@ fn wire(ui: &AppWindow, app: &Shared) {
         });
     }
 
-    // --- closing the window saves (or asks when autosave is off).
+    // --- closing: an editor window saves (or asks when autosave is off) and goes; the library
+    // window hides — with a tray icon the app stays (hotkey, "Quit" in the tray menu), without
+    // one (self-test) the last window closed ends it.
     {
         let app = app.clone();
         let weak = ui.as_weak();
@@ -767,25 +795,8 @@ fn wire(ui: &AppWindow, app: &Shared) {
             let Some(ui) = weak.upgrade() else {
                 return slint::CloseRequestResponse::HideWindow;
             };
-            if must_ask(&app) {
-                // The question is answered later; the window stays until then.
-                confirm_leave(&app, &ui, |_, ui| {
-                    let _ = ui.hide();
-                    if !TRAY.with(|c| c.get()) {
-                        let _ = slint::quit_event_loop();
-                    }
-                });
-                return slint::CloseRequestResponse::KeepWindowShown;
-            }
-            if !leave_quietly(&app, &ui) {
-                return slint::CloseRequestResponse::KeepWindowShown;
-            }
-            // With a tray icon the app stays (hotkey, "Quit" in the tray menu); without one
-            // (self-test) closing the window ends it.
-            if !TRAY.with(|c| c.get()) {
-                let _ = slint::quit_event_loop();
-            }
-            slint::CloseRequestResponse::HideWindow
+            close_window(&app, &ui);
+            slint::CloseRequestResponse::KeepWindowShown
         });
     }
 
@@ -826,14 +837,10 @@ fn wire(ui: &AppWindow, app: &Shared) {
         let app = app.clone();
         let weak = ui.as_weak();
         ui.on_window_close(move || {
-            let Some(ui) = weak.upgrade() else { return };
-            // Same as the system close button: save or ask, then hide to the tray (or quit).
-            confirm_leave(&app, &ui, |_, ui| {
-                let _ = ui.hide();
-                if !TRAY.with(|c| c.get()) {
-                    let _ = slint::quit_event_loop();
-                }
-            });
+            // Same as the system close button.
+            if let Some(ui) = weak.upgrade() {
+                close_window(&app, &ui);
+            }
         });
     }
 
@@ -868,22 +875,18 @@ fn wire(ui: &AppWindow, app: &Shared) {
             }
         });
     }
-    {
-        let app = app.clone();
-        let weak = ui.as_weak();
-        ui.on_open_clipboard(move || {
-            let Some(ui) = weak.upgrade() else { return };
-            confirm_leave(&app, &ui, |app, ui| app.borrow_mut().open_clipboard(ui));
-        });
-    }
+    on!(ui, app, on_open_clipboard, |a, w| {
+        a.open_clipboard(&w);
+    });
 
     // --- editor
     {
         let app = app.clone();
         let weak = ui.as_weak();
         ui.on_back(move || {
-            let Some(ui) = weak.upgrade() else { return };
-            confirm_leave(&app, &ui, |app, ui| app.borrow_mut().close_document(ui));
+            if let Some(ui) = weak.upgrade() {
+                back_to_library(&app, &ui);
+            }
         });
     }
     on!(ui, app, on_undo, |a, w| {
@@ -950,9 +953,7 @@ fn wire(ui: &AppWindow, app: &Shared) {
                 KeyAction::Export => export_with_dialog(&app, &ui),
                 KeyAction::Open => open_with_dialog(&app, &ui),
                 KeyAction::InsertImage => insert_image_with_dialog(&app, &ui),
-                KeyAction::Back => {
-                    confirm_leave(&app, &ui, |app, ui| app.borrow_mut().close_document(ui))
-                }
+                KeyAction::Back => back_to_library(&app, &ui),
                 KeyAction::None => {}
             }
         });
@@ -990,7 +991,7 @@ fn wire(ui: &AppWindow, app: &Shared) {
     });
     on!(ui, app, on_read_codes, |a, _w| {
         if let Some((w, h, rgba)) = a.flatten() {
-            codes::read_and_show(znimok_core::Raster::new(w, h, rgba));
+            codes::read_and_show(znimok_core::Raster::new(w, h, rgba), a.me());
         }
     });
     on!(ui, app, on_canvas_double, |a, w, x, y| {

@@ -101,6 +101,15 @@ fn ten_clicks_on_applied(ui: &AppWindow) {
             button: PointerEventButton::Left,
         });
     }
+/// The window a step works in: the newest editor with a document, else the library (ZK-107).
+fn current(lib_app: &Shared, lib_ui: &AppWindow) -> (Shared, AppWindow) {
+    crate::wins::newest_editor().unwrap_or_else(|| (lib_app.clone(), lib_ui.clone_strong()))
+}
+
+/// The editor window opened by the call just made in this step (a document opens in a window
+/// of its own, ZK-107), or the window given when there is none.
+fn opened(app: &Shared, ui: &AppWindow) -> (Shared, AppWindow) {
+    current(app, ui)
 }
 
 fn click(app: &Shared, ui: &AppWindow, at: (f32, f32)) {
@@ -2286,6 +2295,7 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
         a.save_now(ui);
         let dir = a.lib_dir.clone();
         a.close_document(ui);
+        drop(a);
         let Some(raster) = raster else { return };
         let display = znimok_platform::Rect {
             x: 0,
@@ -2295,20 +2305,31 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
         };
         let n0 = count(&dir);
         let frame = znimok_core::IRect::new(10, 10, 200, 100);
-        a.over_open(ui, raster.clone(), frame, "region", display, true);
-        a.over_finish(ui, false, false);
+        // ZK-107: each "over the screen" is an editor window of its own; the library window
+        // (`lib`) opens it and stays where it is.
+        let Some((lib, lib_ui)) = crate::wins::library() else {
+            r.check("over the screen: the library window", false, String::new());
+            return;
+        };
+        lib.borrow_mut()
+            .over_open(&lib_ui, raster.clone(), frame, "region", display);
+        let (o1, o1_ui) = current(&lib, &lib_ui);
+        let over1 = o1_ui.get_over_screen() && !Rc::ptr_eq(&o1, &lib);
+        o1.borrow_mut().over_finish(&o1_ui, false, false);
         let n1 = count(&dir);
-        a.over_open(ui, raster.clone(), frame, "region", display, true);
-        a.over_finish(ui, false, true);
+        lib.borrow_mut()
+            .over_open(&lib_ui, raster.clone(), frame, "region", display);
+        let (o2, o2_ui) = current(&lib, &lib_ui);
+        o2.borrow_mut().over_finish(&o2_ui, false, true);
         let n2 = count(&dir);
-        let back = !ui.get_over_screen() && ui.get_page() == 0;
+        let back = !lib_ui.get_over_screen() && lib_ui.get_page() == 0;
         // What follows expects a document in the editor.
-        a.new_document(ui, raster, "region", None);
-        drop(a);
+        lib.borrow_mut()
+            .new_document(&lib_ui, raster, "region", None);
         r.check(
             "over the screen: Esc keeps nothing, Ctrl+S saves to the library",
-            n1 == n0 && n2 == n0 + 1 && back,
-            format!("{n0} → {n1} → {n2} · back to the library {back}"),
+            over1 && n1 == n0 && n2 == n0 + 1 && back,
+            format!("own window {over1} · {n0} → {n1} → {n2} · library page 0: {back}"),
         );
         crate::pill::close();
     }));
@@ -2357,6 +2378,7 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
         let raster = znimok_core::Raster::new(w, h, rgba);
         QR_SCENE.with(|q| *q.borrow_mut() = Some(raster.clone()));
         app.borrow_mut().new_document(ui, raster, "region", None);
+        let (_, ui) = opened(app, ui);
         ui.invoke_read_codes();
     }));
     // (the reading runs on a worker thread; one step later it has answered)
@@ -2520,6 +2542,7 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
         );
         let written = std::fs::write(&path, bytes).is_ok();
         app.borrow_mut().open_path(ui, &path);
+        let (app, ui) = &opened(app, ui);
         let opened_as_video = app.borrow().s.as_ref().is_some_and(|s| s.video.is_some());
         ui.invoke_meta_edited("title".into(), "Відео, перейменоване".into());
         let saved = app.borrow_mut().save_now(ui);
@@ -2542,6 +2565,69 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
         );
         app.borrow_mut().close_document(ui);
         let _ = std::fs::remove_file(&path);
+    }));
+
+    // ZK-107: one window per document — a second document opens in a window of its own, marks
+    // do not mix, a PNG from one dropped on the other becomes a mark there, opening a document
+    // that is open again raises its window instead of a copy, closing takes the window away.
+    steps.push(Box::new(|app, ui, r| {
+        let n1 = count(app);
+        // Windows opened by the steps before stay open (each document keeps its own).
+        let before = crate::wins::editors().len();
+        let path1 = app.borrow().s.as_ref().map(|s| s.path.clone());
+        let name1 = app.borrow().doc_name();
+        let png = r.dir.join("zk107-from-window-1.png");
+        app.borrow_mut().export_to(ui, &png);
+        let (w, h) = (320u32, 200u32);
+        let raster = znimok_core::Raster::new(w, h, vec![200; (w * h * 4) as usize]);
+        app.borrow_mut().new_document(ui, raster, "region", None);
+        let (app2, ui2) = opened(app, ui);
+        let two = crate::wins::editors().len() == before + 1 && !Rc::ptr_eq(app, &app2);
+        let n2 = count(&app2);
+        let dropped = png.exists() && app2.borrow_mut().drop_image_mark(&ui2, &png);
+        let title1 = ui.get_window_title().to_string();
+        let title2 = ui2.get_window_title().to_string();
+        let titled = title1 == format!("{name1} — Znimok")
+            && title2 == format!("{} — Znimok", app2.borrow().doc_name())
+            && title1 != title2;
+        r.check(
+            "two documents, two windows: marks stay apart, a PNG dropped from one is a mark in the other",
+            two && dropped
+                && count(&app2) == n2 + 1
+                && count(app) == n1
+                && ui.get_page() == 1
+                && ui2.get_page() == 1
+                && titled,
+            format!(
+                "windows {} · dropped {dropped} · {n2}→{} / {n1}→{} · «{title1}» / «{title2}»",
+                crate::wins::editors().len(),
+                count(&app2),
+                count(app)
+            ),
+        );
+        // The first document again: its window, not a third one.
+        if let Some(p) = path1
+            && let Some((lib, lib_ui)) = crate::wins::library()
+        {
+            lib.borrow_mut().open_path(&lib_ui, &p);
+        }
+        r.check(
+            "opening an open document raises its window, no copy",
+            crate::wins::editors().len() == before + 1,
+            format!("{} windows", crate::wins::editors().len()),
+        );
+        app2.borrow_mut().close_document(&ui2);
+        let _ = std::fs::remove_file(&png);
+        WINDOWS_BEFORE.with(|w| w.set(before));
+    }));
+    steps.push(Box::new(|app, _, r| {
+        let n = crate::wins::editors().len();
+        let before = WINDOWS_BEFORE.with(|w| w.get());
+        r.check(
+            "a closed document's window is gone; the first is current again",
+            n == before && app.borrow().s.is_some(),
+            format!("{n} windows, {before} before"),
+        );
     }));
 
     // ZK-132: the Agents and Updates pages; the MCP switch is the one the server checks.
@@ -2934,8 +3020,11 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
             let next = steps.borrow_mut().next();
             match next {
                 Some(step) => {
-                    step(&app, &ui, &mut report.borrow_mut());
-                    ui.window().request_redraw();
+                    // ZK-107: a step drives the newest window with a document — the editor the
+                    // previous step opened — or the library when none is open.
+                    let (a, w) = current(&app, &ui);
+                    step(&a, &w, &mut report.borrow_mut());
+                    w.window().request_redraw();
                 }
                 None => {
                     t2.stop();
@@ -2985,4 +3074,6 @@ thread_local! {
 
 thread_local! {
     static MULTI_WINDOWS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    /// ZK-107: editor windows before the two-window step opened its second one.
+    static WINDOWS_BEFORE: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }

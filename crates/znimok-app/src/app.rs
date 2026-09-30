@@ -239,12 +239,15 @@ pub struct Session {
 pub struct Over {
     pub display: znimok_platform::Rect,
     restore: Option<crate::over::Restore>,
-    editor_was_visible: bool,
     source: &'static str,
 }
 
 pub struct App {
-    pub tr: Localizer,
+    /// The library window (the hub) or an editor window (ZK-107).
+    pub role: crate::wins::Role,
+    /// This window, for its own timers and worker threads.
+    me: crate::wins::WeakCtx,
+    pub tr: std::rc::Rc<Localizer>,
     pub lib_dir: PathBuf,
     entries: Vec<Entry>,
     filter: String,
@@ -338,8 +341,8 @@ pub struct App {
     /// How the picture last left the editor — Enter repeats it (ZK-60, LH): false copy,
     /// true export.
     last_export: bool,
-    /// settings.json (ZK-56); `None` when the OS gives no config folder.
-    store: Option<znimok_settings::Store>,
+    /// settings.json (ZK-56); `None` when the OS gives no config folder. Shared by the windows.
+    store: Option<std::rc::Rc<znimok_settings::Store>>,
     /// Page shown before the settings (Esc / back returns there).
     settings_from: i32,
     /// The last document moved to the trash: (where it is now, where it was) — for "Undo".
@@ -407,8 +410,11 @@ fn bounds_of_points(points: &[(i32, i32)]) -> IRect {
 }
 
 impl App {
-    pub fn new(tr: Localizer, lib_dir: PathBuf) -> Self {
+    /// The library window's state.
+    pub fn new(tr: std::rc::Rc<Localizer>, lib_dir: PathBuf) -> Self {
         Self {
+            role: crate::wins::Role::Library,
+            me: crate::wins::WeakCtx::UNBOUND,
             tr,
             lib_dir,
             entries: Vec::new(),
@@ -492,12 +498,40 @@ impl App {
         }
     }
 
+    /// An editor window's state (ZK-107): the language and the folder of the hub, no library
+    /// index of its own (the index is a database, opened once, by the library window).
+    pub fn new_editor(parent: &App) -> Self {
+        let mut a = Self::new(parent.tr.clone(), parent.lib_dir.clone());
+        a.role = crate::wins::Role::Editor;
+        a
+    }
+
+    /// Ties the state to its window's handle (once, right after creation).
+    pub fn bind(&mut self, me: crate::wins::WeakCtx) {
+        self.me = me;
+    }
+
+    /// This window, for timers and worker threads.
+    pub fn me(&self) -> crate::wins::WeakCtx {
+        self.me
+    }
+
+    pub fn store_handle(&self) -> Option<std::rc::Rc<znimok_settings::Store>> {
+        self.store.clone()
+    }
+
     // ------------------------------------------------------------------ settings (ZK-56)
 
     /// Takes the settings store and applies what the app already honours.
-    pub fn use_settings(&mut self, ui: &AppWindow, store: Option<znimok_settings::Store>) {
+    pub fn use_settings(
+        &mut self,
+        ui: &AppWindow,
+        store: Option<std::rc::Rc<znimok_settings::Store>>,
+    ) {
         self.store = store;
-        library::purge_trash(&self.lib_dir);
+        if self.role == crate::wins::Role::Library {
+            library::purge_trash(&self.lib_dir);
+        }
         let p = self.prefs();
         self.autosave = p.editor.autosave;
         ui.set_autosave(self.autosave);
@@ -509,6 +543,29 @@ impl App {
         self.settings_sync(ui);
     }
 
+    /// The settings changed in another window (ZK-107): what this window shows of them.
+    pub fn reload_prefs(&mut self, ui: &AppWindow) {
+        let p = self.prefs();
+        let lang = znimok_i18n::choose_language(
+            p.general.language.as_deref(),
+            znimok_i18n::system_language().as_deref(),
+        );
+        if lang != self.tr.lang() {
+            self.tr = std::rc::Rc::new(Localizer::new(lang));
+        }
+        self.autosave = p.editor.autosave;
+        ui.set_autosave(self.autosave);
+        ui.set_export_meta(p.editor.write_metadata);
+        self.lib_dir = library_dir(&p);
+        self.show_recent_colours(ui);
+        self.apply_theme(ui, &p);
+        self.settings_sync(ui);
+        self.show_capture_key(ui);
+        self.show_cards(ui);
+        self.sync(ui);
+        ui.window().request_redraw();
+    }
+
     /// Light / dark / as the system for the main window, the card after a capture and the
     /// macOS window chrome (the overlay stays dark by itself).
     pub fn apply_theme(&self, ui: &AppWindow, p: &znimok_settings::Settings) {
@@ -517,19 +574,16 @@ impl App {
         ui.global::<crate::Theme>().set_system_dark(dark);
         SYSTEM_DARK.with(|d| d.set(dark));
         ui.global::<crate::Theme>().set_mode(mode);
-        // "As the system" follows a change of the system's theme within a couple of seconds.
-        if !self.theme_timer.running() {
-            let weak = ui.as_weak();
+        // "As the system" follows a change of the system's theme within a couple of seconds
+        // (one watcher, in the library window; every window is told).
+        if self.role == crate::wins::Role::Library && !self.theme_timer.running() {
             self.theme_timer.start(
                 slint::TimerMode::Repeated,
                 std::time::Duration::from_secs(2),
                 move || {
                     let dark = crate::system::system_dark();
-                    if SYSTEM_DARK.with(|d| d.get()) != dark
-                        && let Some(ui) = weak.upgrade()
-                    {
-                        crate::with_ctx(|a, ui| a.system_theme(ui, dark));
-                        let _ = ui;
+                    if SYSTEM_DARK.with(|d| d.get()) != dark {
+                        crate::wins::for_each(|a, ui| a.system_theme(ui, dark));
                     }
                 },
             );
@@ -566,6 +620,8 @@ impl App {
             let msg = format!("{} ({e})", self.tr.tr("err-library-save"));
             self.toast(ui, msg);
         }
+        // The other windows follow (ZK-107).
+        crate::wins::prefs_changed(self.me);
         // The overlay reads its settings from a copy (it opens where the app is borrowed).
         crate::overlay::set_prefs(&self.prefs().capture);
     }
@@ -613,8 +669,9 @@ impl App {
             self.update_busy = true;
             ui.set_upd_status(self.tr.tr("upd-checking").into());
             ui.set_upd_busy(true);
-            crate::update::check(|found| {
-                crate::with_ctx(|a, ui| a.update_checked(ui, found));
+            let me = self.me();
+            crate::update::check(move |found| {
+                me.with(|a, ui| a.update_checked(ui, found));
             });
         }
     }
@@ -777,8 +834,9 @@ impl App {
             self.save_now(ui);
             ui.set_upd_busy(true);
             ui.set_upd_status(self.tr.tr("upd-downloading").into());
-            crate::update::install(a, |reason| {
-                crate::with_ctx(|a, ui| {
+            let me = self.me();
+            crate::update::install(a, move |reason| {
+                me.with(|a, ui| {
                     a.update_busy = false;
                     a.update_found = Some(crate::update::Found::Failed(reason));
                     let p = a.prefs();
@@ -1339,7 +1397,7 @@ impl App {
                     znimok_i18n::system_language().as_deref(),
                 );
                 let _ = slint::select_bundled_translation(l);
-                self.tr = Localizer::new(l);
+                self.tr = std::rc::Rc::new(Localizer::new(l));
                 self.show_cards(ui);
                 self.sync(ui);
             }
@@ -1487,6 +1545,11 @@ impl App {
     // ------------------------------------------------------------------ library
 
     pub fn refresh_library(&mut self, ui: &AppWindow) {
+        if self.role == crate::wins::Role::Editor {
+            // The cards and the index live in the library window (ZK-107).
+            crate::wins::library_later(|a, ui| a.refresh_library(ui));
+            return;
+        }
         if self.index.as_ref().is_none_or(|(d, _)| *d != self.lib_dir) {
             self.index = library::Index::open(&self.lib_dir).map(|i| (self.lib_dir.clone(), i));
         }
@@ -1514,10 +1577,8 @@ impl App {
 
     /// Card: to the trash, with "Undo" in the status line (ZK-55).
     pub fn lib_trash(&mut self, ui: &AppWindow, path: &Path) {
-        if self.s.as_ref().is_some_and(|s| s.path == path) {
-            // The open document: leave the editor first (autosave is on, or the user saved).
-            self.close_document(ui);
-        }
+        // An open document: its window goes first (autosave is on, or the user saved).
+        crate::wins::close_editor_of(path);
         match library::move_to_trash(&self.lib_dir, path) {
             Ok(to) => {
                 self.undo_trash = Some((to, path.to_path_buf()));
@@ -1535,9 +1596,7 @@ impl App {
 
     /// Shift+trash on a card (owner 29.09): the file is deleted, not moved to the trash.
     pub fn lib_delete_forever(&mut self, ui: &AppWindow, path: &Path) {
-        if self.s.as_ref().is_some_and(|s| s.path == path) {
-            self.close_document(ui);
-        }
+        crate::wins::close_editor_of(path);
         let msg = match std::fs::remove_file(path) {
             Ok(()) => self.tr.tr("lib-deleted-forever-toast"),
             Err(e) => format!("{} ({e})", self.tr.tr("lib-error-delete")),
@@ -1565,16 +1624,11 @@ impl App {
             self.show_cards(ui);
             return;
         }
-        if let Some(s) = self.s.as_ref()
-            && s.path == path
+        // Open in an editor window (ZK-107): renamed there, so the two do not disagree.
+        if let Some((app, win)) = crate::wins::editor_of(path)
+            && let Ok(mut a) = app.try_borrow_mut()
         {
-            self.apply(
-                ui,
-                Command::SetName {
-                    name: name.to_string(),
-                },
-            );
-            self.save_now(ui);
+            a.rename_open(&win, name);
             self.refresh_library(ui);
             return;
         }
@@ -1595,11 +1649,26 @@ impl App {
         self.refresh_library(ui);
     }
 
+    /// The card's new name for the document open in this window.
+    pub fn rename_open(&mut self, ui: &AppWindow, name: &str) {
+        self.apply(
+            ui,
+            Command::SetName {
+                name: name.to_string(),
+            },
+        );
+        self.save_now(ui);
+    }
+
     /// Keeps the library within its limit (settings → library): the oldest screenshots go to
-    /// the trash, never the open one.
+    /// the trash, never an open one.
     pub fn apply_retention(&mut self, ui: &AppWindow) {
+        if self.role == crate::wins::Role::Editor {
+            crate::wins::library_later(|a, ui| a.apply_retention(ui));
+            return;
+        }
         let r = self.prefs().library.retention;
-        let open = self.s.as_ref().map(|s| s.path.clone());
+        let open = crate::wins::open_paths();
         let entries = library::scan(&self.lib_dir, self.index.as_ref().map(|(_, i)| i));
         let mut used: u64 = 0;
         let mut kept: u32 = 0;
@@ -1610,7 +1679,7 @@ impl App {
                 znimok_settings::RetentionBy::Count => kept >= r.count.max(1),
                 znimok_settings::RetentionBy::Size => used + size > r.size_mb.max(1) * 1024 * 1024,
             };
-            if over && open.as_deref() != Some(e.path.as_path()) {
+            if over && !open.iter().any(|p| p == &e.path) {
                 if library::move_to_trash(&self.lib_dir, &e.path).is_ok() {
                     gone += 1;
                 }
@@ -1716,7 +1785,7 @@ impl App {
     ) {
         let (doc, path) = self.build_document(raster, source, name);
         // Not on disk yet: `fresh` makes the first autosave write it.
-        self.open_session(ui, Editor::new(doc), path, true);
+        self.open_session(ui, Editor::new(doc), path, true, None);
         self.apply_retention(ui);
     }
 
@@ -1728,8 +1797,15 @@ impl App {
         frame: IRect,
         source: &'static str,
         display: znimok_platform::Rect,
-        editor_was_visible: bool,
     ) {
+        // A window of its own (ZK-107), like any document.
+        if self.takes_no_document() {
+            if let Some((app, win)) = self.spawn_editor(ui) {
+                app.borrow_mut()
+                    .over_open(&win, raster, frame, source, display);
+            }
+            return;
+        }
         let (mut doc, path) = self.build_document(raster, source, None);
         let (w, h) = doc.image_size();
         let img = IRect::new(0, 0, w as i32, h as i32);
@@ -1739,12 +1815,11 @@ impl App {
         let y1 = frame.bottom().clamp(0, img.h);
         let f = IRect::new(x0, y0, (x1 - x0).max(1), (y1 - y0).max(1));
         doc.crop = (f != img).then_some(f);
-        self.open_session(ui, Editor::new(doc), path, true);
+        self.open_session(ui, Editor::new(doc), path, true, None);
         let restore = crate::over::enter(ui, display);
         self.over = Some(Over {
             display,
             restore: Some(restore),
-            editor_was_visible,
             source,
         });
         ui.set_over_screen(true);
@@ -1772,6 +1847,7 @@ impl App {
         self.dirty = true;
         self.sync(ui);
         ui.window().request_redraw();
+        crate::wins::come_back();
     }
 
     /// Leaves "over the screen": `copy` = to the clipboard, `save` = to the library (copying
@@ -1794,13 +1870,12 @@ impl App {
             .map(|s| (s.path.clone(), s.ed.doc.name.clone()));
         ui.set_over_screen(false);
         // Out of sight first, so the window does not flash back at its old place.
-        if !o.editor_was_visible {
-            let _ = ui.hide();
-        }
+        let _ = ui.hide();
         if let Some(r) = o.restore.take() {
             crate::over::leave(ui, r);
         }
         self.close_document(ui);
+        crate::wins::come_back();
         if let (Some((w, h, rgba)), true, Some((path, name))) = (flat, saved, file) {
             let heading = match copied {
                 Some(Ok(())) => self.tr.tr(match o.source {
@@ -1846,13 +1921,43 @@ impl App {
         r
     }
 
-    fn open_session(&mut self, ui: &AppWindow, ed: Editor, path: PathBuf, fresh: bool) {
+    /// This window cannot take a document: it is the library, or it has one already — the
+    /// document goes to a new editor window (ZK-107).
+    fn takes_no_document(&self) -> bool {
+        self.role == crate::wins::Role::Library || self.s.is_some()
+    }
+
+    /// A new editor window; a failure to make one is shown here.
+    fn spawn_editor(&mut self, ui: &AppWindow) -> Option<(crate::Shared, AppWindow)> {
+        match crate::wins::spawn_editor(self) {
+            Ok(pair) => Some(pair),
+            Err(e) => {
+                self.toast(ui, e.to_string());
+                None
+            }
+        }
+    }
+
+    fn open_session(
+        &mut self,
+        ui: &AppWindow,
+        ed: Editor,
+        path: PathBuf,
+        fresh: bool,
+        video: Option<znimok_format::VideoPart>,
+    ) {
+        if self.takes_no_document() {
+            if let Some((app, win)) = self.spawn_editor(ui) {
+                app.borrow_mut().open_session(&win, ed, path, fresh, video);
+            }
+            return;
+        }
         self.s = Some(Session {
             ed,
             path,
             changed_at: Instant::now(),
             save_failed: fresh,
-            video: None,
+            video,
         });
         self.drag = None;
         self.editing = None;
@@ -1915,6 +2020,11 @@ impl App {
 
     /// Opens a `.znimok` in place, or makes a new library document from an image file.
     pub fn open_path(&mut self, ui: &AppWindow, path: &Path) {
+        // Already open: that window comes to the front, no second copy (ZK-107).
+        if let Some((_, win)) = crate::wins::editor_of(path) {
+            crate::wins::focus(&win);
+            return;
+        }
         let name = path
             .file_name()
             .map(|n| n.to_string_lossy().into_owned())
@@ -1929,10 +2039,7 @@ impl App {
         if znimok_format::is_znimok(&data) {
             match znimok_format::open_parts(path) {
                 Ok((doc, video)) => {
-                    self.open_session(ui, Editor::new(doc), path.to_path_buf(), false);
-                    if let Some(s) = self.s.as_mut() {
-                        s.video = video;
-                    }
+                    self.open_session(ui, Editor::new(doc), path.to_path_buf(), false, video);
                 }
                 Err(e) => self.toast(ui, format!("{name}: {e}")),
             }
@@ -1952,12 +2059,17 @@ impl App {
         }
     }
 
-    pub fn open_clipboard(&mut self, ui: &AppWindow) {
+    /// A new document from the clipboard; false (and a message) when there is no picture.
+    pub fn open_clipboard(&mut self, ui: &AppWindow) -> bool {
         match io::paste_image() {
-            Some(r) => self.new_document(ui, r, "clipboard", None),
+            Some(r) => {
+                self.new_document(ui, r, "clipboard", None);
+                true
+            }
             None => {
                 let msg = self.tr.tr("open-error-no-image");
                 self.toast(ui, msg);
+                false
             }
         }
     }
@@ -2100,6 +2212,12 @@ impl App {
         self.drag = None;
         self.editing = None;
         ui.set_editing(false);
+        if self.role == crate::wins::Role::Editor {
+            // The window was the document (ZK-107): it goes; the library shows the result.
+            crate::wins::destroy(self.me);
+            self.refresh_library(ui);
+            return;
+        }
         ui.set_page(0);
         ui.invoke_focus_library();
         self.refresh_library(ui);
@@ -3354,16 +3472,19 @@ impl App {
         self.caret_timer.start(
             slint::TimerMode::Repeated,
             std::time::Duration::from_millis(530),
-            || {
-                crate::with_ctx(|a, ui| {
-                    if a.editing.is_some() {
-                        a.caret_on = !a.caret_on;
-                        a.dirty = true;
-                        ui.window().request_redraw();
-                    } else {
-                        a.caret_timer.stop();
-                    }
-                })
+            {
+                let me = self.me();
+                move || {
+                    me.with(|a, ui| {
+                        if a.editing.is_some() {
+                            a.caret_on = !a.caret_on;
+                            a.dirty = true;
+                            ui.window().request_redraw();
+                        } else {
+                            a.caret_timer.stop();
+                        }
+                    })
+                }
             },
         );
     }
@@ -5609,7 +5730,10 @@ impl App {
             self.anim_timer.start(
                 slint::TimerMode::Repeated,
                 std::time::Duration::from_millis(16),
-                || crate::with_ctx(|a, ui| a.tick_anim(ui)),
+                {
+                    let me = self.me();
+                    move || me.with(|a, ui| a.tick_anim(ui))
+                },
             );
         }
     }
@@ -5859,6 +5983,12 @@ impl App {
             ui.set_ov_h(((b.y - a.y) / k) as f32);
         }
         ui.set_doc_name(doc.name.as_str().into());
+        if self.role == crate::wins::Role::Editor {
+            let title = format!("{} — Znimok", doc.name);
+            if ui.get_window_title() != title {
+                ui.set_window_title(title.into());
+            }
+        }
         if let QueryResult::State { state } = s.ed.query(&Query::GetState) {
             ui.set_can_undo(state.can_undo);
             ui.set_can_redo(state.can_redo);

@@ -181,7 +181,7 @@ fn cancel_countdown() {
     let _ = c.ui.hide();
     crate::hotkeys::grab_escape(false);
     if c.editor_was_visible {
-        crate::with_ctx(|_, ui| crate::show_window(ui));
+        crate::wins::come_back();
     }
 }
 
@@ -742,7 +742,7 @@ fn with_session(f: impl FnOnce(&mut Session) -> Option<Outcome>) {
                         ),
                         Err(_) => {
                             if editor_was_visible {
-                                crate::with_ctx(|_, ui| crate::show_window(ui));
+                                crate::wins::come_back();
                             }
                         }
                     });
@@ -761,7 +761,7 @@ fn finish(frozen: Frozen, outcome: Outcome, editor_was_visible: bool) {
     match outcome {
         Outcome::Codes(rect) => {
             if let Some(r) = frozen.crop(rect) {
-                crate::codes::read_and_show(r);
+                crate::codes::read_and_show(r, crate::wins::WeakCtx::LIBRARY);
             }
         }
         Outcome::Scroll(rect) => {
@@ -775,11 +775,9 @@ fn finish(frozen: Frozen, outcome: Outcome, editor_was_visible: bool) {
         Outcome::Cancel => {
             // (`invoke_from_event_loop` wakes the loop; a zero timer waits for the next event.)
             let _ = slint::invoke_from_event_loop(move || {
-                crate::with_ctx(|_, ui| {
-                    if editor_was_visible {
-                        crate::show_window(ui);
-                    }
-                })
+                if editor_was_visible {
+                    crate::wins::come_back();
+                }
             });
         }
         // Over the screen (ZK-58): the whole frozen display is the document, the choice its
@@ -812,8 +810,7 @@ fn finish(frozen: Frozen, outcome: Outcome, editor_was_visible: bool) {
             };
             let _ = slint::invoke_from_event_loop(move || {
                 crate::with_ctx(|a, ui| {
-                    a.over_open(ui, raster, frame, source, display, editor_was_visible);
-                    crate::show_window(ui);
+                    a.over_open(ui, raster, frame, source, display);
                 })
             });
         }
@@ -859,7 +856,7 @@ fn deliver(
             let copied = io::copy_image(w, h, raster.rgba.clone());
             let saved = a.store_quietly(ui, raster.clone(), source);
             if editor_was_visible {
-                crate::show_window(ui);
+                crate::wins::come_back();
             }
             // ZK-41: the card in the corner of this display says where the shot went.
             match (copied, saved) {
@@ -882,7 +879,7 @@ fn deliver(
                 (_, Err(e)) => a.toast(ui, e),
             }
         } else {
-            crate::show_window(ui);
+            crate::wins::come_back();
             a.new_document(ui, raster, source, None);
         }
     });

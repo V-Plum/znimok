@@ -157,12 +157,12 @@ fn finish(result: Option<(u32, u32, Vec<u8>)>) {
     crate::hotkeys::grab_escape(false);
     crate::with_ctx(|a, ui| match result {
         Some((w, h, rgba)) => {
-            crate::show_window(ui);
+            crate::wins::come_back();
             a.new_document(ui, Raster::new(w, h, rgba), "scroll", None);
         }
         None => {
             if job.editor_was_visible {
-                crate::show_window(ui);
+                crate::wins::come_back();
             }
         }
     });

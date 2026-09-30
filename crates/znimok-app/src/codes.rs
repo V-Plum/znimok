@@ -9,13 +9,14 @@ use znimok_core::Raster;
 use crate::{AppWindow, dialog};
 
 /// Reads `raster` in the background, then shows what was found.
-pub fn read_and_show(raster: Raster) {
+pub fn read_and_show(raster: Raster, me: crate::wins::WeakCtx) {
     std::thread::spawn(move || {
         let t = std::time::Instant::now();
         let codes = znimok_codes::read(raster.width, raster.height, &raster.rgba);
         let ms = t.elapsed().as_millis();
         let _ = slint::invoke_from_event_loop(move || {
-            crate::with_ctx(|a, ui| {
+            // The answer in the window that asked (ZK-107).
+            me.with(|a, ui| {
                 crate::show_window(ui);
                 show(a, ui, codes);
                 eprintln!("[codes] {ms} ms");

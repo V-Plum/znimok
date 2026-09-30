@@ -278,14 +278,8 @@ fn wire(ui: &Pill) {
             if let Some((app, weak)) = ctx
                 && let Some(ui) = weak.upgrade()
             {
-                crate::show_window(&ui);
-                if app.borrow().s.as_ref().is_some_and(|s| s.path == path) {
-                    return;
-                }
-                // Leave the open document first (asks only with autosave off).
-                crate::confirm_leave(&app, &ui, move |app, ui| {
-                    app.borrow_mut().open_path(ui, &path);
-                });
+                // Its own window, or the one that has it already (ZK-107).
+                app.borrow_mut().open_path(&ui, &path);
             }
         });
     });
@@ -293,13 +287,10 @@ fn wire(ui: &Pill) {
         close();
         let _ = slint::invoke_from_event_loop(|| {
             let ctx = crate::CTX.with(|c| c.borrow().clone());
-            if let Some((app, weak)) = ctx
+            if let Some((_, weak)) = ctx
                 && let Some(ui) = weak.upgrade()
             {
                 crate::show_window(&ui);
-                if app.borrow().s.is_some() {
-                    crate::confirm_leave(&app, &ui, |app, ui| app.borrow_mut().close_document(ui));
-                }
             }
         });
     });
