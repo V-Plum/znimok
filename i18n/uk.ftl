@@ -4900,3 +4900,56 @@ vid-track-on = Увімкнути
 # @kind: button
 # @max: 12
 vid-track-off = Вимкнути
+
+## Recording in the app (ZK-180, ZK-91)
+
+
+# @where: Settings → Hotkeys: the row of the recording hotkey
+# @kind: label
+# @max: 40
+keys-video = Почати / зупинити запис відео
+
+# @where: Tray menu while recording, followed by the time
+# @kind: menu
+# @max: 24
+tray-stop-record = Зупинити запис
+
+# @where: Settings → Recording: how a recording starts and ends
+# @kind: body
+# @max: 240
+rec-how = Клавіша запису або «Записати відео» в треї відкривають ту саму накладку, що й для знімків: потягнути — ділянка, клік — вікно, Пробіл — увесь екран. Та сама клавіша або «Стоп» завершують; відео йде в бібліотеку.
+
+# @where: Settings → Recording: sound is not captured yet
+# @kind: body
+# @max: 160
+rec-sound-later = Вибір запам'ятовується; звук записуватиметься з наступного оновлення (поки відео без звуку).
+
+# @where: Settings → Recording: what the cursor switch does for now
+# @kind: body
+# @max: 160
+rec-cursor-later = Вказівник потрапляє у відео так, як його малює система; кільця кліків — з наступним оновленням.
+
+# @where: A recording could not start; $reason from the system
+# @kind: toast
+# @max: 160
+rec-error-start = Не вдалося почати запис: { $reason }
+
+# @where: A finished recording could not be saved to the library; $reason
+# @kind: toast
+# @max: 160
+rec-error-save = Не вдалося зберегти запис: { $reason }
+
+# @where: Name of a new recording in the library; $date, $time
+# @kind: label
+# @max: 40
+rec-doc-name = Запис { $date } { $time }
+
+# @where: Recording is not available on this system yet (macOS until the next update)
+# @kind: toast
+# @max: 120
+rec-not-here = Запис на цій системі — з наступним оновленням.
+
+# @where: A recording ended without a single frame (a window that never changed)
+# @kind: toast
+# @max: 120
+rec-nothing = Нічого не записано: вікно не змінювалося, поки його записували.

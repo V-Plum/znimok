@@ -1378,6 +1378,60 @@ export component ScrollPanel inherits Window {
     }
 }
 
+// While recording (ZK-91): a thin red edge around the recorded part (four of these, outside
+// it, so they are never in the video; the mouse goes through) and the control bar next to it.
+// Matched by the window-attributes hook in main.rs: no activation, no taskbar button.
+export component RecEdge inherits Window {
+    title: "Znimok rec";
+    no-frame: true;
+    always-on-top: true;
+    background: #FF5A5F;
+    in property <bool> paused;
+    // Paused: the edge turns amber, as the bar's dot.
+    Rectangle { background: root.paused ? #FFD23F : #FF5A5F; }
+}
+
+export component RecBar inherits Window {
+    init => { Theme.mode = 2; }
+    default-font-family: "Onest";
+    title: "Znimok rec";
+    no-frame: true;
+    always-on-top: true;
+    width: 272px;
+    height: 52px;
+    background: #141418;
+    in property <string> time: "0:00";
+    in property <bool> paused;
+    callback pause();
+    callback stop();
+    HorizontalLayout {
+        padding: 10px;
+        padding-left: 14px;
+        spacing: 10px;
+        // A red dot that breathes while recording, amber while paused.
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 12px;
+                height: 12px;
+                border-radius: 6px;
+                background: root.paused ? #FFD23F : #FF5A5F;
+                opacity: root.paused ? 1 : (mod(animation-tick() / 1ms, 1400) < 900 ? 1 : 0.35);
+            }
+        }
+        Text { text: root.time; color: white; font-family: "JetBrains Mono"; font-size: 16px; font-weight: 600; vertical-alignment: center; min-width: 64px; }
+        Rectangle { horizontal-stretch: 1; }
+        VerticalLayout {
+            alignment: center;
+            TextButton { text: root.paused ? @tr("rec-resume" => "Resume") : @tr("rec-pause" => "Pause"); clicked => { root.pause(); } }
+        }
+        VerticalLayout {
+            alignment: center;
+            TextButton { text: @tr("rec-stop" => "Stop"); primary: true; clicked => { root.stop(); } }
+        }
+    }
+}
+
 export component Countdown inherits Window {
     init => { Theme.mode = 2; }
     default-font-family: "Onest";
@@ -1628,7 +1682,12 @@ export component AppTray inherits SystemTrayIcon {
     in property <bool> capture-available: true;
     in property <bool> mac: false;
     icon: tray-icon;
-    tooltip: root.paused ? @tr("tray-tooltip-paused-keys" => "Znimok — hotkeys paused") : @tr("tray-tooltip" => "Znimok");
+    tooltip: root.recording ? @tr("tray-tooltip-recording" => "Znimok — recording {0}", root.rec-time) : (root.paused ? @tr("tray-tooltip-paused-keys" => "Znimok — hotkeys paused") : @tr("tray-tooltip" => "Znimok"));
+    // ZK-180/91: recording, its time, and the hotkey that starts / stops it.
+    in property <bool> recording;
+    in property <string> rec-time;
+    in property <string> record-key;
+    callback record();
 
     callback shot();
     callback read-codes();
@@ -1646,6 +1705,11 @@ export component AppTray inherits SystemTrayIcon {
             title: @tr("tray-screen" => "Screenshot") + "    " + root.capture-key;
             enabled: root.capture-available;
             activated => { root.shot(); }
+        }
+        MenuItem {
+            title: (root.recording ? @tr("tray-stop-record" => "Stop recording") + "  " + root.rec-time : @tr("tray-record" => "Record video")) + "    " + root.record-key;
+            enabled: root.capture-available;
+            activated => { root.record(); }
         }
         MenuItem {
             title: @tr("tray-read-codes" => "Read a QR code from the screen");
@@ -2042,6 +2106,12 @@ export component AppWindow inherits Window {
     in property <bool> pref-ret-size;
     in-out property <string> pref-ret-count;
     in-out property <string> pref-trash-days;
+    // Recording (ZK-180): 30 / 60; quality 0–2; a clicked window followed; sound 0–3 (ZK-189).
+    in property <int> pref-rec-fps: 30;
+    in property <int> pref-rec-quality: 1;
+    in property <bool> pref-rec-follow: true;
+    in property <int> pref-rec-sound;
+    in property <bool> pref-rec-cursor: true;
     in-out property <string> pref-ret-mb;
     in property <string> pref-lib-dir;
     in property <string> pref-file;
@@ -2526,7 +2596,7 @@ export component AppWindow inherits Window {
                             for t in [
                                 { p: 0, t: @tr("set-page-shots" => "Screenshots") },
                                 { p: 1, t: @tr("set-page-keys" => "Hotkeys") },
-                                { p: -1, t: @tr("set-page-recording" => "Recording") },
+                                { p: 10, t: @tr("set-page-recording" => "Recording") },
                                 { p: 2, t: @tr("set-page-library" => "Library") },
                                 { p: 3, t: @tr("set-page-sharing" => "Sharing") },
                                 { p: 8, t: @tr("set-page-agents" => "Agents and models") },
@@ -2598,6 +2668,7 @@ export component AppWindow inherits Window {
                                     @tr("keys-blank" => "Blank editor"),
                                     @tr("keys-read-codes" => "Read QR codes on the screen"),
                                     @tr("keys-read-text" => "Copy text from the screen"),
+                                    @tr("keys-video" => "Start / stop video recording"),
                                 ]: VerticalLayout {
                                     spacing: 2px;
                                     HorizontalLayout {
@@ -2780,6 +2851,71 @@ export component AppWindow inherits Window {
                                 for line in root.agent-log: Text { text: line; color: Theme.text3; font-size: 11px; wrap: word-wrap; }
                             }
                             // ---- Updates (ZK-132; the updater itself is ZK-122)
+                            // ---- Recording (ZK-180)
+                            if root.settings-page == 10: VerticalLayout {
+                                spacing: 14px;
+                                Text { text: @tr("rec-intro" => "Quality and sources. Sound is off by default: you turn it on deliberately."); color: Theme.text3; font-size: 12px; wrap: word-wrap; }
+                                Text { text: @tr("rec-how" => "The recording hotkey or «Record video» in the tray opens the same overlay as for screenshots: drag — a region, click — a window, Space — the whole screen. The same key or «Stop» ends it; the video goes to the library."); color: Theme.text2; font-size: 12px; wrap: word-wrap; }
+                                Text { text: @tr("rec-fps" => "Frames per second"); color: Theme.text2; font-size: 12px; }
+                                Rectangle {
+                                    height: 32px;
+                                    width: 200px;
+                                    border-radius: 9px;
+                                    background: Theme.elevated;
+                                    HorizontalLayout {
+                                        padding: 2px;
+                                        spacing: 2px;
+                                        SegOption { text: "30"; on: root.pref-rec-fps == 30; clicked => { root.setting("rec-fps", 30); } }
+                                        SegOption { text: "60"; on: root.pref-rec-fps == 60; clicked => { root.setting("rec-fps", 60); } }
+                                    }
+                                }
+                                Text { text: @tr("rec-quality" => "Quality"); color: Theme.text2; font-size: 12px; }
+                                Rectangle {
+                                    height: 32px;
+                                    width: 320px;
+                                    border-radius: 9px;
+                                    background: Theme.elevated;
+                                    HorizontalLayout {
+                                        padding: 2px;
+                                        spacing: 2px;
+                                        SegOption { text: @tr("rec-quality-low" => "Lower"); on: root.pref-rec-quality == 0; clicked => { root.setting("rec-quality", 0); } }
+                                        SegOption { text: @tr("rec-quality-normal" => "Normal"); on: root.pref-rec-quality == 1; clicked => { root.setting("rec-quality", 1); } }
+                                        SegOption { text: @tr("rec-quality-high" => "High"); on: root.pref-rec-quality == 2; clicked => { root.setting("rec-quality", 2); } }
+                                    }
+                                }
+                                Text { text: @tr("rec-window-click" => "Click on a window"); color: Theme.text2; font-size: 12px; }
+                                Rectangle {
+                                    height: 32px;
+                                    width: 320px;
+                                    border-radius: 9px;
+                                    background: Theme.elevated;
+                                    HorizontalLayout {
+                                        padding: 2px;
+                                        spacing: 2px;
+                                        SegOption { text: @tr("rec-follow" => "follow it"); on: root.pref-rec-follow; clicked => { root.setting("rec-follow", 1); } }
+                                        SegOption { text: @tr("rec-as-region" => "as a region"); on: !root.pref-rec-follow; clicked => { root.setting("rec-follow", 0); } }
+                                    }
+                                }
+                                Rectangle { height: 1px; background: Theme.line; }
+                                // ZK-189: the sound's choice; the capture comes with ZK-89.
+                                Text { text: @tr("vid-sound" => "Sound"); color: Theme.text2; font-size: 12px; }
+                                Rectangle {
+                                    height: 32px;
+                                    border-radius: 9px;
+                                    background: Theme.elevated;
+                                    HorizontalLayout {
+                                        padding: 2px;
+                                        spacing: 2px;
+                                        SegOption { text: @tr("vid-no-sound" => "No sound"); on: root.pref-rec-sound == 0; clicked => { root.setting("rec-sound", 0); } }
+                                        SegOption { text: @tr("rec-system-audio" => "System sound"); on: root.pref-rec-sound == 1; clicked => { root.setting("rec-sound", 1); } }
+                                        SegOption { text: @tr("rec-microphone" => "Microphone"); on: root.pref-rec-sound == 2; clicked => { root.setting("rec-sound", 2); } }
+                                        SegOption { text: @tr("vid-sound-both" => "Both"); on: root.pref-rec-sound == 3; clicked => { root.setting("rec-sound", 3); } }
+                                    }
+                                }
+                                Text { text: @tr("rec-sound-later" => "The choice is kept; sound is recorded from the next update (for now videos are silent)."); color: Theme.attention; font-size: 11px; wrap: word-wrap; }
+                                SwitchRow { text: @tr("rec-cursor-clicks" => "Cursor and click highlight"); checked: root.pref-rec-cursor; toggled => { root.setting("rec-cursor", self.checked ? 1 : 0); } }
+                                Text { text: @tr("rec-cursor-later" => "The pointer is in the video as the system draws it; the click rings come with the next update."); color: Theme.text3; font-size: 11px; wrap: word-wrap; }
+                            }
                             if root.settings-page == 9: VerticalLayout {
                                 spacing: 14px;
                                 Text { text: root.upd-version; color: Theme.text; font-size: 13px; font-weight: 600; }

@@ -25,17 +25,20 @@ pub enum Action {
     ReadCodes,
     /// The text of a part of the screen, to the clipboard (ZK-185).
     ReadText,
+    /// Start / stop recording (ZK-180).
+    Video,
 }
 
 impl Action {
     /// In the order of the rows on the Hotkeys page.
-    pub const ALL: [Action; 6] = [
+    pub const ALL: [Action; 7] = [
         Action::Region,
         Action::Screen,
         Action::Clipboard,
         Action::Editor,
         Action::ReadCodes,
         Action::ReadText,
+        Action::Video,
     ];
 
     pub fn of(h: &znimok_settings::Hotkeys, a: Action) -> Option<KeyCombo> {
@@ -46,6 +49,7 @@ impl Action {
             Action::Editor => h.editor,
             Action::ReadCodes => h.read_codes,
             Action::ReadText => h.read_text,
+            Action::Video => h.video,
         }
     }
 
@@ -57,6 +61,7 @@ impl Action {
             Action::Editor => h.editor = c,
             Action::ReadCodes => h.read_codes = c,
             Action::ReadText => h.read_text = c,
+            Action::Video => h.video = c,
         }
     }
 }

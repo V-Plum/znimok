@@ -1,0 +1,601 @@
+//! Recording in the app (ZK-180) and its indicators (ZK-91).
+//!
+//! The recording hotkey (or «Record video» in the tray) opens the capture overlay in its video
+//! mode; what is chosen there — a region, a window, the whole screen — becomes the recording's
+//! target. While it runs: a thin red edge around the recorded part (outside it, so it is never
+//! in the video, the mouse goes through), a control bar with the time, «Pause» and «Stop»
+//! (kept out of every capture), the time in the tray. The same hotkey stops it.
+//!
+//! The MP4 is written to the cache as `.part` by `znimok-video-win`; once it is complete it is
+//! wrapped into a video document (poster = the first frame, a thumbnail for the library) on a
+//! worker thread and moved into the library; the card after a capture says so.
+//!
+//! macOS: the recording backend is ZK-88 — until then the hotkey says so.
+// Until ZK-88 most of this runs on Windows only.
+#![cfg_attr(not(windows), allow(dead_code, unused_imports, unused_variables))]
+
+use std::cell::RefCell;
+use std::path::PathBuf;
+use std::time::{Duration, Instant};
+
+use slint::ComponentHandle;
+use znimok_platform::Rect;
+
+/// What the overlay chose, in desktop units (pixels on Windows).
+#[derive(Clone, Debug)]
+pub struct Choice {
+    /// The display the recording is on (its bounds), for the indicators.
+    pub display: Rect,
+    /// The part recorded (a region, the window, the whole display).
+    pub frame: Rect,
+    /// A window chosen by a click (followed while it moves, when the settings say so).
+    pub window: Option<u64>,
+    /// "region", "window", "screen" — the document's source.
+    pub source: &'static str,
+}
+
+thread_local! {
+    static REC: RefCell<Option<Active>> = const { RefCell::new(None) };
+    /// The tray (main keeps it; its menu and tooltip follow the recording).
+    pub static TRAY: RefCell<Option<slint::Weak<crate::AppTray>>> = const { RefCell::new(None) };
+    /// The recording overlay was asked for: its choice starts a recording, not a shot.
+    static VIDEO_MODE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+struct Active {
+    #[cfg(windows)]
+    rec: Option<znimok_video_win::Recording>,
+    /// The MP4 being written (it becomes the document's stream).
+    mp4: PathBuf,
+    size: (u32, u32),
+    fps: u32,
+    source: &'static str,
+    display: Rect,
+    frame: Rect,
+    window: Option<u64>,
+    started: Instant,
+    paused_since: Option<Instant>,
+    paused_total: Duration,
+    bar: crate::RecBar,
+    edges: Vec<crate::RecEdge>,
+    timer: slint::Timer,
+}
+
+impl Active {
+    fn elapsed(&self) -> Duration {
+        let now = self.paused_since.unwrap_or_else(Instant::now);
+        now.saturating_duration_since(self.started)
+            .saturating_sub(self.paused_total)
+    }
+}
+
+pub fn is_recording() -> bool {
+    REC.with(|r| r.borrow().is_some())
+}
+
+/// The next overlay starts a recording (the hotkey, the tray).
+pub fn set_video_mode(on: bool) {
+    VIDEO_MODE.with(|m| m.set(on));
+}
+
+/// Taken once by the overlay when its choice is made.
+pub fn take_video_mode() -> bool {
+    VIDEO_MODE.with(|m| m.replace(false))
+}
+
+/// The recording hotkey / tray item: stop the running recording, or open the overlay to choose
+/// what to record.
+pub fn toggle(start_overlay: impl FnOnce()) {
+    if is_recording() {
+        stop();
+        return;
+    }
+    if cfg!(not(windows)) {
+        crate::with_ctx(|a, ui| {
+            let msg = a.tr.tr("rec-not-here");
+            a.toast(ui, msg);
+            crate::show_window(ui);
+        });
+        return;
+    }
+    if crate::overlay::is_open() || !crate::capture::available() {
+        return;
+    }
+    set_video_mode(true);
+    start_overlay();
+}
+
+/// Starts recording what the overlay chose.
+pub fn start(choice: Choice) {
+    if is_recording() {
+        return;
+    }
+    match start_inner(&choice) {
+        Ok(()) => {}
+        Err(reason) => {
+            crate::wins::come_back();
+            crate::with_ctx(|a, ui| {
+                let msg =
+                    a.tr.tr_args("rec-error-start", &crate::app::fargs(&[("reason", reason)]));
+                a.toast(ui, msg);
+                crate::show_window(ui);
+            });
+        }
+    }
+}
+
+#[cfg(not(windows))]
+fn start_inner(_choice: &Choice) -> Result<(), String> {
+    Err("ZK-88".into())
+}
+
+#[cfg(windows)]
+fn start_inner(choice: &Choice) -> Result<(), String> {
+    use znimok_platform::WindowId;
+    use znimok_video_win::{RecordRequest, Recording, Target};
+    let p = crate::with_prefs(|p| p.video.clone()).unwrap_or_default();
+    // A clicked window is followed as it moves — or recorded as the region it covers now.
+    let target = match (choice.window, p.follow_window) {
+        (Some(id), true) => Target::Window { id: WindowId(id) },
+        _ => {
+            let m = znimok_win::raw::monitors()
+                .into_iter()
+                .find(|m| m.info.bounds == choice.display)
+                .or_else(|| znimok_win::raw::monitors().into_iter().next())
+                .ok_or_else(|| "no display".to_string())?;
+            let whole = choice.frame == m.info.bounds;
+            Target::Display {
+                id: m.info.id.clone(),
+                region: (!whole).then(|| Rect {
+                    x: choice.frame.x - m.info.bounds.x,
+                    y: choice.frame.y - m.info.bounds.y,
+                    ..choice.frame
+                }),
+            }
+        }
+    };
+    let dir = crate::library::cache_dir().join("recordings");
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let mp4 = dir.join(format!(
+        "rec-{}.mp4",
+        chrono::Local::now().format("%Y%m%d-%H%M%S")
+    ));
+    let mut req = RecordRequest::new(target, mp4.clone());
+    req.fps = if p.fps >= 45 { 60 } else { 30 };
+    req.quality = match p.quality {
+        znimok_settings::Quality::Small => znimok_video::settings::Quality::Smaller,
+        znimok_settings::Quality::Normal => znimok_video::settings::Quality::Normal,
+        znimok_settings::Quality::High => znimok_video::settings::Quality::High,
+    };
+    let rec = Recording::start(req).map_err(|e| e.to_string())?;
+    let size = rec.started().size;
+    let fps = if p.fps >= 45 { 60 } else { 30 };
+    let bar = crate::RecBar::new().map_err(|e| e.to_string())?;
+    let edges = if choice.source == "screen" {
+        Vec::new()
+    } else {
+        (0..4).filter_map(|_| crate::RecEdge::new().ok()).collect()
+    };
+    bar.on_pause(toggle_pause);
+    bar.on_stop(stop);
+    let timer = slint::Timer::default();
+    timer.start(slint::TimerMode::Repeated, Duration::from_millis(250), tick);
+    REC.with(|r| {
+        *r.borrow_mut() = Some(Active {
+            rec: Some(rec),
+            mp4,
+            size,
+            fps,
+            source: choice.source,
+            display: choice.display,
+            frame: choice.frame,
+            window: choice.window.filter(|_| p.follow_window),
+            started: Instant::now(),
+            paused_since: None,
+            paused_total: Duration::ZERO,
+            bar,
+            edges,
+            timer,
+        })
+    });
+    show_indicators();
+    tick();
+    Ok(())
+}
+
+/// Pause / resume (the bar's button).
+pub fn toggle_pause() {
+    REC.with(|r| {
+        let mut r = r.borrow_mut();
+        let Some(a) = r.as_mut() else { return };
+        #[cfg(windows)]
+        if let Some(rec) = &a.rec {
+            rec.control().toggle_pause();
+        }
+        match a.paused_since.take() {
+            Some(t) => a.paused_total += t.elapsed(),
+            None => a.paused_since = Some(Instant::now()),
+        }
+        let paused = a.paused_since.is_some();
+        a.bar.set_paused(paused);
+        for e in &a.edges {
+            e.set_paused(paused);
+        }
+    });
+    tick();
+}
+
+/// Stop: the indicators go at once; the file is finished and wrapped on a worker thread.
+pub fn stop() {
+    let Some(mut a) = REC.with(|r| r.borrow_mut().take()) else {
+        return;
+    };
+    a.timer.stop();
+    let _ = a.bar.hide();
+    for e in &a.edges {
+        let _ = e.hide();
+    }
+    set_tray(false, String::new());
+    #[cfg(windows)]
+    {
+        let Some(rec) = a.rec.take() else { return };
+        let lib = crate::with_lib_dir().unwrap_or_else(crate::library::default_dir);
+        let name = doc_name();
+        let (mp4, size, fps, source, display) = (a.mp4.clone(), a.size, a.fps, a.source, a.display);
+        std::thread::spawn(move || {
+            let fin = rec.stop();
+            LAST_FRAMES.store(fin.result.frames, std::sync::atomic::Ordering::SeqCst);
+            let r = match fin.path {
+                Some(p) => wrap(&p, &lib, &name, size, fps, source, &fin.result),
+                // Nothing came: WGC sends a window's frame only when it is drawn anew, so a
+                // window that did not change for the whole recording gives no video.
+                None => Err(fin
+                    .result
+                    .error
+                    .map(|e| e.to_string())
+                    .unwrap_or_else(|| NOTHING.into())),
+            };
+            let _ = std::fs::remove_file(&mp4);
+            let _ = slint::invoke_from_event_loop(move || saved(r, name, display));
+        });
+    }
+    #[cfg(not(windows))]
+    let _ = a;
+}
+
+fn doc_name() -> String {
+    let now = chrono::Local::now();
+    let mut name = String::new();
+    crate::with_ctx(|a, _| {
+        name = a.tr.tr_args(
+            "rec-doc-name",
+            &crate::app::fargs(&[
+                ("date", now.format("%Y-%m-%d").to_string()),
+                ("time", now.format("%H.%M.%S").to_string()),
+            ]),
+        );
+    });
+    name
+}
+
+/// The finished MP4 → a video document in the library: the first frame is the poster, a
+/// thumbnail for the card; the stream is copied in, never held in memory whole.
+#[cfg(windows)]
+fn wrap(
+    mp4: &std::path::Path,
+    lib: &std::path::Path,
+    name: &str,
+    size: (u32, u32),
+    fps: u32,
+    source: &str,
+    result: &znimok_video::recorder::RecordingResult,
+) -> Result<(PathBuf, znimok_core::Raster), String> {
+    use znimok_video::traits::{Decoded, VideoDecoder};
+    let poster = {
+        let mut dec = znimok_video_win::MfDecoder::open(mp4).map_err(|e| e.to_string())?;
+        loop {
+            match dec.next().map_err(|e| e.to_string())? {
+                Some(Decoded::Video { frame, .. }) => break crate::video::nv12_to_rgba(&frame),
+                Some(_) => continue,
+                None => return Err("no frames".into()),
+            }
+        }
+    };
+    let poster = if (poster.width, poster.height) == size {
+        poster
+    } else {
+        znimok_core::Raster::solid(size.0, size.1, znimok_core::Rgb::new(20, 20, 24))
+    };
+    let mut doc = znimok_core::Document::from_raster(name.to_string(), poster.clone());
+    doc.meta.created_ms = chrono::Local::now().timestamp_millis();
+    doc.meta.source = source.into();
+    let info = znimok_format::VideoInfo {
+        width: size.0,
+        height: size.1,
+        fps_milli: fps * 1000,
+        frames: result.frames.max(1) as u32,
+        duration_hns: result.duration_hns,
+        codec: znimok_format::video::CODEC_H264,
+    };
+    let video = znimok_format::Video::new(info);
+    doc.timeline = Some(video.edit.to_timeline());
+    let opts = znimok_format::WriteOptions {
+        app_version: format!("Znimok {}", env!("CARGO_PKG_VERSION")),
+        thumbnail: Some(thumbnail(&poster)),
+        ..Default::default()
+    };
+    std::fs::create_dir_all(lib).map_err(|e| e.to_string())?;
+    let path = crate::library::new_path(lib, &doc.id.simple().to_string());
+    let part = path.with_extension("part");
+    let len = std::fs::metadata(mp4).map_err(|e| e.to_string())?.len();
+    {
+        let src = std::io::BufReader::new(std::fs::File::open(mp4).map_err(|e| e.to_string())?);
+        let mut out =
+            std::io::BufWriter::new(std::fs::File::create(&part).map_err(|e| e.to_string())?);
+        let r = {
+            let _guard = crate::app::SAVE_LOCK
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
+            znimok_format::write_video_to(&mut out, &doc, &video, src, len, &opts)
+        };
+        if let Err(e) = r {
+            drop(out);
+            let _ = std::fs::remove_file(&part);
+            return Err(e.to_string());
+        }
+        use std::io::Write;
+        out.flush().map_err(|e| e.to_string())?;
+    }
+    std::fs::rename(&part, &path).map_err(|e| e.to_string())?;
+    Ok((path, poster))
+}
+
+/// A small copy (≤ 320 × 240) for the library's card.
+fn thumbnail(r: &znimok_core::Raster) -> znimok_core::Raster {
+    let k = (320.0 / r.width as f64)
+        .min(240.0 / r.height as f64)
+        .min(1.0);
+    let (w, h) = (
+        ((r.width as f64 * k).round() as u32).max(1),
+        ((r.height as f64 * k).round() as u32).max(1),
+    );
+    let mut out = vec![0u8; (w * h * 4) as usize];
+    for y in 0..h {
+        let sy = ((y as f64 + 0.5) / k) as u32;
+        for x in 0..w {
+            let sx = ((x as f64 + 0.5) / k) as u32;
+            let s = ((sy.min(r.height - 1) * r.width + sx.min(r.width - 1)) * 4) as usize;
+            let d = ((y * w + x) * 4) as usize;
+            out[d..d + 4].copy_from_slice(&r.rgba[s..s + 4]);
+        }
+    }
+    znimok_core::Raster::new(w, h, out)
+}
+
+/// Back on the UI thread: the library shows it and the card after a capture says so.
+fn saved(r: Result<(PathBuf, znimok_core::Raster), String>, name: String, display: Rect) {
+    crate::with_ctx(|a, ui| match r {
+        Ok((path, poster)) => {
+            a.refresh_library(ui);
+            let size = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+            let heading = a.tr.tr("rec-saved");
+            let sub = a.tr.tr_args(
+                "rec-saved-details",
+                &crate::app::fargs(&[
+                    ("width", poster.width.to_string()),
+                    ("height", poster.height.to_string()),
+                    ("size", human_size(size)),
+                ]),
+            );
+            LAST_SAVED.with(|l| *l.borrow_mut() = Some(path.clone()));
+            crate::pill::show(poster, path, name, heading, sub, display);
+        }
+        Err(reason) => {
+            let msg = if reason == NOTHING {
+                a.tr.tr("rec-nothing")
+            } else {
+                a.tr.tr_args("rec-error-save", &crate::app::fargs(&[("reason", reason)]))
+            };
+            a.toast(ui, msg);
+            crate::show_window(ui);
+        }
+    });
+}
+
+/// The recording ended without a single frame.
+const NOTHING: &str = "nothing recorded";
+
+/// Frames of the last recording that ended (the self-test tells an unchanged window from a
+/// failure).
+pub static LAST_FRAMES: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(-1);
+
+thread_local! {
+    /// The last recording saved (the self-test opens it).
+    pub static LAST_SAVED: RefCell<Option<PathBuf>> = const { RefCell::new(None) };
+}
+
+fn human_size(b: u64) -> String {
+    if b >= 1 << 20 {
+        format!("{:.1} MB", b as f64 / (1u64 << 20) as f64)
+    } else {
+        format!("{} KB", (b / 1024).max(1))
+    }
+}
+
+// ------------------------------------------------------------------ indicators
+
+/// Thickness of the red edge and its gap from the recorded part, pixels.
+const EDGE: i32 = 3;
+const GAP: i32 = 2;
+
+fn show_indicators() {
+    REC.with(|r| {
+        let r = r.borrow();
+        let Some(a) = r.as_ref() else { return };
+        for e in &a.edges {
+            let _ = e.show();
+            no_touch(e.window());
+        }
+        let _ = a.bar.show();
+        crate::frame::round_window(a.bar.window());
+        keep_out_of_capture(a.bar.window());
+        place(a);
+    });
+}
+
+/// The edges around the recorded part and the bar under it (above when there is no room
+/// below, inside at the bottom when neither fits).
+fn place(a: &Active) {
+    let f = a.frame;
+    let (x0, y0) = (f.x - GAP - EDGE, f.y - GAP - EDGE);
+    let (w, h) = (
+        f.width as i32 + 2 * (GAP + EDGE),
+        f.height as i32 + 2 * (GAP + EDGE),
+    );
+    let rects = [
+        (x0, y0, w, EDGE),
+        (x0, y0 + h - EDGE, w, EDGE),
+        (x0, y0, EDGE, h),
+        (x0 + w - EDGE, y0, EDGE, h),
+    ];
+    for (e, (x, y, w, h)) in a.edges.iter().zip(rects) {
+        set_rect(e.window(), x, y, w.max(1) as u32, h.max(1) as u32);
+    }
+    let area = crate::system::work_area(a.display);
+    let k = a.bar.window().scale_factor();
+    let (bw, bh) = ((272.0 * k) as i32, (52.0 * k) as i32);
+    let cx = (f.x + f.width as i32 / 2 - bw / 2).clamp(
+        area.x + 8,
+        (area.x + area.width as i32 - bw - 8).max(area.x + 8),
+    );
+    let below = f.y + f.height as i32 + GAP + EDGE + 10;
+    let above = f.y - GAP - EDGE - 10 - bh;
+    let y = if below + bh <= area.y + area.height as i32 - 8 {
+        below
+    } else if above >= area.y + 8 {
+        above
+    } else {
+        area.y + area.height as i32 - bh - 24
+    };
+    a.bar
+        .window()
+        .set_position(slint::PhysicalPosition::new(cx, y));
+}
+
+fn set_rect(w: &slint::Window, x: i32, y: i32, width: u32, height: u32) {
+    w.set_position(slint::PhysicalPosition::new(x, y));
+    w.set_size(slint::PhysicalSize::new(width, height));
+}
+
+/// The mouse goes through the edge, and it stays out of captures.
+fn no_touch(w: &slint::Window) {
+    use slint::winit_030::WinitWindowAccessor;
+    w.with_winit_window(|w| {
+        let _ = w.set_cursor_hittest(false);
+    });
+    keep_out_of_capture(w);
+}
+
+/// Never in a screenshot or a recording (the whole screen, or a window under it).
+fn keep_out_of_capture(w: &slint::Window) {
+    #[cfg(windows)]
+    {
+        use slint::winit_030::WinitWindowAccessor;
+        use slint::winit_030::winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
+        use windows::Win32::Foundation::HWND;
+        use windows::Win32::UI::WindowsAndMessaging::{
+            SetWindowDisplayAffinity, WDA_EXCLUDEFROMCAPTURE,
+        };
+        w.with_winit_window(|w| {
+            if let Ok(h) = w.window_handle()
+                && let RawWindowHandle::Win32(h) = h.as_raw()
+            {
+                // SAFETY: the window's own handle, alive while `w` is.
+                let _ = unsafe {
+                    SetWindowDisplayAffinity(HWND(h.hwnd.get() as _), WDA_EXCLUDEFROMCAPTURE)
+                };
+            }
+        });
+    }
+    #[cfg(not(windows))]
+    let _ = w;
+}
+
+/// Every 250 ms: the time on the bar and in the tray; a followed window's new place; the end
+/// when the recording stopped by itself (the window closed, the display went away).
+fn tick() {
+    let ended = REC.with(|r| {
+        let mut r = r.borrow_mut();
+        let Some(a) = r.as_mut() else { return false };
+        #[cfg(windows)]
+        {
+            if a.rec.as_ref().is_some_and(|rec| !rec.is_running()) {
+                return true;
+            }
+            if let Some(id) = a.window {
+                let h = znimok_win::raw::hwnd(znimok_platform::WindowId(id));
+                if let Some(b) = znimok_win::raw::dwm_bounds(h)
+                    && b != a.frame
+                {
+                    a.frame = b;
+                    place(a);
+                }
+            }
+        }
+        let t = fmt(a.elapsed());
+        a.bar.set_time(t.clone().into());
+        set_tray(true, t);
+        false
+    });
+    if ended {
+        stop();
+    }
+}
+
+fn fmt(d: Duration) -> String {
+    let s = d.as_secs();
+    if s >= 3600 {
+        format!("{}:{:02}:{:02}", s / 3600, s / 60 % 60, s % 60)
+    } else {
+        format!("{}:{:02}", s / 60, s % 60)
+    }
+}
+
+fn set_tray(recording: bool, time: String) {
+    TRAY.with(|t| {
+        if let Some(t) = t.borrow().as_ref().and_then(|w| w.upgrade()) {
+            t.set_recording(recording);
+            t.set_rec_time(time.into());
+        }
+    });
+}
+
+/// For the self-test: the recording's control bar, while one runs.
+#[allow(dead_code)]
+pub fn bar_time() -> Option<String> {
+    REC.with(|r| r.borrow().as_ref().map(|a| a.bar.get_time().to_string()))
+}
+
+/// For the self-test: the recorded part and how many edges show it.
+#[allow(dead_code)]
+pub fn indicators() -> Option<(Rect, usize, bool)> {
+    REC.with(|r| {
+        r.borrow().as_ref().map(|a| {
+            (
+                a.frame,
+                a.edges.iter().filter(|e| e.window().is_visible()).count(),
+                a.bar.window().is_visible(),
+            )
+        })
+    })
+}
+
+/// For the self-test: `f` on the control bar's window, while a recording runs.
+#[allow(dead_code)]
+pub fn with_bar(f: impl FnOnce(&slint::Window)) {
+    REC.with(|r| {
+        if let Some(a) = r.borrow().as_ref() {
+            f(a.bar.window());
+        }
+    });
+}

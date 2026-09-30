@@ -2244,6 +2244,9 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
             use znimok_settings::CaptureAction as A;
             ui.set_settings_page(0);
             r.snapshot(ui, "24b-settings-shots");
+            ui.set_settings_page(10);
+            r.snapshot(ui, "24c-settings-recording");
+            ui.set_settings_page(0);
             ui.invoke_setting("gesture-plain".into(), 1);
             let g = app.borrow().prefs().capture.gestures;
             let shown = (ui.get_pref_gesture_plain(), ui.get_pref_gesture_alt());
@@ -3643,6 +3646,248 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
         }));
     }
 
+    // ZK-180/91: recording in the app — a window of Znimok itself (WGC sees windows even where the
+    // screen is out of reach, as under RDP): the edges and the bar show around it, the time runs,
+    // pause holds it; Stop wraps the MP4 into a video document in the library that opens in the
+    // «Відео» mode.
+    #[cfg(windows)]
+    steps.push(Box::new(|_, ui, r| {
+        // Another program's window (in-process windows give WGC no frames — see the note in
+        // rec.rs): VS Code where the self-test runs from it, else the editor window itself.
+        let _ = ui;
+        let hwnd = {
+            use znimok_platform::WindowList;
+            let cap = znimok_win::WinCapture::new();
+            cap.windows()
+                .unwrap_or_default()
+                .into_iter()
+                .find(|w| w.title.contains("Visual Studio Code"))
+                .map(|w| w.id.0)
+        };
+        let Some(hwnd) = hwnd else {
+            r.check(
+                "recording: a window to record",
+                true,
+                "no VS Code window — skipped".into(),
+            );
+            return;
+        };
+        let frame =
+            znimok_win::raw::dwm_bounds(znimok_win::raw::hwnd(znimok_platform::WindowId(hwnd)));
+        let display = znimok_win::raw::monitors().first().map(|m| m.info.bounds);
+        match (frame, display) {
+            (Some(frame), Some(display)) => crate::rec::start(crate::rec::Choice {
+                display,
+                frame,
+                window: Some(hwnd),
+                source: "window",
+            }),
+            _ => r.check(
+                "recording: the library window's place",
+                false,
+                format!("{frame:?}"),
+            ),
+        }
+        let ind = crate::rec::indicators();
+        r.check(
+            "recording: started on a window; four edges around it and the bar",
+            crate::rec::is_recording() && ind.is_some_and(|(_, edges, bar)| edges == 4 && bar),
+            format!("{ind:?}"),
+        );
+    }));
+    // The window changes while it is recorded (WGC sends a frame when the window is presented).
+    #[cfg(windows)]
+    for i in 0..6 {
+        steps.push(Box::new(move |_, ui, _| {
+            ui.set_toast(format!("запис {i}").into())
+        }));
+    }
+    #[cfg(windows)]
+    steps.push(Box::new(|_, _, r| {
+        let t = crate::rec::bar_time();
+        crate::rec::toggle_pause();
+        let paused_at = crate::rec::bar_time();
+        r.check(
+            "recording: the time runs on the bar; pause holds it",
+            t.as_deref().is_some_and(|t| t != "0:00") && paused_at == t,
+            format!("{t:?} → paused {paused_at:?}"),
+        );
+    }));
+    #[cfg(windows)]
+    for i in 0..3 {
+        steps.push(Box::new(move |_, ui, _| {
+            ui.set_toast(format!("пауза {i}").into())
+        }));
+    }
+    #[cfg(windows)]
+    steps.push(Box::new(|_, _, r| {
+        let held = crate::rec::bar_time();
+        crate::rec::toggle_pause();
+        crate::rec::stop();
+        r.check(
+            "recording: the time stood still while paused; stop hides the indicators",
+            held.is_some() && !crate::rec::is_recording() && crate::rec::indicators().is_none(),
+            format!("{held:?}"),
+        );
+    }));
+    // The file is finished and wrapped on a worker thread.
+    #[cfg(windows)]
+    for _ in 0..8 {
+        steps.push(Box::new(|_, _, _| {}));
+    }
+    #[cfg(windows)]
+    steps.push(Box::new(|app, ui, r| {
+        let path = crate::rec::LAST_SAVED.with(|l| l.borrow_mut().take());
+        let doc = path
+            .as_ref()
+            .and_then(|p| znimok_format::open(p).ok())
+            .and_then(|l| match l {
+                znimok_format::Loaded::Video(v) => Some((
+                    v.video.info.width,
+                    v.video.info.height,
+                    v.video.info.frames,
+                    v.doc.meta.source.clone(),
+                )),
+                _ => None,
+            });
+        let card = path
+            .as_deref()
+            .and_then(crate::library::read_entry)
+            .map(|e| e.meta_line());
+        // WGC sends a window's frame only when it is drawn anew: a window that stood still for
+        // the whole recording gives nothing, and the library says so instead of saving.
+        let frames = crate::rec::LAST_FRAMES.load(std::sync::atomic::Ordering::SeqCst);
+        if frames == 0 {
+            let said = crate::wins::library().map(|(_, u)| u.get_toast().to_string());
+            r.check(
+                "recording: a window that did not change — nothing saved, and the library says so",
+                path.is_none() && said.as_deref().is_some_and(|t| !t.is_empty()),
+                format!("{said:?}"),
+            );
+            return;
+        }
+        r.check(
+            "recording: stop leaves a video document in the library (▶ on the card)",
+            doc.as_ref()
+                .is_some_and(|(w, h, n, s)| *w > 0 && *h > 0 && *n >= 20 && s == "window")
+                && card.as_deref().is_some_and(|m| m.starts_with('▶'))
+                && crate::pill::is_open(),
+            format!(
+                "{doc:?} · {card:?} · card after capture {} · {frames} frames",
+                crate::pill::is_open()
+            ),
+        );
+        crate::pill::close();
+        if let Some(p) = path {
+            app.borrow_mut().open_path(ui, &p);
+            let (va, vui) = opened(app, ui);
+            let playing_ok = va
+                .borrow()
+                .s
+                .as_ref()
+                .and_then(|s| s.vid.as_ref())
+                .is_some_and(|v| v.player.is_some());
+            r.check(
+                "recording: the new video opens in the «Відео» mode with a player",
+                vui.get_vid_mode() && playing_ok,
+                format!("mode {} · player {playing_ok}", vui.get_vid_mode()),
+            );
+            va.borrow_mut().close_document(&vui);
+            let _ = std::fs::remove_file(&p);
+        }
+    }));
+
+    // ZK-180: the recording overlay — a region dragged on the frozen first display becomes the
+    // recorded part (desktop units = the display's origin + frame pixels). Under RDP the screen
+    // may be out of reach: then the start fails with a message, never silently.
+    #[cfg(windows)]
+    steps.push(Box::new(|_, _, r| {
+        let Some(m) = znimok_win::raw::monitors().into_iter().next() else {
+            r.check(
+                "recording overlay: a display",
+                true,
+                "none — skipped".into(),
+            );
+            return;
+        };
+        let b = m.info.bounds;
+        let frozen = crate::capture::Frozen {
+            displays: Vec::new(),
+            bounds: b,
+            windows: Vec::new(),
+            raster: znimok_core::Raster::solid(
+                b.width,
+                b.height,
+                znimok_core::Rgb::new(90, 90, 100),
+            ),
+        };
+        crate::rec::set_video_mode(true);
+        if crate::overlay::open(frozen, false).is_ok()
+            && let Some(ov) = crate::overlay::handle()
+        {
+            let osf = ov.window().scale_factor();
+            let lw = ov.window().size().width as f32 / osf;
+            let lh = ov.window().size().height as f32 / osf;
+            let (kx, ky) = (b.width as f32 / lw.max(1.0), b.height as f32 / lh.max(1.0));
+            // Frame pixels 200,150 → 840,510: a 640 × 360 region.
+            ov.invoke_pointer(0, 200.0 / kx, 150.0 / ky, false, false);
+            for i in 1..=8 {
+                let t = i as f32 / 8.0;
+                ov.invoke_pointer(
+                    1,
+                    (200.0 + 640.0 * t) / kx,
+                    (150.0 + 360.0 * t) / ky,
+                    false,
+                    false,
+                );
+            }
+            ov.invoke_pointer(2, 840.0 / kx, 510.0 / ky, false, false);
+        }
+        OVERLAY_DISPLAY.with(|d| d.set(Some((b.x, b.y))));
+    }));
+    #[cfg(windows)]
+    steps.push(Box::new(|_, _, _| {}));
+    #[cfg(windows)]
+    steps.push(Box::new(|_, _, r| {
+        let Some((x0, y0)) = OVERLAY_DISPLAY.with(|d| d.take()) else {
+            return;
+        };
+        let ind = crate::rec::indicators();
+        let said = crate::wins::library().map(|(_, u)| u.get_toast().to_string());
+        let ok = match ind {
+            // Started: the recorded part is where the region was dragged (±1 px of rounding).
+            Some((f, edges, bar)) => {
+                (f.x - (x0 + 200)).abs() <= 1
+                    && (f.y - (y0 + 150)).abs() <= 1
+                    && (f.width as i32 - 640).abs() <= 2
+                    && (f.height as i32 - 360).abs() <= 2
+                    && edges == 4
+                    && bar
+            }
+            // The screen out of reach: a message says why.
+            None => said.as_deref().is_some_and(|t| !t.is_empty()),
+        };
+        r.check(
+            "recording overlay: the dragged region is recorded (or the start says why it cannot)",
+            ok && !crate::overlay::is_open(),
+            format!("{ind:?} · {said:?}"),
+        );
+        crate::rec::with_bar(|w| r.snapshot_window(w, "41-rec-bar"));
+        crate::rec::stop();
+    }));
+    #[cfg(windows)]
+    for _ in 0..6 {
+        steps.push(Box::new(|_, _, _| {}));
+    }
+    #[cfg(windows)]
+    steps.push(Box::new(|_, _, _| {
+        // A black RDP screen still records: that document goes, and the card with it.
+        if let Some(p) = crate::rec::LAST_SAVED.with(|l| l.borrow_mut().take()) {
+            let _ = std::fs::remove_file(p);
+        }
+        crate::pill::close();
+    }));
+
     // ZK-107: one window per document — a second document opens in a window of its own, marks
     // do not mix, a PNG from one dropped on the other becomes a mark there, opening a document
     // that is open again raises its window instead of a copy, closing takes the window away.
@@ -4157,6 +4402,8 @@ thread_local! {
 }
 
 thread_local! {
+    /// The display the recording overlay test froze (ZK-180): its origin.
+    static OVERLAY_DISPLAY: std::cell::Cell<Option<(i32, i32)>> = const { std::cell::Cell::new(None) };
     /// The document made from ZNIMOK_SELFTEST_VIDEO, removed at the end (ZK-181).
     static REAL_VIDEO: std::cell::RefCell<Option<PathBuf>> = const { std::cell::RefCell::new(None) };
     static MULTI_WINDOWS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };

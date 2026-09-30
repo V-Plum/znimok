@@ -126,6 +126,11 @@ impl Recording {
         &self.started
     }
 
+    /// The loop still runs (it ends by itself when the window closes or the display goes).
+    pub fn is_running(&self) -> bool {
+        self.thread.as_ref().is_some_and(|t| !t.is_finished())
+    }
+
     /// Stop and wait for the file.
     pub fn stop(mut self) -> Finished {
         self.control.stop();

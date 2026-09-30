@@ -1373,6 +1373,17 @@ impl App {
         ui.set_pref_ret_count(p.library.retention.count.to_string().into());
         ui.set_pref_ret_mb(p.library.retention.size_mb.to_string().into());
         ui.set_pref_trash_days(p.library.trash_days.to_string().into());
+        ui.set_pref_rec_fps(if p.video.fps >= 45 { 60 } else { 30 });
+        ui.set_pref_rec_quality(match p.video.quality {
+            znimok_settings::Quality::Small => 0,
+            znimok_settings::Quality::Normal => 1,
+            znimok_settings::Quality::High => 2,
+        });
+        ui.set_pref_rec_follow(p.video.follow_window);
+        ui.set_pref_rec_sound(
+            i32::from(p.video.audio.system) | (i32::from(p.video.audio.microphone) << 1),
+        );
+        ui.set_pref_rec_cursor(p.video.cursor);
         ui.set_pref_lib_dir(self.lib_dir.display().to_string().into());
         ui.set_pref_file(
             self.store
@@ -1527,6 +1538,24 @@ impl App {
                 let n = ui.get_pref_ret_count().trim().parse::<u32>().unwrap_or(100);
                 self.save_prefs(ui, |p| p.library.retention.count = n);
             }
+            // Recording (ZK-180); the sound's choice is kept for ZK-89 (ZK-189).
+            "rec-fps" => self.save_prefs(ui, |p| p.video.fps = if value >= 45 { 60 } else { 30 }),
+            "rec-quality" => self.save_prefs(ui, |p| {
+                p.video.quality = match value {
+                    0 => znimok_settings::Quality::Small,
+                    2 => znimok_settings::Quality::High,
+                    _ => znimok_settings::Quality::Normal,
+                }
+            }),
+            "rec-follow" => self.save_prefs(ui, |p| p.video.follow_window = on),
+            "rec-sound" => self.save_prefs(ui, |p| {
+                p.video.audio.system = value & 1 != 0;
+                p.video.audio.microphone = value & 2 != 0;
+            }),
+            "rec-cursor" => self.save_prefs(ui, |p| {
+                p.video.cursor = on;
+                p.video.clicks = on;
+            }),
             "trash-days" => {
                 let n = ui
                     .get_pref_trash_days()

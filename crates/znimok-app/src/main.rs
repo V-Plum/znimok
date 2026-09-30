@@ -25,6 +25,7 @@ mod library;
 mod over;
 mod overlay;
 mod pill;
+mod rec;
 mod scroll;
 mod selftest;
 mod system;
@@ -55,6 +56,32 @@ thread_local! {
     /// through `invoke_from_event_loop` and for everything shared. The editor windows are in
     /// `windows`.
     static CTX: RefCell<Option<(Shared, slint::Weak<AppWindow>)>> = const { RefCell::new(None) };
+}
+
+/// The settings, from the library window (worker results and other modules).
+fn with_prefs<T>(f: impl FnOnce(&znimok_settings::Settings) -> T) -> Option<T> {
+    let mut out = None;
+    CTX.with(|c| {
+        if let Some((app, _)) = c.borrow().as_ref()
+            && let Ok(a) = app.try_borrow()
+        {
+            out = Some(f(&a.prefs()));
+        }
+    });
+    out
+}
+
+/// The library folder, from the library window.
+fn with_lib_dir() -> Option<PathBuf> {
+    let mut out = None;
+    CTX.with(|c| {
+        if let Some((app, _)) = c.borrow().as_ref()
+            && let Ok(a) = app.try_borrow()
+        {
+            out = Some(a.lib_dir.clone());
+        }
+    });
+    out
 }
 
 /// Runs `f` on the library window.
@@ -136,6 +163,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // The card after a capture (ZK-41) must not take the focus or show in the taskbar.
         .with_winit_window_attributes_hook(|attrs| {
             if attrs.title != pill::TITLE
+                && attrs.title != "Znimok rec"
                 && attrs.title != overlay::COUNTDOWN_TITLE
                 && attrs.title != scroll::PANEL_TITLE
             {
@@ -222,6 +250,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         t.set_tray_icon(tray::tray_icon());
         // macOS: the 400 ms timer makes the menu bar glyph a template once the item exists.
         t.set_capture_key(ui.get_capture_key());
+        {
+            // The recording hotkey, shown next to «Record video» (ZK-180).
+            let os = znimok_platform::Os::current();
+            let k = hotkeys::active(hotkeys::Action::Video)
+                .or(app.borrow().prefs().capture.hotkeys.video)
+                .map(|k| k.display(os))
+                .unwrap_or_default();
+            t.set_record_key(k.into());
+        }
         t.set_capture_available(capture::available());
         t.set_mac(cfg!(target_os = "macos"));
         {
@@ -239,6 +276,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 codes::from_screen();
             }
         });
+        // ZK-180: record video / stop recording.
+        {
+            let app = app.clone();
+            let weak = ui.as_weak();
+            t.on_record(move || {
+                if let Some(ui) = weak.upgrade() {
+                    rec::toggle(|| new_shot(&app, &ui));
+                }
+            });
+        }
+        rec::TRAY.with(|r| *r.borrow_mut() = Some(t.as_weak()));
         // ZK-185: the overlay in its text mode — the chosen part's text to the clipboard.
         {
             let app = app.clone();
@@ -465,6 +513,10 @@ fn hotkey_pressed(a: hotkeys::Action) {
                 overlay::set_text_mode(true);
                 new_shot(&app, &ui);
             }
+        }
+        // ZK-180: the overlay chooses what to record; the same key stops it.
+        hotkeys::Action::Video => {
+            rec::toggle(|| new_shot(&app, &ui));
         }
     }
 }

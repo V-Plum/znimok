@@ -4858,3 +4858,56 @@ vid-track-on = Turn on
 # @kind: button
 # @max: 12
 vid-track-off = Turn off
+
+## Recording in the app (ZK-180, ZK-91)
+
+
+# @where: Settings → Hotkeys: the row of the recording hotkey
+# @kind: label
+# @max: 40
+keys-video = Start / stop video recording
+
+# @where: Tray menu while recording, followed by the time
+# @kind: menu
+# @max: 24
+tray-stop-record = Stop recording
+
+# @where: Settings → Recording: how a recording starts and ends
+# @kind: body
+# @max: 240
+rec-how = The recording hotkey or «Record video» in the tray opens the same overlay as for screenshots: drag — a region, click — a window, Space — the whole screen. The same key or «Stop» ends it; the video goes to the library.
+
+# @where: Settings → Recording: sound is not captured yet
+# @kind: body
+# @max: 160
+rec-sound-later = The choice is kept; sound is recorded from the next update (for now videos are silent).
+
+# @where: Settings → Recording: what the cursor switch does for now
+# @kind: body
+# @max: 160
+rec-cursor-later = The pointer is in the video as the system draws it; the click rings come with the next update.
+
+# @where: A recording could not start; $reason from the system
+# @kind: toast
+# @max: 160
+rec-error-start = Could not start recording: { $reason }
+
+# @where: A finished recording could not be saved to the library; $reason
+# @kind: toast
+# @max: 160
+rec-error-save = The recording could not be saved: { $reason }
+
+# @where: Name of a new recording in the library; $date, $time
+# @kind: label
+# @max: 40
+rec-doc-name = Recording { $date } { $time }
+
+# @where: Recording is not available on this system yet (macOS until the next update)
+# @kind: toast
+# @max: 120
+rec-not-here = Recording on this system comes with the next update.
+
+# @where: A recording ended without a single frame (a window that never changed)
+# @kind: toast
+# @max: 120
+rec-nothing = Nothing was recorded: the window did not change while it was being recorded.

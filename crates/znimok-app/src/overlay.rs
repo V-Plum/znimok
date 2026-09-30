@@ -769,6 +769,38 @@ fn with_session(f: impl FnOnce(&mut Session) -> Option<Outcome>) {
 
 /// What the choice becomes: the editor, the clipboard, over the screen — or nothing.
 fn finish(frozen: Frozen, outcome: Outcome, editor_was_visible: bool) {
+    // The recording overlay (ZK-180): the choice is what is recorded, whatever the gesture.
+    if crate::rec::take_video_mode() {
+        if let Outcome::Keep(rect, source, id, _) = outcome {
+            let d = frozen.part_at(rect);
+            let x0 = rect.x.max(d.rect.x);
+            let y0 = rect.y.max(d.rect.y);
+            let x1 = (rect.x + rect.w).min(d.rect.x + d.rect.w);
+            let y1 = (rect.y + rect.h).min(d.rect.y + d.rect.h);
+            // Frame pixels → desktop units: on Windows both are pixels, only the origin moves.
+            let choice = crate::rec::Choice {
+                display: d.bounds,
+                frame: znimok_platform::Rect {
+                    x: d.bounds.x + x0 - d.rect.x,
+                    y: d.bounds.y + y0 - d.rect.y,
+                    width: (x1 - x0).max(2) as u32,
+                    height: (y1 - y0).max(2) as u32,
+                },
+                window: id,
+                source,
+            };
+            drop(frozen);
+            // The overlay is gone from the screen before the first frame.
+            slint::Timer::single_shot(std::time::Duration::from_millis(150), move || {
+                crate::rec::start(choice);
+            });
+            return;
+        }
+        if editor_was_visible {
+            let _ = slint::invoke_from_event_loop(crate::wins::come_back);
+        }
+        return;
+    }
     // In the text mode what was chosen is read for its text, whatever the gesture (ZK-185).
     let outcome = match (TEXT_MODE.with(|m| m.replace(false)), outcome) {
         (true, Outcome::Keep(rect, ..)) => Outcome::Text(rect),

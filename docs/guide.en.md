@@ -198,8 +198,17 @@ Windows HEIC/AVIF need Microsoft's free extensions).
 
 ## Video (preview)
 
-Screen recording comes in the next release; the editor already opens video documents. Such a
-document opens in the "Video" mode: the same tools, and under the canvas a transport (Space —
+**Recording (Windows).** Alt+Shift+5 or "Record video" in the tray opens the same overlay as for
+screenshots: drag — a region, click — a window (followed as it moves, or recorded "as a region" —
+in the settings), Space — the whole screen. While it records, a thin red edge runs round the part
+(outside it, so it is not in the video) and a bar next to it shows the time, "Pause" and "Stop"; the
+time is in the tray too. The same key or "Stop" ends it: the video is in the library at once, with ▶
+and its length on the card, and the card in the corner offers to open it. Settings → "Recording":
+30/60 frames, quality, how a clicked window is recorded, sound (the choice is kept; sound itself
+comes with the next update). A window that did not change for the whole recording gives an empty
+recording — Znimok says so. On macOS recording comes with the next update.
+
+**Editor.** A video document opens in the "Video" mode: the same tools, and under the canvas a transport (Space —
 play / pause, ← → — a frame, Shift+← → — a second, Home / End) and a timeline. Trimming: the white
 handles at the ends of the strip, or I / O at the current frame; a drag on the strip picks a piece —
 Del cuts it, Shift+Del keeps only it; S splits; a cut-out piece is hatched, with "Restore". The
