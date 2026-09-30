@@ -854,6 +854,10 @@ criteria = "safe-to-deploy"
 version = "0.1.4"
 criteria = "safe-to-deploy"
 
+[[exemptions.libwebp-sys]]
+version = "0.9.6"
+criteria = "safe-to-deploy"
+
 [[exemptions.linebender_resource_handle]]
 version = "0.1.1"
 criteria = "safe-to-deploy"
@@ -1856,6 +1860,10 @@ criteria = "safe-to-deploy"
 
 [[exemptions.webbrowser]]
 version = "1.2.4"
+criteria = "safe-to-deploy"
+
+[[exemptions.webp]]
+version = "0.3.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.weezl]]

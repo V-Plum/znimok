@@ -2348,7 +2348,7 @@ export-jpeg-sub = with quality
 # @where: Export sheet: WebP card, beside the title
 # @kind: label
 # @max: 20
-export-webp-sub = lossless
+export-webp-sub = smallest files
 
 # @where: Export sheet: PNG card, what it is for
 # @kind: hint
@@ -2363,7 +2363,12 @@ export-jpeg-desc = The smallest for photos and gradients; no transparency.
 # @where: Export sheet: WebP card, what it is for
 # @kind: hint
 # @max: 90
-export-webp-desc = Lossless, opens in browsers and chats.
+export-webp-desc = The smallest files, with a quality or lossless; opens in browsers and chats.
+
+# @where: Export sheet, WebP chosen: a switch; off = the quality slider (libwebp)
+# @kind: label
+# @max: 30
+export-lossless = Lossless
 
 # @where: Export sheet: under the title — the picture's size and the size it will have
 # @kind: status

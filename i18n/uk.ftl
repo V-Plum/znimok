@@ -2358,7 +2358,7 @@ export-jpeg-sub = з якістю
 # @where: Export sheet: WebP card, beside the title
 # @kind: label
 # @max: 20
-export-webp-sub = без втрат
+export-webp-sub = найменші файли
 
 # @where: Export sheet: PNG card, what it is for
 # @kind: hint
@@ -2373,7 +2373,12 @@ export-jpeg-desc = Найменший для фото й градієнтів; �
 # @where: Export sheet: WebP card, what it is for
 # @kind: hint
 # @max: 90
-export-webp-desc = Без втрат; відкривається в браузерах і чатах.
+export-webp-desc = Найменші файли — з якістю або без втрат; відкривається в браузерах і чатах.
+
+# @where: Export sheet, WebP chosen: a switch; off = the quality slider (libwebp)
+# @kind: label
+# @max: 30
+export-lossless = Без втрат
 
 # @where: Export sheet: under the title — the picture's size and the size it will have
 # @kind: status
