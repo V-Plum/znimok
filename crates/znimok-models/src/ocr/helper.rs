@@ -113,19 +113,23 @@ pub fn parse_reply(json: &[u8], mode: Mode) -> Result<OcrResult, OcrError> {
     })
 }
 
-/// `znimok-ocr.exe` and its `tessdata` next to the running app, or `ZNIMOK_OCR_HELPER`.
+/// `znimok-ocr.exe` and its `tessdata`: `ZNIMOK_OCR_HELPER`, else next to the running app (as
+/// installed), else in `target/ocr-helper` beside a build in `target/<profile>` — where
+/// `tools/ocr-helper/build.py` puts it, so a build run from the tree and the self-test read with
+/// the same engine as the installed app (ZK-202).
 pub fn find() -> Option<PathBuf> {
-    let exe = std::env::var_os("ZNIMOK_OCR_HELPER")
-        .map(PathBuf::from)
-        .or_else(|| {
-            let dir = std::env::current_exe().ok()?.parent()?.to_path_buf();
-            Some(dir.join(if cfg!(windows) {
-                "znimok-ocr.exe"
-            } else {
-                "znimok-ocr"
-            }))
-        })?;
-    usable(&exe).then_some(exe)
+    let name = if cfg!(windows) {
+        "znimok-ocr.exe"
+    } else {
+        "znimok-ocr"
+    };
+    if let Some(exe) = std::env::var_os("ZNIMOK_OCR_HELPER").map(PathBuf::from) {
+        return usable(&exe).then_some(exe);
+    }
+    let dir = std::env::current_exe().ok()?.parent()?.to_path_buf();
+    let beside = dir.join(name);
+    let built = dir.parent().map(|t| t.join("ocr-helper").join(name));
+    std::iter::once(beside).chain(built).find(|exe| usable(exe))
 }
 
 fn usable(exe: &Path) -> bool {

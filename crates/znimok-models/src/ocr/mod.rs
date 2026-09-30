@@ -135,6 +135,24 @@ pub fn read_for_masking(engine: &dyn Ocr, img: &Rgba) -> Option<OcrResult> {
     text
 }
 
+/// Languages of «text on the picture» (ZK-202), in order: Ukrainian, then English.
+pub const TEXT_LANGUAGES: [&str; 2] = ["uk", "en"];
+
+/// Text for the person (the editor's panel, the overlay, the tray, `znimok text`): the
+/// [`TEXT_LANGUAGES`] asked for by name, so an engine that has only some of them says which are
+/// missing instead of reading Cyrillic with an English model in silence; with none of them it
+/// reads with the user's languages and reports both as missing.
+pub fn read_text(engine: &dyn Ocr, img: &Rgba) -> Result<OcrResult, OcrError> {
+    match engine.recognize(img, &TEXT_LANGUAGES) {
+        Err(OcrError::NoLanguage { .. }) => {
+            let mut r = engine.recognize(img, &[])?;
+            r.missing = TEXT_LANGUAGES.iter().map(|l| l.to_string()).collect();
+            Ok(r)
+        }
+        r => r,
+    }
+}
+
 pub fn system() -> Option<Box<dyn Ocr>> {
     #[cfg(windows)]
     return Some(match helper::find() {
@@ -209,6 +227,43 @@ pub(crate) fn winrt_thread() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// An engine with only the given languages, answering like Windows OCR does.
+    struct Only(Vec<String>);
+    impl Ocr for Only {
+        fn languages(&self) -> Vec<String> {
+            self.0.clone()
+        }
+        fn recognize(&self, _: &Rgba, languages: &[&str]) -> Result<OcrResult, OcrError> {
+            let (used, missing) = match_languages(languages, &self.0);
+            if used.is_empty() && !languages.is_empty() {
+                return Err(OcrError::NoLanguage {
+                    available: self.0.clone(),
+                });
+            }
+            Ok(OcrResult {
+                lines: Vec::new(),
+                languages: used,
+                missing,
+            })
+        }
+    }
+
+    /// ZK-202: the text is asked for in Ukrainian and English by name; what the engine lacks
+    /// is reported, and an engine with neither still reads (both reported missing).
+    #[test]
+    fn read_text_names_its_languages() {
+        let img = Rgba::new(1, 1, vec![255; 4]).unwrap();
+        let r = read_text(&Only(vec!["en-US".into()]), &img).unwrap();
+        assert_eq!(
+            (r.languages, r.missing),
+            (vec!["en-US".to_string()], vec!["uk".to_string()])
+        );
+        let r = read_text(&Only(vec!["uk-UA".into(), "en-US".into()]), &img).unwrap();
+        assert!(r.missing.is_empty() && r.languages[0] == "uk-UA");
+        let r = read_text(&Only(vec!["de-DE".into()]), &img).unwrap();
+        assert_eq!(r.missing, vec!["uk".to_string(), "en".to_string()]);
+    }
 
     #[test]
     fn languages_match_by_primary_subtag() {
