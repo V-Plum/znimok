@@ -118,7 +118,7 @@ fn plays_the_kept_clip() {
     for f in [0, 45, 89, 10, 11, 60, 7] {
         assert_eq!(r.seek(f), (f, Some(f as u32)), "seek to {f}");
     }
-    r.player.play(20, 2.0, false, false);
+    r.player.play(60, 0.5, false, false);
     let mut last = -1;
     while let Some((f, bar, playing)) = r.shown() {
         assert!(f > last || !playing, "forward: {f} after {last}");
@@ -129,7 +129,7 @@ fn plays_the_kept_clip() {
         }
     }
     assert_eq!(last, frames - 1, "played to the end");
-    r.player.play(70, 1.0, false, true);
+    r.player.play(70, 0.25, false, true);
     let mut last = i64::MAX;
     let mut seen = 0;
     while let Some((f, bar, playing)) = r.shown() {
@@ -140,13 +140,12 @@ fn plays_the_kept_clip() {
         assert_eq!(bar, Some(f as u32), "reverse frame {f}");
         last = f;
         seen += 1;
-        if f < 40 {
+        if f < 60 {
             r.player.pause();
             break;
         }
     }
-    // Two frames are enough to see the direction; a slow machine skips the rest.
-    assert!(seen >= 2, "only {seen} reverse frames");
+    assert!(seen >= 4, "only {seen} reverse frames");
     drop(r);
 
     // The MP4 as byte ranges of a bigger file (copied out into the cache where AVFoundation
