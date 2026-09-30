@@ -6803,6 +6803,8 @@ dependencies = [
  "znimok-settings",
  "znimok-stitch",
  "znimok-update",
+ "znimok-video",
+ "znimok-video-win",
  "znimok-win",
 ]
 

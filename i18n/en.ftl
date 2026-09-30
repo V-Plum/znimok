@@ -4746,3 +4746,115 @@ month-11 = November
 # @kind: title
 # @max: 16
 month-12 = December
+
+## Video mode of the editor (ZK-181)
+
+
+# @where: Inspector tab for a video document, in place of «Image»
+# @kind: tab
+# @max: 12
+insp-tab-video = Video
+
+# @where: Video transport: the start of the kept video is the current frame (I)
+# @kind: button
+# @max: 16
+vid-in-here = Start here
+
+# @where: Video transport: the end of the kept video is the current frame (O)
+# @kind: button
+# @max: 16
+vid-out-here = End here
+
+# @where: Video transport: split the strip at the current frame (S)
+# @kind: button
+# @max: 16
+vid-split-here = Split here
+
+# @where: Video timeline: cut the selected piece (Del); also the row «Cut» in the Trim section
+# @kind: button
+# @max: 16
+vid-cut = Cut
+
+# @where: Video timeline: cut everything but the selected piece (Shift+Del)
+# @kind: button
+# @max: 24
+vid-keep-only = Keep only this
+
+# @where: Video timeline: a cut-out piece comes back
+# @kind: button
+# @max: 16
+vid-restore = Restore
+
+# @where: Video, Trim section: forget every trim and cut
+# @kind: button
+# @max: 24
+vid-reset-trim = Reset trimming
+
+# @where: Video, Trim section: how long the video is after the edits
+# @kind: label
+# @max: 16
+vid-left = Left
+
+# @where: Video, Trim section: a note under the numbers
+# @kind: body
+# @max: 160
+vid-trim-note = The recording is never changed: what is cut can come back, and the file is rewritten only on export.
+
+# @where: Video, Trim section: how the strip is used
+# @kind: body
+# @max: 120
+vid-tl-hint = Drag on the strip to pick a piece · Del cuts it · Shift+Del keeps only it · S splits
+
+# @where: Video, Sound section: no track goes into the export
+# @kind: button
+# @max: 16
+vid-no-sound = No sound
+
+# @where: Video, Sound section: both tracks go into the export
+# @kind: button
+# @max: 12
+vid-sound-both = Both
+
+# @where: Video transport: the whole timeline in view
+# @kind: button
+# @max: 12
+vid-fit = Fit
+
+# @where: Video, Trim section: playback is not available on this machine
+# @kind: body
+# @max: 160
+vid-poster-note = Playback is not available here yet: the first frame stands for the video; trimming works.
+
+# @where: Name of the screenshot made from a video frame; $name the video, $n the frame
+# @kind: label
+# @max: 60
+vid-frame-doc-name = { $name } — frame { $n }
+
+# @where: Video, Trim section: how many pieces are cut out and their length; $count, $seconds
+# @kind: label
+# @max: 40
+vid-cut-count =
+    { $count ->
+        [one] { $count } piece · { $seconds } s
+       *[other] { $count } pieces · { $seconds } s
+    }
+
+# @where: Video transport: the timeline shows more time
+# @kind: tooltip
+# @max: 24
+vid-zoom-out = Timeline: zoom out
+
+# @where: Video transport: the timeline shows less time, larger
+# @kind: tooltip
+# @max: 24
+vid-zoom-in = Timeline: zoom in
+
+# @where: Video, Sound section: put a muted track back into the export
+# @kind: button
+# @max: 12
+vid-track-on = Turn on
+
+# @where: Video, Sound section: leave a track out of the export
+# @kind: button
+# @max: 12
+vid-track-off = Turn off

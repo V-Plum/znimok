@@ -254,6 +254,8 @@ pub struct Session {
     /// A video document opened for its marks (ZK-145): written back as a video, never as a
     /// screenshot of its poster.
     pub video: Option<znimok_format::VideoPart>,
+    /// The «Відео» mode of the editor (ZK-181): the player, the timeline, what frame is shown.
+    pub vid: Option<crate::video::Vid>,
 }
 
 /// "Over the screen" (ZK-58): the editor window covers the frozen display without chrome; the
@@ -289,6 +291,8 @@ pub struct App {
     pub gpu: Option<Gpu>,
     pub dpr: f64,
     dirty: bool,
+    /// The video frame on the canvas changed: everything is repainted (ZK-181).
+    frame_changed: bool,
     fit_pending: bool,
     tool: usize,
     color: Rgb,
@@ -526,6 +530,7 @@ impl App {
             gpu: None,
             dpr: 1.0,
             dirty: true,
+            frame_changed: false,
             fit_pending: true,
             tool: tool::RECT,
             color: PALETTE[0],
@@ -2637,7 +2642,9 @@ impl App {
             changed_at: Instant::now(),
             save_failed: fresh,
             video,
+            vid: None,
         });
+        self.video_open(ui);
         self.drag = None;
         self.editing = None;
         self.crop = None;
@@ -3216,6 +3223,12 @@ impl App {
         shift: bool,
         ctrl: bool,
     ) {
+        // A press on the canvas takes the keys back from the timeline (ZK-181).
+        if kind == 0
+            && let Some(v) = self.s.as_mut().and_then(|s| s.vid.as_mut())
+        {
+            v.focus = false;
+        }
         if self.s.is_none() {
             return;
         }
@@ -4669,6 +4682,8 @@ impl App {
                 Some(']') => self.arrange(ui, 2),
                 Some('[') if shift => self.arrange(ui, 1),
                 Some('[') => self.arrange(ui, 3),
+                // Video (ZK-181): loop, the frame to the clipboard.
+                Some('l') if self.is_video() => self.vid_transport(ui, "loop"),
                 Some('0') => self.zoom_fit(ui),
                 Some('1') => self.zoom_100(ui),
                 // Zoom in / out by half a stop about the canvas centre ("=" is "+" unshifted).
@@ -4679,6 +4694,10 @@ impl App {
             self.sync(ui);
             ui.window().request_redraw();
             return KeyAction::None;
+        }
+        // Video (ZK-181): the transport and the timeline's keys.
+        if let Some(a) = self.video_key(ui, text, latin, shift) {
+            return a;
         }
         // I: a picture from a file (a dialog — so not over the screen, ZK-163).
         // X: the text on the picture (ZK-184).
@@ -7551,6 +7570,7 @@ impl App {
     // ------------------------------------------------------------------ UI state
 
     pub fn sync(&mut self, ui: &AppWindow) {
+        self.sync_video(ui);
         let Some(s) = self.s.as_ref() else { return };
         let doc = &s.ed.doc;
         if self.over.is_some() {
@@ -7969,20 +7989,30 @@ impl App {
         let shown_crop = self
             .crop
             .or_else(|| self.over.as_ref().map(|_| s.ed.doc.frame()));
-        let doc: std::borrow::Cow<Document> = if shown_crop.is_some() || self.compare {
-            let mut d = s.ed.doc.clone();
-            if shown_crop.is_some() {
-                d.crop = None;
-            }
-            if self.compare {
-                d.recipe.exposure = 0.0;
-                d.recipe.gamma = 1.0;
-                d.recipe.contrast = 0;
-            }
-            std::borrow::Cow::Owned(d)
-        } else {
-            std::borrow::Cow::Borrowed(&s.ed.doc)
-        };
+        // A video (ZK-181): the frame the player delivered stands in for the poster.
+        let frame = s.vid.as_ref().and_then(|v| v.raster.clone());
+        let doc: std::borrow::Cow<Document> =
+            if shown_crop.is_some() || self.compare || frame.is_some() {
+                let mut d = s.ed.doc.clone();
+                if let Some(r) = frame
+                    && d.banks
+                        .get(d.source as usize)
+                        .is_some_and(|b| (b.width, b.height) == (r.width, r.height))
+                {
+                    d.banks[d.source as usize] = r;
+                }
+                if shown_crop.is_some() {
+                    d.crop = None;
+                }
+                if self.compare {
+                    d.recipe.exposure = 0.0;
+                    d.recipe.gamma = 1.0;
+                    d.recipe.contrast = 0;
+                }
+                std::borrow::Cow::Owned(d)
+            } else {
+                std::borrow::Cow::Borrowed(&s.ed.doc)
+            };
         let frame_rect = if self.crop.is_some() {
             let (w, h) = s.ed.doc.image_size();
             IRect::new(0, 0, w as i32, h as i32)
@@ -7992,7 +8022,10 @@ impl App {
         let dark = ui.global::<crate::Theme>().get_dark();
         // ZK-130: only what changed is rendered and uploaded. A new texture, the crop frame
         // (it dims the whole canvas) and any change of view repaint everything.
-        let fresh = size_changed || self.gpu.as_ref().is_none_or(|g| g.texture.is_none());
+        let fresh = size_changed
+            || self.frame_changed
+            || self.gpu.as_ref().is_none_or(|g| g.texture.is_none());
+        self.frame_changed = false;
         let repaint = if fresh || shown_crop.is_some() {
             self.tracker.reset();
             Repaint::All
@@ -8949,5 +8982,545 @@ fn head_index(h: Head) -> i32 {
         Head::Triangle => 1,
         Head::Chevron => 2,
         Head::Dot => 3,
+    }
+}
+
+// ------------------------------------------------------------------ video (ZK-181)
+
+impl App {
+    pub fn is_video(&self) -> bool {
+        self.s.as_ref().is_some_and(|s| s.vid.is_some())
+    }
+
+    /// A video document opened in an editor window: the player and the timeline come up.
+    fn video_open(&mut self, ui: &AppWindow) {
+        let me = self.me();
+        let role = self.role;
+        let Some(s) = self.s.as_mut() else { return };
+        let Some(part) = s.video.as_ref() else {
+            ui.set_vid_mode(false);
+            return;
+        };
+        if role != crate::wins::Role::Editor {
+            return;
+        }
+        let info = &part.video.info;
+        let mut v =
+            crate::video::Vid::new(info.fps(), info.frames as i64, s.ed.doc.timeline.as_ref());
+        match crate::video::Player::open(part, move |d| {
+            let _ = slint::invoke_from_event_loop(move || me.with(|a, ui| a.video_frame(ui, d)));
+        }) {
+            Ok(p) => {
+                p.set_edit(v.edit().clone());
+                p.seek(0);
+                v.player = Some(p);
+            }
+            Err(e) => v.player_error = Some(e),
+        }
+        s.vid = Some(v);
+        ui.set_vid_mode(true);
+        ui.set_insp_tab(2);
+        self.sync_video(ui);
+    }
+
+    /// The player delivered a frame.
+    pub fn video_frame(&mut self, ui: &AppWindow, d: crate::video::Delivered) {
+        let Some(v) = self.s.as_mut().and_then(|s| s.vid.as_mut()) else {
+            return;
+        };
+        v.frame = d.frame;
+        v.raster = Some(d.raster);
+        v.playing = d.playing;
+        self.frame_changed = true;
+        self.dirty = true;
+        self.sync_video(ui);
+        ui.window().request_redraw();
+    }
+
+    /// Everything the video bars and the «Відео» tab show.
+    fn sync_video(&mut self, ui: &AppWindow) {
+        let Some(s) = self.s.as_mut() else { return };
+        let Some(v) = s.vid.as_mut() else { return };
+        if let Some(t) = s.ed.doc.timeline.as_ref() {
+            v.adopt(t);
+        }
+        let e = v.edit();
+        let edited = e.is_edited();
+        let kept = v.kept();
+        ui.set_vid_playing(v.playing);
+        ui.set_vid_can_play(v.player.is_some());
+        ui.set_vid_time(v.time_str(v.frame).into());
+        ui.set_vid_total(crate::video::fmt_time(kept as f64 / v.fps.max(1e-6)).into());
+        ui.set_vid_total_full(
+            if edited {
+                v.time_str(v.frames)
+            } else {
+                String::new()
+            }
+            .into(),
+        );
+        ui.set_vid_frame_label(
+            self.tr
+                .tr_args("vid-frame-n", &count_args("n", v.frame))
+                .into(),
+        );
+        ui.set_vid_speed(format!("{}×", v.speed()).into());
+        ui.set_vid_loop(v.looping);
+        ui.set_vid_muted(v.muted);
+        ui.set_tl_focus(v.focus);
+        ui.set_vid_edited(edited);
+        ui.set_vid_trim_in(v.time_str(e.in_point()).into());
+        ui.set_vid_trim_out(v.time_str(e.out_point()).into());
+        let off: Vec<_> = e.parts().iter().filter(|p| p.off).collect();
+        let cut_frames: i64 = off.iter().map(|p| p.b - p.a).sum();
+        ui.set_vid_trim_cut(
+            if off.is_empty() {
+                self.tr.tr("common-off")
+            } else {
+                let mut a = count_args("count", off.len() as i64);
+                a.set(
+                    "seconds",
+                    format!("{:.1}", cut_frames as f64 / v.fps.max(1e-6)),
+                );
+                self.tr.tr_args("vid-cut-count", &a)
+            }
+            .into(),
+        );
+        ui.set_vid_trim_left(crate::video::fmt_time(kept as f64 / v.fps.max(1e-6)).into());
+        ui.set_vid_note(
+            match (&v.player, &v.player_error) {
+                (None, Some(_)) | (None, None) => self.tr.tr("vid-poster-note"),
+                _ => String::new(),
+            }
+            .into(),
+        );
+        // The timeline.
+        v.view.auto_scroll((v.frame as f64 + 0.5) / v.fps.max(1e-6));
+        let g = v.geometry();
+        let ticks: Vec<crate::TlTick> = g
+            .ticks
+            .into_iter()
+            .map(|(x, label)| crate::TlTick {
+                x: x as f32,
+                label: label.into(),
+            })
+            .collect();
+        let pieces: Vec<crate::TlPiece> = g
+            .pieces
+            .into_iter()
+            .map(|(x, w, kind)| crate::TlPiece {
+                x: x as f32,
+                w: w as f32,
+                kind,
+            })
+            .collect();
+        ui.set_tl_ticks(std::rc::Rc::new(VecModel::from(ticks)).into());
+        ui.set_tl_pieces(std::rc::Rc::new(VecModel::from(pieces)).into());
+        ui.set_tl_in(g.in_x as f32);
+        ui.set_tl_out(g.out_x as f32);
+        ui.set_tl_playhead(g.playhead_x as f32);
+        ui.set_tl_has_range(v.selected_range().is_some());
+        // Sound: the tracks of the recording, and the choice they make together (ZK-189).
+        let tracks = s
+            .video
+            .as_ref()
+            .map(|p| p.video.audio.clone())
+            .unwrap_or_default();
+        use znimok_format::video::AudioSource;
+        let has = |src: AudioSource| tracks.iter().any(|t| t.source == src);
+        let on = |src: AudioSource| tracks.iter().any(|t| t.source == src && !t.muted);
+        ui.set_vid_has_system(has(AudioSource::System));
+        ui.set_vid_has_mic(has(AudioSource::Microphone));
+        ui.set_vid_sound_mode(
+            match (on(AudioSource::System), on(AudioSource::Microphone)) {
+                (false, false) => 0,
+                (true, false) => 1,
+                (false, true) => 2,
+                (true, true) => 3,
+            },
+        );
+        let rows: Vec<crate::VidTrack> = tracks
+            .iter()
+            .map(|t| crate::VidTrack {
+                label: if t.label.is_empty() {
+                    self.tr.tr(match t.source {
+                        AudioSource::System => "vid-track-system",
+                        AudioSource::Microphone => "vid-track-mic",
+                    })
+                } else {
+                    t.label.clone()
+                }
+                .into(),
+                colour: match t.source {
+                    AudioSource::System => slint::Color::from_rgb_u8(0x3D, 0x7B, 0xF5),
+                    AudioSource::Microphone => slint::Color::from_rgb_u8(0x34, 0xC4, 0x8A),
+                },
+                muted: t.muted,
+                volume: t.volume as i32,
+            })
+            .collect();
+        ui.set_vid_tracks(std::rc::Rc::new(VecModel::from(rows)).into());
+    }
+
+    /// The frame to show: the player decodes it; without one the timeline still moves.
+    fn vid_seek(&mut self, ui: &AppWindow, f: i64) {
+        let Some(v) = self.s.as_mut().and_then(|s| s.vid.as_mut()) else {
+            return;
+        };
+        let f = f.clamp(0, (v.frames - 1).max(0));
+        v.playing = false;
+        match &v.player {
+            Some(p) => p.seek(f),
+            None => v.frame = f,
+        }
+        v.frame = f;
+        self.sync_video(ui);
+    }
+
+    /// A finished edit of the timeline: one command of the core editor (one undo step with the
+    /// marks, ZK-144); the player learns the new cuts.
+    fn tl_commit(&mut self, ui: &AppWindow, merge: Option<MergeKey>) {
+        let Some(t) = self
+            .s
+            .as_ref()
+            .and_then(|s| s.vid.as_ref())
+            .map(|v| v.edit().to_timeline())
+        else {
+            return;
+        };
+        self.apply(ui, Command::SetTimeline { timeline: t, merge });
+        if let Some(v) = self.s.as_ref().and_then(|s| s.vid.as_ref())
+            && let Some(p) = &v.player
+        {
+            p.set_edit(v.edit().clone());
+        }
+        self.sync(ui);
+        ui.window().request_redraw();
+    }
+
+    /// The transport bar and its keys.
+    pub fn vid_transport(&mut self, ui: &AppWindow, what: &str) {
+        let Some(v) = self.s.as_mut().and_then(|s| s.vid.as_mut()) else {
+            return;
+        };
+        match what {
+            "play" => {
+                if v.playing {
+                    v.playing = false;
+                    if let Some(p) = &v.player {
+                        p.pause();
+                    }
+                } else if let Some(p) = &v.player {
+                    // At the end: from the start again.
+                    let from = if v.frame >= v.end() {
+                        v.home()
+                    } else {
+                        v.frame
+                    };
+                    v.playing = true;
+                    p.play(from, v.speed(), v.looping);
+                }
+            }
+            "back" => {
+                let f = v.step(-1);
+                self.vid_seek(ui, f);
+                return;
+            }
+            "fwd" => {
+                let f = v.step(1);
+                self.vid_seek(ui, f);
+                return;
+            }
+            "sec-back" => {
+                let f = v.step(-(v.fps.round() as i64).max(1));
+                self.vid_seek(ui, f);
+                return;
+            }
+            "sec-fwd" => {
+                let f = v.step((v.fps.round() as i64).max(1));
+                self.vid_seek(ui, f);
+                return;
+            }
+            "home" => {
+                let f = v.home();
+                self.vid_seek(ui, f);
+                return;
+            }
+            "end" => {
+                let f = v.end();
+                self.vid_seek(ui, f);
+                return;
+            }
+            "loop" => v.looping = !v.looping,
+            "mute" => v.muted = !v.muted,
+            "speed" => v.speed_i = (v.speed_i + 1) % crate::video::SPEEDS.len(),
+            "fit" => {
+                v.view.zoom = 1.0;
+                v.view.off = 0.0;
+            }
+            "zoom-in" | "zoom-out" => {
+                let x = v.track_w / 2;
+                let n = if what == "zoom-in" { 1.0 } else { -1.0 };
+                v.view.zoom_at(x, n, znimok_video::edit::MAX_PX_PER_FRAME);
+            }
+            _ => {}
+        }
+        self.sync_video(ui);
+    }
+
+    /// The width of the timeline's track area, from the window.
+    pub fn tl_layout(&mut self, ui: &AppWindow, w: i32) {
+        if let Some(v) = self.s.as_mut().and_then(|s| s.vid.as_mut()) {
+            v.set_track_width(w);
+            self.sync_video(ui);
+        }
+    }
+
+    /// The pointer over the timeline's tracks: `kind` 0 down, 1 move, 2 up; `x`, `y` in the
+    /// track area. The ruler scrubs; the strip takes a trim handle, a range or a click.
+    pub fn tl_pointer(&mut self, ui: &AppWindow, kind: i32, x: i32, y: i32, _shift: bool) {
+        let Some(v) = self.s.as_mut().and_then(|s| s.vid.as_mut()) else {
+            return;
+        };
+        const RULER: i32 = 22;
+        const STRIP_TOP: i32 = 26;
+        const STRIP_BOTTOM: i32 = 78;
+        match kind {
+            0 => {
+                v.focus = true;
+                if y < RULER {
+                    v.scrubbing = true;
+                    let f = v.frame_at_x(x);
+                    self.vid_seek(ui, f);
+                } else if (STRIP_TOP..=STRIP_BOTTOM).contains(&y) {
+                    if v.strip_press(x) {
+                        // A handle: the frame at it is shown while it moves.
+                        if let Some(f) = v.strip_move(x) {
+                            self.vid_seek(ui, f);
+                        }
+                    }
+                } else {
+                    v.tl.clear_selection();
+                }
+                self.sync_video(ui);
+            }
+            1 => {
+                if v.scrubbing {
+                    let f = v.frame_at_x(x);
+                    self.vid_seek(ui, f);
+                    return;
+                }
+                if let Some(f) = v.strip_move(x) {
+                    self.vid_seek(ui, f);
+                    return;
+                }
+                self.sync_video(ui);
+            }
+            _ => {
+                if v.scrubbing {
+                    v.scrubbing = false;
+                    return;
+                }
+                match v.strip_release() {
+                    crate::video::StripEnd::Edited => self.tl_commit(ui, None),
+                    crate::video::StripEnd::Click(f) => self.vid_seek(ui, f),
+                    crate::video::StripEnd::Nothing => self.sync_video(ui),
+                }
+            }
+        }
+    }
+
+    /// The wheel over the timeline: Ctrl — zoom about the pointer, else pan.
+    pub fn tl_wheel(&mut self, ui: &AppWindow, x: i32, dy: f32, ctrl: bool) {
+        let Some(v) = self.s.as_mut().and_then(|s| s.vid.as_mut()) else {
+            return;
+        };
+        let notches = (dy / 40.0) as f64;
+        if ctrl {
+            v.view
+                .zoom_at(x, notches, znimok_video::edit::MAX_PX_PER_FRAME);
+        } else {
+            v.view.pan(-notches);
+        }
+        self.sync_video(ui);
+    }
+
+    /// The timeline's actions (buttons and keys): cut, keep only, split, in, out, restore,
+    /// reset, the frame as a screenshot, the sound tracks.
+    pub fn vid_action(&mut self, ui: &AppWindow, what: &str, arg: i32) {
+        let Some(v) = self.s.as_mut().and_then(|s| s.vid.as_mut()) else {
+            return;
+        };
+        let frame = v.frame;
+        let changed = match what {
+            "cut" => v.tl.cut_selection(),
+            "keep" => v.keep_only(),
+            "split" => v.tl.split(frame),
+            "in" => v.tl.set_in(frame),
+            "out" => v.tl.set_out(frame),
+            // The «Повернути» pill sits on the piece: its x names the piece.
+            "restore" => {
+                let f = v.frame_at_x(arg);
+                v.restore_at(f)
+            }
+            "reset" => {
+                let n = v.frames;
+                v.tl = znimok_video::edit::EditTimeline::with_edit(
+                    znimok_video::edit::VideoEdit::new(n),
+                );
+                true
+            }
+            "deselect" => {
+                v.tl.clear_selection();
+                self.sync_video(ui);
+                return;
+            }
+            "frame-shot" => {
+                self.frame_as_shot(ui);
+                return;
+            }
+            "sound" => {
+                self.set_sound_mode(ui, arg);
+                return;
+            }
+            "track-mute" => {
+                self.set_track(ui, arg as usize, None, Some(true));
+                return;
+            }
+            "track-unmute" => {
+                self.set_track(ui, arg as usize, None, Some(false));
+                return;
+            }
+            _ => false,
+        };
+        if changed {
+            self.tl_commit(ui, None);
+        } else {
+            self.sync_video(ui);
+        }
+    }
+
+    /// No sound / system / microphone / both (ZK-189): the tracks' `muted` flags.
+    fn set_sound_mode(&mut self, ui: &AppWindow, mode: i32) {
+        use znimok_format::video::AudioSource;
+        let Some(s) = self.s.as_mut() else { return };
+        let Some(part) = s.video.as_mut() else { return };
+        for t in &mut part.video.audio {
+            t.muted = match t.source {
+                AudioSource::System => mode & 1 == 0,
+                AudioSource::Microphone => mode & 2 == 0,
+            };
+        }
+        s.changed_at = Instant::now();
+        self.sync_video(ui);
+    }
+
+    fn set_track(&mut self, ui: &AppWindow, i: usize, volume: Option<u8>, muted: Option<bool>) {
+        let Some(s) = self.s.as_mut() else { return };
+        let Some(t) = s.video.as_mut().and_then(|p| p.video.audio.get_mut(i)) else {
+            return;
+        };
+        if let Some(vol) = volume {
+            t.volume = vol;
+        }
+        if let Some(m) = muted {
+            t.muted = m;
+        }
+        s.changed_at = Instant::now();
+        self.sync_video(ui);
+    }
+
+    /// «Кадр як знімок»: the frame on the canvas, full size, as a new document — in a window of
+    /// its own (ZK-107). The marks come with ZK-94.
+    fn frame_as_shot(&mut self, ui: &AppWindow) {
+        let Some(s) = self.s.as_ref() else { return };
+        let Some(v) = s.vid.as_ref() else { return };
+        let raster = v
+            .raster
+            .as_ref()
+            .map(|r| (**r).clone())
+            .unwrap_or_else(|| s.ed.doc.source().clone());
+        let mut a = count_args("n", v.frame);
+        a.set("name", s.ed.doc.name.clone());
+        let name = self.tr.tr_args("vid-frame-doc-name", &a);
+        self.new_document(ui, raster, "video-frame", Some(name));
+    }
+
+    /// Keys of the video mode. Space and the transport work everywhere in the editor; I / O / S /
+    /// Delete act on the timeline only while it has the keys (the last press was on it), so the
+    /// tools keep their letters on the canvas.
+    fn video_key(
+        &mut self,
+        ui: &AppWindow,
+        text: &str,
+        latin: Option<char>,
+        shift: bool,
+    ) -> Option<KeyAction> {
+        let (focus, has_sel, has_range) = {
+            let v = self.s.as_ref()?.vid.as_ref()?;
+            (
+                v.focus,
+                !self.selection().is_empty(),
+                v.selected_range().is_some(),
+            )
+        };
+        let done = |a: &mut App| {
+            a.sync(ui);
+            ui.window().request_redraw();
+            Some(KeyAction::None)
+        };
+        match text {
+            " " => {
+                self.vid_transport(ui, "play");
+                return done(self);
+            }
+            "\u{F702}" if !has_sel => {
+                self.vid_transport(ui, if shift { "sec-back" } else { "back" });
+                return done(self);
+            }
+            "\u{F703}" if !has_sel => {
+                self.vid_transport(ui, if shift { "sec-fwd" } else { "fwd" });
+                return done(self);
+            }
+            "\u{F729}" => {
+                self.vid_transport(ui, "home");
+                return done(self);
+            }
+            "\u{F72B}" => {
+                self.vid_transport(ui, "end");
+                return done(self);
+            }
+            "\u{7f}" | "\u{8}" if focus && has_range => {
+                self.vid_action(ui, if shift { "keep" } else { "cut" }, 0);
+                return done(self);
+            }
+            "\u{1b}" if focus && has_range => {
+                self.vid_action(ui, "deselect", 0);
+                return done(self);
+            }
+            _ => {}
+        }
+        if focus {
+            match latin {
+                Some('i') => {
+                    self.vid_action(ui, "in", 0);
+                    return done(self);
+                }
+                Some('o') => {
+                    self.vid_action(ui, "out", 0);
+                    return done(self);
+                }
+                Some('s') => {
+                    self.vid_action(ui, "split", 0);
+                    return done(self);
+                }
+                _ => {}
+            }
+        }
+        if latin == Some('m') {
+            self.vid_transport(ui, "mute");
+            return done(self);
+        }
+        None
     }
 }

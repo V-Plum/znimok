@@ -393,7 +393,7 @@ impl Index {
     }
 }
 
-fn cache_dir() -> PathBuf {
+pub fn cache_dir() -> PathBuf {
     if cfg!(target_os = "macos") {
         let home = std::env::var_os("HOME").unwrap_or_default();
         return PathBuf::from(home).join("Library/Caches/Znimok");

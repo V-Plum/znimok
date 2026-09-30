@@ -33,6 +33,7 @@ mod tray;
 #[cfg(test)]
 mod ui_tests;
 mod update;
+mod video;
 mod wins;
 
 use std::cell::RefCell;
@@ -1313,4 +1314,34 @@ fn wire(ui: &AppWindow, app: &Shared) {
     on!(ui, app, on_zoom_100, |a, w| {
         a.zoom_100(&w);
     });
+    // ZK-181: the video's transport and timeline.
+    on!(ui, app, on_vid_transport, |a, w, what| {
+        a.vid_transport(&w, &what);
+    });
+    on!(ui, app, on_vid_action, |a, w, what, arg| {
+        a.vid_action(&w, &what, arg);
+    });
+    on!(ui, app, on_tl_pointer, |a, w, kind, x, y, shift| {
+        a.tl_pointer(&w, kind, x as i32, y as i32, shift);
+    });
+    on!(ui, app, on_tl_wheel, |a, w, x, dy, ctrl| {
+        a.tl_wheel(&w, x as i32, dy, ctrl);
+    });
+    {
+        // Reported while laying out, possibly from inside the app's own code (as lib-layout).
+        let (app, weak) = (app.clone(), ui.as_weak());
+        ui.on_tl_layout(move |w| {
+            let Some(ui) = weak.upgrade() else { return };
+            if let Ok(mut a) = app.try_borrow_mut() {
+                a.tl_layout(&ui, w as i32);
+                return;
+            }
+            let (app, weak) = (app.clone(), weak.clone());
+            slint::Timer::single_shot(Duration::ZERO, move || {
+                if let (Some(ui), Ok(mut a)) = (weak.upgrade(), app.try_borrow_mut()) {
+                    a.tl_layout(&ui, w as i32);
+                }
+            });
+        });
+    }
 }

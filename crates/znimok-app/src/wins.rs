@@ -178,20 +178,17 @@ pub fn show_library() {
 /// window cannot be destroyed from inside its own callback). Quits when it was the last window
 /// and there is no tray icon.
 pub fn destroy(me: WeakCtx) {
-    if let Some((_, ui)) = find(me.id) {
-        let _ = ui.hide();
-    }
-    slint::Timer::single_shot(Duration::ZERO, move || {
-        let gone = EDITORS.with(|e| {
-            let mut e = e.borrow_mut();
-            let n = e.len();
-            e.retain(|w| w.id != me.id);
-            e.len() != n
-        });
-        if gone {
-            maybe_quit();
-        }
+    // Out of the registry at once (so the windows are counted right), hidden now, dropped once
+    // the current callback has returned — a window cannot be destroyed from inside its own.
+    let taken = EDITORS.with(|e| {
+        let mut e = e.borrow_mut();
+        let i = e.iter().position(|w| w.id == me.id)?;
+        Some(e.remove(i))
     });
+    let Some(w) = taken else { return };
+    let _ = w.ui.hide();
+    slint::Timer::single_shot(Duration::ZERO, move || drop(w));
+    maybe_quit();
 }
 
 /// Closes the editor window that has `path` (the document was saved by the caller's rules).

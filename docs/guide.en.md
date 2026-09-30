@@ -196,6 +196,20 @@ on a cloud drive — Znimok notices files added or removed from outside. In Expl
 Znimok opens PNG, JPEG, WebP, GIF, BMP, and HEIC, AVIF and TIFF through the system codecs (on
 Windows HEIC/AVIF need Microsoft's free extensions).
 
+## Video (preview)
+
+Screen recording comes in the next release; the editor already opens video documents. Such a
+document opens in the "Video" mode: the same tools, and under the canvas a transport (Space —
+play / pause, ← → — a frame, Shift+← → — a second, Home / End) and a timeline. Trimming: the white
+handles at the ends of the strip, or I / O at the current frame; a drag on the strip picks a piece —
+Del cuts it, Shift+Del keeps only it; S splits; a cut-out piece is hatched, with "Restore". The
+timeline's keys work while the last click was on it (a thin ring); on the canvas the letters stay
+with the tools. The recording is never changed: the edits live in the document and undo together
+with the marks. The "Video" tab has the trimming summary, the sound (no sound / system /
+microphone / both), the crop, tone and size; "Frame as screenshot" opens the current frame as a
+document of its own. Playback is Windows-only for now; on macOS the first frame stands for the
+video and trimming works.
+
 ## Sharing the result
 
 - **Copy** (Ctrl+C) — the image to the clipboard. The Copy button can be dragged into a chat or a
