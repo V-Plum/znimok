@@ -195,8 +195,12 @@ Windows HEIC/AVIF need Microsoft's free extensions).
 
 - **Copy** (Ctrl+C) — the image to the clipboard. The Copy button can be dragged into a chat or a
   folder — a PNG file goes there. Enter repeats the last action.
-- **Other ways** (the arrow next to Copy): export to PNG, JPEG or WebP (Ctrl+Shift+S), the system
-  Share, "Save as…" — a copy of the `.znimok` document anywhere.
+- **Export** (Ctrl+E or Ctrl+Shift+S, or Other ways next to Copy) — a sheet: the format as a card
+  with a size estimate (PNG — lossless with transparency, JPEG — quality 1–100, WebP — lossless),
+  scale 50 / 100 / 200 % or a width in px, metadata, transparent → white, the name and where to: the
+  clipboard, a file or a flat copy in the library. "Remember" keeps the choice; Ctrl+Shift+E (and
+  Enter after an export) repeats the last export without the sheet.
+- The system Share, "Save as…" — a copy of the `.znimok` document anywhere.
 - Exported files carry the title, description, author, rights, tags and the time of the shot —
   no window titles or paths; this can be turned off in Other ways. The file time equals the shot
   time.

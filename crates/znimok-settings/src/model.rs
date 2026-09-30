@@ -290,6 +290,70 @@ pub struct Editor {
     pub write_metadata: bool,
     /// Colours picked in the colour picker, newest first, `#RRGGBB` (ZK-160).
     pub recent_colours: Vec<String>,
+    /// The export sheet as last used (ZK-187): format, quality, size, background, where to.
+    pub export: ExportPrefs,
+    /// The last folder a picture was exported to (ZK-187).
+    pub export_dir: Option<PathBuf>,
+}
+
+/// What the export sheet chose last (ZK-187); Ctrl+Shift+E repeats it without the sheet.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(default)]
+pub struct ExportPrefs {
+    pub format: ExportFormat,
+    /// JPEG quality, 1–100.
+    pub jpeg_quality: u8,
+    pub scale: ExportScale,
+    /// Width in pixels when `scale` is `Width`.
+    pub width: u32,
+    /// Transparent pixels over white (JPEG always).
+    pub white_bg: bool,
+    pub to: ExportTo,
+    /// Keep the choices as the next sheet's.
+    pub remember: bool,
+}
+
+impl Default for ExportPrefs {
+    fn default() -> Self {
+        Self {
+            format: ExportFormat::Png,
+            jpeg_quality: 90,
+            scale: ExportScale::Full,
+            width: 1280,
+            white_bg: false,
+            to: ExportTo::File,
+            remember: true,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ExportFormat {
+    #[default]
+    Png,
+    Jpeg,
+    Webp,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ExportScale {
+    Half,
+    #[default]
+    Full,
+    Double,
+    /// To `ExportPrefs::width`, the height in proportion.
+    Width,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ExportTo {
+    Clipboard,
+    #[default]
+    File,
+    Library,
 }
 
 impl Default for Editor {
@@ -302,6 +366,8 @@ impl Default for Editor {
             save_dir: None,
             write_metadata: true,
             recent_colours: Vec::new(),
+            export: ExportPrefs::default(),
+            export_dir: None,
         }
     }
 }

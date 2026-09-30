@@ -2295,6 +2295,106 @@ export-done-toast = Exported “{ $name }”
 # @max: 80
 export-error = Could not save the file.
 
+# @where: Export sheet: the format card titles
+# @kind: label
+# @max: 12
+export-png = PNG
+
+# @where: Export sheet: the format card titles
+# @kind: label
+# @max: 12
+export-jpeg = JPEG
+
+# @where: Export sheet: the format card titles
+# @kind: label
+# @max: 12
+export-webp = WebP
+
+# @where: Export sheet: PNG card, beside the title
+# @kind: label
+# @max: 20
+export-png-sub = lossless
+
+# @where: Export sheet: JPEG card, beside the title
+# @kind: label
+# @max: 20
+export-jpeg-sub = with quality
+
+# @where: Export sheet: WebP card, beside the title
+# @kind: label
+# @max: 20
+export-webp-sub = lossless
+
+# @where: Export sheet: PNG card, what it is for
+# @kind: hint
+# @max: 90
+export-png-desc = Every pixel as it is, with transparency — for interfaces and text.
+
+# @where: Export sheet: JPEG card, what it is for
+# @kind: hint
+# @max: 90
+export-jpeg-desc = The smallest for photos and gradients; no transparency.
+
+# @where: Export sheet: WebP card, what it is for
+# @kind: hint
+# @max: 90
+export-webp-desc = Lossless, opens in browsers and chats.
+
+# @where: Export sheet: under the title — the picture's size and the size it will have
+# @kind: status
+# @max: 80
+export-subtitle = { $w } × { $h } → { $tw } × { $th } px · marks drawn in
+
+# @where: Export sheet: caption of the row «To clipboard / File… / To the library»
+# @kind: label
+# @max: 16
+export-where = Where
+
+# @where: Export sheet: where to — a file (the save dialog comes next)
+# @kind: button
+# @max: 16
+export-to-file = File…
+
+# @where: Export sheet: where to — a flat copy in the library
+# @kind: button
+# @max: 20
+export-to-library = To the library
+
+# @where: Export sheet: note when the clipboard is chosen
+# @kind: hint
+# @max: 100
+export-clipboard-note = The clipboard takes the picture itself; the format and quality are for files.
+
+# @where: Export sheet: the main button for a file
+# @kind: button
+# @max: 24
+export-go = Export { $format }
+
+# @where: Export sheet: the main button for the clipboard
+# @kind: button
+# @max: 24
+export-go-copy = Copy
+
+# @where: Export sheet: the main button for the library
+# @kind: button
+# @max: 24
+export-go-library = Save to the library
+
+# @where: Toast: the flat copy went to the library
+# @kind: toast
+# @max: 48
+export-library-done = A flat copy is in the library
+
+# @where: A file size in kilobytes
+# @kind: label
+# @max: 12
+size-kb = { $n } KB
+
+# @where: A file size in megabytes
+# @kind: label
+# @max: 12
+size-mb = { $n } MB
+
 # @where: Toast after copying
 # @kind: toast
 # @max: 24

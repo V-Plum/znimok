@@ -1929,7 +1929,7 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
         app.borrow_mut().set_last_share(ui, false);
         r.check(
             "Enter repeats the last share (copy, then export)",
-            enter == KeyAction::Copy && enter2 == KeyAction::Export,
+            enter == KeyAction::Copy && enter2 == KeyAction::ExportRepeat,
             format!("{enter:?} / {enter2:?}"),
         );
         let t0 = ui.get_thick_index();
@@ -2394,6 +2394,82 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
                     .is_ok_and(|p| p.extension().is_some_and(|e| e == "png")),
             format!("{file:?} {dims:?}"),
         );
+    }));
+
+    // ZK-187: the export sheet — estimates for every format, JPEG's quality changes the size,
+    // 50 % halves the sides, the clipboard gets the chosen size, Esc closes.
+    steps.push(Box::new(|_, ui, _| {
+        ui.invoke_export();
+    }));
+    steps.push(Box::new(|_, _, _| {}));
+    steps.push(Box::new(|_, _, _| {}));
+    steps.push(Box::new(|_, _, _| {}));
+    steps.push(Box::new(|_, _, _| {}));
+    steps.push(Box::new(|_, _, _| {}));
+    steps.push(Box::new(|_, _, _| {}));
+    steps.push(Box::new(|app, ui, r| {
+        let sizes = app.borrow().export_sizes();
+        r.snapshot(ui, "40-export");
+        r.check(
+            "export sheet: opens with a size estimate for PNG, JPEG and WebP",
+            ui.get_exp_open() && sizes.is_some_and(|s| s.iter().all(|b| b.is_some_and(|n| n > 0))),
+            format!("{sizes:?}"),
+        );
+        let dir = r.dir.clone();
+        let write = |q: i32, file: &str| {
+            ui.invoke_exp_set("format".into(), 1);
+            ui.invoke_exp_set("quality".into(), q);
+            ui.invoke_exp_set("scale".into(), 1);
+            ui.invoke_exp_set("remember".into(), 0);
+            let path = dir.join(file);
+            app.borrow_mut().export_write(ui, &path);
+            std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0)
+        };
+        ui.invoke_export();
+        let q60 = write(60, "sheet-q60.jpg");
+        ui.invoke_export();
+        let q90 = write(90, "sheet-q90.jpg");
+        r.check(
+            "export sheet: JPEG quality 60 gives a smaller file than 90",
+            q60 > 0 && q90 > q60,
+            format!("{q60} vs {q90} bytes"),
+        );
+        // 50 %: half the sides, PNG.
+        ui.invoke_export();
+        ui.invoke_exp_set("format".into(), 0);
+        ui.invoke_exp_set("scale".into(), 0);
+        ui.invoke_exp_set("remember".into(), 0);
+        let half = dir.join("sheet-half.png");
+        app.borrow_mut().export_write(ui, &half);
+        let dims = image::image_dimensions(&half).ok();
+        let frame = app.borrow().s.as_ref().map(|s| {
+            let f = s.ed.doc.frame();
+            (f.w as u32, f.h as u32)
+        });
+        r.check(
+            "export sheet: 50 % halves the sides",
+            matches!((dims, frame), (Some((w, h)), Some((fw, fh))) if w == fw.div_ceil(2) && h == fh.div_ceil(2)),
+            format!("{dims:?} of {frame:?}"),
+        );
+        // To the clipboard at 200 %.
+        ui.invoke_export();
+        ui.invoke_exp_set("scale".into(), 2);
+        ui.invoke_exp_set("to".into(), 0);
+        ui.invoke_exp_set("remember".into(), 0);
+        ui.invoke_exp_go_clicked();
+        let clip = arboard::Clipboard::new()
+            .and_then(|mut c| c.get_image())
+            .ok()
+            .map(|i| (i.width as u32, i.height as u32));
+        r.check(
+            "export sheet: to the clipboard at 200 %, the sheet closes",
+            matches!((clip, frame), (Some((w, h)), Some((fw, fh))) if w == fw * 2 && h == fh * 2)
+                && !ui.get_exp_open(),
+            format!("{clip:?} · open {}", ui.get_exp_open()),
+        );
+        ui.invoke_export();
+        ui.invoke_exp_close();
+        r.check("export sheet: closes", !ui.get_exp_open(), String::new());
     }));
 
     // Capture overlay on a synthetic frozen frame: hover a window, drag a region.

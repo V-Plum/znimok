@@ -333,6 +333,10 @@ pub struct App {
     pub test_alt: bool,
     /// Text found on the picture (ZK-184); the panel is open while this is `Some`.
     text: Option<TextFind>,
+    /// The export sheet while it is open (ZK-187).
+    exp: Option<ExportSheet>,
+    /// What was exported last in this session: Ctrl+Shift+E repeats it (ZK-187).
+    exp_last: Option<znimok_settings::ExportPrefs>,
     stamp_id: u32,
     /// Size step of new stamps (ZK-173), an index into [`COUNTER_SIZES`] like the counter's.
     stamp_size_i: usize,
@@ -549,6 +553,8 @@ impl App {
             eyedrop: None,
             test_alt: false,
             text: None,
+            exp: None,
+            exp_last: None,
             stamp_id: 0,
             stamp_size_i: 1,
             alpha_merge: None,
@@ -4572,6 +4578,9 @@ impl App {
                 }
                 Some('o') if self.over.is_some() => return KeyAction::None,
                 Some('s') if shift => return KeyAction::Export,
+                // The export sheet (ZK-187); with Shift — the last export again, no sheet.
+                Some('e') if shift && self.over.is_none() => return KeyAction::ExportRepeat,
+                Some('e') if self.over.is_none() => return KeyAction::Export,
                 Some('s') => {
                     self.save_now(ui);
                 }
@@ -4667,7 +4676,7 @@ impl App {
                 // Enter repeats how the picture last left the editor (LH): copy by default.
                 "\n" | "\r" => {
                     return if self.last_export {
-                        KeyAction::Export
+                        KeyAction::ExportRepeat
                     } else {
                         KeyAction::Copy
                     };
@@ -7055,6 +7064,398 @@ impl App {
         ui.global::<crate::Keys>().set_last_share(export as i32);
     }
 
+    // ---------------------------------------------------------------- the export sheet (ZK-187)
+
+    /// Opens the export sheet with the choices last kept.
+    pub fn export_open(&mut self, ui: &AppWindow) {
+        let Some((w, h, rgba)) = self.flatten() else {
+            return;
+        };
+        let prefs = self.prefs().editor.export;
+        // The preview: the picture small, as it will look (marks included).
+        let (pw, ph) = {
+            let k = (360.0 / w as f64).min(200.0 / h as f64).min(1.0);
+            (
+                ((w as f64 * k).round() as u32).max(1),
+                ((h as f64 * k).round() as u32).max(1),
+            )
+        };
+        let (pw, ph, small) = io::scaled(w, h, rgba.clone(), pw, ph);
+        let buf = slint::SharedPixelBuffer::<slint::Rgba8Pixel>::clone_from_slice(&small, pw, ph);
+        ui.set_exp_preview(slint::Image::from_rgba8(buf));
+        ui.set_exp_name(self.doc_name().into());
+        ui.set_exp_metadata(crate::filemeta::enabled());
+        self.exp = Some(ExportSheet {
+            w,
+            h,
+            rgba: std::sync::Arc::new(rgba),
+            prefs,
+            sizes: [None; 3],
+            serial: 0,
+        });
+        ui.set_exp_open(true);
+        self.export_show(ui);
+        self.export_estimate();
+    }
+
+    /// The sheet's controls from its state.
+    fn export_show(&self, ui: &AppWindow) {
+        use znimok_settings::{ExportFormat as F, ExportScale as S, ExportTo as T};
+        let Some(e) = self.exp.as_ref() else { return };
+        let p = &e.prefs;
+        let est = |i: usize| match e.sizes[i] {
+            Some(b) => format!("≈ {}", self.human_size(b)),
+            None => "…".to_string(),
+        };
+        let card = |title: &str, sub: &str, desc: &str, i: usize| crate::ExportCard {
+            title: self.tr.tr(title).into(),
+            sub: self.tr.tr(sub).into(),
+            desc: self.tr.tr(desc).into(),
+            estimate: est(i).into(),
+            enabled: true,
+        };
+        let cards = vec![
+            card("export-png", "export-png-sub", "export-png-desc", 0),
+            card("export-jpeg", "export-jpeg-sub", "export-jpeg-desc", 1),
+            card("export-webp", "export-webp-sub", "export-webp-desc", 2),
+        ];
+        ui.set_exp_cards(std::rc::Rc::new(slint::VecModel::from(cards)).into());
+        let fi = match p.format {
+            F::Png => 0,
+            F::Jpeg => 1,
+            F::Webp => 2,
+        };
+        ui.set_exp_format(fi);
+        ui.set_exp_quality(p.jpeg_quality as i32);
+        ui.set_exp_scale(match p.scale {
+            S::Half => 0,
+            S::Full => 1,
+            S::Double => 2,
+            S::Width => 3,
+        });
+        ui.set_exp_width(p.width.to_string().into());
+        ui.set_exp_white(p.white_bg || p.format == F::Jpeg);
+        ui.set_exp_white_forced(p.format == F::Jpeg);
+        ui.set_exp_remember(p.remember);
+        ui.set_exp_to(match p.to {
+            T::Clipboard => 0,
+            T::File => 1,
+            T::Library => 2,
+        });
+        let (tw, th) = export_size(e.w, e.h, p);
+        ui.set_exp_subtitle(
+            self.tr
+                .tr_args(
+                    "export-subtitle",
+                    &args(&[
+                        ("w", e.w.to_string()),
+                        ("h", e.h.to_string()),
+                        ("tw", tw.to_string()),
+                        ("th", th.to_string()),
+                    ]),
+                )
+                .into(),
+        );
+        ui.set_exp_estimate(est(fi as usize).into());
+        let format = ["PNG", "JPEG", "WebP"][fi as usize];
+        ui.set_exp_go(
+            match p.to {
+                T::Clipboard => self.tr.tr("export-go-copy"),
+                T::Library => self.tr.tr("export-go-library"),
+                T::File => self
+                    .tr
+                    .tr_args("export-go", &args(&[("format", format.to_string())])),
+            }
+            .into(),
+        );
+    }
+
+    /// «86 KB» / «1.4 MB».
+    fn human_size(&self, bytes: u64) -> String {
+        if bytes < 1024 * 1024 {
+            self.tr.tr_args(
+                "size-kb",
+                &args(&[("n", (bytes.div_ceil(1024)).to_string())]),
+            )
+        } else {
+            self.tr.tr_args(
+                "size-mb",
+                &args(&[("n", format!("{:.1}", bytes as f64 / 1048576.0))]),
+            )
+        }
+    }
+
+    /// Size estimates on a worker thread: each format encoded on a small copy, scaled to the
+    /// chosen size by the number of pixels. The newest request wins.
+    fn export_estimate(&mut self) {
+        let Some(e) = self.exp.as_mut() else { return };
+        e.serial += 1;
+        e.sizes = [None; 3];
+        let (serial, w, h, rgba, prefs) = (e.serial, e.w, e.h, e.rgba.clone(), e.prefs.clone());
+        let me = self.me();
+        std::thread::spawn(move || {
+            let (tw, th) = export_size(w, h, &prefs);
+            let k = (640.0 / w.max(h) as f64).min(1.0);
+            let (sw, sh) = (
+                ((w as f64 * k).round() as u32).max(1),
+                ((h as f64 * k).round() as u32).max(1),
+            );
+            let (sw, sh, small) = io::scaled(w, h, (*rgba).clone(), sw, sh);
+            let ratio = (tw as f64 * th as f64) / (sw as f64 * sh as f64).max(1.0);
+            let mut sizes = [0u64; 3];
+            for (i, f) in [io::Format::Png, io::Format::Jpeg, io::Format::Webp]
+                .into_iter()
+                .enumerate()
+            {
+                let opts = io::Encode {
+                    format: f,
+                    quality: prefs.jpeg_quality,
+                    white_bg: prefs.white_bg,
+                };
+                let n = io::encode(sw, sh, &small, opts, None).map_or(0, |b| b.len());
+                sizes[i] = (n as f64 * ratio) as u64;
+            }
+            let _ = slint::invoke_from_event_loop(move || {
+                me.with(|a, ui| a.export_estimated(ui, serial, sizes));
+            });
+        });
+    }
+
+    fn export_estimated(&mut self, ui: &AppWindow, serial: u64, sizes: [u64; 3]) {
+        if let Some(e) = self.exp.as_mut()
+            && e.serial == serial
+        {
+            e.sizes = sizes.map(Some);
+            self.export_show(ui);
+        }
+    }
+
+    /// A control of the sheet changed.
+    pub fn export_set(&mut self, ui: &AppWindow, key: &str, v: i32) {
+        use znimok_settings::{ExportFormat as F, ExportScale as S, ExportTo as T};
+        if key == "metadata" {
+            // The same switch as in Settings → Sharing.
+            self.setting(ui, "metadata", v);
+            ui.set_exp_metadata(v != 0);
+            return;
+        }
+        let Some(e) = self.exp.as_mut() else { return };
+        let p = &mut e.prefs;
+        let mut estimate = true;
+        match key {
+            "format" => {
+                p.format = match v {
+                    1 => F::Jpeg,
+                    2 => F::Webp,
+                    _ => F::Png,
+                }
+            }
+            "quality" => p.jpeg_quality = v.clamp(1, 100) as u8,
+            "scale" => {
+                p.scale = match v {
+                    0 => S::Half,
+                    2 => S::Double,
+                    3 => S::Width,
+                    _ => S::Full,
+                }
+            }
+            "white" => p.white_bg = v != 0,
+            "remember" => {
+                p.remember = v != 0;
+                estimate = false;
+            }
+            "to" => {
+                p.to = match v {
+                    0 => T::Clipboard,
+                    2 => T::Library,
+                    _ => T::File,
+                };
+                estimate = false;
+            }
+            _ => return,
+        }
+        self.export_show(ui);
+        if estimate {
+            self.export_estimate();
+        }
+    }
+
+    /// The width field: a number of pixels, the height follows.
+    pub fn export_width(&mut self, ui: &AppWindow, text: &str) {
+        if let Ok(v) = text.trim().parse::<u32>()
+            && let Some(e) = self.exp.as_mut()
+        {
+            e.prefs.width = v.clamp(16, 16384);
+            e.prefs.scale = znimok_settings::ExportScale::Width;
+            self.export_show(ui);
+            self.export_estimate();
+        } else {
+            self.export_show(ui);
+        }
+    }
+
+    pub fn export_close(&mut self, ui: &AppWindow) {
+        self.exp = None;
+        ui.set_exp_open(false);
+    }
+
+    /// «Export»: to the clipboard or the library here; for a file, what the save dialog needs
+    /// (folder, name with its extension, format) — the caller asks, then `export_write`.
+    pub fn export_go(
+        &mut self,
+        ui: &AppWindow,
+    ) -> Option<(Option<PathBuf>, String, znimok_settings::ExportFormat)> {
+        use znimok_settings::ExportTo as T;
+        let e = self.exp.as_ref()?;
+        let prefs = e.prefs.clone();
+        let name = file_safe(ui.get_exp_name().trim());
+        let name = if name.is_empty() {
+            self.doc_name()
+        } else {
+            name
+        };
+        match prefs.to {
+            T::File => Some((
+                self.prefs().editor.export_dir,
+                format!("{name}.{}", export_ext(prefs.format)),
+                prefs.format,
+            )),
+            T::Clipboard | T::Library => {
+                self.export_run(ui, &prefs, None, &name);
+                self.export_close(ui);
+                None
+            }
+        }
+    }
+
+    /// The file the dialog gave: written with the sheet's choices.
+    pub fn export_write(&mut self, ui: &AppWindow, path: &Path) {
+        let Some(prefs) = self.exp.as_ref().map(|e| e.prefs.clone()) else {
+            return;
+        };
+        let name = path
+            .file_stem()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        if self.export_run(ui, &prefs, Some(path), &name) {
+            self.export_close(ui);
+        }
+    }
+
+    /// Ctrl+Shift+E / Enter after an export: the last export again, without the sheet — a file
+    /// goes to the same folder under the document's name (never over another file). `false`
+    /// when there is nothing to repeat yet (the caller opens the sheet).
+    pub fn export_repeat(&mut self, ui: &AppWindow) -> bool {
+        use znimok_settings::ExportTo as T;
+        let Some(prefs) = self.exp_last.clone() else {
+            return false;
+        };
+        let name = self.doc_name();
+        let path = match prefs.to {
+            T::File => {
+                let Some(dir) = self.prefs().editor.export_dir else {
+                    return false;
+                };
+                let ext = export_ext(prefs.format);
+                let mut path = dir.join(format!("{name}.{ext}"));
+                let mut n = 2;
+                while path.exists() {
+                    path = dir.join(format!("{name} {n}.{ext}"));
+                    n += 1;
+                }
+                Some(path)
+            }
+            _ => None,
+        };
+        self.export_run(ui, &prefs, path.as_deref(), &name);
+        true
+    }
+
+    /// Renders at the chosen size and sends it where `prefs` says; remembers the choices.
+    fn export_run(
+        &mut self,
+        ui: &AppWindow,
+        prefs: &znimok_settings::ExportPrefs,
+        path: Option<&Path>,
+        name: &str,
+    ) -> bool {
+        use znimok_settings::ExportTo as T;
+        let Some((w, h, rgba)) = self.flatten() else {
+            return false;
+        };
+        let (tw, th) = export_size(w, h, prefs);
+        let (tw, th, rgba) = io::scaled(w, h, rgba, tw, th);
+        let ok = match (prefs.to, path) {
+            (T::Clipboard, _) => {
+                let r = io::copy_image(tw, th, rgba);
+                let msg = if r.is_ok() {
+                    self.tr.tr("clipboard-copied")
+                } else {
+                    self.tr.tr("clipboard-error")
+                };
+                self.toast(ui, msg);
+                r.is_ok()
+            }
+            (T::Library, _) => match self.store_quietly(ui, Raster::new(tw, th, rgba), "export") {
+                Ok(_) => {
+                    let msg = self.tr.tr("export-library-done");
+                    self.toast(ui, msg);
+                    true
+                }
+                Err(e) => {
+                    self.toast(ui, e);
+                    false
+                }
+            },
+            (T::File, Some(path)) => {
+                let opts = io::Encode {
+                    format: export_io(prefs.format),
+                    quality: prefs.jpeg_quality,
+                    white_bg: prefs.white_bg,
+                };
+                let meta = self.file_meta();
+                let r = io::encode(tw, th, &rgba, opts, meta.as_ref())
+                    .and_then(|b| std::fs::write(path, b).map_err(|e| e.to_string()));
+                if r.is_ok()
+                    && let Some(m) = meta.as_ref()
+                {
+                    crate::filemeta::set_file_time(path, m.created_ms);
+                }
+                let shown = path
+                    .file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| name.to_string());
+                let msg = match &r {
+                    Ok(()) => self
+                        .tr
+                        .tr_args("export-done-toast", &args(&[("name", shown)])),
+                    Err(e) => format!("{} ({e})", self.tr.tr("export-error")),
+                };
+                self.toast(ui, msg);
+                if r.is_ok() {
+                    let dir = path.parent().map(Path::to_path_buf);
+                    self.save_prefs(ui, |p| p.editor.export_dir = dir);
+                }
+                r.is_ok()
+            }
+            (T::File, None) => false,
+        };
+        if ok {
+            self.exp_last = Some(prefs.clone());
+            if prefs.remember {
+                let keep = prefs.clone();
+                self.save_prefs(ui, |p| p.editor.export = keep);
+            }
+            self.set_last_share(ui, true);
+        }
+        ok
+    }
+
+    /// For the self-test: the sheet's current estimates (PNG, JPEG, WebP).
+    pub fn export_sizes(&self) -> Option<[Option<u64>; 3]> {
+        self.exp.as_ref().map(|e| e.sizes)
+    }
+
     pub fn export_to(&mut self, ui: &AppWindow, path: &Path) {
         let Some((w, h, rgba)) = self.flatten() else {
             return;
@@ -7790,6 +8191,8 @@ pub enum KeyAction {
     Back,
     /// Ctrl+S over the screen: to the library and close.
     Save,
+    /// Ctrl+Shift+E, Enter after an export: the last export again, without the sheet (ZK-187).
+    ExportRepeat,
     /// I: a picture from a file as a mark (ZK-163).
     InsertImage,
 }
@@ -8181,6 +8584,49 @@ pub fn stamp_size(badge: i32, i: usize) -> i32 {
 /// A counter's width at size step `i` for an automatic size `badge`.
 pub fn counter_size(badge: i32, i: usize) -> i32 {
     ((badge as f64 * COUNTER_SIZES[i.min(COUNTER_SIZES.len() - 1)]).round() as i32).max(8)
+}
+
+/// The export sheet (ZK-187): the picture as drawn (full size), the choices, the size estimates.
+struct ExportSheet {
+    w: u32,
+    h: u32,
+    rgba: std::sync::Arc<Vec<u8>>,
+    prefs: znimok_settings::ExportPrefs,
+    /// Estimates in bytes for PNG, JPEG, WebP at the chosen size; `None` while counting.
+    sizes: [Option<u64>; 3],
+    /// Only the newest estimate is shown.
+    serial: u64,
+}
+
+/// The picture's size at `prefs`' scale.
+fn export_size(w: u32, h: u32, prefs: &znimok_settings::ExportPrefs) -> (u32, u32) {
+    use znimok_settings::ExportScale as S;
+    let k = match prefs.scale {
+        S::Half => 0.5,
+        S::Full => 1.0,
+        S::Double => 2.0,
+        S::Width => prefs.width.clamp(16, 16384) as f64 / w.max(1) as f64,
+    };
+    (
+        ((w as f64 * k).round() as u32).max(1),
+        ((h as f64 * k).round() as u32).max(1),
+    )
+}
+
+fn export_ext(f: znimok_settings::ExportFormat) -> &'static str {
+    match f {
+        znimok_settings::ExportFormat::Png => "png",
+        znimok_settings::ExportFormat::Jpeg => "jpg",
+        znimok_settings::ExportFormat::Webp => "webp",
+    }
+}
+
+fn export_io(f: znimok_settings::ExportFormat) -> io::Format {
+    match f {
+        znimok_settings::ExportFormat::Png => io::Format::Png,
+        znimok_settings::ExportFormat::Jpeg => io::Format::Jpeg,
+        znimok_settings::ExportFormat::Webp => io::Format::Webp,
+    }
 }
 
 /// The text panel's state (ZK-184): the lines found and whether a reading is running.

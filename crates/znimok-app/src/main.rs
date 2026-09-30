@@ -583,6 +583,28 @@ fn open_with_dialog(app: &Shared, ui: &AppWindow) {
     }
 }
 
+/// «Export» in the sheet (ZK-187): a file asks where, with the chosen format's extension.
+fn export_go(app: &Shared, ui: &AppWindow) {
+    let Some((dir, name, format)) = app.borrow_mut().export_go(ui) else {
+        return;
+    };
+    let (label, ext) = match format {
+        znimok_settings::ExportFormat::Png => ("PNG", "png"),
+        znimok_settings::ExportFormat::Jpeg => ("JPEG", "jpg"),
+        znimok_settings::ExportFormat::Webp => ("WebP", "webp"),
+    };
+    let mut dlg = rfd::FileDialog::new()
+        .add_filter(label, &[ext])
+        .set_file_name(name);
+    if let Some(d) = dir {
+        dlg = dlg.set_directory(d);
+    }
+    if let Some(p) = dlg.save_file() {
+        app.borrow_mut().export_write(ui, &p);
+    }
+}
+
+#[allow(dead_code)]
 fn export_with_dialog(app: &Shared, ui: &AppWindow) {
     let name = app.borrow().doc_name();
     let file = rfd::FileDialog::new()
@@ -938,7 +960,7 @@ fn wire(ui: &AppWindow, app: &Shared) {
         let weak = ui.as_weak();
         ui.on_export(move || {
             if let Some(ui) = weak.upgrade() {
-                export_with_dialog(&app, &ui);
+                app.borrow_mut().export_open(&ui);
             }
         });
     }
@@ -985,7 +1007,13 @@ fn wire(ui: &AppWindow, app: &Shared) {
                 KeyAction::Save => app.borrow_mut().over_finish(&ui, false, true),
                 KeyAction::Back if over => app.borrow_mut().over_finish(&ui, false, false),
                 KeyAction::Copy => app.borrow_mut().copy(&ui),
-                KeyAction::Export => export_with_dialog(&app, &ui),
+                KeyAction::Export => app.borrow_mut().export_open(&ui),
+                KeyAction::ExportRepeat => {
+                    let done = app.borrow_mut().export_repeat(&ui);
+                    if !done {
+                        app.borrow_mut().export_open(&ui);
+                    }
+                }
                 KeyAction::Open => open_with_dialog(&app, &ui),
                 KeyAction::InsertImage => insert_image_with_dialog(&app, &ui),
                 KeyAction::Back => back_to_library(&app, &ui),
@@ -1024,6 +1052,25 @@ fn wire(ui: &AppWindow, app: &Shared) {
     on!(ui, app, on_over_close, |a, w| {
         a.over_finish(&w, false, false);
     });
+    // The export sheet (ZK-187).
+    on!(ui, app, on_exp_set, |a, w, key, v| {
+        a.export_set(&w, &key, v);
+    });
+    on!(ui, app, on_exp_width_set, |a, w, text| {
+        a.export_width(&w, &text);
+    });
+    on!(ui, app, on_exp_close, |a, w| {
+        a.export_close(&w);
+        w.invoke_focus_canvas();
+    });
+    {
+        let (app, weak) = (app.clone(), ui.as_weak());
+        ui.on_exp_go_clicked(move || {
+            if let Some(ui) = weak.upgrade() {
+                export_go(&app, &ui);
+            }
+        });
+    }
     on!(ui, app, on_text_start, |a, w| {
         a.text_open(&w);
     });
