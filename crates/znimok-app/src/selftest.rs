@@ -3280,7 +3280,21 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
         let here = lib.borrow().doc_path() == Some(cards[0].clone())
             && crate::wins::editors().len() == before
             && lw.get_page() == 1;
-        lib.borrow_mut().close_document(&lw);
+        // ZK-196: «Бібліотека» in the top bar (the button itself) closes it and brings the grid.
+        lw.invoke_back();
+        let back = lib.borrow().doc_path().is_none() && lw.get_page() == 0;
+        r.check(
+            "open in place: «Library» in the top bar goes back to the grid",
+            back,
+            format!(
+                "document {:?} · page {}",
+                lib.borrow().doc_path(),
+                lw.get_page()
+            ),
+        );
+        if !back {
+            lib.borrow_mut().close_document(&lw);
+        }
         lib.borrow_mut().card_click(&lw, &cards[1], 3);
         let alt_new =
             crate::wins::editors().len() == before + 1 && lib.borrow().doc_path().is_none();

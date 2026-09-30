@@ -583,9 +583,10 @@ fn close_window(app: &Shared, ui: &AppWindow) {
 }
 
 /// «Бібліотека» / Esc in an editor (ZK-107): the document is saved (or asks), its window goes,
-/// the library comes to the front.
+/// the library comes to the front. The library window holds a document too since ZK-192 (a
+/// card opens in the same window): there the document closes and the grid comes back (ZK-196).
 fn back_to_library(app: &Shared, ui: &AppWindow) {
-    if app.borrow().role != wins::Role::Editor {
+    if app.borrow().s.is_none() {
         return;
     }
     confirm_leave(app, ui, |app, ui| {
