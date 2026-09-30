@@ -16,6 +16,10 @@
 //! Nothing here on other systems.
 
 #[cfg(windows)]
+pub mod audio;
+#[cfg(windows)]
+pub mod clock;
+#[cfg(windows)]
 pub mod decoder;
 #[cfg(windows)]
 pub mod interop;
@@ -34,6 +38,10 @@ pub mod source;
 #[cfg(windows)]
 pub mod synthetic;
 
+#[cfg(windows)]
+pub use audio::{AudioDevice, WasapiSource, devices as audio_devices};
+#[cfg(windows)]
+pub use clock::QpcClock;
 #[cfg(windows)]
 pub use decoder::{MfDecoder, Nv12Frame};
 #[cfg(windows)]
