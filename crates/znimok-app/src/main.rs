@@ -59,6 +59,8 @@ thread_local! {
 }
 
 /// The settings, from the library window (worker results and other modules).
+// Used by the recording (Windows until ZK-88).
+#[cfg_attr(not(windows), allow(dead_code))]
 fn with_prefs<T>(f: impl FnOnce(&znimok_settings::Settings) -> T) -> Option<T> {
     let mut out = None;
     CTX.with(|c| {
@@ -72,6 +74,8 @@ fn with_prefs<T>(f: impl FnOnce(&znimok_settings::Settings) -> T) -> Option<T> {
 }
 
 /// The library folder, from the library window.
+// Used by the recording (Windows until ZK-88).
+#[cfg_attr(not(windows), allow(dead_code))]
 fn with_lib_dir() -> Option<PathBuf> {
     let mut out = None;
     CTX.with(|c| {

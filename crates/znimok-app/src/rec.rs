@@ -227,6 +227,7 @@ pub fn toggle_pause() {
 
 /// Stop: the indicators go at once; the file is finished and wrapped on a worker thread.
 pub fn stop() {
+    #[cfg_attr(not(windows), allow(unused_mut))]
     let Some(mut a) = REC.with(|r| r.borrow_mut().take()) else {
         return;
     };
