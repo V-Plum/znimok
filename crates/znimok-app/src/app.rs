@@ -3685,6 +3685,11 @@ impl App {
         }
         self.tool = t;
         ui.set_tool(self.tool as i32);
+        // Choosing a drawing tool lets go of the selection, so the inspector shows the tool's
+        // own properties (owner, 30.09: a mark just drawn stayed selected under a new tool).
+        if t != tool::SELECT && !self.selection().is_empty() {
+            self.apply(ui, Command::ClearSelection);
+        }
         let (out, p) = (self.last_out, {
             let d = self.view.to_doc(self.last_out.x, self.last_out.y);
             (d.x.round() as i32, d.y.round() as i32)

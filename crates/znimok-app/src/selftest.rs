@@ -1168,6 +1168,31 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
         }
         key(app, ui, "\u{1b}", false, false);
     }));
+    // ZK-168: another tool lets go of the selection; the inspector shows that tool.
+    steps.push(Box::new(|app, ui, r| {
+        let id = app.borrow().s.as_ref().and_then(|s| {
+            s.ed.doc
+                .objects
+                .iter()
+                .find(|o| o.kind() == znimok_core::Kind::Rect)
+                .map(|o| o.id)
+        });
+        let Some(id) = id else { return };
+        app.borrow_mut().layer_click(ui, id as i32, false);
+        let had = ui.get_selection_count();
+        ui.invoke_tool_chosen(2);
+        let (n, kind, for_sel) = (
+            ui.get_selection_count(),
+            ui.get_prop_kind(),
+            ui.get_prop_for_selection(),
+        );
+        r.check(
+            "another tool drops the selection; the inspector shows the tool",
+            had == 1 && n == 0 && kind == 1 && !for_sel,
+            format!("selected {had} → {n} · inspector kind {kind} for selection {for_sel}"),
+        );
+        ui.invoke_tool_chosen(0);
+    }));
     // Cursors (ZK-47) and dragging rows of the layers list (ZK-54).
     steps.push(Box::new(|app, ui, r| {
         let order = |app: &Shared| -> Vec<(u32, u32)> {
@@ -1568,8 +1593,9 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
     steps.push(Box::new(|app, ui, r| {
         use crate::app::KeyAction;
         let k = |t: &str, ctrl: bool| app.borrow_mut().key(ui, t, ctrl, false);
-        k("a", true); // select all
+        // A drawing tool first (choosing one lets go of the selection, ZK-168), then select all.
         app.borrow_mut().set_tool(ui, crate::app::tool::RECT);
+        k("a", true);
         let e1 = k("\u{1b}", false);
         let sel_after = ui.get_selection_count();
         let e2 = k("\u{1b}", false);
