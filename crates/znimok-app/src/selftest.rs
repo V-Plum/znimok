@@ -1088,6 +1088,46 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
         key(app, ui, "z", true, false);
         ui.invoke_tool_chosen(0);
     }));
+    // ZK-171: the marker is a bar of fixed thickness along the drag, turned with it; four fixed
+    // thicknesses; its own inks, apart from the other tools' colour.
+    steps.push(Box::new(|app, ui, r| {
+        use znimok_core::Kind;
+        let (cx, cy) = centre(ui);
+        let other = ui.get_color_index();
+        ui.invoke_tool_chosen(7);
+        let ink = (ui.get_color_index(), ui.get_color_rgb());
+        drag(app, ui, (cx - 150.0, cy - 150.0), (cx + 50.0, cy + 50.0));
+        let bar = |app: &Shared| {
+            app.borrow().s.as_ref().and_then(|s| {
+                s.ed.doc
+                    .objects
+                    .iter()
+                    .rev()
+                    .find(|o| o.kind() == Kind::Mark)
+                    .map(|o| (o.rect, o.rot, o.style.color))
+            })
+        };
+        let made = bar(app);
+        ui.invoke_set_prop("marker-size".into(), 3);
+        let thick = bar(app);
+        ui.invoke_set_prop("color".into(), 2);
+        let magenta = bar(app).map(|b| b.2);
+        let shown = ui.get_color_index();
+        r.check(
+            "marker: a turned bar along the drag, fixed thickness, sizes, its own inks",
+            matches!(made, Some((rc, 45, c)) if rc.h == 18 && rc.w > 300 && c == znimok_core::Rgb::new(255, 255, 0))
+                && matches!(thick, Some((rc, 45, _)) if rc.h == 38)
+                && magenta == Some(znimok_core::Rgb::new(255, 0, 255))
+                && ink.0 == 0
+                && shown == 2,
+            format!("made {made:?} · XL {thick:?} · ink {:?} → {magenta:?} (chip {shown}) · other tools' chip was {other}", ink.0),
+        );
+        r.snapshot(ui, "26b-marker");
+        for _ in 0..3 {
+            key(app, ui, "z", true, false);
+        }
+        ui.invoke_tool_chosen(0);
+    }));
     // ZK-164: the rotation handle — one mark turns about its centre (Shift: 45° steps), several
     // turn about the middle of their box; one undo step; the angle field.
     steps.push(Box::new(|app, ui, r| {

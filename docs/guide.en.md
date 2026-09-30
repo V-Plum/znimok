@@ -91,7 +91,7 @@ Tools are on the left; the letters work on the Ukrainian layout too.
 | Pen | P | a free stroke, with arrowheads too |
 | Text | T | typed right on the canvas |
 | Hide | B | pixelate, blur or a plate |
-| Highlighter | H | a translucent band |
+| Highlighter | H | a bar of fixed thickness (four to choose) along the drag, turns; its own bright inks |
 | Counter | N | a numbered circle, square or pin |
 | Stamp | S | 6 signs and 24 emoji; sizes S–XL |
 | Image | I | a picture from a file as a mark |

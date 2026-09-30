@@ -158,9 +158,10 @@ impl Kind {
         matches!(self, Kind::Line | Kind::Pen)
     }
 
-    /// Hide and Mark operate on the pixels below them and never rotate.
+    /// Hide works on the pixels below it and never rotates. The marker is a bar of fixed
+    /// thickness that turns (ZK-171, owner 30.09 — Little Helpers kept it level).
     pub fn can_rotate(self) -> bool {
-        !matches!(self, Kind::Hide | Kind::Mark)
+        !matches!(self, Kind::Hide)
     }
 
     pub fn has_dash(self) -> bool {
@@ -518,7 +519,8 @@ impl Object {
                 }
                 self.rect = self.bounds();
             }
-            _ if kind.is_effect() => {
+            // Axis-aligned effects (hide): corner to corner. A marker turns like any box.
+            _ if kind.is_effect() && !kind.can_rotate() => {
                 let r = self.rect.normalized();
                 let (x0, y0) = f(r.x, r.y);
                 let (x1, y1) = f(r.right(), r.bottom());

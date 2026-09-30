@@ -31,13 +31,31 @@ pub const PALETTE: [Rgb; 8] = [
 ];
 pub const THICK: [i32; 3] = [2, 4, 7];
 
+/// The marker's own colours (ZK-171, LH `kEdMarkPalette`): highlighter inks — pure channels,
+/// bright under multiply.
+pub const MARKER_PALETTE: [Rgb; 4] = [
+    Rgb::new(0xFF, 0xFF, 0x00),
+    Rgb::new(0x00, 0xFF, 0x00),
+    Rgb::new(0xFF, 0x00, 0xFF),
+    Rgb::new(0x00, 0xFF, 0xFF),
+];
+
+/// Marker thicknesses on a picture up to 1080 px on its short side (ZK-171; LH 16 / 26 / 40),
+/// scaled up for larger pictures so a line of text is covered at any DPI.
+pub const MARKER_SIZES: [i32; 4] = [12, 18, 26, 38];
+
 /// How a colour control shows a colour: its palette chip (index), -1 for none, -2 for a colour
 /// off the palette (the picker's chip then shows it, ZK-160) — and the colour itself.
 fn colour_shown(c: Option<Rgb>) -> (i32, slint::Color) {
+    colour_shown_in(&PALETTE, c)
+}
+
+/// [`colour_shown`] against another row of chips (the marker's, ZK-171).
+fn colour_shown_in(palette: &[Rgb], c: Option<Rgb>) -> (i32, slint::Color) {
     match c {
         None => (-1, slint::Color::from_argb_u8(0, 0, 0, 0)),
         Some(c) => (
-            PALETTE
+            palette
                 .iter()
                 .position(|p| *p == c)
                 .map_or(-2, |i| i as i32),
@@ -134,7 +152,7 @@ enum Drag {
     Rotate {
         center: (f64, f64),
         ang0: f64,
-        /// Each mark as it was: id, centre, angle, whether it turns (Hide and Marker only move).
+        /// Each mark as it was: id, centre, angle, whether it turns (Hide only moves).
         orig: Vec<(ObjectId, (f64, f64), u16, bool)>,
         merge: MergeKey,
     },
@@ -268,6 +286,9 @@ pub struct App {
     fit_pending: bool,
     tool: usize,
     color: Rgb,
+    /// New markers: their own colour and thickness step (ZK-171).
+    marker_color: Rgb,
+    marker_size_i: usize,
     thick: usize,
     /// Defaults for new marks (and what the inspector changes on a selection), ZK-54.
     alpha: u8,
@@ -444,6 +465,8 @@ impl App {
             fit_pending: true,
             tool: tool::RECT,
             color: PALETTE[0],
+            marker_color: MARKER_PALETTE[0],
+            marker_size_i: 1,
             thick: 1,
             alpha: 100,
             no_stroke: false,
@@ -2343,13 +2366,8 @@ impl App {
         let badge = self.badge();
         match t {
             tool::MARKER => Style {
-                // The red default reads badly as a highlighter: yellow unless a colour was picked.
-                color: if self.color == PALETTE[0] {
-                    Rgb::YELLOW
-                } else {
-                    self.color
-                },
-                thick: 8 * THICK[self.thick] + 8,
+                color: self.marker_color,
+                thick: self.marker_thick(self.marker_size_i),
                 ..base
             },
             tool::COUNTER => Style {
@@ -2391,7 +2409,68 @@ impl App {
         }
     }
 
+    /// A marker thickness step on this picture (ZK-171).
+    fn marker_thick(&self, i: usize) -> i32 {
+        let side = self
+            .s
+            .as_ref()
+            .map(|s| {
+                let f = s.ed.doc.frame();
+                f.w.min(f.h)
+            })
+            .unwrap_or(1080);
+        let k = (side as f64 / 1080.0).max(1.0);
+        (MARKER_SIZES[i.min(MARKER_SIZES.len() - 1)] as f64 * k).round() as i32
+    }
+
+    /// The marker's bar from `a` to `b` (ZK-171): as long as the drag, its own thickness across,
+    /// turned along the drag (Shift: in 45° steps). The box is the bar as if level, about its
+    /// middle; the angle turns it there.
+    fn marker_bar(&self, a: (i32, i32), b: (i32, i32), shift: bool) -> (IRect, u16) {
+        let (dx, dy) = ((b.0 - a.0) as f64, (b.1 - a.1) as f64);
+        let mut deg = dy.atan2(dx).to_degrees();
+        if shift {
+            deg = (deg / 45.0).round() * 45.0;
+        }
+        // A bar has no direction: keep the angle within ±90°, so the handle stays on top.
+        if deg > 90.0 {
+            deg -= 180.0;
+        } else if deg <= -90.0 {
+            deg += 180.0;
+        }
+        let len = dx.hypot(dy).round().max(1.0) as i32;
+        let h = self.marker_thick(self.marker_size_i);
+        let (cx, cy) = ((a.0 + b.0) as f64 / 2.0, (a.1 + b.1) as f64 / 2.0);
+        let rect = IRect::new(
+            (cx - len as f64 / 2.0).round() as i32,
+            (cy - h as f64 / 2.0).round() as i32,
+            len,
+            h,
+        );
+        (rect, (deg.round() as i32).rem_euclid(360) as u16)
+    }
+
+    /// The colour controls speak of markers: a marker tool with nothing selected, or a selection
+    /// of markers only (their own palette, ZK-171).
+    fn marker_colours(&self) -> bool {
+        let sel = self.selection();
+        if sel.is_empty() {
+            return self.tool == tool::MARKER;
+        }
+        let Some(s) = self.s.as_ref() else {
+            return false;
+        };
+        sel.iter()
+            .all(|id| s.ed.doc.get(*id).is_some_and(|o| o.kind() == Kind::Mark))
+    }
+
     fn new_object(&self, t: usize, a: (i32, i32), b: (i32, i32)) -> Object {
+        if t == tool::MARKER {
+            let (rect, rot) = self.marker_bar(a, b, false);
+            let mut o = Object::new(rect, Data::Mark).with_style(self.style_for(t));
+            o.rot = rot;
+            return o;
+        }
         let rect = IRect::new(a.0, a.1, b.0 - a.0, b.1 - a.1);
         let data = match t {
             tool::RECT => Data::Rect,
@@ -2749,6 +2828,21 @@ impl App {
                         self.drag = Some(Drag::Create { id, start, merge });
                     }
                 }
+            }
+            Drag::Create { id, start, merge } if self.tool == tool::MARKER => {
+                let (rect, rot) = self.marker_bar(start, p, shift);
+                self.apply(
+                    ui,
+                    Command::UpdateObjects {
+                        ids: vec![id],
+                        patch: ObjectPatch {
+                            rect: Some(rect),
+                            rot: Some(rot),
+                            ..Default::default()
+                        },
+                        merge: Some(merge),
+                    },
+                );
             }
             Drag::Create { id, start, merge } => {
                 let (mut w, mut h) = (p.0 - start.0, p.1 - start.1);
@@ -4172,6 +4266,7 @@ impl App {
         };
         // A colour control gives a palette index, or — the colour picker, names ending in
         // "-rgb" (ZK-160) — 0xRRGGBB; below 0 is "none".
+        let marker = self.marker_colours();
         let (name, col) = match name.strip_suffix("-rgb") {
             Some(base) => {
                 let c = (v >= 0).then(|| Rgb::new((v >> 16) as u8, (v >> 8) as u8, v as u8));
@@ -4180,12 +4275,67 @@ impl App {
                 }
                 (base, c)
             }
+            // The main colour row of markers shows the marker's inks (ZK-171).
+            None if name == "color" && marker => (
+                name,
+                (v >= 0).then(|| MARKER_PALETTE[(v as usize).min(MARKER_PALETTE.len() - 1)]),
+            ),
             None => (
                 name,
                 (v >= 0).then(|| PALETTE[(v as usize).min(PALETTE.len() - 1)]),
             ),
         };
         match name {
+            // Markers keep their own colour, apart from the other tools' (ZK-171).
+            "color" if marker => {
+                self.marker_color = col.unwrap_or(MARKER_PALETTE[0]);
+                let c = self.marker_color;
+                self.patch_selected(
+                    ui,
+                    |o| o.kind() == Kind::Mark,
+                    style(StylePatch {
+                        color: Some(c),
+                        ..Default::default()
+                    }),
+                    None,
+                );
+            }
+            // Fixed marker thicknesses (ZK-171): a selected bar keeps its middle, length and angle.
+            "marker-size" => {
+                self.marker_size_i = (v.max(0) as usize).min(MARKER_SIZES.len() - 1);
+                let h = self.marker_thick(self.marker_size_i);
+                let items: Vec<(ObjectId, IRect)> = {
+                    let Some(s) = self.s.as_ref() else { return };
+                    s.ed.selection()
+                        .iter()
+                        .filter_map(|id| s.ed.doc.get(*id))
+                        .filter(|o| o.kind() == Kind::Mark)
+                        .map(|o| {
+                            let r = o.rect.normalized();
+                            let cy2 = 2 * r.y + r.h;
+                            (o.id, IRect::new(r.x, (cy2 - h).div_euclid(2), r.w, h))
+                        })
+                        .collect()
+                };
+                let merge = (items.len() > 1).then(|| self.merge_key());
+                for (id, rect) in items {
+                    self.apply(
+                        ui,
+                        Command::UpdateObjects {
+                            ids: vec![id],
+                            patch: ObjectPatch {
+                                rect: Some(rect),
+                                style: Some(StylePatch {
+                                    thick: Some(h),
+                                    ..Default::default()
+                                }),
+                                ..Default::default()
+                            },
+                            merge: merge.clone(),
+                        },
+                    );
+                }
+            }
             "color" => {
                 self.color = col.unwrap_or(PALETTE[0]);
                 // New shapes without an outline were plates of the fill colour: the fill stays.
@@ -4193,7 +4343,7 @@ impl App {
                 let c = self.color;
                 // A plate gets its outline back and keeps its colour as the fill (ZK-161).
                 let items = self.style_each(
-                    |o| !matches!(o.kind(), Kind::Hide | Kind::Image),
+                    |o| !matches!(o.kind(), Kind::Hide | Kind::Image | Kind::Mark),
                     |o| StylePatch {
                         color: Some(c),
                         no_main: Some(false),
@@ -6189,7 +6339,16 @@ impl App {
                 ui.set_prop_title(title.into());
                 let st = &o.style;
                 let plate = matches!(o.kind(), Kind::Rect | Kind::Ellipse) && st.no_main;
-                let (i, c) = colour_shown((!plate).then_some(st.color));
+                let (i, c) = if o.kind() == Kind::Mark {
+                    ui.set_marker_size(
+                        (0..MARKER_SIZES.len())
+                            .find(|i| self.marker_thick(*i) == o.rect.h.abs())
+                            .map_or(-1, |i| i as i32),
+                    );
+                    colour_shown_in(&MARKER_PALETTE, Some(st.color))
+                } else {
+                    colour_shown((!plate).then_some(st.color))
+                };
                 ui.set_color_index(i);
                 ui.set_color_rgb(c);
                 ui.set_thick_index(
@@ -6292,9 +6451,14 @@ impl App {
                     .into(),
                 );
                 let plate = self.no_stroke && matches!(self.tool, tool::RECT | tool::ELLIPSE);
-                let (i, c) = colour_shown((!plate).then_some(self.color));
+                let (i, c) = if self.tool == tool::MARKER {
+                    colour_shown_in(&MARKER_PALETTE, Some(self.marker_color))
+                } else {
+                    colour_shown((!plate).then_some(self.color))
+                };
                 ui.set_color_index(i);
                 ui.set_color_rgb(c);
+                ui.set_marker_size(self.marker_size_i as i32);
                 ui.set_thick_index(self.thick as i32);
                 let fill = if self.tool == tool::TEXT {
                     self.text_outline

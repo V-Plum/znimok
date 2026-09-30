@@ -893,6 +893,11 @@ insp-position = Положення й розмір
 # @max: 24
 insp-place = Положення
 
+# @where: Inspector, Marker: tooltip of the fourth (thickest) thickness button
+# @kind: tooltip
+# @max: 24
+marker-extra-thick = Дуже товста
+
 # @where: Fill section: button that swaps the stroke and fill colours (text: letters and outline)
 # @kind: tooltip
 # @max: 40
