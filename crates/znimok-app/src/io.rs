@@ -2,7 +2,6 @@
 //! The clipboard goes through `arboard` for now; the platform `Clipboard` trait (ZK-42) replaces
 //! it once the Windows and macOS implementations land.
 
-use std::io::Write;
 use std::path::Path;
 
 use znimok_core::Raster;
@@ -127,13 +126,61 @@ pub fn write_image(
     rgba: Vec<u8>,
     meta: Option<&crate::filemeta::FileMeta>,
 ) -> Result<(), String> {
+    let opts = Encode {
+        format: Format::for_path(path),
+        quality: 92,
+        white_bg: false,
+    };
+    let bytes = encode(w, h, &rgba, opts, meta)?;
+    std::fs::write(path, bytes).map_err(|e| e.to_string())?;
+    if let Some(m) = meta {
+        crate::filemeta::set_file_time(path, m.created_ms);
+    }
+    Ok(())
+}
+
+/// How a picture is written (ZK-187): the format, JPEG's quality, transparency over white.
+#[derive(Clone, Copy, Debug)]
+pub struct Encode {
+    pub format: Format,
+    /// JPEG only, 1–100.
+    pub quality: u8,
+    /// Transparent pixels over white (JPEG always, having no alpha).
+    pub white_bg: bool,
+}
+
+/// The file's bytes. Metadata goes in when `meta` is given and writing it is switched on.
+pub fn encode(
+    w: u32,
+    h: u32,
+    rgba: &[u8],
+    opts: Encode,
+    meta: Option<&crate::filemeta::FileMeta>,
+) -> Result<Vec<u8>, String> {
     use image::ImageEncoder;
     let written = meta.filter(|_| crate::filemeta::enabled());
-    let img = image::RgbaImage::from_raw(w, h, rgba).ok_or("image buffer size mismatch")?;
-    let file = std::fs::File::create(path).map_err(|e| e.to_string())?;
-    let mut out = std::io::BufWriter::new(file);
+    let over_white = |p: &[u8]| {
+        let a = p[3] as u32;
+        let mix = |c: u8| ((c as u32 * a + 255 * (255 - a)) / 255) as u8;
+        [mix(p[0]), mix(p[1]), mix(p[2])]
+    };
+    let flat: Option<Vec<u8>> = (opts.white_bg && opts.format != Format::Jpeg).then(|| {
+        rgba.as_chunks::<4>()
+            .0
+            .iter()
+            .flat_map(|p| {
+                let [r, g, b] = over_white(p);
+                [r, g, b, 255]
+            })
+            .collect()
+    });
+    let rgba = flat.as_deref().unwrap_or(rgba);
+    if rgba.len() != w as usize * h as usize * 4 {
+        return Err("image buffer size mismatch".into());
+    }
+    let mut out = Vec::new();
     let err = |e: image::ImageError| e.to_string();
-    match Format::for_path(path) {
+    match opts.format {
         Format::Png => {
             let mut enc = png::Encoder::new(&mut out, w, h);
             enc.set_color(png::ColorType::Rgba);
@@ -145,8 +192,7 @@ pub fn write_image(
                 }
             }
             let mut wr = enc.write_header().map_err(|e| e.to_string())?;
-            wr.write_image_data(img.as_raw())
-                .map_err(|e| e.to_string())?;
+            wr.write_image_data(rgba).map_err(|e| e.to_string())?;
             wr.finish().map_err(|e| e.to_string())?;
         }
         Format::Webp => {
@@ -154,29 +200,46 @@ pub fn write_image(
             if let Some(m) = written {
                 let _ = enc.set_exif_metadata(m.exif());
             }
-            enc.write_image(img.as_raw(), w, h, image::ExtendedColorType::Rgba8)
+            enc.write_image(rgba, w, h, image::ExtendedColorType::Rgba8)
                 .map_err(err)?;
         }
         Format::Jpeg => {
-            let rgb = image::RgbImage::from_fn(w, h, |x, y| {
-                let p = img.get_pixel(x, y).0;
-                let a = p[3] as u32;
-                let mix = |c: u8| ((c as u32 * a + 255 * (255 - a)) / 255) as u8;
-                image::Rgb([mix(p[0]), mix(p[1]), mix(p[2])])
-            });
-            let mut enc = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut out, 92);
+            let rgb: Vec<u8> = rgba
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .flat_map(|p| over_white(p))
+                .collect();
+            let mut enc = image::codecs::jpeg::JpegEncoder::new_with_quality(
+                &mut out,
+                opts.quality.clamp(1, 100),
+            );
             if let Some(m) = written {
                 let _ = enc.set_exif_metadata(m.exif());
             }
-            rgb.write_with_encoder(enc).map_err(err)?;
+            enc.write_image(&rgb, w, h, image::ExtendedColorType::Rgb8)
+                .map_err(err)?;
         }
     }
-    out.flush().map_err(|e| e.to_string())?;
-    drop(out);
-    if let Some(m) = meta {
-        crate::filemeta::set_file_time(path, m.created_ms);
+    Ok(out)
+}
+
+/// The picture scaled to `w2`×`h2` (Lanczos down, Catmull–Rom up); the same size is returned as is.
+pub fn scaled(w: u32, h: u32, rgba: Vec<u8>, w2: u32, h2: u32) -> (u32, u32, Vec<u8>) {
+    let (w2, h2) = (w2.max(1), h2.max(1));
+    if (w2, h2) == (w, h) {
+        return (w, h, rgba);
     }
-    Ok(())
+    let Some(img) = image::RgbaImage::from_raw(w, h, rgba) else {
+        return (0, 0, Vec::new());
+    };
+    let filter = if w2 < w {
+        image::imageops::FilterType::Lanczos3
+    } else {
+        image::imageops::FilterType::CatmullRom
+    };
+    let out = image::imageops::resize(&img, w2, h2, filter);
+    (w2, h2, out.into_raw())
 }
 
 pub fn copy_image(w: u32, h: u32, rgba: Vec<u8>) -> Result<(), String> {

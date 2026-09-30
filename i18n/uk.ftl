@@ -2330,6 +2330,106 @@ export-done-toast = Експортовано «{ $name }»
 # @max: 80
 export-error = Не вдалося зберегти файл.
 
+# @where: Export sheet: the format card titles
+# @kind: label
+# @max: 12
+export-png = PNG
+
+# @where: Export sheet: the format card titles
+# @kind: label
+# @max: 12
+export-jpeg = JPEG
+
+# @where: Export sheet: the format card titles
+# @kind: label
+# @max: 12
+export-webp = WebP
+
+# @where: Export sheet: PNG card, beside the title
+# @kind: label
+# @max: 20
+export-png-sub = без втрат
+
+# @where: Export sheet: JPEG card, beside the title
+# @kind: label
+# @max: 20
+export-jpeg-sub = з якістю
+
+# @where: Export sheet: WebP card, beside the title
+# @kind: label
+# @max: 20
+export-webp-sub = без втрат
+
+# @where: Export sheet: PNG card, what it is for
+# @kind: hint
+# @max: 90
+export-png-desc = Кожен піксель як є, з прозорістю — для інтерфейсів і тексту.
+
+# @where: Export sheet: JPEG card, what it is for
+# @kind: hint
+# @max: 90
+export-jpeg-desc = Найменший для фото й градієнтів; без прозорості.
+
+# @where: Export sheet: WebP card, what it is for
+# @kind: hint
+# @max: 90
+export-webp-desc = Без втрат; відкривається в браузерах і чатах.
+
+# @where: Export sheet: under the title — the picture's size and the size it will have
+# @kind: status
+# @max: 80
+export-subtitle = { $w } × { $h } → { $tw } × { $th } px · позначки вмальовано
+
+# @where: Export sheet: caption of the row «To clipboard / File… / To the library»
+# @kind: label
+# @max: 16
+export-where = Куди
+
+# @where: Export sheet: where to — a file (the save dialog comes next)
+# @kind: button
+# @max: 16
+export-to-file = Файл…
+
+# @where: Export sheet: where to — a flat copy in the library
+# @kind: button
+# @max: 20
+export-to-library = У бібліотеку
+
+# @where: Export sheet: note when the clipboard is chosen
+# @kind: hint
+# @max: 100
+export-clipboard-note = У буфер іде саме зображення; формат і якість — для файлів.
+
+# @where: Export sheet: the main button for a file
+# @kind: button
+# @max: 24
+export-go = Експортувати { $format }
+
+# @where: Export sheet: the main button for the clipboard
+# @kind: button
+# @max: 24
+export-go-copy = Скопіювати
+
+# @where: Export sheet: the main button for the library
+# @kind: button
+# @max: 24
+export-go-library = Зберегти в бібліотеку
+
+# @where: Toast: the flat copy went to the library
+# @kind: toast
+# @max: 48
+export-library-done = Пласка копія — у бібліотеці
+
+# @where: A file size in kilobytes
+# @kind: label
+# @max: 12
+size-kb = { $n } КБ
+
+# @where: A file size in megabytes
+# @kind: label
+# @max: 12
+size-mb = { $n } МБ
+
 # @where: Toast after copying
 # @kind: toast
 # @max: 24

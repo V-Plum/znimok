@@ -95,7 +95,8 @@ Settings → Screenshots; the hint strip at the bottom of the overlay shows the 
 |---|---|---|
 | Repeat the last action: copy or export | Enter | Enter |
 | Copy image | Ctrl+C | ⌘C |
-| Export to a file | Ctrl+Shift+S | ⇧⌘S |
+| Export (the sheet) | Ctrl+E or Ctrl+Shift+S | ⌘E or ⇧⌘S |
+| Repeat the last export | Ctrl+Shift+E | ⇧⌘E |
 | Save to the library now | Ctrl+S | ⌘S |
 | Open a file | Ctrl+O | ⌘O |
 

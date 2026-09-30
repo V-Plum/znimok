@@ -379,6 +379,15 @@ global Palette {
     out property <[color]> marker: [#FFFF00, #00FF00, #FF00FF, #00FFFF];
 }
 
+// A format card of the export sheet (ZK-187).
+export struct ExportCard {
+    title: string,
+    sub: string,
+    desc: string,
+    estimate: string,
+    enabled: bool,
+}
+
 export struct LayerRow {
     // Mark id, or the group id on a group's header row.
     id: int,
@@ -962,13 +971,18 @@ component HoldButton inherits Rectangle {
 component SwitchRow inherits HorizontalLayout {
     in property <string> text;
     in-out property <bool> checked;
+    // Off: shown as it is, dimmed, and not switchable (the export sheet's «white» for JPEG).
+    in property <bool> enabled: true;
     callback toggled;
     spacing: 8px;
     height: 24px;
-    Text { text: root.text; color: Theme.text2; font-size: 12px; vertical-alignment: center; horizontal-stretch: 1; wrap: word-wrap; }
+    Text { text: root.text; color: root.enabled ? Theme.text2 : Theme.text3; font-size: 12px; vertical-alignment: center; horizontal-stretch: 1; wrap: word-wrap; }
     VerticalLayout {
         alignment: center;
+        opacity: root.enabled ? 1 : 0.5;
         Switch { checked <=> root.checked; toggled => { root.toggled(); } }
+        // Takes the clicks while off.
+        if !root.enabled: TouchArea { }
     }
 }
 
@@ -4016,6 +4030,209 @@ export component AppWindow inherits Window {
         ResizeEdge { x: parent.width - 10px; y: 0; width: 10px; height: 10px; dir: 2; mouse-cursor: nesw-resize; resize(d) => { root.window-resize(d); } }
         ResizeEdge { x: 0; y: parent.height - 10px; width: 10px; height: 10px; dir: 6; mouse-cursor: nesw-resize; resize(d) => { root.window-resize(d); } }
         ResizeEdge { x: parent.width - 10px; y: parent.height - 10px; width: 10px; height: 10px; dir: 5; mouse-cursor: nwse-resize; resize(d) => { root.window-resize(d); } }
+    }
+
+    // ---- the export sheet (ZK-187): formats as cards with a size estimate on the left, the
+    // chosen format's settings on the right, where it goes, and the two buttons. Built so the
+    // video formats (MP4 / GIF / HTML) fit the same frame later.
+    in property <bool> exp-open;
+    in property <[ExportCard]> exp-cards;
+    in property <int> exp-format;
+    in property <int> exp-quality: 90;
+    in property <int> exp-scale: 1;
+    in-out property <string> exp-width;
+    in property <bool> exp-metadata;
+    in property <bool> exp-white;
+    in property <bool> exp-white-forced;
+    in property <bool> exp-remember: true;
+    in property <int> exp-to: 1;
+    in-out property <string> exp-name;
+    in property <string> exp-subtitle;
+    in property <string> exp-estimate;
+    in property <string> exp-go;
+    in property <image> exp-preview;
+    callback exp-set(string, int);
+    callback exp-width-set(string);
+    callback exp-go-clicked();
+    callback exp-close();
+    changed exp-open => {
+        if (root.exp-open) {
+            Tip.armed = false;
+            exp-keys.focus();
+        }
+    }
+    Rectangle {
+        x: 0;
+        y: 0;
+        width: root.width;
+        height: root.height;
+        background: #00000088;
+        opacity: root.exp-open ? 1 : 0;
+        visible: self.opacity > 0.01;
+        animate opacity { duration: 160ms; easing: ease-out; }
+        TouchArea { clicked => { root.exp-close(); } }
+        exp-keys := FocusScope {
+            enabled: root.exp-open;
+            key-pressed(e) => {
+                if (e.text == Key.Escape) {
+                    root.exp-close();
+                } else if (e.text == Key.Return) {
+                    root.exp-go-clicked();
+                }
+                accept
+            }
+        }
+        Rectangle {
+            width: min(840px, root.width - 32px);
+            height: min(exp-lay.preferred-height, root.height - 32px);
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2 - 12px;
+            border-radius: 16px;
+            background: Theme.panel;
+            border-width: 1px;
+            border-color: Theme.control-on;
+            drop-shadow-blur: 40px;
+            drop-shadow-offset-y: 12px;
+            drop-shadow-color: #000000A0;
+            clip: true;
+            transform-origin: { x: self.width / 2, y: self.height / 2 };
+            transform-scale: root.exp-open ? 1.0 : 0.94;
+            animate transform-scale { duration: 260ms; easing: cubic-bezier(0.2, 0.9, 0.3, 1.12); }
+            TouchArea { }
+            exp-lay := VerticalLayout {
+                padding: 22px;
+                padding-top: 18px;
+                spacing: 16px;
+                HorizontalLayout {
+                    spacing: 12px;
+                    height: 28px;
+                    Text { text: @tr("export-title" => "Export file"); color: Theme.text; font-size: 18px; font-weight: 800; vertical-alignment: center; }
+                    Text { text: root.exp-subtitle; color: Theme.text3; font-size: 12px; vertical-alignment: center; horizontal-stretch: 1; overflow: elide; }
+                    IconButton { width: 32px; height: 28px; icon: "M6 6 L18 18 M18 6 L6 18"; label: @tr("common-close" => "Close") + "  Esc"; clicked => { root.exp-close(); } }
+                }
+                HorizontalLayout {
+                    spacing: 20px;
+                    // formats
+                    VerticalLayout {
+                        width: 320px;
+                        spacing: 8px;
+                        alignment: start;
+                        for c[i] in root.exp-cards: Rectangle {
+                            height: card-lay.preferred-height;
+                            border-radius: 12px;
+                            background: root.exp-format == i ? Theme.accent.transparentize(0.86) : (card-ta.has-hover ? Theme.hover : Theme.elevated);
+                            border-width: 1.5px;
+                            border-color: root.exp-format == i ? Theme.accent : transparent;
+                            animate background, border-color { duration: 140ms; }
+                            opacity: c.enabled ? 1 : 0.55;
+                            card-lay := VerticalLayout {
+                                padding: 14px;
+                                padding-left: 16px;
+                                spacing: 5px;
+                                HorizontalLayout {
+                                    spacing: 8px;
+                                    Text { text: c.title; color: Theme.text; font-size: 14px; font-weight: 700; }
+                                    Text { text: c.sub; color: Theme.text3; font-size: 13px; horizontal-stretch: 1; }
+                                }
+                                Text { text: c.desc; color: Theme.text2; font-size: 12px; wrap: word-wrap; }
+                                Text { text: c.estimate; color: Theme.accent; font-size: 11px; font-family: "JetBrains Mono"; }
+                            }
+                            card-ta := TipTouch {
+                                enabled: c.enabled;
+                                clicked => { root.exp-set("format", i); }
+                            }
+                        }
+                        Rectangle { height: 4px; }
+                        // the preview, as it will look
+                        Rectangle {
+                            height: 140px;
+                            border-radius: 10px;
+                            background: Theme.elevated;
+                            clip: true;
+                            Image { source: root.exp-preview; width: parent.width - 16px; height: parent.height - 16px; image-fit: contain; }
+                        }
+                    }
+                    // the chosen format's settings
+                    Rectangle { width: 1px; background: Theme.line; }
+                    VerticalLayout {
+                        horizontal-stretch: 1;
+                        spacing: 10px;
+                        alignment: start;
+                        if root.exp-format == 1: VerticalLayout {
+                            spacing: 8px;
+                            HorizontalLayout {
+                                Text { text: @tr("export-quality" => "Quality"); color: Theme.text3; font-size: 11px; font-weight: 600; letter-spacing: 0.4px; horizontal-stretch: 1; }
+                                Text { text: root.exp-quality; color: Theme.text; font-size: 12px; font-family: "JetBrains Mono"; }
+                            }
+                            MiniSlider {
+                                height: 20px;
+                                value: (root.exp-quality - 1) / 99;
+                                moved(v) => { root.exp-set("quality", round(1 + v * 99)); }
+                            }
+                            HorizontalLayout {
+                                spacing: 4px;
+                                for q in [60, 75, 85, 92]: SegOption { text: q; on: root.exp-quality == q; clicked => { root.exp-set("quality", q); } }
+                            }
+                        }
+                        Text { text: @tr("export-scale" => "Scale"); color: Theme.text3; font-size: 11px; font-weight: 600; letter-spacing: 0.4px; }
+                        HorizontalLayout {
+                            spacing: 4px;
+                            SegOption { text: "50 %"; on: root.exp-scale == 0; clicked => { root.exp-set("scale", 0); } }
+                            SegOption { text: "100 %"; on: root.exp-scale == 1; clicked => { root.exp-set("scale", 1); } }
+                            SegOption { text: "200 %"; on: root.exp-scale == 2; clicked => { root.exp-set("scale", 2); } }
+                            NumField { width: 110px; label: "px"; value <=> root.exp-width; committed(v) => { root.exp-width-set(v); } }
+                        }
+                        Rectangle {
+                            border-radius: 10px;
+                            background: Theme.elevated;
+                            height: est-lay.preferred-height;
+                            est-lay := HorizontalLayout {
+                                padding: 12px;
+                                Text { text: @tr("export-size" => "Size"); color: Theme.text2; font-size: 12px; horizontal-stretch: 1; }
+                                Text { text: root.exp-estimate; color: Theme.accent; font-size: 12px; font-family: "JetBrains Mono"; }
+                            }
+                        }
+                        SwitchRow { text: @tr("export-metadata" => "Write metadata (title, description, author, date)"); checked: root.exp-metadata; toggled => { root.exp-set("metadata", self.checked ? 1 : 0); } }
+                        SwitchRow { enabled: !root.exp-white-forced; text: @tr("export-white-bg" => "Transparent background → white"); checked: root.exp-white; toggled => { root.exp-set("white", self.checked ? 1 : 0); } }
+                        SwitchRow { text: @tr("export-remember" => "Remember these settings"); checked: root.exp-remember; toggled => { root.exp-set("remember", self.checked ? 1 : 0); } }
+                        Text { text: @tr("export-name" => "Name"); color: Theme.text3; font-size: 11px; font-weight: 600; letter-spacing: 0.4px; }
+                        Rectangle {
+                            height: 30px;
+                            border-radius: 7px;
+                            background: Theme.elevated;
+                            border-width: 1px;
+                            border-color: name-in.has-focus ? Theme.accent : Theme.control-on;
+                            name-in := TextInput {
+                                x: 10px;
+                                width: parent.width - 20px;
+                                height: parent.height;
+                                vertical-alignment: center;
+                                color: Theme.text;
+                                font-size: 13px;
+                                single-line: true;
+                                text <=> root.exp-name;
+                                accessible-label: @tr("export-name-a11y" => "File name");
+                            }
+                        }
+                        Text { text: @tr("export-where" => "Where"); color: Theme.text3; font-size: 11px; font-weight: 600; letter-spacing: 0.4px; }
+                        HorizontalLayout {
+                            spacing: 4px;
+                            SegOption { text: @tr("export-to-clipboard" => "To clipboard"); on: root.exp-to == 0; clicked => { root.exp-set("to", 0); } }
+                            SegOption { text: @tr("export-to-file" => "File…"); on: root.exp-to == 1; clicked => { root.exp-set("to", 1); } }
+                            SegOption { text: @tr("export-to-library" => "To the library"); on: root.exp-to == 2; clicked => { root.exp-set("to", 2); } }
+                        }
+                        if root.exp-to == 0: Text { text: @tr("export-clipboard-note" => "The clipboard takes the picture itself; the format and quality are for files."); color: Theme.text3; font-size: 11px; wrap: word-wrap; }
+                        HorizontalLayout {
+                            padding-top: 6px;
+                            spacing: 8px;
+                            alignment: end;
+                            TextButton { text: @tr("common-cancel" => "Cancel"); clicked => { root.exp-close(); } }
+                            TextButton { primary: true; text: root.exp-go; clicked => { root.exp-go-clicked(); } }
+                        }
+                    }
+                }
+            }
+        }
     }
 
     // ---- in-window dialog (owner, 28.09): questions in the app's own look, not the system box.
