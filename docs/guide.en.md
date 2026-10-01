@@ -162,7 +162,9 @@ window's close button just closes it. The window's title is the document's name.
 ## The library
 
 Every shot saves itself to the library (autosave can be turned off — then Ctrl+S and a question on
-closing). Cards show thumbnails; search looks at the name, description and tags. Hovering a card
+closing). Cards show thumbnails; search looks at the name, description and tags; the "All / Shots /
+Videos" switch in the header shows one kind (the choice is kept). Videos have a size limit of their
+own (Settings → Library, 5 GB by default): the oldest go to the trash, screenshots are not affected. Hovering a card
 offers rename, show in folder, to the trash (with "Undo"). Shift+trash deletes for good after one
 question.
 

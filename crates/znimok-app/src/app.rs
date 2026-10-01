@@ -275,7 +275,7 @@ pub struct App {
     me: crate::wins::WeakCtx,
     pub tr: std::rc::Rc<Localizer>,
     pub lib_dir: PathBuf,
-    entries: Vec<Entry>,
+    pub(crate) entries: Vec<Entry>,
     filter: String,
     pub s: Option<Session>,
     pub over: Option<Over>,
@@ -651,6 +651,12 @@ impl App {
         if self.role == crate::wins::Role::Library {
             let days = self.prefs().library.trash_days as u64;
             library::purge_trash(&self.lib_dir, days);
+            // Leftovers of writes a crash cut off (ZK-100); nothing is recording at start.
+            library::clean_parts(
+                &self.lib_dir,
+                &library::cache_dir().join("recordings"),
+                std::time::Duration::from_secs(600),
+            );
         }
         let p = self.prefs();
         self.autosave = p.editor.autosave;
@@ -1378,6 +1384,7 @@ impl App {
         ui.set_pref_ret_size(p.library.retention.by == znimok_settings::RetentionBy::Size);
         ui.set_pref_ret_count(p.library.retention.count.to_string().into());
         ui.set_pref_ret_mb(p.library.retention.size_mb.to_string().into());
+        ui.set_pref_video_mb(p.library.video_limit_mb.to_string().into());
         ui.set_pref_trash_days(p.library.trash_days.to_string().into());
         ui.set_pref_rec_fps(if p.video.fps >= 45 { 60 } else { 30 });
         ui.set_pref_rec_quality(match p.video.quality {
@@ -1593,6 +1600,16 @@ impl App {
             "ret-mb" => {
                 let n = ui.get_pref_ret_mb().trim().parse::<u64>().unwrap_or(500);
                 self.save_prefs(ui, |p| p.library.retention.size_mb = n);
+            }
+            // The videos' own size limit, MB (ZK-100).
+            "ret-video-mb" => {
+                let n = ui
+                    .get_pref_video_mb()
+                    .trim()
+                    .parse::<u64>()
+                    .unwrap_or(5120)
+                    .clamp(100, 10_000_000);
+                self.save_prefs(ui, |p| p.library.video_limit_mb = n);
             }
             "lib-folder" => {
                 let Some(dir) = rfd::FileDialog::new()
@@ -1947,6 +1964,17 @@ impl App {
                     self.refresh_library(ui);
                 }
             }
+            // All / screenshots / videos (ZK-100), kept in the settings.
+            "kind-all" | "kind-shots" | "kind-videos" => {
+                let kind = match what {
+                    "kind-shots" => znimok_settings::LibraryFilter::Shots,
+                    "kind-videos" => znimok_settings::LibraryFilter::Videos,
+                    _ => znimok_settings::LibraryFilter::All,
+                };
+                self.save_prefs(ui, |p| p.library.filter = kind);
+                self.clear_picks();
+                self.show_cards(ui);
+            }
             "pick-all" => {
                 self.picked = self.shown.clone();
                 self.show_picks(ui);
@@ -2096,18 +2124,21 @@ impl App {
         self.save_now(ui);
     }
 
-    /// Keeps the library within its limit (settings → library): the oldest screenshots go to
-    /// the trash, never an open one.
+    /// Keeps the library within its limits (settings → library): the oldest screenshots go to
+    /// the trash past the screenshots' limit, the oldest videos past the videos' size (ZK-100);
+    /// never an open or a pinned one.
     pub fn apply_retention(&mut self, ui: &AppWindow) {
         if self.role == crate::wins::Role::Editor {
             crate::wins::library_later(|a, ui| a.apply_retention(ui));
             return;
         }
         let r = self.prefs().library.retention;
+        let video_limit = self.prefs().library.video_limit_mb.max(1) * 1024 * 1024;
         let open = crate::wins::open_paths();
         let entries = library::scan(&self.lib_dir, self.index.as_ref().map(|(_, i)| i));
         let mut used: u64 = 0;
         let mut kept: u32 = 0;
+        let mut video_used: u64 = 0;
         let mut gone = 0;
         for e in &entries {
             // Pinned documents are never trashed by the limit, nor counted in it (ZK-178).
@@ -2115,6 +2146,17 @@ impl App {
                 continue;
             }
             let size = std::fs::metadata(&e.path).map(|m| m.len()).unwrap_or(0);
+            // Videos have a size limit of their own and do not count against the screenshots'.
+            if e.video_ms.is_some() {
+                if video_used + size > video_limit && !open.iter().any(|p| p == &e.path) {
+                    if library::move_to_trash(&self.lib_dir, &e.path).is_ok() {
+                        gone += 1;
+                    }
+                } else {
+                    video_used += size;
+                }
+                continue;
+            }
             let over = match r.by {
                 znimok_settings::RetentionBy::Count => kept >= r.count.max(1),
                 znimok_settings::RetentionBy::Size => used + size > r.size_mb.max(1) * 1024 * 1024,
@@ -2140,6 +2182,13 @@ impl App {
 
     fn show_cards(&mut self, ui: &AppWindow) {
         let days = self.prefs().library.trash_days as i64;
+        // All / screenshots / videos (ZK-100).
+        let kind = self.prefs().library.filter;
+        ui.set_lib_kind(match kind {
+            znimok_settings::LibraryFilter::All => 0,
+            znimok_settings::LibraryFilter::Shots => 1,
+            znimok_settings::LibraryFilter::Videos => 2,
+        });
         // Groups (ZK-177): pinned first (not in the trash), then by date — of capture in the
         // library, of deletion in the trash. Each group keeps the newest first.
         let when = |e: &library::Entry| {
@@ -2153,6 +2202,11 @@ impl App {
             .entries
             .iter()
             .filter(|e| e.matches(&self.filter))
+            .filter(|e| match kind {
+                znimok_settings::LibraryFilter::All => true,
+                znimok_settings::LibraryFilter::Shots => e.video_ms.is_none(),
+                znimok_settings::LibraryFilter::Videos => e.video_ms.is_some(),
+            })
             .map(|e| {
                 let t = when(e);
                 let g = if e.pinned && !self.trash_view {

@@ -2143,6 +2143,10 @@ export component AppWindow inherits Window {
     in property <int> pref-rec-sound;
     in property <bool> pref-rec-cursor: true;
     in-out property <string> pref-ret-mb;
+    // The videos' own size limit, MB (ZK-100).
+    in-out property <string> pref-video-mb;
+    // What the library shows (ZK-100): 0 all, 1 screenshots, 2 videos.
+    in property <int> lib-kind;
     in property <string> pref-lib-dir;
     in property <string> pref-file;
     in property <string> pref-version;
@@ -2247,8 +2251,23 @@ export component AppWindow inherits Window {
                                 SegOption { text: root.trash-count > 0 ? @tr("lib-trash-tab" => "Trash") + " · " + root.trash-count : @tr("lib-trash-tab" => "Trash"); on: root.trash-view; clicked => { root.lib-action("view-trash", ""); } }
                             }
                         }
+                        // All / screenshots / videos (ZK-100).
+                        if !root.trash-view: Rectangle {
+                            y: (parent.height - self.height) / 2;
+                            width: 250px;
+                            height: 32px;
+                            border-radius: 9px;
+                            background: Theme.elevated;
+                            HorizontalLayout {
+                                padding: 2px;
+                                spacing: 2px;
+                                SegOption { text: @tr("lib-kind-all" => "All"); on: root.lib-kind == 0; clicked => { root.lib-action("kind-all", ""); } }
+                                SegOption { text: @tr("lib-kind-shots" => "Shots"); on: root.lib-kind == 1; clicked => { root.lib-action("kind-shots", ""); } }
+                                SegOption { text: @tr("lib-kind-videos" => "Videos"); on: root.lib-kind == 2; clicked => { root.lib-action("kind-videos", ""); } }
+                            }
+                        }
                         Rectangle {
-                            width: 360px;
+                            width: 300px;
                             LineEdit {
                                 y: (parent.height - self.height) / 2;
                                 width: parent.width;
@@ -2775,6 +2794,13 @@ export component AppWindow inherits Window {
                                     if !root.pref-ret-size: NumField { width: 110px; label: ""; value <=> root.pref-ret-count; committed(v) => { root.setting("ret-count", 0); } }
                                     if root.pref-ret-size: NumField { width: 110px; label: ""; value <=> root.pref-ret-mb; committed(v) => { root.setting("ret-mb", 0); } }
                                     Text { text: root.pref-ret-size ? "MB" : ""; color: Theme.text3; font-size: 12px; vertical-alignment: center; width: 24px; }
+                                }
+                                // ZK-100: videos have a size limit of their own.
+                                HorizontalLayout {
+                                    spacing: 8px;
+                                    Text { text: @tr("libset-keep-videos" => "Videos — no more than"); color: Theme.text2; font-size: 12px; vertical-alignment: center; horizontal-stretch: 1; wrap: word-wrap; }
+                                    NumField { width: 110px; label: ""; value <=> root.pref-video-mb; committed(v) => { root.setting("ret-video-mb", 0); } }
+                                    Text { text: "MB"; color: Theme.text3; font-size: 12px; vertical-alignment: center; width: 24px; }
                                 }
                                 Text { text: @tr("libset-oldest-trash" => "The oldest go to the trash, not away for good"); color: Theme.text3; font-size: 11px; wrap: word-wrap; }
                                 Rectangle { height: 1px; background: Theme.line; }

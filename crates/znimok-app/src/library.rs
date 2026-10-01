@@ -191,6 +191,35 @@ pub fn purge_trash(lib: &Path, days: u64) {
     }
 }
 
+/// Leftovers of work that never finished (ZK-100): `.part` files in the library (a document or a
+/// wrapped recording whose write was cut off) and in the recordings cache (an MP4 left by a crash
+/// before it became a document), older than `min_age` — a younger one may still be written.
+/// Returns how many went.
+pub fn clean_parts(lib: &Path, cache: &Path, min_age: std::time::Duration) -> usize {
+    let old = |e: &std::fs::DirEntry| {
+        e.metadata()
+            .and_then(|m| m.modified())
+            .ok()
+            .and_then(|t| t.elapsed().ok())
+            .is_some_and(|age| age > min_age)
+    };
+    let mut gone = 0;
+    for (dir, all) in [(lib, false), (cache, true)] {
+        let Ok(rd) = std::fs::read_dir(dir) else {
+            continue;
+        };
+        for e in rd.flatten() {
+            let p = e.path();
+            let is_part = p.extension().is_some_and(|x| x == "part");
+            let is_mp4 = all && p.extension().is_some_and(|x| x == "mp4");
+            if p.is_file() && (is_part || is_mp4) && old(&e) && std::fs::remove_file(&p).is_ok() {
+                gone += 1;
+            }
+        }
+    }
+    gone
+}
+
 #[cfg(windows)]
 fn hide(dir: &Path) {
     use std::os::windows::ffi::OsStrExt;
@@ -497,6 +526,43 @@ pub fn thumb_image(png: &[u8]) -> Option<slint::Image> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// ZK-100: `.part` leftovers in the library and MP4 / `.part` in the recordings cache go
+    /// once old enough; documents stay, and so does anything younger.
+    #[test]
+    fn clean_parts_removes_old_leftovers_only() {
+        let base = std::env::temp_dir().join(format!("znimok-parts-{}", std::process::id()));
+        let (lib, cache) = (base.join("lib"), base.join("rec"));
+        std::fs::create_dir_all(&lib).unwrap();
+        std::fs::create_dir_all(&cache).unwrap();
+        let old = std::time::SystemTime::now() - std::time::Duration::from_secs(3600);
+        let make = |p: &Path, aged: bool| {
+            let f = std::fs::File::create(p).unwrap();
+            if aged {
+                f.set_modified(old).unwrap();
+            }
+        };
+        make(&lib.join("a.part"), true);
+        make(&lib.join("young.part"), false);
+        make(&lib.join("doc.znimok"), true);
+        make(&lib.join("keep.mp4"), true);
+        make(&cache.join("rec-1.mp4"), true);
+        make(&cache.join("rec-1.mp4.part"), true);
+        let gone = clean_parts(&lib, &cache, std::time::Duration::from_secs(600));
+        let left = |d: &Path| {
+            let mut v: Vec<String> = std::fs::read_dir(d)
+                .unwrap()
+                .flatten()
+                .map(|e| e.file_name().to_string_lossy().into_owned())
+                .collect();
+            v.sort();
+            v
+        };
+        assert_eq!(gone, 3);
+        assert_eq!(left(&lib), ["doc.znimok", "keep.mp4", "young.part"]);
+        assert!(left(&cache).is_empty());
+        let _ = std::fs::remove_dir_all(&base);
+    }
 
     fn png(w: u32, h: u32) -> Vec<u8> {
         let mut out = Vec::new();

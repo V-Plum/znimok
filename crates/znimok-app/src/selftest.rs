@@ -4064,6 +4064,22 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
             format!("{clicks:?} · middle {middle:?}"),
         );
         ui.invoke_setting("rec-sound".into(), 0);
+        // ZK-100: the library shows all, only screenshots or only videos; the choice is kept.
+        if let Some((lib, lw)) = crate::wins::library() {
+            use slint::Model;
+            let videos = lib.borrow().entries.iter().filter(|e| e.video_ms.is_some()).count();
+            let shots = lib.borrow().entries.len() - videos;
+            let count = |what: &str| {
+                lw.invoke_lib_action(what.into(), "".into());
+                lw.get_cards().row_count()
+            };
+            let (v, s, a) = (count("kind-videos"), count("kind-shots"), count("kind-all"));
+            r.check(
+                "library: All / Shots / Videos show what they say",
+                videos >= 1 && v == videos && s == shots && a == videos + shots && lw.get_lib_kind() == 0,
+                format!("videos {v}/{videos} · shots {s}/{shots} · all {a}"),
+            );
+        }
         crate::pill::close();
         if let Some(p) = path {
             app.borrow_mut().open_path(ui, &p);
