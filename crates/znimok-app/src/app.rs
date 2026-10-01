@@ -8242,6 +8242,7 @@ impl App {
     }
 
     /// For the self-test: the video sheet's estimates (MP4, GIF, HTML) and whether one runs.
+    #[cfg_attr(not(windows), allow(dead_code))]
     pub fn vexport_state(&self) -> ([Option<u64>; 3], bool) {
         (self.vexp_sizes, self.vexp_run.is_some())
     }
