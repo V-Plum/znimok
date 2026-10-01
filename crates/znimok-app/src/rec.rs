@@ -72,6 +72,15 @@ impl Active {
     }
 }
 
+/// The recording is paused.
+pub fn is_paused() -> bool {
+    REC.with(|r| {
+        r.borrow()
+            .as_ref()
+            .is_some_and(|a| a.paused_since.is_some())
+    })
+}
+
 pub fn is_recording() -> bool {
     REC.with(|r| r.borrow().is_some())
 }
@@ -268,6 +277,8 @@ fn start_inner(choice: &Choice) -> Result<(), String> {
         })
     });
     show_indicators();
+    // The browser's log (ZK-97): the extension starts writing now.
+    crate::devlog::hub().start(znimok_devtools::now_ms());
     // Clicks on the bar (Pause, Stop) are not the recording's.
     REC.with(|r| {
         if let Some(a) = r.borrow().as_ref()
@@ -316,6 +327,7 @@ pub fn toggle_pause() {
             None => a.paused_since = Some(Instant::now()),
         }
         let paused = a.paused_since.is_some();
+        crate::devlog::hub().pause(paused);
         a.bar.set_paused(paused);
         for e in &a.edges {
             e.set_paused(paused);
@@ -336,6 +348,10 @@ pub fn stop() {
         let _ = e.hide();
     }
     set_tray(false, String::new());
+    // The browser's log ends with the recording (ZK-97).
+    let devlog = crate::devlog::hub().stop();
+    #[cfg(not(windows))]
+    let _ = devlog;
     #[cfg(windows)]
     {
         // The hook goes first: nothing after Stop is the recording's.
@@ -351,7 +367,7 @@ pub fn stop() {
             LAST_FRAMES.store(fin.result.frames, std::sync::atomic::Ordering::SeqCst);
             let warning = fin.result.warning;
             let r = match fin.path {
-                Some(p) => wrap(&p, &lib, &name, size, fps, source, &fin.result),
+                Some(p) => wrap(&p, &lib, &name, size, fps, source, &fin.result, devlog),
                 // Nothing came: WGC sends a window's frame only when it is drawn anew, so a
                 // window that did not change for the whole recording gives no video.
                 None => Err(fin
@@ -389,6 +405,7 @@ fn doc_name() -> String {
 /// The finished MP4 → a video document in the library: the first frame is the poster, a
 /// thumbnail for the card; the stream is copied in, never held in memory whole.
 #[cfg(windows)]
+#[allow(clippy::too_many_arguments)]
 fn wrap(
     mp4: &std::path::Path,
     lib: &std::path::Path,
@@ -397,6 +414,7 @@ fn wrap(
     fps: u32,
     source: &str,
     result: &znimok_video::recorder::RecordingResult,
+    devlog: Option<znimok_format::video::DevLog>,
 ) -> Result<(PathBuf, znimok_core::Raster), String> {
     use znimok_video::traits::{Decoded, VideoDecoder};
     let poster = {
@@ -463,6 +481,8 @@ fn wrap(
             down: e.event.down,
         })
         .collect();
+    // The browser's log of this recording (ZK-97).
+    video.devlog = devlog;
     doc.timeline = Some(video.edit.to_timeline());
     let opts = znimok_format::WriteOptions {
         app_version: format!("Znimok {}", env!("CARGO_PKG_VERSION")),

@@ -12,6 +12,7 @@ mod app;
 mod capture;
 mod codes;
 mod crash;
+mod devlog;
 mod dialog;
 #[cfg(target_os = "macos")]
 mod dnd_mac;
@@ -259,6 +260,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     app.borrow_mut().refresh_library(&ui);
 
     wire(&ui, &app);
+    // The browser's log (ZK-97): the IPC server the Native Messaging host talks to, the host
+    // registered for Chrome and Edge, and the extension's requests a few times a second. Not in
+    // the self-test (a running Znimok holds the endpoint).
+    let _ipc = if selftest_dir.is_none() {
+        devlog::register_host();
+        devlog::start_server()
+    } else {
+        None
+    };
+    let devtools_timer = slint::Timer::default();
+    devtools_timer.start(
+        slint::TimerMode::Repeated,
+        std::time::Duration::from_millis(200),
+        devlog::poll,
+    );
     if selftest_dir.is_none() {
         // Once the loop runs and the window exists: the report question is asked in it.
         let _ = slint::invoke_from_event_loop(|| {

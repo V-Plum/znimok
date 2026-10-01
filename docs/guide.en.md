@@ -238,6 +238,19 @@ plays, a hide shows as a hatched plate and a marker as a translucent one; paused
 frame's pixels again. "Frame as screenshot" takes that frame's marks along, editable. Changes of
 time undo like everything else.
 
+**The browser's DevTools log.** The Znimok extension for Chrome and Edge writes, while you record,
+what the page's DevTools panels show: the console (with objects and stacks), errors, the network —
+request and response headers, the request's payload, the response, timings — and navigations, in sync
+with the video (both take their time from the system clock; the recording's pauses are cut out of the
+log). The log lies in the recording's document. It is debugging data, so it is written in full;
+sensitive parts can be hidden on export. While the log is written the browser shows its
+"extension is debugging this browser" bar. The extension's "Record this window" starts recording the
+browser's window (Windows only for now); while it records, a click on its icon stops it, pause is in the
+right-click menu. Settings → "Recording" → "Browser": write the log, let the extension start a
+recording, and whether a browser is connected. Installing until the extension is in the Chrome Web
+Store: the release's `znimok-extension-….zip` → chrome://extensions → "Developer mode" → "Load
+unpacked". Znimok registers itself for the browsers; no administrator rights needed.
+
 **Exporting a video.** The top button in the "Video" mode is "Copy MP4" (Ctrl+C): the file goes to
 the clipboard, to paste into a chat or a folder. The menu next to it: "Copy GIF", "Copy frame"
 (Ctrl+Shift+C), "Export file…" (Ctrl+E), "Save to the library" (a new video document), "Frame as

@@ -373,6 +373,8 @@ jobs:
           mkdir -p out
           cp in/windows/*.zip in/windows/*.msi in/macos/*.zip in/macos/*.dmg in/mcpb/*.mcpb in/sbom/*.zip out/
           cp in/macos/appcast.xml out/ 2>/dev/null || true
+          # The browser extension of the DevTools log (ZK-97), to load unpacked until the store has it.
+          (cd extension && zip -q -r "../out/znimok-extension-${{ needs.version.outputs.version }}.zip" .)
           cd out
           sha256sum * > SHA256SUMS
           cat SHA256SUMS
@@ -396,6 +398,7 @@ jobs:
             echo "- Windows: Znimok-…-windows-x64.msi — installs for the current user, no admin rights (Start menu, .znimok files, Explorer thumbnails, \`znimok\` on PATH). The .zip is the same without installing."
             echo "- macOS (Apple silicon): Znimok-…-macos-arm64.dmg (or .zip) — ad-hoc signed, not notarised: open with right-click → Open. Finder thumbnails included. Updates itself through Sparkle (appcast.xml, EdDSA-signed)."
             echo "- Claude Desktop: znimok-….mcpb. SBOM: …-sbom-cyclonedx.zip. Binaries carry their dependency list (cargo auditable)."
+            echo "- Browser extension (the DevTools log of a recording, Chrome / Edge): znimok-extension-….zip — until it is in the Chrome Web Store: unzip, open chrome://extensions, turn on Developer mode, Load unpacked."
             if [[ "$SIGNED" == "1" ]]; then
               echo "- Signed: SHA256SUMS.sig (ECDSA P-256, keys/znimok-release-p256.pub.pem). Check: python tools/verify_release.py <tag>."
             else

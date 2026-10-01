@@ -1,0 +1,21 @@
+[package]
+name = "znimok-devtools"
+description = "The browser log of a recording (ZK-97): the hub inside the app (commands to the extension, its events mapped onto the video's time without the pauses → the DEVT log), its IPC methods, the Native Messaging host the browser starts (znimok CLI), and the host's registration for Chrome and Edge without administrator rights"
+version.workspace = true
+edition.workspace = true
+license-file.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+znimok-ipc = { path = "../znimok-ipc" }
+znimok-format = { path = "../znimok-format" }
+serde_json = "1"
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.62", features = ["Win32_Foundation", "Win32_System_Registry"] }
+windows-core = "0.62"

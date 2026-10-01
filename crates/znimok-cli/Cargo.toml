@@ -16,6 +16,8 @@ name = "znimok"
 path = "src/main.rs"
 
 [dependencies]
+znimok-ipc = { path = "../znimok-ipc" }
+znimok-devtools = { path = "../znimok-devtools" }
 znimok-core = { path = "../znimok-core" }
 znimok-format = { path = "../znimok-format" }
 znimok-render = { path = "../znimok-render" }

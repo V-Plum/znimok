@@ -5097,6 +5097,45 @@ vid-out-title = Розмір на виході
 # @max: 160
 vid-out-note = Кадр масштабується при експорті; запис лишається як є. Сторони парні — так треба кодувальнику.
 
+## The browser log (ZK-97)
+
+
+# @where: Settings → Recording: section title, the browser log
+# @kind: label
+# @max: 24
+rec-browser = Браузер
+
+# @where: Settings → Recording: switch, the DevTools log of a recording
+# @kind: label
+# @max: 70
+rec-devlog = Писати лог DevTools браузера разом із записом
+
+# @where: Settings → Recording: switch, the extension may start recordings
+# @kind: label
+# @max: 70
+rec-ext-control = Дозволити розширенню починати запис свого вікна
+
+# @where: Settings → Recording: the extension is connected; $count browsers
+# @kind: body
+# @max: 80
+rec-browsers-on =
+    { $count ->
+        [one] Розширення підключено ({ $count } браузер).
+        [few] Розширення підключено ({ $count } браузери).
+        [many] Розширення підключено ({ $count } браузерів).
+       *[other] Розширення підключено ({ $count } браузера).
+    }
+
+# @where: Settings → Recording: no browser with the extension is connected
+# @kind: body
+# @max: 90
+rec-browsers-off = Жоден браузер із розширенням Znimok не підключено.
+
+# @where: Settings → Recording: what the browser log writes and how to install the extension
+# @kind: body
+# @max: 500
+rec-devlog-hint = Розширення Znimok для Chrome і Edge пише консоль сторінки, помилки, мережу (заголовки, тіла запитів і відповідей) і переходи синхронно з відео — усе, що показують панелі DevTools, для налагодження; чутливе можна приховати при експорті. Доки його немає в Chrome Web Store: архів znimok-extension з релізу → chrome://extensions → Режим розробника → Завантажити розпаковане.
+
 ## Video export (ZK-190)
 
 
