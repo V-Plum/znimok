@@ -4,7 +4,7 @@
 // inspector and a status bar. Strings come from i18n/*.ftl through @tr (ZK-29).
 // Not yet here: tabs, overlay editor, full inspector, settings (see the tickets of Phase 4).
 
-import { AboutSlint, LineEdit, Palette as StdPalette, ScrollView, TextEdit } from "std-widgets.slint";
+import { AboutSlint, LineEdit, ListView, Palette as StdPalette, ScrollView, TextEdit } from "std-widgets.slint";
 // Bundled faces (ZK-34, SIL OFL 1.1): Onest for the interface and the marks, JetBrains Mono for
 // numbers and key combinations, Unbounded for the Znimok wordmark only.
 import "../../znimok-render/fonts/Onest.ttf";
@@ -64,6 +64,12 @@ export struct TlPiece { x: length, w: length, kind: int }
 // A mark's bar on the marks track (ZK-94): its time in track pixels, lane, colour.
 export struct TlMark { x: length, w: length, lane: int, colour: color, selected: bool }
 export struct VidTrack { label: string, colour: color, muted: bool, volume: int }
+// The DevTools log (ZK-191): a tick of the log lane (cls 0 network and the rest, 1 navigation,
+// 2 warning, 3 error), a filter chip, a row of the list, a phase of a request's timing.
+export struct DevTick { x: length, cls: int }
+export struct DevChip { label: string, count: int }
+export struct DevRow { time: string, label: string, text: string, src: string, cls: int }
+export struct DevTiming { label: string, a: float, w: float, ms: string }
 
 // A group title in the library grid (ZK-177): titles and card rows above it.
 export struct LibHeader {
@@ -1930,6 +1936,28 @@ export component AppWindow inherits Window {
     in property <length> tl-out;
     in property <length> tl-playhead;
     in property <bool> tl-has-range;
+    // The DevTools log (ZK-191): whether the recording has one, the panel open, the lane's
+    // ticks, chips and rows; the row at the playhead and the selected one; the details pane.
+    in property <bool> devp-has;
+    in property <bool> devp-open;
+    in property <bool> devp-follow;
+    in property <[DevTick]> devp-ticks;
+    in property <[DevChip]> devp-chips;
+    in property <int> devp-chip;
+    in-out property <string> devp-query;
+    in property <[DevRow]> devp-rows;
+    in property <int> devp-current: -1;
+    in property <int> devp-selected: -1;
+    in property <bool> devp-detail-open;
+    in property <string> devp-detail-title;
+    in property <bool> devp-tabbed;
+    in property <[bool]> devp-has-tab;
+    in property <int> devp-tab;
+    in property <string> devp-detail;
+    in property <[DevTiming]> devp-timing;
+    in property <bool> devp-can-save;
+    callback devp-action(string, int);
+    callback devp-search(string);
     // macOS: shortcuts shown with ⌘ ⇧ ⌥, and the cursor image sized for points (winit maps an
     // image's pixels to points there).
     in property <bool> mac;
@@ -3661,6 +3689,7 @@ export component AppWindow inherits Window {
                         Text { text: root.vid-frame-label; color: Theme.text2; font-family: "JetBrains Mono"; font-size: 12px; vertical-alignment: center; }
                         Rectangle { width: 1px; height: 22px; y: 11px; background: Theme.line; }
                         SmallButton { y: 8px; text: root.vid-speed; clicked => { root.vid-transport("speed"); } }
+                        if root.devp-has: IconButton { y: 6px; icon: "M12 3 l9 16 H3 z M12 10 v4 M12 17 h.01"; label: @tr("devp-next-error" => "To the next error"); tip: self.label; clicked => { root.devp-action("next-error", 0); } }
                         IconButton { y: 6px; active: root.vid-loop; icon: "M17 4 l3 3 -3 3 M20 7 H8 a4 4 0 0 0 -4 4 v1 M7 20 l-3 -3 3 -3 M4 17 h12 a4 4 0 0 0 4 -4 v-1"; label: @tr("vid-loop" => "Loop"); tip: self.label + "  " + Keys.k("Ctrl+L", "⌘L"); clicked => { root.vid-transport("loop"); } }
                         IconButton { y: 6px; active: root.vid-muted; icon: root.vid-muted ? "M4 10 v4 h4 l5 4 V6 L8 10 z M17 9 l4 6 M21 9 l-4 6" : "M4 10 v4 h4 l5 4 V6 L8 10 z M16 9 a4 4 0 0 1 0 6 M18.5 6.5 a8 8 0 0 1 0 11"; label: @tr("vid-sound" => "Sound"); tip: self.label + "  M"; clicked => { root.vid-transport("mute"); } }
                         Rectangle { horizontal-stretch: 1; }
@@ -3679,7 +3708,7 @@ export component AppWindow inherits Window {
                 if root.vid-mode && !root.over-screen: Rectangle { height: 1px; background: Theme.line; }
                 // ---- timeline (ZK-181): lane labels, then the tracks Rust lays out in pixels
                 if root.vid-mode && !root.over-screen: Rectangle {
-                    height: 196px;
+                    height: root.devp-has ? 196px : 160px;
                     min-width: 0px;
                     clip: true;
                     background: Theme.panel;
@@ -3691,7 +3720,22 @@ export component AppWindow inherits Window {
                                 Text { height: 56px; text: @tr("vid-lane-video" => "video"); color: Theme.text3; font-size: 11px; font-weight: 600; horizontal-alignment: center; vertical-alignment: center; }
                                 Text { height: 26px; text: @tr("vid-lane-sound" => "sound"); color: Theme.text3; font-size: 11px; font-weight: 600; horizontal-alignment: center; vertical-alignment: center; }
                                 Text { height: 52px; text: @tr("vid-lane-marks" => "marks"); color: Theme.text3; font-size: 11px; font-weight: 600; horizontal-alignment: center; vertical-alignment: center; }
-                                Text { height: 40px; text: @tr("vid-devtools" => "DevTools log"); color: Theme.disabled; font-size: 10px; font-weight: 600; horizontal-alignment: center; vertical-alignment: center; wrap: word-wrap; }
+                                // The log lane (ZK-191): only when the recording has one; its chevron opens the
+                                // panel under the timeline.
+                                if root.devp-has: Rectangle {
+                                    height: 40px;
+                                    background: lane-touch.has-hover ? Theme.hover : transparent;
+                                    VerticalLayout {
+                                        alignment: center;
+                                        spacing: 3px;
+                                        Text { text: @tr("vid-lane-log" => "log"); color: root.devp-open ? Theme.text : Theme.text3; font-size: 11px; font-weight: 600; horizontal-alignment: center; }
+                                        HorizontalLayout {
+                                            alignment: center;
+                                            Chevron { tint: root.devp-open ? Theme.text : Theme.text3; transform-rotation: root.devp-open ? 180deg : 0deg; animate transform-rotation { duration: 200ms; easing: cubic-bezier(0.2, 0.8, 0.2, 1); } }
+                                        }
+                                    }
+                                    lane-touch := TipTouch { tip: root.devp-open ? @tr("devp-hide" => "Hide the log") : @tr("devp-show" => "Show the log"); clicked => { root.devp-action("toggle", 0); } }
+                                }
                             }
                         }
                         Rectangle { width: 1px; background: Theme.line; }
@@ -3779,6 +3823,23 @@ export component AppWindow inherits Window {
                                 if m.selected && m.w > 18px: Rectangle { x: 1px; width: 3px; height: 6px; border-radius: 1px; background: Theme.canvas; }
                                 if m.selected && m.w > 18px: Rectangle { x: parent.width - 4px; width: 3px; height: 6px; border-radius: 1px; background: Theme.canvas; }
                             }
+                            // the log lane (ZK-191): a tick per event; an error also runs a faint line across
+                            // the whole timeline
+                            for t in root.devp-ticks: Rectangle {
+                                x: 8px + t.x;
+                                y: t.cls == 3 ? 22px : 162px;
+                                width: t.cls == 3 ? 1px : 2px;
+                                height: t.cls == 3 ? parent.height - 22px : 28px;
+                                background: t.cls == 3 ? #FF5A5F40 : (t.cls == 2 ? #F5A524 : (t.cls == 1 ? Theme.accent : Theme.text3));
+                            }
+                            for t in root.devp-ticks: Rectangle {
+                                visible: t.cls == 3;
+                                x: 8px + t.x - 0.5px;
+                                y: 162px;
+                                width: 2px;
+                                height: 28px;
+                                background: #FF5A5F;
+                            }
                             // playhead
                             Rectangle { x: 8px + root.tl-playhead; y: 0; width: 1px; height: parent.height; background: Theme.text; }
                             Rectangle { x: 8px + root.tl-playhead - 6px; y: 0; width: 13px; height: 8px; background: Theme.text; border-radius: 2px; }
@@ -3794,6 +3855,142 @@ export component AppWindow inherits Window {
                                 scroll-event(e) => {
                                     root.tl-wheel(self.mouse-x, e.delta-y / 1px, e.modifiers.control);
                                     return accept;
+                                }
+                            }
+                        }
+                    }
+                }
+                // ---- the DevTools log under the timeline (ZK-191): search, chips, the list; a row's
+                // details beside it (a request in tabs as in DevTools)
+                if root.vid-mode && !root.over-screen && root.devp-has && root.devp-open: Rectangle { height: 1px; background: Theme.line; }
+                if root.vid-mode && !root.over-screen && root.devp-has && root.devp-open: Rectangle {
+                    height: 240px;
+                    min-width: 0px;
+                    clip: true;
+                    background: Theme.panel;
+                    // The row at the playhead stays in sight while the video plays.
+                    property <int> cur: root.devp-current;
+                    changed cur => {
+                        if (root.devp-follow && self.cur >= 0) {
+                            log-list.content-y = min(0px, max(log-list.visible-height - root.devp-rows.length * 22px, log-list.visible-height / 2 - self.cur * 22px));
+                        }
+                    }
+                    HorizontalLayout {
+                        VerticalLayout {
+                            min-width: 0px;
+                            horizontal-stretch: 1;
+                            padding: 8px;
+                            spacing: 6px;
+                            HorizontalLayout {
+                                height: 28px;
+                                spacing: 6px;
+                                Rectangle {
+                                    width: 200px;
+                                    LineEdit {
+                                        y: (parent.height - self.height) / 2;
+                                        width: parent.width;
+                                        text <=> root.devp-query;
+                                        placeholder-text: @tr("devp-search" => "Search the log");
+                                        edited(t) => { root.devp-search(t); }
+                                    }
+                                }
+                                for c[i] in root.devp-chips: Rectangle {
+                                    y: 3px;
+                                    height: 22px;
+                                    width: devchip-text.preferred-width + 18px;
+                                    border-radius: 11px;
+                                    background: root.devp-chip == i ? Theme.control-on : (devchip-touch.has-hover ? Theme.hover : Theme.elevated);
+                                    animate background { duration: 120ms; easing: ease-out; }
+                                    devchip-text := Text {
+                                        text: c.label + "  " + c.count;
+                                        color: root.devp-chip == i ? Theme.text : (c.count > 0 ? Theme.text2 : Theme.disabled);
+                                        font-size: 11px;
+                                        font-weight: 600;
+                                        horizontal-alignment: center;
+                                        vertical-alignment: center;
+                                        width: parent.width;
+                                        height: parent.height;
+                                    }
+                                    devchip-touch := TouchArea { clicked => { root.devp-action("chip", i); } }
+                                }
+                                Rectangle { horizontal-stretch: 1; }
+                                SmallButton { y: 3px; icon: "M6 9 l6 6 6 -6"; tip: @tr("devp-hide" => "Hide the log"); clicked => { root.devp-action("toggle", 0); } }
+                            }
+                            if root.devp-rows.length == 0: Text {
+                                vertical-stretch: 1;
+                                text: @tr("devp-empty" => "Nothing matches.");
+                                color: Theme.text3;
+                                font-size: 12px;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                            }
+                            log-list := ListView {
+                                vertical-stretch: 1;
+                                visible: root.devp-rows.length > 0;
+                                for r[i] in root.devp-rows: Rectangle {
+                                    height: 22px;
+                                    border-radius: 4px;
+                                    background: i == root.devp-selected ? Theme.control-on : (i == root.devp-current ? Theme.accent.with-alpha(0.14) : (row-touch.has-hover ? Theme.hover : transparent));
+                                    HorizontalLayout {
+                                        padding-left: 6px;
+                                        padding-right: 6px;
+                                        spacing: 8px;
+                                        Text { width: 64px; text: r.time; color: Theme.text3; font-family: "JetBrains Mono"; font-size: 11px; vertical-alignment: center; }
+                                        Text { width: 64px; text: r.label; color: r.cls == 3 ? #FF5A5F : (r.cls == 2 ? #F5A524 : (r.cls == 1 ? Theme.accent : Theme.text2)); font-size: 11px; font-weight: 600; vertical-alignment: center; overflow: elide; }
+                                        Text { horizontal-stretch: 1; min-width: 0px; text: r.text; color: r.cls == 3 ? #FF5A5F : Theme.text; font-size: 12px; vertical-alignment: center; overflow: elide; }
+                                        Text { width: 130px; text: r.src; color: Theme.text3; font-size: 11px; horizontal-alignment: right; vertical-alignment: center; overflow: elide; }
+                                    }
+                                    row-touch := TouchArea { clicked => { root.devp-action("row", i); } }
+                                }
+                            }
+                        }
+                        if root.devp-detail-open: Rectangle { width: 1px; background: Theme.line; }
+                        if root.devp-detail-open: VerticalLayout {
+                            min-width: 0px;
+                            horizontal-stretch: 1;
+                            padding: 8px;
+                            spacing: 6px;
+                            HorizontalLayout {
+                                height: 24px;
+                                spacing: 6px;
+                                Text { horizontal-stretch: 1; min-width: 0px; text: root.devp-detail-title; color: Theme.text; font-size: 12px; font-weight: 600; vertical-alignment: center; overflow: elide; }
+                                if root.devp-can-save: SmallButton { y: 1px; text: @tr("devp-save" => "Save as…"); clicked => { root.devp-action("save", 0); } }
+                                SmallButton { y: 1px; icon: "M6 6 L18 18 M18 6 L6 18"; tip: @tr("common-close" => "Close"); clicked => { root.devp-action("close", 0); } }
+                            }
+                            if root.devp-tabbed: Rectangle {
+                                height: 28px;
+                                border-radius: 8px;
+                                background: Theme.elevated;
+                                HorizontalLayout {
+                                    padding: 2px;
+                                    spacing: 2px;
+                                    SegOption { text: @tr("devp-tab-headers" => "Headers"); on: root.devp-tab == 0; clicked => { root.devp-action("tab", 0); } }
+                                    SegOption { text: @tr("devp-tab-payload" => "Payload"); enabled: root.devp-has-tab.length > 1 && root.devp-has-tab[1]; on: root.devp-tab == 1; clicked => { root.devp-action("tab", 1); } }
+                                    SegOption { text: @tr("devp-tab-preview" => "Preview"); enabled: root.devp-has-tab.length > 2 && root.devp-has-tab[2]; on: root.devp-tab == 2; clicked => { root.devp-action("tab", 2); } }
+                                    SegOption { text: @tr("devp-tab-response" => "Response"); enabled: root.devp-has-tab.length > 3 && root.devp-has-tab[3]; on: root.devp-tab == 3; clicked => { root.devp-action("tab", 3); } }
+                                    SegOption { text: @tr("devp-tab-timing" => "Timing"); enabled: root.devp-has-tab.length > 4 && root.devp-has-tab[4]; on: root.devp-tab == 4; clicked => { root.devp-action("tab", 4); } }
+                                }
+                            }
+                            if !root.devp-tabbed || root.devp-tab != 4: TextEdit {
+                                vertical-stretch: 1;
+                                read-only: true;
+                                wrap: word-wrap;
+                                font-size: 11px;
+                                text: root.devp-detail;
+                            }
+                            if root.devp-tabbed && root.devp-tab == 4: VerticalLayout {
+                                vertical-stretch: 1;
+                                spacing: 4px;
+                                alignment: start;
+                                for t in root.devp-timing: HorizontalLayout {
+                                    height: 18px;
+                                    spacing: 8px;
+                                    Text { width: 120px; text: t.label; color: Theme.text2; font-size: 11px; vertical-alignment: center; overflow: elide; }
+                                    Rectangle {
+                                        horizontal-stretch: 1;
+                                        Rectangle { x: parent.width * t.a; y: 5px; width: max(2px, parent.width * t.w); height: 8px; border-radius: 2px; background: Theme.accent; }
+                                    }
+                                    Text { width: 72px; text: t.ms; color: Theme.text3; font-family: "JetBrains Mono"; font-size: 11px; horizontal-alignment: right; vertical-alignment: center; }
                                 }
                             }
                         }

@@ -9971,8 +9971,15 @@ impl App {
             return;
         }
         let info = &part.video.info;
-        let v = crate::video::Vid::new(info.fps(), info.frames as i64, s.ed.doc.timeline.as_ref());
+        let mut v =
+            crate::video::Vid::new(info.fps(), info.frames as i64, s.ed.doc.timeline.as_ref());
+        v.dev = part
+            .video
+            .devlog
+            .as_ref()
+            .map(crate::devpanel::DevPanel::new);
         s.vid = Some(v);
+        ui.set_devp_detail_open(false);
         ui.set_vid_mode(true);
         ui.set_insp_tab(2);
         self.video_start(ui);
@@ -10469,6 +10476,230 @@ impl App {
         self.video_tone();
         self.video_strip(ui);
         self.video_waves(ui);
+        self.sync_devpanel(ui);
+    }
+
+    /// The DevTools log (ZK-191): the lane's ticks, the panel's chips and rows, the row at the
+    /// playhead. The rows and ticks go to the window only when they change.
+    fn sync_devpanel(&mut self, ui: &AppWindow) {
+        let Some(v) = self.s.as_mut().and_then(|s| s.vid.as_mut()) else {
+            return;
+        };
+        let ms_now = ((v.frame as f64 + 0.5) / v.fps.max(1e-6) * 1000.0) as i32;
+        let key = (v.view.off.to_bits(), v.view.zoom.to_bits(), v.view.width);
+        let view = &v.view;
+        let Some(p) = v.dev.as_mut() else {
+            ui.set_devp_has(false);
+            return;
+        };
+        ui.set_devp_has(true);
+        ui.set_devp_open(p.open);
+        ui.set_devp_follow(v.playing);
+        if p.tick_key != Some(key) {
+            p.tick_key = Some(key);
+            let ticks: Vec<crate::DevTick> = p
+                .ticks(|ms| view.time_to_x(ms as f64 / 1000.0), view.width)
+                .into_iter()
+                .map(|(x, cls)| crate::DevTick { x: x as f32, cls })
+                .collect();
+            ui.set_devp_ticks(std::rc::Rc::new(VecModel::from(ticks)).into());
+        }
+        if p.rows_dirty {
+            p.rows_dirty = false;
+            use crate::devpanel as dp;
+            let rows: Vec<crate::DevRow> = p
+                .shown
+                .iter()
+                .map(|&i| {
+                    let e = &p.entries[i];
+                    crate::DevRow {
+                        time: crate::video::fmt_time(e.ms as f64 / 1000.0).into(),
+                        label: dp::label(e).into(),
+                        text: dp::message(e).into(),
+                        src: dp::source(e).into(),
+                        cls: dp::class(e),
+                    }
+                })
+                .collect();
+            ui.set_devp_rows(std::rc::Rc::new(VecModel::from(rows)).into());
+            let names = [
+                "devp-chip-all",
+                "devp-chip-errors",
+                "devp-chip-warnings",
+                "devp-chip-network",
+                "devp-chip-console",
+                "devp-chip-nav",
+            ];
+            let chips: Vec<crate::DevChip> = p
+                .counts()
+                .iter()
+                .zip(names)
+                .map(|(&n, k)| crate::DevChip {
+                    label: self.tr.tr(k).into(),
+                    count: n as i32,
+                })
+                .collect();
+            ui.set_devp_chips(std::rc::Rc::new(VecModel::from(chips)).into());
+            ui.set_devp_chip(p.chip as i32);
+        }
+        ui.set_devp_current(p.current(ms_now).map_or(-1, |i| i as i32));
+        ui.set_devp_selected(
+            p.selected
+                .and_then(|i| p.shown.iter().position(|&j| j == i))
+                .map_or(-1, |i| i as i32),
+        );
+    }
+
+    /// The open row's details (ZK-191): a request in tabs, else the full text and stack.
+    fn devp_detail(&mut self, ui: &AppWindow) {
+        use crate::devpanel as dp;
+        let w = dp::Words {
+            general: self.tr.tr("devp-general"),
+            res_headers: self.tr.tr("devp-res-headers"),
+            req_headers: self.tr.tr("devp-req-headers"),
+            url: self.tr.tr("devp-h-url"),
+            method: self.tr.tr("devp-h-method"),
+            status: self.tr.tr("devp-h-status"),
+            remote: self.tr.tr("devp-h-remote"),
+            protocol: self.tr.tr("devp-h-protocol"),
+            initiator: self.tr.tr("devp-h-initiator"),
+            cache: self.tr.tr("devp-h-cache"),
+            error: self.tr.tr("devp-h-error"),
+            stack: self.tr.tr("devp-stack"),
+            cut: self.tr.tr("devp-cut"),
+            binary: self
+                .tr
+                .tr_args("devp-binary", &args(&[("size", "{size}".into())])),
+            nothing: self.tr.tr("devp-nothing"),
+        };
+        let Some(p) = self
+            .s
+            .as_ref()
+            .and_then(|s| s.vid.as_ref())
+            .and_then(|v| v.dev.as_ref())
+        else {
+            return;
+        };
+        let Some(e) = p.selected.map(|i| &p.entries[i]) else {
+            ui.set_devp_detail_open(false);
+            return;
+        };
+        let d = dp::detail(e, p.tab, &w);
+        ui.set_devp_detail_open(true);
+        ui.set_devp_detail_title(format!("{}  {}", dp::label(e), dp::message(e)).into());
+        ui.set_devp_tabbed(d.tabs);
+        ui.set_devp_tab(p.tab as i32);
+        ui.set_devp_has_tab(std::rc::Rc::new(VecModel::from(d.has.to_vec())).into());
+        ui.set_devp_detail(d.text.into());
+        let timing: Vec<crate::DevTiming> = d
+            .timing
+            .into_iter()
+            .map(|t| crate::DevTiming {
+                label: self.tr.tr(&format!("devp-t-{}", t.label)).into(),
+                a: t.a,
+                w: t.w,
+                ms: t.ms.into(),
+            })
+            .collect();
+        ui.set_devp_timing(std::rc::Rc::new(VecModel::from(timing)).into());
+        ui.set_devp_can_save(d.can_save);
+    }
+
+    /// The log panel's controls (ZK-191): `toggle` the panel, `chip` a filter, `row` a row of
+    /// the list (to its frame, details open), `tab` a details tab, `close` the details,
+    /// `next-error` (the transport's button), `save` a response's body.
+    pub fn devp_action(&mut self, ui: &AppWindow, what: &str, i: i32) {
+        let Some(v) = self.s.as_mut().and_then(|s| s.vid.as_mut()) else {
+            return;
+        };
+        let fps = v.fps.max(1e-6);
+        let ms_now = ((v.frame as f64 + 0.5) / fps * 1000.0) as i32;
+        let Some(p) = v.dev.as_mut() else { return };
+        let frame_of = |ms: i32| (ms as f64 * fps / 1000.0).floor() as i64;
+        match what {
+            "toggle" => p.open = !p.open,
+            "chip" => {
+                p.chip = (i.max(0) as usize).min(crate::devpanel::CHIPS - 1);
+                p.refilter();
+            }
+            "row" => {
+                let Some(&e) = p.shown.get(i.max(0) as usize) else {
+                    return;
+                };
+                p.selected = Some(e);
+                let f = frame_of(p.entries[e].ms);
+                self.vid_seek(ui, f);
+                self.devp_detail(ui);
+                return;
+            }
+            "tab" => {
+                p.tab = (i.max(0) as usize).min(crate::devpanel::TAB_TIMING);
+                self.devp_detail(ui);
+                return;
+            }
+            "close" => {
+                p.selected = None;
+                self.devp_detail(ui);
+            }
+            "next-error" => {
+                let Some(t) = p.next_error(ms_now) else {
+                    return;
+                };
+                p.selected = p.entries.iter().position(|e| e.sev == 2 && e.ms == t);
+                p.open = true;
+                // The error stays in the list whatever the filter.
+                if p.chip != 0 && p.chip != 1 {
+                    p.chip = 0;
+                    p.refilter();
+                }
+                let f = frame_of(t);
+                self.vid_seek(ui, f);
+                self.devp_detail(ui);
+                return;
+            }
+            "save" => {
+                let Some(e) = p.selected.map(|i| &p.entries[i]) else {
+                    return;
+                };
+                let name = crate::devpanel::body_name(e);
+                let Some(bytes) = crate::devpanel::body_bytes(e) else {
+                    return;
+                };
+                let mut dlg = rfd::FileDialog::new().set_file_name(&name);
+                if let Some(d) = self.prefs().editor.export_dir.filter(|d| d.is_dir()) {
+                    dlg = dlg.set_directory(d);
+                }
+                let Some(path) = dlg.save_file() else { return };
+                let text = match std::fs::write(&path, bytes) {
+                    Ok(()) => {
+                        let name = path
+                            .file_name()
+                            .map(|n| n.to_string_lossy().into_owned())
+                            .unwrap_or_default();
+                        self.tr.tr_args("devp-saved", &args(&[("name", name)]))
+                    }
+                    Err(_) => self.tr.tr("devp-save-failed"),
+                };
+                self.toast(ui, text);
+                return;
+            }
+            _ => return,
+        }
+        self.sync_devpanel(ui);
+    }
+
+    /// The log panel's search (ZK-191).
+    pub fn devp_search(&mut self, ui: &AppWindow, q: &str) {
+        if let Some(p) = self
+            .s
+            .as_mut()
+            .and_then(|s| s.vid.as_mut())
+            .and_then(|v| v.dev.as_mut())
+        {
+            p.query = q.trim().to_string();
+            p.refilter();
+        }
+        self.sync_devpanel(ui);
     }
 
     /// The sound lane of the timeline (ZK-189): per track, its loudness over the visible time
@@ -10684,6 +10915,7 @@ impl App {
         const STRIP_BOTTOM: i32 = 78;
         const MARKS_TOP: i32 = 104;
         const MARKS_BOTTOM: i32 = 156;
+        const LOG_TOP: i32 = 156;
         // A bar being dragged (ZK-94): its new time, one undo step.
         if kind != 0 && v.mark_press.is_some() {
             let mut p = v.mark_press.unwrap();
@@ -10747,6 +10979,36 @@ impl App {
                     }
                     self.sync(ui);
                     ui.window().request_redraw();
+                    return;
+                }
+                // The log lane (ZK-191): an event near the pointer opens in the panel, else the
+                // frame under it.
+                if y >= LOG_TOP
+                    && let Some(p) = v.dev.as_mut()
+                {
+                    let view = &v.view;
+                    let near = p
+                        .entries
+                        .iter()
+                        .enumerate()
+                        .map(|(i, e)| (i, (view.time_to_x(e.ms as f64 / 1000.0) - x).abs()))
+                        .filter(|(_, d)| *d <= 4)
+                        .min_by_key(|(_, d)| *d)
+                        .map(|(i, _)| i);
+                    if let Some(i) = near {
+                        p.open = true;
+                        if !p.shown.contains(&i) {
+                            p.chip = 0;
+                            p.query.clear();
+                            p.refilter();
+                            ui.set_devp_query("".into());
+                        }
+                        let row = p.shown.iter().position(|&j| j == i).unwrap_or(0);
+                        self.devp_action(ui, "row", row as i32);
+                    } else {
+                        let f = v.frame_at_x(x);
+                        self.vid_seek(ui, f);
+                    }
                     return;
                 }
                 if y < RULER {

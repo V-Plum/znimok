@@ -378,7 +378,15 @@ fn bench_4k() {
     let dir = std::env::temp_dir().join(format!("znimok-play-4k-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
-    let (w, h, fps, secs) = (3840, 2160, 60, 6.0);
+    // ZNIMOK_BENCH_SIZE=1920x1080 for another size.
+    let (w, h) = std::env::var("ZNIMOK_BENCH_SIZE")
+        .ok()
+        .and_then(|v| {
+            let (a, b) = v.split_once('x')?;
+            Some((a.parse().ok()?, b.parse().ok()?))
+        })
+        .unwrap_or((3840u32, 2160u32));
+    let (fps, secs) = (60, 6.0);
     let Some(mp4) = record_clip(&dir, w, h, fps, secs) else {
         return;
     };
