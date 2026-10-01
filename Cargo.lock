@@ -6883,6 +6883,7 @@ name = "znimok-export"
 version = "0.0.1"
 dependencies = [
  "gif",
+ "png",
  "znimok-core",
  "znimok-format",
  "znimok-play",

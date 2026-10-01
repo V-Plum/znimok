@@ -37,6 +37,9 @@ pub enum Kind {
         fps: f64,
         dither: bool,
     },
+    /// One HTML page: the MP4 inside it, the marks a live layer shown in their time (Hide and
+    /// the marker, which work on the pixels, go into the video itself).
+    Html,
 }
 
 /// A video document to export.
@@ -266,6 +269,7 @@ pub fn run(job: &Job, gpu: &Gpu, progress: &Progress) -> Result<Outcome, String>
         }
         Kind::Mp4 { sound } => mp4(job, gpu, progress, &part, *sound),
         Kind::Gif { width, fps, dither } => gif(job, gpu, progress, &part, *width, *fps, *dither),
+        Kind::Html => html(job, gpu, progress, &part),
     };
     match r {
         Ok(o) => {
@@ -588,6 +592,190 @@ fn gif(
     Ok(Outcome {
         frames: n as i64,
         bytes: std::fs::metadata(part).map(|m| m.len()).unwrap_or(0),
+        copied: false,
+        hardware: false,
+    })
+}
+
+/// Marks that stay in the video of an HTML page: they work on the pixels below.
+fn burned(o: &znimok_core::Object) -> bool {
+    matches!(
+        o.data,
+        znimok_core::Data::Hide { .. } | znimok_core::Data::Mark
+    )
+}
+
+/// Seconds of the output in which source frames `[a, b)` show, over the cuts.
+pub fn out_intervals(keep: &[KeepSeg], a: i64, b: i64, fps: f64) -> Vec<(f64, f64)> {
+    let mut out = Vec::new();
+    let mut before = 0i64;
+    for s in keep {
+        let (x, y) = (a.max(s.a), b.min(s.b));
+        if y > x {
+            let o0 = before + (x - s.a);
+            out.push((o0 as f64 / fps, (o0 + (y - x)) as f64 / fps));
+        }
+        before += s.len();
+    }
+    out
+}
+
+fn base64(data: &[u8]) -> String {
+    const T: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut s = String::with_capacity(data.len().div_ceil(3) * 4);
+    for c in data.chunks(3) {
+        let n = (u32::from(c[0]) << 16)
+            | (u32::from(*c.get(1).unwrap_or(&0)) << 8)
+            | u32::from(*c.get(2).unwrap_or(&0));
+        s.push(T[(n >> 18) as usize & 63] as char);
+        s.push(T[(n >> 12) as usize & 63] as char);
+        s.push(if c.len() > 1 {
+            T[(n >> 6) as usize & 63] as char
+        } else {
+            '='
+        });
+        s.push(if c.len() > 2 {
+            T[n as usize & 63] as char
+        } else {
+            '='
+        });
+    }
+    s
+}
+
+fn png_of(rgba: &[u8], w: u32, h: u32) -> Result<Vec<u8>, String> {
+    let mut out = Vec::new();
+    {
+        let mut e = png::Encoder::new(&mut out, w, h);
+        e.set_color(png::ColorType::Rgba);
+        e.set_depth(png::BitDepth::Eight);
+        let mut wr = e.write_header().map_err(|e| e.to_string())?;
+        wr.write_image_data(rgba).map_err(|e| e.to_string())?;
+    }
+    Ok(out)
+}
+
+fn esc(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+}
+
+const PAGE_SCRIPT: &str = "const v=document.querySelector('video'),m=[...document.querySelectorAll('.m')].map(e=>[e,e.dataset.t.split(';').map(s=>s.split(',').map(Number))]);\n(function f(){const t=v.currentTime;for(const[e,r]of m)e.style.display=r.some(([a,b])=>t>=a&&t<b)?'block':'none';requestAnimationFrame(f)})();";
+
+const PAGE_STYLE: &str = ":root{--bg:#f4f5f7;--fg:#16181d;--muted:#5c6270}\n@media (prefers-color-scheme:dark){:root{--bg:#0f1115;--fg:#e8eaee;--muted:#9aa1ad}}\nbody{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 system-ui,sans-serif}\nmain{margin:0 auto;padding:24px 16px}\nh1{font-size:20px;margin:0 0 12px}\n.v{position:relative;line-height:0;border-radius:10px;overflow:hidden;background:#000}\nvideo{width:100%;height:auto;display:block}\n.m{position:absolute;inset:0;width:100%;height:100%;display:none;pointer-events:none}\np{color:var(--muted);font-size:13px}";
+
+fn html(job: &Job, gpu: &Gpu, progress: &Progress, part: &Path) -> Result<Outcome, String> {
+    let info = job.video.info;
+    let fps = info.fps();
+    let frames = i64::from(info.frames);
+    let keep = keep_of(&job.doc, frames);
+    let (frame, out) = out_geometry(&job.doc, &job.video);
+    // 1. The video, with only the marks that work on its pixels.
+    let mut inner = job.clone();
+    for o in &mut inner.doc.objects {
+        if !burned(o) {
+            o.hidden = true;
+        }
+    }
+    let tmp = part.with_extension("video.part");
+    let r = if untouched(&inner.doc, &inner.video) {
+        copy_mp4(&inner.source, &tmp).map(|_| ())
+    } else {
+        // The inner export's progress shows as ours (the page itself is quick).
+        let sub = Progress::default();
+        std::thread::scope(|sc| {
+            let h = sc.spawn(|| mp4(&inner, gpu, &sub, &tmp, true));
+            while !h.is_finished() {
+                if progress.cancel.load(Ordering::Relaxed) {
+                    sub.cancel.store(true, Ordering::Relaxed);
+                }
+                progress.set(f64::from(sub.done.load(Ordering::Relaxed)) / 1000.0 * 0.9);
+                std::thread::sleep(std::time::Duration::from_millis(50));
+            }
+            h.join()
+                .map_err(|_| "the export thread failed".to_string())?
+                .map(|_| ())
+        })
+    };
+    if let Err(e) = r {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(e);
+    }
+    let mp4_bytes = std::fs::read(&tmp).map_err(|e| e.to_string());
+    let _ = std::fs::remove_file(&tmp);
+    let mp4_bytes = mp4_bytes?;
+    // 2. Each other mark as a picture of the whole frame, transparent around it.
+    let mut layers = String::new();
+    let mut renderer = Renderer::new();
+    renderer.set_picture(false);
+    let mut pix = Pixmap::new(1, 1);
+    for o in job.doc.objects.iter().filter(|o| !o.hidden && !burned(o)) {
+        progress.cancelled()?;
+        let (a, b) = job
+            .doc
+            .timeline
+            .as_ref()
+            .and_then(|t| t.marks.get(&o.id).copied())
+            .unwrap_or((0, frames));
+        let times = out_intervals(&keep, a, b, fps);
+        if times.is_empty() {
+            continue;
+        }
+        let mut one = job.doc.clone();
+        one.objects = vec![o.clone()];
+        one.shown_frame = None;
+        let view = View {
+            scale: f64::from(out.0) / f64::from(frame.w.max(1)),
+            origin: znimok_render::vello_cpu::kurbo::Point::new(
+                f64::from(frame.x),
+                f64::from(frame.y),
+            ),
+            width: out.0.min(65535) as u16,
+            height: out.1.min(65535) as u16,
+        };
+        renderer.render(&one, view, &mut pix);
+        let mut rgba = pix.data_as_u8_slice().to_vec();
+        for p in rgba.as_chunks_mut::<4>().0 {
+            let a = u32::from(p[3]);
+            if a != 0 && a != 255 {
+                for c in &mut p[..3] {
+                    *c = ((u32::from(*c) * 255 + a / 2) / a).min(255) as u8;
+                }
+            }
+        }
+        let png = png_of(&rgba, u32::from(view.width), u32::from(view.height))?;
+        let t: Vec<String> = times
+            .iter()
+            .map(|(x, y)| format!("{x:.3},{y:.3}"))
+            .collect();
+        layers.push_str("<img class=\"m\" alt=\"\" data-t=\"");
+        layers.push_str(&t.join(";"));
+        layers.push_str("\" src=\"data:image/png;base64,");
+        layers.push_str(&base64(&png));
+        layers.push_str("\">\n");
+    }
+    let title = esc(&job.doc.name);
+    let mut page = String::new();
+    page.push_str("<!doctype html>\n<html><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n<title>");
+    page.push_str(&title);
+    page.push_str("</title>\n<style>\n");
+    page.push_str(PAGE_STYLE);
+    page.push_str(&format!("\nmain{{max-width:{}px}}\n", out.0.max(320)));
+    page.push_str("</style></head><body><main>\n<h1>");
+    page.push_str(&title);
+    page.push_str("</h1>\n<div class=\"v\"><video controls playsinline preload=\"auto\" src=\"data:video/mp4;base64,");
+    page.push_str(&base64(&mp4_bytes));
+    page.push_str("\"></video>\n");
+    page.push_str(&layers);
+    page.push_str("</div>\n<p>Znimok</p>\n</main><script>\n");
+    page.push_str(PAGE_SCRIPT);
+    page.push_str("\n</script></body></html>\n");
+    std::fs::write(part, page.as_bytes()).map_err(|e| e.to_string())?;
+    Ok(Outcome {
+        frames: kept_frames(&keep),
+        bytes: page.len() as u64,
         copied: false,
         hardware: false,
     })

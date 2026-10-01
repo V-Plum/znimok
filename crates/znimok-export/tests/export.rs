@@ -269,6 +269,31 @@ fn exports_cut_marked_framed_and_as_gif() {
         "estimate {est} vs {real}"
     );
 
+    // HTML: the Hide in the video, a frame mark as a live layer in its time over the cuts.
+    let mut paged = doc.clone();
+    paged.push(Object::new(IRect::new(400, 40, 100, 60), Data::Rect));
+    let id2 = paged.objects[1].id;
+    if let Some(t) = paged.timeline.as_mut() {
+        t.marks.insert(id2, (15, 75));
+    }
+    run(
+        &job(Kind::Html, "page.html", &paged, &video),
+        &gpu,
+        &Progress::default(),
+    )
+    .unwrap();
+    let page = std::fs::read_to_string(dir.join("page.html")).unwrap();
+    assert!(page.contains("<video") && page.contains("data:video/mp4;base64,"));
+    assert_eq!(
+        page.matches("class=\"m\"").count(),
+        1,
+        "one live layer (the Hide is burned in)"
+    );
+    assert!(
+        page.contains("data-t=\"0.500,1.000;1.000,1.500\""),
+        "15..30 and 60..75 after the cut"
+    );
+
     // Untouched: the MP4 as it is.
     let plain = Document::from_raster("v", Raster::solid(W, H, Rgb::new(40, 40, 40)));
     let mut plain = plain;
