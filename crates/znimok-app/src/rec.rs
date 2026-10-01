@@ -815,8 +815,17 @@ fn tick() {
         let mut r = r.borrow_mut();
         let Some(a) = r.as_mut() else { return false };
         #[cfg(target_os = "macos")]
-        if a.rec.as_ref().is_some_and(|rec| !rec.is_running()) {
-            return true;
+        {
+            if a.rec.as_ref().is_some_and(|rec| !rec.is_running()) {
+                return true;
+            }
+            // The frame follows a recorded window as it moves.
+            if let Some(b) = a.window.and_then(|id| znimok_mac::window_bounds(id as u32))
+                && b != a.frame
+            {
+                a.frame = b;
+                place(a);
+            }
         }
         #[cfg(windows)]
         {

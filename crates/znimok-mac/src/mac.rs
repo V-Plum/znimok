@@ -23,6 +23,18 @@ unsafe extern "C" {
     fn CGEventCreate(source: *const c_void) -> *mut c_void;
     fn CGEventGetLocation(event: *const c_void) -> CGPoint;
     fn CGWindowListCreate(option: u32, relative_to: u32) -> *const c_void;
+    fn CGWindowListCopyWindowInfo(option: u32, relative_to: u32) -> *const c_void;
+    fn CGRectMakeWithDictionaryRepresentation(dict: *const c_void, rect: *mut CGRectRaw) -> bool;
+    static kCGWindowBounds: *const c_void;
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+struct CGRectRaw {
+    x: f64,
+    y: f64,
+    w: f64,
+    h: f64,
 }
 
 #[link(name = "CoreFoundation", kind = "framework")]
@@ -30,6 +42,36 @@ unsafe extern "C" {
     fn CFRelease(cf: *const c_void);
     fn CFArrayGetCount(array: *const c_void) -> isize;
     fn CFArrayGetValueAtIndex(array: *const c_void, idx: isize) -> *const c_void;
+    fn CFDictionaryGetValue(dict: *const c_void, key: *const c_void) -> *const c_void;
+}
+
+/// A window's bounds now, in points (desktop units), without ScreenCaptureKit: one cheap
+/// CoreGraphics query (the recording's frame follows a moving window with it, ZK-88).
+pub fn window_bounds(id: u32) -> Option<Rect> {
+    // SAFETY: CoreGraphics returns a +1 array of dictionaries (or null), read and released here;
+    // kCGWindowBounds is a constant key; the rect is written by CoreGraphics.
+    unsafe {
+        let arr = CGWindowListCopyWindowInfo(8, id); // kCGWindowListOptionIncludingWindow
+        if arr.is_null() {
+            return None;
+        }
+        let mut out = None;
+        if CFArrayGetCount(arr) > 0 {
+            let d = CFArrayGetValueAtIndex(arr, 0);
+            let b = CFDictionaryGetValue(d, kCGWindowBounds);
+            let mut r = CGRectRaw::default();
+            if !b.is_null() && CGRectMakeWithDictionaryRepresentation(b, &mut r) {
+                out = Some(Rect {
+                    x: r.x.round() as i32,
+                    y: r.y.round() as i32,
+                    width: r.w.round().max(0.0) as u32,
+                    height: r.h.round().max(0.0) as u32,
+                });
+            }
+        }
+        CFRelease(arr);
+        out
+    }
 }
 
 /// On-screen window ids, front to back (`kCGWindowListOptionOnScreenOnly`). ScreenCaptureKit
