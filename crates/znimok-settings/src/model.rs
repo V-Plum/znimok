@@ -474,7 +474,44 @@ pub struct Video {
     pub devtools_log: bool,
     /// The browser extension may start and stop recording.
     pub extension_control: bool,
+    /// Hiding the DevTools log's sensitive values in a developer report (ZK-98/195): the log is
+    /// written in full; this is what the export sheet starts with.
+    pub hide_on_export: HideOnExport,
+    /// The keys whose values are hidden: headers, JSON keys, form fields, dataLayer keys.
+    pub hide_keys: Vec<String>,
 }
+
+/// What the export sheet does about sensitive values of the log.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum HideOnExport {
+    /// The sheet asks (its switch starts on).
+    #[default]
+    Ask,
+    Always,
+    Never,
+}
+
+/// The keys hidden by default.
+pub const HIDE_KEYS: &[&str] = &[
+    "authorization",
+    "proxy-authorization",
+    "cookie",
+    "set-cookie",
+    "x-api-key",
+    "password",
+    "passwd",
+    "secret",
+    "token",
+    "api_key",
+    "session",
+    "email",
+    "phone",
+    "user_id",
+    "card",
+    "cvv",
+    "iban",
+];
 
 impl Default for Video {
     fn default() -> Self {
@@ -489,6 +526,8 @@ impl Default for Video {
             audio: Audio::default(),
             devtools_log: true,
             extension_control: true,
+            hide_on_export: HideOnExport::Ask,
+            hide_keys: HIDE_KEYS.iter().map(|k| k.to_string()).collect(),
         }
     }
 }

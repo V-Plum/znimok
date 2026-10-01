@@ -5217,7 +5217,7 @@ vexp-soon = згодом
 # @where: Video export sheet: the report card (not yet)
 # @kind: body
 # @max: 90
-vexp-report-desc = З’явиться разом із розширенням для браузера.
+vexp-report-desc = Відео, позначки й лог DevTools браузера на одній сторінці — для звіту про ваду.
 
 # @where: Video export sheet, GIF: the size limit label
 # @kind: label
@@ -5526,6 +5526,145 @@ devp-t-download = Завантаження
 # @kind: label
 # @max: 20
 devp-t-total = Усього
+
+## The developer report (ZK-98)
+
+
+# @where: Export sheet, the developer report: what the two forms are
+# @kind: body
+# @max: 240
+vexp-report-note = Одна сторінка до 100 МБ відкривається в будь-якому браузері; .zreport тримає відео поруч зі сторінкою, а лог і dataLayer — у JSON, і відкривається в Znimok як запис.
+
+# @where: Export sheet, the developer report: form option, one HTML page
+# @kind: label
+# @max: 22
+vexp-report-html = Одна сторінка (HTML)
+
+# @where: Export sheet, the developer report: form option, a ZIP archive
+# @kind: label
+# @max: 22
+vexp-report-zip = Архів (.zreport)
+
+# @where: Export sheet, the developer report: the estimate is over 100 MB as one page
+# @kind: body
+# @max: 100
+vexp-report-big = Понад 100 МБ однією сторінкою — оберіть .zreport.
+
+# @where: Export sheet, the developer report: the recording has no browser log
+# @kind: body
+# @max: 120
+vexp-no-log = У цього запису немає логу браузера: у звіті будуть відео і позначки.
+
+# @where: Export sheet, the developer report: switch, hide sensitive values of the log
+# @kind: label
+# @max: 40
+vexp-hide = Приховати чутливе
+
+# @where: Export sheet, the developer report: Settings say always hide
+# @kind: body
+# @max: 100
+vexp-hide-always = Чутливе приховується завжди (Налаштування → Запис).
+
+# @where: Export sheet, the developer report: Settings say never hide
+# @kind: body
+# @max: 100
+vexp-hide-never = Чутливе не приховується (Налаштування → Запис).
+
+# @where: Export sheet, the developer report: how many values will be hidden; $count
+# @kind: body
+# @max: 200
+vexp-hide-count =
+    { $count ->
+        [one] Буде приховано { $count } значення: ключі зі списку в Налаштуваннях і секрети за їхнім виглядом.
+        [few] Буде приховано { $count } значення: ключі зі списку в Налаштуваннях і секрети за їхнім виглядом.
+        [many] Буде приховано { $count } значень: ключі зі списку в Налаштуваннях і секрети за їхнім виглядом.
+       *[other] Буде приховано { $count } значення: ключі зі списку в Налаштуваннях і секрети за їхнім виглядом.
+    }
+
+# @where: Export sheet, the developer report: nothing sensitive was found in the log
+# @kind: body
+# @max: 60
+vexp-hide-none = У лозі не знайдено чутливого.
+
+# @where: Toast: the report is over 100 MB as one page
+# @kind: body
+# @max: 100
+vexp-report-too-big = Звіт однією сторінкою більший за 100 МБ — експортуйте його як .zreport.
+
+# @where: Developer report page: header fact, when it was recorded
+# @kind: label
+# @max: 20
+report-recorded = Записано
+
+# @where: Developer report page: header fact, the video length
+# @kind: label
+# @max: 20
+report-length = Тривалість
+
+# @where: Developer report page: header fact, the video size in pixels
+# @kind: label
+# @max: 20
+report-size = Розмір
+
+# @where: Developer report page: header fact, the browser
+# @kind: label
+# @max: 20
+report-browser = Браузер
+
+# @where: Developer report page: header fact, the page address the log starts on
+# @kind: label
+# @max: 20
+report-page = Сторінка
+
+# @where: Developer report page: how many values of the log were hidden; $n a number
+# @kind: body
+# @max: 60
+report-masked = Приховано значень: { $n }
+
+# @where: Developer report page: footer; $version the app version
+# @kind: body
+# @max: 60
+report-foot = Зроблено в Znimok { $version }
+
+# @where: Developer report page: the recording has no browser log
+# @kind: body
+# @max: 80
+report-no-log = У цього запису немає логу браузера.
+
+# @where: Toast: a .zreport could not be opened; $reason why
+# @kind: body
+# @max: 120
+zreport-error = Не вдалося відкрити звіт: { $reason }
+
+# @where: Settings → Recording: section, hiding values in a developer report
+# @kind: label
+# @max: 50
+rec-hide-title = Приховувати чутливе у звіті
+
+# @where: Settings → Recording: option, the export sheet asks
+# @kind: label
+# @max: 14
+rec-hide-ask = Питати
+
+# @where: Settings → Recording: option, always hide
+# @kind: label
+# @max: 14
+rec-hide-always = Завжди
+
+# @where: Settings → Recording: option, never hide
+# @kind: label
+# @max: 14
+rec-hide-never = Ніколи
+
+# @where: Settings → Recording: label of the field with the keys to hide
+# @kind: label
+# @max: 30
+rec-hide-keys = Ключі, які приховувати
+
+# @where: Settings → Recording: what the keys are and what else is hidden
+# @kind: body
+# @max: 300
+rec-hide-hint = Через кому: заголовки, ключі JSON, поля форм і ключі dataLayer, значення яких стануть •••. Секрети на кшталт токенів, адрес пошти й номерів карток знаходяться і за виглядом. У ваших файлах лог лишається цілим.
 
 ## dataLayer in the DevTools log (ZK-195)
 

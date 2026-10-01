@@ -31,6 +31,10 @@ pub struct VidExport {
     /// Index into [`LIMITS`].
     pub limit: usize,
     pub to: usize,
+    /// The report as a `.zreport` (else one HTML page; ZK-98).
+    pub zreport: bool,
+    /// Hide the log's sensitive values (when Settings leave it to the sheet).
+    pub hide: bool,
 }
 
 impl Default for VidExport {
@@ -42,13 +46,28 @@ impl Default for VidExport {
             dither: true,
             limit: 0,
             to: TO_FILE,
+            zreport: false,
+            hide: true,
         }
     }
 }
 
 impl VidExport {
     pub fn ext(&self) -> &'static str {
-        ext(self.kind)
+        if self.kind == REPORT && self.zreport {
+            "zreport"
+        } else {
+            ext(self.kind)
+        }
+    }
+
+    /// The format's name for the dialog's filter and the toasts.
+    pub fn name(&self) -> &'static str {
+        if self.kind == REPORT && self.zreport {
+            ".zreport"
+        } else {
+            format_name(self.kind)
+        }
     }
 
     pub fn limit_bytes(&self) -> Option<u64> {
@@ -77,7 +96,7 @@ impl VidExport {
 pub fn ext(kind: usize) -> &'static str {
     match kind {
         GIF => "gif",
-        HTML => "html",
+        HTML | REPORT => "html",
         _ => "mp4",
     }
 }
@@ -208,6 +227,77 @@ pub fn wrap_into_library(
     _sound: bool,
 ) -> Result<PathBuf, String> {
     Err("MP4 export on this system comes with its encoder".into())
+}
+
+/// A `.zreport` (ZK-98) opened: its video, poster and log as a new video document in the
+/// library — the document's path.
+pub fn import_zreport(path: &Path, lib: &Path) -> Result<PathBuf, String> {
+    let bytes = std::fs::read(path).map_err(|e| e.to_string())?;
+    let r = znimok_report::read_zreport(&bytes)?;
+    let fps = if r.fps > 0.0 { r.fps } else { 30.0 };
+    let (w, h) = (r.width.max(2), r.height.max(2));
+    let poster = r
+        .poster_png
+        .as_deref()
+        .and_then(|p| image::load_from_memory(p).ok())
+        .map(|i| {
+            let i = i.to_rgba8();
+            let (pw, ph) = i.dimensions();
+            znimok_core::Raster::new(pw, ph, i.into_raw())
+        })
+        .unwrap_or_else(|| znimok_core::Raster::solid(w, h, znimok_core::Rgb::new(0, 0, 0)));
+    let name = if r.title.is_empty() {
+        path.file_stem()
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_default()
+    } else {
+        r.title.clone()
+    };
+    let mut doc = znimok_core::Document::from_raster(name, poster.clone());
+    doc.meta.created_ms = chrono::Local::now().timestamp_millis();
+    doc.meta.source = "zreport".into();
+    let frames = (r.seconds * fps).round().max(1.0) as u32;
+    let mut video = znimok_format::Video::new(znimok_format::VideoInfo {
+        width: w,
+        height: h,
+        fps_milli: (fps * 1000.0).round() as u32,
+        frames,
+        duration_hns: (r.seconds * 1e7).round() as i64,
+        codec: znimok_format::video::CODEC_H264,
+    });
+    if r.audio {
+        video.audio = vec![znimok_format::video::AudioTrack::default()];
+    }
+    video.devlog = r.log;
+    doc.timeline = Some(video.edit.to_timeline());
+    let small = {
+        let k = (320.0 / f64::from(poster.width))
+            .min(240.0 / f64::from(poster.height))
+            .min(1.0);
+        let (tw, th) = (
+            ((f64::from(poster.width) * k).round() as u32).max(1),
+            ((f64::from(poster.height) * k).round() as u32).max(1),
+        );
+        let px = znimok_export::scale_rgba(&poster.rgba, (poster.width, poster.height), (tw, th));
+        znimok_core::Raster::new(tw, th, px)
+    };
+    let opts = znimok_format::WriteOptions {
+        app_version: format!("Znimok {}", env!("CARGO_PKG_VERSION")),
+        thumbnail: Some(small),
+        ..Default::default()
+    };
+    std::fs::create_dir_all(lib).map_err(|e| e.to_string())?;
+    let dest = crate::library::new_path(lib, &doc.id.simple().to_string());
+    let part = dest.with_extension("part");
+    let data = {
+        let _guard = crate::app::SAVE_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        znimok_format::write_video(&doc, &video, &r.mp4, &opts)
+    };
+    std::fs::write(&part, data).map_err(|e| e.to_string())?;
+    std::fs::rename(&part, &dest).map_err(|e| e.to_string())?;
+    Ok(dest)
 }
 
 /// A file on the clipboard (to paste into a chat or a folder).

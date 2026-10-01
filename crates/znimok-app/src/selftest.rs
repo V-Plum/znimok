@@ -3668,6 +3668,69 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
             format!("selected {} · {nav:?}", ui.get_devp_selected()),
         );
         ui.invoke_devp_action("toggle".into(), 0);
+        // ZK-98: the developer report in the export sheet — the card on, the two forms, hiding as
+        // Settings say (ask: the sheet's switch).
+        ui.invoke_export();
+        ui.invoke_exp_set("format".into(), 4);
+        let card = ui.get_exp_cards().row_data(4).map(|c| c.enabled);
+        let before_zip = ui.get_vexp_zreport();
+        ui.invoke_exp_set("rzip".into(), 1);
+        let zip_on = ui.get_vexp_zreport() && ui.get_exp_estimate().to_string().starts_with('≈');
+        ui.invoke_exp_set("rhide".into(), 0);
+        let hide_off = !ui.get_vexp_hide();
+        ui.invoke_exp_set("rhide".into(), 1);
+        ui.invoke_exp_set("rzip".into(), 0);
+        r.check(
+            "developer report: the sheet offers it with the log — one page or .zreport, hiding on",
+            cfg!(not(windows)) || (card == Some(true)
+                && ui.get_exp_format() == 4
+                && ui.get_vexp_has_log()
+                && ui.get_vexp_hide_mode() == 0
+                && !before_zip
+                && zip_on
+                && hide_off
+                && ui.get_vexp_hide()),
+            format!(
+                "card {:?} · log {} · mode {} · zip {before_zip}→{zip_on} · hide off {hide_off}",
+                card,
+                ui.get_vexp_has_log(),
+                ui.get_vexp_hide_mode()
+            ),
+        );
+        ui.invoke_exp_close();
+        // A .zreport opened: its recording comes into the library, with the log on its time.
+        let zr = dir.join("Znimok-selftest-report.zreport");
+        let zev = znimok_report::log_events(video.devlog.as_ref().unwrap(), |ms| Some(f64::from(ms) / 1000.0));
+        let mut zbuf = Vec::new();
+        let zmeta = znimok_report::Meta {
+            title: "Звіт із браузера".into(),
+            width: 160,
+            height: 100,
+            fps: 30.0,
+            seconds: 3.0,
+            ..Default::default()
+        };
+        let wrote = znimok_report::write_zreport(&mut zbuf, &zmeta, &Default::default(), &zev, &mp4, None, "").is_ok()
+            && std::fs::write(&zr, &zbuf).is_ok();
+        app.borrow_mut().open_path(ui, &zr);
+        let (zapp, _zui) = &opened(app, ui);
+        let (title, events, is_video) = {
+            let a = zapp.borrow();
+            let s = a.s.as_ref();
+            (
+                s.map(|s| s.ed.doc.name.clone()).unwrap_or_default(),
+                s.and_then(|s| s.video.as_ref())
+                    .and_then(|v| v.video.devlog.as_ref())
+                    .map_or(0, |l| l.events.len()),
+                a.is_video(),
+            )
+        };
+        r.check(
+            "developer report: a .zreport opens as a recording with its log",
+            wrote && title == "Звіт із браузера" && events == zev.len() && events > 0 && is_video,
+            format!("written {wrote} · {title:?} · {events} events · video {is_video}"),
+        );
+        let _ = std::fs::remove_file(&zr);
     }));
 
     // ZK-145: a video document opened in the app and saved again stays a video (its stream

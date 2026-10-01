@@ -2230,6 +2230,10 @@ export component AppWindow inherits Window {
     // ZK-97: the browser's log, the extension may start, how many browsers are connected.
     in property <bool> pref-rec-devlog: true;
     in property <bool> pref-rec-ext-control: true;
+    // ZK-98: hiding in a report — 0 ask, 1 always, 2 never — and the keys.
+    in property <int> pref-rec-hide;
+    in property <string> pref-rec-hide-keys;
+    callback setting-text(string, string);
     in property <string> rec-browsers;
     in property <bool> rec-browsers-on;
     in-out property <string> pref-ret-mb;
@@ -3076,6 +3080,20 @@ export component AppWindow inherits Window {
                                 SwitchRow { text: @tr("rec-devlog" => "Write the browser's DevTools log with a recording"); checked: root.pref-rec-devlog; toggled => { root.setting("rec-devlog", self.checked ? 1 : 0); } }
                                 SwitchRow { text: @tr("rec-ext-control" => "Let the extension start a recording of its window"); checked: root.pref-rec-ext-control; toggled => { root.setting("rec-ext-control", self.checked ? 1 : 0); } }
                                 Text { text: root.rec-browsers; color: root.rec-browsers-on ? Theme.text2 : Theme.attention; font-size: 12px; wrap: word-wrap; }
+                                // ZK-98: what a developer report hides
+                                Text { text: @tr("rec-hide-title" => "Hide sensitive values in a report"); color: Theme.text2; font-size: 12px; }
+                                HorizontalLayout {
+                                    spacing: 4px;
+                                    SegOption { text: @tr("rec-hide-ask" => "Ask"); on: root.pref-rec-hide == 0; clicked => { root.setting("rec-hide", 0); } }
+                                    SegOption { text: @tr("rec-hide-always" => "Always"); on: root.pref-rec-hide == 1; clicked => { root.setting("rec-hide", 1); } }
+                                    SegOption { text: @tr("rec-hide-never" => "Never"); on: root.pref-rec-hide == 2; clicked => { root.setting("rec-hide", 2); } }
+                                }
+                                Text { text: @tr("rec-hide-keys" => "Keys to hide"); color: Theme.text3; font-size: 11px; }
+                                LineEdit {
+                                    text: root.pref-rec-hide-keys;
+                                    edited(t) => { root.setting-text("rec-hide-keys", t); }
+                                }
+                                Text { text: @tr("rec-hide-hint" => "Comma-separated: headers, JSON keys, form fields and dataLayer keys whose values become •••. Secrets such as tokens, e-mails and card numbers are found by their look as well. The log stays whole in your files."); color: Theme.text3; font-size: 11px; wrap: word-wrap; }
                                 Text { text: @tr("rec-devlog-hint" => "The Znimok extension for Chrome and Edge writes the page's console, errors, network (headers, request and response bodies) and navigations in sync with the video — everything the DevTools panels show, for debugging; sensitive parts can be hidden on export. Until it is in the Chrome Web Store: the znimok-extension archive of a release → chrome://extensions → Developer mode → Load unpacked."); color: Theme.text3; font-size: 11px; wrap: word-wrap; }
                             }
                             if root.settings-page == 9: VerticalLayout {
@@ -4884,6 +4902,14 @@ export component AppWindow inherits Window {
     in property <bool> vexp-over;
     in property <bool> vexp-library-ok: true;
     in property <float> vexp-progress: -1;
+    // The report (ZK-98): one page or a .zreport; hiding — the sheet's switch (Settings: 0 ask,
+    // 1 always, 2 never) and what it would hide; over 100 MB as a page.
+    in property <bool> vexp-zreport;
+    in property <bool> vexp-has-log;
+    in property <int> vexp-hide-mode;
+    in property <bool> vexp-hide: true;
+    in property <string> vexp-hide-text;
+    in property <bool> vexp-report-big;
     changed exp-open => {
         if (root.exp-open) {
             Tip.armed = false;
@@ -5018,7 +5044,23 @@ export component AppWindow inherits Window {
                         if root.exp-format == 0: Text { text: @tr("vexp-mp4-note" => "H.264 with the hardware encoder; the sound tracks that are on are mixed into one; what is cut is left out with short fades at the joints."); color: Theme.text2; font-size: 12px; wrap: word-wrap; }
                         if root.exp-format == 2: Text { text: @tr("vexp-html-note" => "The video and its marks in one file: the marks stay a layer over the video, shown in their time; a hide and a marker go into the video itself."); color: Theme.text2; font-size: 12px; wrap: word-wrap; }
                         if root.exp-format == 3: Text { text: @tr("vexp-frame-note" => "The frame on the canvas, full size, with the marks shown on it — a new screenshot in a window of its own."); color: Theme.text2; font-size: 12px; wrap: word-wrap; }
-                        if root.exp-format <= 2: Rectangle {
+                        // ZK-98: the developer report
+                        if root.exp-format == 4: VerticalLayout {
+                            spacing: 8px;
+                            Text { text: @tr("vexp-report-note" => "One page up to 100 MB opens in any browser; a .zreport keeps the video beside the page and the log and dataLayer as JSON, and opens in Znimok as a recording."); color: Theme.text2; font-size: 12px; wrap: word-wrap; }
+                            HorizontalLayout {
+                                spacing: 4px;
+                                SegOption { text: @tr("vexp-report-html" => "One page (HTML)"); on: !root.vexp-zreport; clicked => { root.exp-set("rzip", 0); } }
+                                SegOption { text: @tr("vexp-report-zip" => "Archive (.zreport)"); on: root.vexp-zreport; clicked => { root.exp-set("rzip", 1); } }
+                            }
+                            if root.vexp-report-big: Text { text: @tr("vexp-report-big" => "Over 100 MB as one page — choose the .zreport."); color: Theme.attention; font-size: 11px; wrap: word-wrap; }
+                            if !root.vexp-has-log: Text { text: @tr("vexp-no-log" => "This recording has no browser log: the report has the video and its marks."); color: Theme.text3; font-size: 11px; wrap: word-wrap; }
+                            if root.vexp-has-log && root.vexp-hide-mode == 0: SwitchRow { text: @tr("vexp-hide" => "Hide sensitive values"); checked: root.vexp-hide; toggled => { root.exp-set("rhide", self.checked ? 1 : 0); } }
+                            if root.vexp-has-log && root.vexp-hide-mode == 1: Text { text: @tr("vexp-hide-always" => "Sensitive values are always hidden (Settings → Recording)."); color: Theme.text2; font-size: 11px; wrap: word-wrap; }
+                            if root.vexp-has-log && root.vexp-hide-mode == 2: Text { text: @tr("vexp-hide-never" => "Sensitive values are not hidden (Settings → Recording)."); color: Theme.attention; font-size: 11px; wrap: word-wrap; }
+                            if root.vexp-has-log && root.vexp-hide-mode != 2 && (root.vexp-hide-mode == 1 || root.vexp-hide): Text { text: root.vexp-hide-text; color: Theme.text3; font-size: 11px; wrap: word-wrap; }
+                        }
+                        if root.exp-format <= 2 || root.exp-format == 4: Rectangle {
                             border-radius: 10px;
                             background: Theme.elevated;
                             height: vest-lay.preferred-height;
@@ -5028,8 +5070,8 @@ export component AppWindow inherits Window {
                                 Text { text: root.exp-estimate; color: Theme.accent; font-size: 12px; font-family: "JetBrains Mono"; }
                             }
                         }
-                        if root.exp-format <= 2: Text { text: @tr("export-name" => "Name"); color: Theme.text3; font-size: 11px; font-weight: 600; letter-spacing: 0.4px; }
-                        if root.exp-format <= 2: Rectangle {
+                        if root.exp-format <= 2 || root.exp-format == 4: Text { text: @tr("export-name" => "Name"); color: Theme.text3; font-size: 11px; font-weight: 600; letter-spacing: 0.4px; }
+                        if root.exp-format <= 2 || root.exp-format == 4: Rectangle {
                             height: 30px;
                             border-radius: 7px;
                             background: Theme.elevated;
@@ -5047,14 +5089,14 @@ export component AppWindow inherits Window {
                                 accessible-label: @tr("export-name-a11y" => "File name");
                             }
                         }
-                        if root.exp-format <= 2: Text { text: @tr("export-where" => "Where"); color: Theme.text3; font-size: 11px; font-weight: 600; letter-spacing: 0.4px; }
-                        if root.exp-format <= 2: HorizontalLayout {
+                        if root.exp-format <= 2 || root.exp-format == 4: Text { text: @tr("export-where" => "Where"); color: Theme.text3; font-size: 11px; font-weight: 600; letter-spacing: 0.4px; }
+                        if root.exp-format <= 2 || root.exp-format == 4: HorizontalLayout {
                             spacing: 4px;
                             SegOption { text: @tr("export-to-clipboard" => "To clipboard"); on: root.exp-to == 0; clicked => { root.exp-set("to", 0); } }
                             SegOption { text: @tr("export-to-file" => "File…"); on: root.exp-to == 1; clicked => { root.exp-set("to", 1); } }
                             SegOption { text: @tr("export-to-library" => "To the library"); enabled: root.vexp-library-ok; on: root.exp-to == 2; clicked => { root.exp-set("to", 2); } }
                         }
-                        if root.exp-format <= 2 && root.exp-to == 0: Text { text: @tr("vexp-clipboard-note" => "The clipboard gets the file: paste it into a chat or a folder."); color: Theme.text3; font-size: 11px; wrap: word-wrap; }
+                        if (root.exp-format <= 2 || root.exp-format == 4) && root.exp-to == 0: Text { text: @tr("vexp-clipboard-note" => "The clipboard gets the file: paste it into a chat or a folder."); color: Theme.text3; font-size: 11px; wrap: word-wrap; }
                         if root.vexp-progress >= 0: VerticalLayout {
                             spacing: 6px;
                             Rectangle {
@@ -5070,7 +5112,7 @@ export component AppWindow inherits Window {
                             spacing: 8px;
                             alignment: end;
                             TextButton { text: @tr("common-cancel" => "Cancel"); clicked => { root.exp-close(); } }
-                            TextButton { primary: true; enabled: root.vexp-progress < 0 && root.exp-format != 4; text: root.exp-go; clicked => { root.exp-go-clicked(); } }
+                            TextButton { primary: true; enabled: root.vexp-progress < 0; text: root.exp-go; clicked => { root.exp-go-clicked(); } }
                         }
                     }
                     if !root.exp-video: VerticalLayout {

@@ -1,0 +1,18 @@
+[package]
+name = "znimok-report"
+description = "The developer report of a recording (ZK-98): the video, its marks and the browser's DevTools log in one HTML page or a .zreport archive, with a viewer that follows the video; sensitive values hidden on request; a .zreport read back as a recording"
+version.workspace = true
+edition.workspace = true
+license-file.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+znimok-format = { path = "../znimok-format" }
+znimok-mask = { path = "../znimok-mask" }
+serde_json = "1"
+crc32fast = "1.5"
