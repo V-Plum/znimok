@@ -115,17 +115,12 @@ impl PayloadLoader {
     }
 }
 
+/// The resource loader of a document's asset and its queue; they must outlive the asset.
+type Keep = Option<(Retained<PayloadLoader>, DispatchRetained<DispatchQueue>)>;
+
 /// An asset of the MP4 at `path`, or of the payload ranges of a document (read in place); what
 /// must outlive the asset comes along.
-fn asset_of(
-    source: &Source,
-) -> Result<
-    (
-        Retained<AVURLAsset>,
-        Option<(Retained<PayloadLoader>, DispatchRetained<DispatchQueue>)>,
-    ),
-    String,
-> {
+fn asset_of(source: &Source) -> Result<(Retained<AVURLAsset>, Keep), String> {
     match source {
         Source::File(path) => {
             let abs = std::path::absolute(path).map_err(|e| e.to_string())?;
