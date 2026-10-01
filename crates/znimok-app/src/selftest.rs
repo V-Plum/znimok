@@ -3997,7 +3997,14 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
     #[cfg(windows)]
     for i in 0..6 {
         steps.push(Box::new(move |_, ui, _| {
-            ui.set_toast(format!("запис {i}").into())
+            ui.set_toast(format!("запис {i}").into());
+            // ZK-90: a click in the middle of the recorded window (not the real mouse).
+            if (i == 2 || i == 3)
+                && let Some((f, _, _)) = crate::rec::indicators()
+            {
+                let (x, y) = (f.x + f.width as i32 / 2, f.y + f.height as i32 / 2);
+                crate::rec::note_click(x, y, i == 2);
+            }
         }));
     }
     #[cfg(windows)]
@@ -4057,6 +4064,11 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
                         .iter()
                         .map(|t| (t.source, t.label.clone()))
                         .collect::<Vec<_>>(),
+                    v.video
+                        .mouse
+                        .iter()
+                        .map(|m| (m.x, m.y, m.down))
+                        .collect::<Vec<_>>(),
                 )),
                 _ => None,
             });
@@ -4079,7 +4091,7 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
         r.check(
             "recording: stop leaves a video document in the library (▶ on the card)",
             doc.as_ref()
-                .is_some_and(|(w, h, n, s, _)| *w > 0 && *h > 0 && *n >= 20 && s == "window")
+                .is_some_and(|(w, h, n, s, _, _)| *w > 0 && *h > 0 && *n >= 20 && s == "window")
                 && card.as_deref().is_some_and(|m| m.starts_with('▶'))
                 && crate::pill::is_open(),
             format!(
@@ -4098,6 +4110,17 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
                     && tracks[0].0 == znimok_format::video::AudioSource::System
                     && !tracks[0].1.is_empty()),
             format!("{tracks:?} · outputs {}", outputs.len()),
+        );
+        // ZK-90: the click is in the document's mouse log, in video pixels, near the middle.
+        let clicks = doc.as_ref().map(|d| d.5.clone()).unwrap_or_default();
+        let middle = doc.as_ref().map(|d| (d.0 as i32 / 2, d.1 as i32 / 2));
+        r.check(
+            "recording: a click is in the mouse log (MOUS) in video pixels",
+            clicks.len() == 2
+                && clicks[0].2
+                && !clicks[1].2
+                && middle.is_some_and(|(mx, my)| (clicks[0].0 - mx).abs() <= 4 && (clicks[0].1 - my).abs() <= 4),
+            format!("{clicks:?} · middle {middle:?}"),
         );
         ui.invoke_setting("rec-sound".into(), 0);
         crate::pill::close();

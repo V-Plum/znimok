@@ -365,12 +365,19 @@ impl Renderer {
     }
 
     fn draw_pixmap(&mut self, pix: Arc<Pixmap>, dest: Rect, quality: ImageQuality, alpha: f32) {
+        if alpha <= 0.0 {
+            return;
+        }
+        // vello_common 0.2 panics on an image paint with alpha («Applying opacity to image
+        // commands» is unimplemented — ZK-204): the image goes opaque into an opacity layer.
+        let translucent = alpha < 1.0;
+        if translucent {
+            self.ctx.push_opacity_layer(alpha);
+        }
         let (w, h) = (pix.width() as f64, pix.height() as f64);
         let img = Image {
             image: ImageSource::Pixmap(pix),
-            sampler: ImageSampler::default()
-                .with_quality(quality)
-                .with_alpha(alpha),
+            sampler: ImageSampler::default().with_quality(quality),
         };
         // The image paint is sampled in the paint's own space: scale it to `dest`.
         let scale = Affine::translate(dest.origin().to_vec2())
@@ -379,6 +386,9 @@ impl Renderer {
         self.ctx.set_paint(img);
         self.ctx.fill_rect(&dest);
         self.ctx.reset_paint_transform();
+        if translucent {
+            self.ctx.pop_layer();
+        }
     }
 
     // ---- effects: the mark rendered alone into a tile, its alpha shifted, blurred, boosted
@@ -1336,6 +1346,36 @@ fn znimok_render_line(a: Point, b: Point) -> BezPath {
 
 #[cfg(test)]
 mod tests {
+
+    /// ZK-204: a picture mark and a Hide at a see-through opacity rendered without a panic
+    /// (vello_common 0.2 has no alpha on image paints), half-way between the picture and the mark.
+    #[test]
+    fn translucent_images_render() {
+        use znimok_core::{Data, Document, HideMode, IRect, Object, Raster, Rgb};
+        let mut d = Document::from_raster("t", Raster::solid(100, 60, Rgb::new(0, 0, 0)));
+        let bank = d.add_bank(Raster::solid(20, 20, Rgb::new(255, 255, 255)));
+        let mut img = Object::new(IRect::new(10, 10, 20, 20), Data::Image { bank });
+        img.style.alpha = 50;
+        d.push(img);
+        let mut hide = Object::new(
+            IRect::new(50, 10, 30, 30),
+            Data::Hide {
+                mode: HideMode::Blur,
+                strength: 50,
+            },
+        );
+        hide.style.alpha = 40;
+        d.push(hide);
+        let mut r = Renderer::deterministic();
+        let mut out = Pixmap::new(1, 1);
+        r.render(&d, View::one_to_one(&d), &mut out);
+        let px = out.data_as_u8_slice();
+        let g = px[(20 * 100 + 20) * 4] as i32;
+        assert!(
+            (g - 128).abs() <= 8,
+            "half-transparent white over black: {g}"
+        );
+    }
 
     /// ZK-94: a mark outside its time is not drawn; with the plain effects a Hide still covers
     /// its box (a plate) where the picture is left out.
