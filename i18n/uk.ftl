@@ -5043,3 +5043,31 @@ rec-not-here = Запис на цій системі — з наступним �
 # @kind: toast
 # @max: 120
 rec-nothing = Нічого не записано: вікно не змінювалося, поки його записували.
+
+## The «Відео» tab (ZK-188)
+
+
+# @where: Crop panel: free proportions (the other presets are ratios like 16:9)
+# @kind: button
+# @max: 10
+crop-aspect-free = Вільно
+
+# @where: Video tab: section title, the playback speed
+# @kind: label
+# @max: 24
+vid-speed-title = Швидкість
+
+# @where: Video tab: under the speed buttons
+# @kind: body
+# @max: 120
+vid-speed-note = Лише для відтворення в редакторі; експорт зберігає справжню швидкість.
+
+# @where: Video tab: section title, the width and height of the exported video
+# @kind: label
+# @max: 30
+vid-out-title = Розмір на виході
+
+# @where: Video tab: under the size on export
+# @kind: body
+# @max: 160
+vid-out-note = Кадр масштабується при експорті; запис лишається як є. Сторони парні — так треба кодувальнику.

@@ -5001,3 +5001,31 @@ rec-not-here = Recording on this system comes with the next update.
 # @kind: toast
 # @max: 120
 rec-nothing = Nothing was recorded: the window did not change while it was being recorded.
+
+## The «Відео» tab (ZK-188)
+
+
+# @where: Crop panel: free proportions (the other presets are ratios like 16:9)
+# @kind: button
+# @max: 10
+crop-aspect-free = Free
+
+# @where: Video tab: section title, the playback speed
+# @kind: label
+# @max: 24
+vid-speed-title = Speed
+
+# @where: Video tab: under the speed buttons
+# @kind: body
+# @max: 120
+vid-speed-note = Playback in the editor only; the export keeps the real speed.
+
+# @where: Video tab: section title, the width and height of the exported video
+# @kind: label
+# @max: 30
+vid-out-title = Size on export
+
+# @where: Video tab: under the size on export
+# @kind: body
+# @max: 160
+vid-out-note = The frame is scaled on export; the recording stays as it is. Sides are even (the encoder needs it).

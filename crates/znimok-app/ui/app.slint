@@ -1903,6 +1903,15 @@ export component AppWindow inherits Window {
     in property <bool> tone-default: true;
     in property <bool> cropped;
     in property <bool> crop-lock;
+    // ZK-188: the crop's proportions preset: 0 free, 1 16:9, 2 4:3, 3 1:1, 4 9:16, 5 its own.
+    in property <int> crop-aspect;
+    // The «Відео» tab (ZK-188): the part kept, the speed, the size on export.
+    in property <float> vid-kept-frac: 1;
+    in property <int> vid-speed-i: 1;
+    in property <string> vid-out-w;
+    in property <string> vid-out-h;
+    in property <bool> vid-out-lock: true;
+    in property <int> vid-out-preset;
     in-out property <string> crop-w;
     in-out property <string> crop-h;
     in property <string> crop-sizes;
@@ -2080,6 +2089,8 @@ export component AppWindow inherits Window {
     // wheel (x, delta, Ctrl) and the track area's width.
     callback vid-transport(string);
     callback vid-action(string, int);
+    // ZK-188: W or H of the size on export typed in.
+    callback vid-out-edited(string, string);
     callback tl-pointer(int, length, length, bool);
     callback tl-wheel(length, float, bool);
     callback tl-layout(length);
@@ -4275,7 +4286,12 @@ export component AppWindow inherits Window {
                                     HorizontalLayout { Text { text: @tr("vid-from" => "From"); color: Theme.text2; font-size: 12px; horizontal-stretch: 1; } Text { text: root.vid-trim-in; color: Theme.text; font-family: "JetBrains Mono"; font-size: 12px; } }
                                     HorizontalLayout { Text { text: @tr("vid-to" => "To"); color: Theme.text2; font-size: 12px; horizontal-stretch: 1; } Text { text: root.vid-trim-out; color: Theme.text; font-family: "JetBrains Mono"; font-size: 12px; } }
                                     HorizontalLayout { Text { text: @tr("vid-cut" => "Cut"); color: Theme.text2; font-size: 12px; horizontal-stretch: 1; } Text { text: root.vid-trim-cut; color: Theme.text; font-family: "JetBrains Mono"; font-size: 12px; } }
-                                    Rectangle { height: 1px; background: Theme.line; }
+                                    Rectangle {
+                                        height: 6px;
+                                        border-radius: 3px;
+                                        background: Theme.control-on;
+                                        Rectangle { x: 0; width: parent.width * root.vid-kept-frac; border-radius: 3px; background: Theme.accent; }
+                                    }
                                     HorizontalLayout { Text { text: @tr("vid-left" => "Left"); color: Theme.text; font-size: 12px; font-weight: 600; horizontal-stretch: 1; } Text { text: root.vid-trim-left; color: Theme.text; font-family: "JetBrains Mono"; font-size: 12px; font-weight: 600; } }
                                     Text { text: @tr("vid-trim-note" => "The recording is never changed: what is cut can come back, and the file is rewritten only on export."); color: Theme.text3; font-size: 11px; wrap: word-wrap; }
                                     Text { text: @tr("vid-tl-hint" => "Drag on the strip to pick a piece · Del cuts it · Shift+Del keeps only it · S splits"); color: Theme.text3; font-size: 11px; wrap: word-wrap; }
@@ -4300,6 +4316,17 @@ export component AppWindow inherits Window {
                                     }
                                     Text { text: @tr("vid-tracks-note" => "Tracks are separate; export mixes them into one."); color: Theme.text3; font-size: 11px; wrap: word-wrap; }
                                 }
+                                if root.vid-mode: PropSection {
+                                    title: @tr("vid-speed-title" => "Speed");
+                                    HorizontalLayout {
+                                        spacing: 2px;
+                                        SegOption { text: "0.5×"; on: root.vid-speed-i == 0; clicked => { root.vid-action("speed-set", 0); } }
+                                        SegOption { text: "1×"; on: root.vid-speed-i == 1; clicked => { root.vid-action("speed-set", 1); } }
+                                        SegOption { text: "1.5×"; on: root.vid-speed-i == 2; clicked => { root.vid-action("speed-set", 2); } }
+                                        SegOption { text: "2×"; on: root.vid-speed-i == 3; clicked => { root.vid-action("speed-set", 3); } }
+                                    }
+                                    Text { text: @tr("vid-speed-note" => "Playback in the editor only; the export keeps the real speed."); color: Theme.text3; font-size: 11px; wrap: word-wrap; }
+                                }
                                 // Crop: the panel while the Crop tool is on, a button otherwise.
                                 if root.tool == 10: PropSection {
                                     title: @tr("crop-title" => "Crop");
@@ -4311,6 +4338,14 @@ export component AppWindow inherits Window {
                                         NumField { label: @tr("insp-w" => "W"); value <=> root.crop-w; committed(v) => { root.set-crop-size("w", v); } }
                                         NumField { label: @tr("insp-h" => "H"); value <=> root.crop-h; committed(v) => { root.set-crop-size("h", v); } }
                                         IconButton { width: 28px; height: 26px; icon: "M8 11 V8 a4 4 0 0 1 8 0 v3 M6 11 h12 v9 H6 z"; active: root.crop-lock; label: @tr("crop-lock-ratio" => "Lock proportions"); clicked => { root.image-action("crop-lock"); } }
+                                    }
+                                    HorizontalLayout {
+                                        spacing: 2px;
+                                        SegOption { text: @tr("crop-aspect-free" => "Free"); on: root.crop-aspect == 0 || root.crop-aspect == 5; clicked => { root.image-action("crop-aspect-0"); } }
+                                        SegOption { text: "16:9"; on: root.crop-aspect == 1; clicked => { root.image-action("crop-aspect-1"); } }
+                                        SegOption { text: "4:3"; on: root.crop-aspect == 2; clicked => { root.image-action("crop-aspect-2"); } }
+                                        SegOption { text: "1:1"; on: root.crop-aspect == 3; clicked => { root.image-action("crop-aspect-3"); } }
+                                        SegOption { text: "9:16"; on: root.crop-aspect == 4; clicked => { root.image-action("crop-aspect-4"); } }
                                     }
                                     Text { text: root.crop-sizes; color: Theme.text2; font-size: 12px; wrap: word-wrap; }
                                     if root.crop-outside != "": Text { text: root.crop-outside; color: Theme.text3; font-size: 11px; wrap: word-wrap; }
@@ -4366,7 +4401,24 @@ export component AppWindow inherits Window {
                                     HoldButton { text: @tr("shot-compare" => "Compare"); tip: @tr("shot-compare-tip" => "Hold to see the original frame"); held(on) => { root.compare(on); } }
                                     Text { text: @tr("shot-tone-hint" => "A recipe over the original: the original stays untouched; Compare shows it while you hold."); color: Theme.text3; font-size: 11px; wrap: word-wrap; }
                                 }
-                                PropSection {
+                                if root.vid-mode: PropSection {
+                                    title: @tr("vid-out-title" => "Size on export");
+                                    HorizontalLayout {
+                                        spacing: 2px;
+                                        SegOption { text: "100 %"; on: root.vid-out-preset == 0; clicked => { root.vid-action("out-preset", 0); } }
+                                        SegOption { text: "1280"; on: root.vid-out-preset == 1; clicked => { root.vid-action("out-preset", 1); } }
+                                        SegOption { text: "1920"; on: root.vid-out-preset == 2; clicked => { root.vid-action("out-preset", 2); } }
+                                        SegOption { text: "50 %"; on: root.vid-out-preset == 3; clicked => { root.vid-action("out-preset", 3); } }
+                                    }
+                                    HorizontalLayout {
+                                        spacing: 8px;
+                                        NumField { label: @tr("insp-w" => "W"); value: root.vid-out-w; committed(v) => { root.vid-out-edited("w", v); } }
+                                        NumField { label: @tr("insp-h" => "H"); value: root.vid-out-h; committed(v) => { root.vid-out-edited("h", v); } }
+                                        IconButton { width: 28px; height: 26px; icon: "M8 11 V8 a4 4 0 0 1 8 0 v3 M6 11 h12 v9 H6 z"; active: root.vid-out-lock; label: @tr("crop-lock-ratio" => "Lock proportions"); clicked => { root.vid-action("out-lock", 0); } }
+                                    }
+                                    Text { text: @tr("vid-out-note" => "The frame is scaled on export; the recording stays as it is. Sides are even (the encoder needs it)."); color: Theme.text3; font-size: 11px; wrap: word-wrap; }
+                                }
+                                if !root.vid-mode: PropSection {
                                     title: @tr("size-image-title" => "Image size");
                                     HorizontalLayout {
                                         spacing: 8px;
