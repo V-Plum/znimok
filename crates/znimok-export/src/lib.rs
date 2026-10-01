@@ -21,7 +21,7 @@ use znimok_format::video::Video;
 use znimok_play::{Frames, Gpu, Source};
 use znimok_render::{Renderer, View, vello_cpu::Pixmap};
 use znimok_video::edit::VideoEdit;
-use znimok_video::export::{KeepSeg, kept_frames, split_video_frames, src_of_out};
+use znimok_video::export::{KeepSeg, kept_frames, src_of_out};
 use znimok_video::gifenc;
 
 /// What to make.
@@ -308,7 +308,7 @@ fn mp4(
     part: &Path,
     sound: bool,
 ) -> Result<Outcome, String> {
-    use znimok_video::export::AudioCut;
+    use znimok_video::export::{AudioCut, split_video_frames};
     use znimok_video_win::export::{AudioTrackReader, CHANNELS, Mp4Config, Mp4Writer, RATE};
     let info = job.video.info;
     let fps = info.fps();
