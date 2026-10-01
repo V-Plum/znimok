@@ -93,10 +93,12 @@ pub fn countdown_window() -> Option<crate::Countdown> {
 }
 
 fn countdown_ms() -> u64 {
-    std::env::var("ZNIMOK_COUNTDOWN_MS")
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(3000)
+    NEXT_COUNTDOWN_MS.with(|m| m.take()).unwrap_or_else(|| {
+        std::env::var("ZNIMOK_COUNTDOWN_MS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(3000)
+    })
 }
 
 /// 3-2-1 in the bottom-right corner of `display`, then `then` (not called if Esc cancels).
@@ -140,14 +142,20 @@ fn countdown(
     let start = std::time::Instant::now();
     let timer = slint::Timer::default();
     let weak = ui.as_weak();
+    // Each second of the countdown is felt (ZK-214).
+    let shown = std::cell::Cell::new(0);
     timer.start(
         slint::TimerMode::Repeated,
         std::time::Duration::from_millis(50),
         move || {
             let elapsed = start.elapsed().as_millis() as u64;
             if elapsed < total {
+                let left = (total - elapsed).div_ceil(1000) as i32;
+                if left != shown.replace(left) {
+                    crate::commands::emit("countdownTick");
+                }
                 if let Some(ui) = weak.upgrade() {
-                    ui.set_left((total - elapsed).div_ceil(1000) as i32);
+                    ui.set_left(left);
                 }
                 return;
             }
@@ -177,6 +185,9 @@ fn cancel_countdown() {
     let Some(c) = COUNT.with(|c| c.borrow_mut().take()) else {
         return;
     };
+    // A recording's countdown: the next overlay is not a recording's.
+    crate::rec::set_video_mode(false);
+    crate::commands::emit("captureCancel");
     c.timer.stop();
     let _ = c.ui.hide();
     crate::hotkeys::grab_escape(false);
@@ -461,7 +472,7 @@ pub fn open(frozen: Frozen, editor_was_visible: bool) -> Result<(), slint::Platf
         ui.set_act_shift(action_code(g.shift));
         ui.set_act_alt(action_code(g.alt));
         // The text mode has one gesture: no strip about the others (ZK-185).
-        ui.set_show_hints(hints && !TEXT_MODE.with(|m| m.get()));
+        ui.set_show_hints(hints && NEXT.with(|m| m.get().intent == Intent::Keep));
         // A recording's overlay has its own strip, with the sound choice under A (ZK-189).
         let video = crate::rec::video_mode();
         ui.set_video(video);
@@ -511,6 +522,8 @@ pub fn open(frozen: Frozen, editor_was_visible: bool) -> Result<(), slint::Platf
                 s.pointer(kind, x, y, chosen(shift, alt))
             })
         });
+        // The lens and the hint strip hopping to the other side (ZK-214).
+        ui.on_haptic(|name| crate::commands::emit(&name));
         ui.on_key(|text, shift, alt| {
             let (shift, alt) = with_held(shift, alt);
             with_session(|s| s.key(&text, chosen(shift, alt)))
@@ -548,6 +561,9 @@ pub fn open(frozen: Frozen, editor_was_visible: bool) -> Result<(), slint::Platf
                 };
                 let (x, y) = s.last_pointer;
                 s.update_lens(x, y);
+                if s.zoom != before {
+                    crate::commands::emit("lensZoom");
+                }
                 if s.zoom != 0 && s.zoom != before {
                     // A short "breath" of the lens on each level change.
                     s.ui().set_lens_pulse(true);
@@ -717,15 +733,102 @@ enum Outcome {
     Cancel,
 }
 
+/// What the next overlay's choice is for (ZK-185, ZK-214): a shot, or its text, its codes, a
+/// scrolling capture — whatever the gesture.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Intent {
+    #[default]
+    Keep,
+    Text,
+    Codes,
+    Scroll,
+}
+
+/// The next overlay's request (the hotkey, the tray or the command layer): `clip` sends the
+/// shot to the clipboard as Shift would, `delayed` takes it after the countdown.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Next {
+    pub intent: Intent,
+    pub clip: bool,
+    pub delayed: bool,
+}
+
 thread_local! {
-    /// The next overlay chooses a part for its text (the hotkey or the tray, ZK-185): releasing
-    /// the mouse reads the text instead of keeping a shot.
-    static TEXT_MODE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    static NEXT: std::cell::Cell<Next> = const {
+        std::cell::Cell::new(Next {
+            intent: Intent::Keep,
+            clip: false,
+            delayed: false,
+        })
+    };
+    /// The length of the next countdown, when the command layer asks for one (ZK-214).
+    static NEXT_COUNTDOWN_MS: std::cell::Cell<Option<u64>> = const { std::cell::Cell::new(None) };
+}
+
+/// What the next overlay is for; consumed by its outcome (or by `keep`).
+pub fn set_next(next: Next) {
+    NEXT.with(|m| m.set(next));
 }
 
 /// Opens the next overlay in its text mode (ZK-185).
 pub fn set_text_mode(on: bool) {
-    TEXT_MODE.with(|m| m.set(on));
+    set_next(Next {
+        intent: if on { Intent::Text } else { Intent::Keep },
+        ..Next::default()
+    });
+}
+
+/// The next countdown lasts this long (the command layer's `delay`, ZK-214).
+pub fn set_countdown_ms(ms: u64) {
+    NEXT_COUNTDOWN_MS.with(|m| m.set(Some(ms)));
+}
+
+/// The command layer's shot without the overlay (ZK-214): the whole frozen display, or its
+/// active window (the whole display when there is none), to the editor or the clipboard, now or
+/// after the countdown — a recording of it when the video mode is on. Not from inside
+/// `with_ctx`: the shot borrows the app.
+pub fn keep(frozen: Frozen, window: bool, next: Next, editor_was_visible: bool) {
+    set_next(next);
+    let g = Gesture {
+        shift: false,
+        alt: false,
+        delayed: false,
+    };
+    let outcome = match window.then(|| active_window(&frozen)).flatten() {
+        Some((rect, id)) => Outcome::Keep(rect, "window", Some(id), g),
+        None => Outcome::Keep(frozen.whole(), "screen", None, g),
+    };
+    settle(frozen, outcome, editor_was_visible);
+}
+
+/// The active window in the frozen frame: the foreground one on Windows, else the frontmost.
+fn active_window(frozen: &Frozen) -> Option<(PxRect, u64)> {
+    #[cfg(windows)]
+    {
+        // SAFETY: a plain state query.
+        let fg = unsafe { windows::Win32::UI::WindowsAndMessaging::GetForegroundWindow() };
+        let id = fg.0 as usize as u64;
+        if let Some(w) = frozen.windows.iter().find(|w| w.id == id) {
+            return Some((w.rect, w.id));
+        }
+    }
+    frozen.windows.first().map(|w| (w.rect, w.id))
+}
+
+/// The sound choice changed elsewhere (the command layer, ZK-214): the recording overlay's strip
+/// says so.
+pub fn sound_changed(mode: i32) {
+    if !crate::rec::video_mode() || !is_open() {
+        return;
+    }
+    let label: slint::SharedString = crate::rec::sound_text(mode).into();
+    SESSION.with(|s| {
+        if let Some(s) = s.borrow().as_ref() {
+            for p in &s.parts {
+                p.ui.set_sound_text(label.clone());
+            }
+        }
+    });
 }
 
 /// Runs `f` on the open session; finishes the capture when it returns an outcome.
@@ -744,6 +847,29 @@ fn with_session(f: impl FnOnce(&mut Session) -> Option<Outcome>) {
         editor_was_visible,
         ..
     } = session;
+    settle(frozen, outcome, editor_was_visible);
+}
+
+/// The choice as the request for this overlay shapes it (ZK-214): its intent, the clipboard,
+/// the countdown — then what it becomes.
+fn settle(frozen: Frozen, outcome: Outcome, editor_was_visible: bool) {
+    let next = NEXT.with(|m| m.take());
+    let outcome = match outcome {
+        Outcome::Keep(rect, ..) if next.intent == Intent::Text => Outcome::Text(rect),
+        Outcome::Keep(rect, ..) if next.intent == Intent::Codes => Outcome::Codes(rect),
+        Outcome::Keep(rect, ..) if next.intent == Intent::Scroll => Outcome::Scroll(rect),
+        Outcome::Keep(rect, source, id, g) => Outcome::Keep(
+            rect,
+            source,
+            id,
+            Gesture {
+                shift: g.shift || next.clip,
+                alt: g.alt,
+                delayed: g.delayed || next.delayed,
+            },
+        ),
+        o => o,
+    };
     let display = frozen.bounds;
     match outcome {
         // ZK-128: the countdown (in the corner of the display with the choice), then a fresh
@@ -815,11 +941,6 @@ fn finish(frozen: Frozen, outcome: Outcome, editor_was_visible: bool) {
         }
         return;
     }
-    // In the text mode what was chosen is read for its text, whatever the gesture (ZK-185).
-    let outcome = match (TEXT_MODE.with(|m| m.replace(false)), outcome) {
-        (true, Outcome::Keep(rect, ..)) => Outcome::Text(rect),
-        (_, o) => o,
-    };
     let display = frozen.bounds;
     // The card after the capture goes to the display with the choice (ZK-139).
     let card = |r: PxRect| frozen.part_at(r).bounds;
@@ -846,6 +967,7 @@ fn finish(frozen: Frozen, outcome: Outcome, editor_was_visible: bool) {
             });
         }
         Outcome::Cancel => {
+            crate::commands::emit("captureCancel");
             // (`invoke_from_event_loop` wakes the loop; a zero timer waits for the next event.)
             let _ = slint::invoke_from_event_loop(move || {
                 if editor_was_visible {
@@ -1235,6 +1357,7 @@ impl Session {
                     Some((sx, sy)) => {
                         if !self.dragging && ((x - sx).abs() > 4.0 || (y - sy).abs() > 4.0) {
                             self.dragging = true;
+                            crate::commands::emit("dragStart");
                         }
                         if self.dragging {
                             let (ax, ay) = self.px(sx, sy);
@@ -1249,8 +1372,13 @@ impl Session {
                     }
                     None => {
                         let hit = self.window_at(px, py);
+                        let id = hit.map(|(_, id)| id);
+                        // Another window lights up under the pointer (ZK-214).
+                        if id.is_some() && id != self.window {
+                            crate::commands::emit("windowHover");
+                        }
                         self.sel = hit.map(|(r, _)| r);
-                        self.window = hit.map(|(_, id)| id);
+                        self.window = id;
                     }
                 }
                 self.show();

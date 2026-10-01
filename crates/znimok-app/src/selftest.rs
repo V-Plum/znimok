@@ -1990,6 +1990,27 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
         );
         app.borrow_mut().set_tool(ui, before);
     }));
+    // ZK-214: `record.sound` sets the next recording's sound — the state says it, the mouse
+    // feels it.
+    steps.push(Box::new(|app, ui, r| {
+        let hub = crate::commands::hub();
+        let before = crate::rec::sound_mode();
+        let (seq0, ..) = hub.wait(0, std::time::Duration::ZERO);
+        hub.handle("record.sound", &serde_json::json!({"mode": "both"}));
+        crate::commands::poll();
+        let (_, events, state) = hub.wait(seq0, std::time::Duration::ZERO);
+        let felt = events.iter().any(|e| e["name"] == "soundChanged");
+        r.check(
+            "command layer: record.sound → both, the state and a soundChanged event (ZK-214)",
+            crate::rec::sound_mode() == 3 && state["sound"] == "both" && felt,
+            format!(
+                "{before} → {} · {}",
+                crate::rec::sound_mode(),
+                state["sound"]
+            ),
+        );
+        app.borrow_mut().setting(ui, "rec-sound", before);
+    }));
     // Tooltip bubble: arm it as a hover over the Undo button would, wait past the delay.
     steps.push(Box::new(|_, ui, _| {
         let tip = ui.global::<crate::Tip>();
@@ -2688,6 +2709,16 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
         );
         r.snapshot_window(ov.window(), "08-overlay-drag");
         ov.invoke_pointer(2, 900.0 / kx, 700.0 / ky, false, false);
+        // ZK-214: what the mouse felt in this overlay (the kept events hold the whole run).
+        let (_, events, _) = crate::commands::hub().wait(0, std::time::Duration::ZERO);
+        let names: Vec<&str> = events.iter().filter_map(|e| e["name"].as_str()).collect();
+        r.check(
+            "overlay events: windowHover, lensZoom, dragStart (ZK-214)",
+            ["windowHover", "lensZoom", "dragStart"]
+                .iter()
+                .all(|n| names.contains(n)),
+            format!("{names:?}"),
+        );
     }));
     steps.push(Box::new(|app, ui, r| {
         let size = app.borrow().s.as_ref().map(|s| s.ed.doc.image_size());

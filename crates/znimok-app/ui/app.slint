@@ -1568,6 +1568,8 @@ export component Overlay inherits Window {
     callback pointer(int, length, length, bool, bool);
     callback key(string, bool, bool);
     callback wheel(length);
+    // The lens or the hint strip hopped to the other side (ZK-214, felt on the mouse).
+    callback haptic(string);
 
     // The frame glides from window to window while hovering (like the system screenshot tool);
     // while dragging a region it follows the pointer exactly.
@@ -1611,6 +1613,7 @@ export component Overlay inherits Window {
     // Hint strip: bottom centre, or top centre when the pointer comes near the bottom.
     hint-strip := Rectangle {
         property <bool> up: root.pointer-y > parent.height - self.height - 28px - 80px;
+        changed up => { if (root.show-hints) { root.haptic("hintsFlip"); } }
         visible: root.show-hints;
         x: (parent.width - self.width) / 2;
         y: self.up ? 28px : parent.height - self.height - 28px;
@@ -1654,6 +1657,8 @@ export component Overlay inherits Window {
         // lens still follows the pointer exactly and glides over when it changes sides.
         property <bool> left: root.pointer-x + self.gap + root.lens-size > parent.width;
         property <bool> below: root.pointer-y - 44px - root.lens-size - self.info-h < 0;
+        changed left => { if (root.lens-visible) { root.haptic("lensFlip"); } }
+        changed below => { if (root.lens-visible) { root.haptic("lensFlip"); } }
         property <length> off-x: self.left ? -self.gap - root.lens-size : self.gap;
         property <length> off-y: self.below ? self.gap : -44px - root.lens-size - self.info-h;
         animate off-x, off-y { duration: 240ms; easing: cubic-bezier(0.2, 0.8, 0.2, 1); }

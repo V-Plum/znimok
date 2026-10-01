@@ -31,6 +31,8 @@ pub const METHODS: &[&str] = &[
     "app.state",
     "app.wait",
     "capture.start",
+    "record.start",
+    "record.sound",
     "record.toggle",
     "record.pause",
     "record.resume",

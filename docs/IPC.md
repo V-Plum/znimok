@@ -72,7 +72,10 @@ current state does not allow (undo with nothing open, pause with no recording) d
 failures arrive as events.
 
 ```json
-{"method": "capture.start", "params": {"mode": "region"}}   // region | screen | clipboard | editor | codes | text
+{"method": "capture.start", "params": {"mode": "region"}}   // region | screen | window | clipboard | editor | codes | codes-region | text | scroll
+{"method": "capture.start", "params": {"mode": "window", "to": "clipboard", "delay": 3}}
+{"method": "record.start", "params": {"what": "screen"}}    // region (the overlay chooses) | screen | window; "delay" too
+{"method": "record.sound", "params": {"mode": "mic"}}       // none | system | mic | both | cycle
 {"method": "record.toggle"}  {"method": "record.pause"}  {"method": "record.resume"}  {"method": "record.stop"}
 {"method": "editor.undo"}  {"method": "editor.redo"}
 {"method": "editor.tool", "params": {"name": "rect"}}       // select rect ellipse line pen text hide highlighter counter stamp crop (or "index")
@@ -81,6 +84,15 @@ failures arrive as events.
 → {"result": {"queued": true, "state": {…}}}
 ```
 
+`capture.start` (ZK-214): `region` opens the overlay; `screen` is the display under the pointer and
+`window` the active window (the foreground one; the whole display when there is none), both
+without the overlay; `codes` reads the whole display, `codes-region`, `text` and `scroll` open the
+overlay for the part to read or to scroll. `to: "clipboard"` sends the shot to the clipboard (and
+the library) instead of the editor, as Shift does; `delay: N` (1–30) takes it after a countdown of
+N seconds. `record.start` starts a recording the same way (`what`: `region` | `screen` | `window`,
+`delay` too) and does nothing while one runs; `record.sound` sets the sound of the next recording
+(`cycle` = the next choice, as A in the overlay).
+
 `app.state` is what other programs see, refreshed by the UI thread after every round:
 
 ```json
@@ -88,6 +100,7 @@ failures arrive as events.
 → {"result": {"page": "library" | "editor" | "settings" | "overlay" | "recording",
               "document": "Знімок 2026-10-01 …" | null, "video": false,
               "tool": "rect", "zoom": 100, "can_undo": true, "can_redo": false,
+              "sound": "system",                                  // of the next recording
               "recording": {"paused": false, "time": "0:12"}}}   // while recording
 ```
 
@@ -100,9 +113,15 @@ waiting and pass the returned `seq` back; the last 200 events are kept for a lat
 → {"result": {"seq": 43, "events": [{"seq": 42, "name": "shotTaken", "t": 1790000000000}, …], "state": {…}}}
 ```
 
-Events: `shotTaken`, `copied`, `recordStart`, `recordStop`, `recordPause`, `recordResume`,
-`exportDone`, `textRead`, `codesRead`, `failed`. `t` is the wall clock in ms. The plugin's haptic
-event source maps these names to waveforms.
+Events — the outcomes: `shotTaken`, `copied`, `recordStart`, `recordStop`, `recordPause`,
+`recordResume`, `exportDone`, `textRead`, `codesRead`, `failed`; the overlay (ZK-214): `lensZoom`
+(the magnifier's level changed), `lensFlip` (it hopped to the other side of the pointer),
+`hintsFlip` (the hint strip hopped out of the way), `windowHover` (another window lit up under
+the pointer), `dragStart`, `countdownTick` (each second of 3-2-1), `captureCancel`; the editor:
+`markAdded`, `markDeleted`, `cropped`, `undo`, `redo`, `toolChanged`, `zoomChanged`,
+`documentOpened`, `trashed` (by the user), `soundChanged`. `t` is the wall clock in ms. The
+plugin's haptic event source maps these names to waveforms; the frequent ones (`lensZoom`,
+`windowHover`, `zoomChanged`) deserve a subtle one and a debounce on the client.
 
 ## Agents and the settings
 
