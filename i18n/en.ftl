@@ -5173,7 +5173,7 @@ vexp-soon = soon
 # @where: Video export sheet: the report card (not yet)
 # @kind: body
 # @max: 90
-vexp-report-desc = Comes with the browser extension.
+vexp-report-desc = The video, its marks and the browser's DevTools log in one page, for a bug report.
 
 # @where: Video export sheet, GIF: the size limit label
 # @kind: label
@@ -5482,6 +5482,143 @@ devp-t-download = Download
 # @kind: label
 # @max: 20
 devp-t-total = Total
+
+## The developer report (ZK-98)
+
+
+# @where: Export sheet, the developer report: what the two forms are
+# @kind: body
+# @max: 240
+vexp-report-note = One page up to 100 MB opens in any browser; a .zreport keeps the video beside the page and the log and dataLayer as JSON, and opens in Znimok as a recording.
+
+# @where: Export sheet, the developer report: form option, one HTML page
+# @kind: label
+# @max: 22
+vexp-report-html = One page (HTML)
+
+# @where: Export sheet, the developer report: form option, a ZIP archive
+# @kind: label
+# @max: 22
+vexp-report-zip = Archive (.zreport)
+
+# @where: Export sheet, the developer report: the estimate is over 100 MB as one page
+# @kind: body
+# @max: 100
+vexp-report-big = Over 100 MB as one page — choose the .zreport.
+
+# @where: Export sheet, the developer report: the recording has no browser log
+# @kind: body
+# @max: 120
+vexp-no-log = This recording has no browser log: the report has the video and its marks.
+
+# @where: Export sheet, the developer report: switch, hide sensitive values of the log
+# @kind: label
+# @max: 40
+vexp-hide = Hide sensitive values
+
+# @where: Export sheet, the developer report: Settings say always hide
+# @kind: body
+# @max: 100
+vexp-hide-always = Sensitive values are always hidden (Settings → Recording).
+
+# @where: Export sheet, the developer report: Settings say never hide
+# @kind: body
+# @max: 100
+vexp-hide-never = Sensitive values are not hidden (Settings → Recording).
+
+# @where: Export sheet, the developer report: how many values will be hidden; $count
+# @kind: body
+# @max: 200
+vexp-hide-count =
+    { $count ->
+        [one] One value will be hidden: keys from the list in Settings and secrets by their look.
+       *[other] { $count } values will be hidden: keys from the list in Settings and secrets by their look.
+    }
+
+# @where: Export sheet, the developer report: nothing sensitive was found in the log
+# @kind: body
+# @max: 60
+vexp-hide-none = Nothing sensitive found in the log.
+
+# @where: Toast: the report is over 100 MB as one page
+# @kind: body
+# @max: 100
+vexp-report-too-big = The report is over 100 MB as one page — export it as a .zreport.
+
+# @where: Developer report page: header fact, when it was recorded
+# @kind: label
+# @max: 20
+report-recorded = Recorded
+
+# @where: Developer report page: header fact, the video length
+# @kind: label
+# @max: 20
+report-length = Length
+
+# @where: Developer report page: header fact, the video size in pixels
+# @kind: label
+# @max: 20
+report-size = Size
+
+# @where: Developer report page: header fact, the browser
+# @kind: label
+# @max: 20
+report-browser = Browser
+
+# @where: Developer report page: header fact, the page address the log starts on
+# @kind: label
+# @max: 20
+report-page = Page
+
+# @where: Developer report page: how many values of the log were hidden; $n a number
+# @kind: body
+# @max: 60
+report-masked = { $n } values hidden
+
+# @where: Developer report page: footer; $version the app version
+# @kind: body
+# @max: 60
+report-foot = Made with Znimok { $version }
+
+# @where: Developer report page: the recording has no browser log
+# @kind: body
+# @max: 80
+report-no-log = This recording has no browser log.
+
+# @where: Toast: a .zreport could not be opened; $reason why
+# @kind: body
+# @max: 120
+zreport-error = Cannot open the report: { $reason }
+
+# @where: Settings → Recording: section, hiding values in a developer report
+# @kind: label
+# @max: 50
+rec-hide-title = Hide sensitive values in a report
+
+# @where: Settings → Recording: option, the export sheet asks
+# @kind: label
+# @max: 14
+rec-hide-ask = Ask
+
+# @where: Settings → Recording: option, always hide
+# @kind: label
+# @max: 14
+rec-hide-always = Always
+
+# @where: Settings → Recording: option, never hide
+# @kind: label
+# @max: 14
+rec-hide-never = Never
+
+# @where: Settings → Recording: label of the field with the keys to hide
+# @kind: label
+# @max: 30
+rec-hide-keys = Keys to hide
+
+# @where: Settings → Recording: what the keys are and what else is hidden
+# @kind: body
+# @max: 300
+rec-hide-hint = Comma-separated: headers, JSON keys, form fields and dataLayer keys whose values become •••. Secrets such as tokens, e-mails and card numbers are found by their look as well. The log stays whole in your files.
 
 ## dataLayer in the DevTools log (ZK-195)
 

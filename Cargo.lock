@@ -6826,6 +6826,7 @@ dependencies = [
  "znimok-platform",
  "znimok-play",
  "znimok-render",
+ "znimok-report",
  "znimok-settings",
  "znimok-stitch",
  "znimok-update",
@@ -6905,6 +6906,7 @@ dependencies = [
  "znimok-format",
  "znimok-play",
  "znimok-render",
+ "znimok-report",
  "znimok-video",
  "znimok-video-win",
 ]
@@ -7118,6 +7120,16 @@ dependencies = [
  "vello_common",
  "vello_cpu",
  "znimok-core",
+]
+
+[[package]]
+name = "znimok-report"
+version = "0.0.2"
+dependencies = [
+ "crc32fast",
+ "serde_json",
+ "znimok-format",
+ "znimok-mask",
 ]
 
 [[package]]

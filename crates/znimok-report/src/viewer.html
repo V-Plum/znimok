@@ -1,0 +1,283 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{TITLE}}</title>
+<style>
+:root{--bg:#f4f5f7;--panel:#fff;--line:#dfe2e8;--fg:#16181d;--fg2:#3b404b;--muted:#5c6270;--accent:#3d7bf5;--sel:#e3ebfd;--cur:#3d7bf51f;
+--err:#d93a3f;--warn:#b86e00;--dl:#7b4ee0;--nav:#3d7bf5;--net:#5c6270;--mono:ui-monospace,"JetBrains Mono",Consolas,monospace}
+@media (prefers-color-scheme:dark){:root{--bg:#0f1115;--panel:#171a20;--line:#2a2f38;--fg:#e8eaee;--fg2:#c4c8d0;--muted:#9aa1ad;--accent:#6b9bff;--sel:#24324d;--cur:#6b9bff24;
+--err:#ff6b6f;--warn:#f5a524;--dl:#a970ff;--nav:#6b9bff;--net:#9aa1ad}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:1280px;margin:0 auto;padding:20px 16px 32px;display:grid;gap:14px}
+h1{font-size:20px;margin:0;text-wrap:balance}
+.meta{display:flex;flex-wrap:wrap;gap:6px 14px;color:var(--muted);font-size:13px}
+.meta b{color:var(--fg2);font-weight:600}
+.masked{color:var(--warn)}
+.v{position:relative;line-height:0;border-radius:10px;overflow:hidden;background:#000;max-width:{{VW}}px;width:100%;justify-self:center}
+video{width:100%;height:auto;display:block}
+.m{position:absolute;inset:0;width:100%;height:100%;display:none;pointer-events:none}
+.log{background:var(--panel);border:1px solid var(--line);border-radius:10px;display:grid;grid-template-columns:minmax(0,1fr);overflow:hidden}
+.log.open{grid-template-columns:minmax(0,1.1fr) minmax(0,1fr)}
+@media (max-width:820px){.log.open{grid-template-columns:minmax(0,1fr)}}
+.bar{display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:8px;border-bottom:1px solid var(--line)}
+.bar input{flex:0 1 220px;min-width:120px;padding:5px 9px;border:1px solid var(--line);border-radius:7px;background:var(--bg);color:var(--fg);font:inherit}
+.chip{border:0;border-radius:11px;padding:3px 10px;background:var(--bg);color:var(--fg2);font:600 12px system-ui,sans-serif;cursor:pointer}
+.chip.on{background:var(--sel);color:var(--fg)}
+.chip:focus-visible,.row:focus-visible,.tab:focus-visible,.dl a:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.dl{margin-left:auto;display:flex;gap:10px;font-size:12px}
+.dl a{color:var(--accent);text-decoration:none;cursor:pointer}
+.list{max-height:46vh;overflow:auto}
+.row{display:grid;grid-template-columns:70px 78px minmax(0,1fr) minmax(0,150px);gap:8px;padding:3px 8px;cursor:pointer;align-items:baseline}
+.row:hover{background:var(--bg)}
+.row.cur{background:var(--cur)}
+.row.sel{background:var(--sel)}
+.row span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tm{font:12px var(--mono);color:var(--muted);font-variant-numeric:tabular-nums}
+.kd{font-size:12px;font-weight:600}
+.src{font-size:12px;color:var(--muted);text-align:right}
+.c4{color:var(--err)}.c3{color:var(--warn)}.c2{color:var(--dl)}.c1{color:var(--nav)}.c0{color:var(--net)}
+.row .msg.c4{color:var(--err)}.row .msg{color:var(--fg)}
+.empty{padding:14px;color:var(--muted)}
+.det{border-left:1px solid var(--line);display:none;flex-direction:column;min-height:0;max-height:calc(46vh + 45px)}
+.log.open .det{display:flex}
+@media (max-width:820px){.det{border-left:0;border-top:1px solid var(--line)}}
+.dhead{display:flex;gap:8px;align-items:center;padding:8px;border-bottom:1px solid var(--line)}
+.dhead span{flex:1;min-width:0;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dhead button{border:0;background:var(--bg);color:var(--fg2);border-radius:6px;padding:2px 8px;cursor:pointer;font:inherit}
+.tabs{display:flex;gap:2px;padding:6px 8px 0}
+.tab{border:0;background:none;color:var(--fg2);padding:5px 9px;border-radius:7px 7px 0 0;cursor:pointer;font:600 12px system-ui,sans-serif}
+.tab.on{background:var(--bg);color:var(--fg)}
+.tab:disabled{color:var(--line);cursor:default}
+pre{margin:0;padding:10px;overflow:auto;font:12px/1.5 var(--mono);white-space:pre-wrap;word-break:break-word;flex:1;background:var(--bg)}
+.tim{padding:10px;display:grid;gap:5px;background:var(--bg);flex:1}
+.tr{display:grid;grid-template-columns:130px minmax(0,1fr) 80px;gap:8px;align-items:center;font-size:12px}
+.tr i{display:block;height:8px;border-radius:2px;background:var(--accent)}
+.tr .ms{font:12px var(--mono);color:var(--muted);text-align:right}
+footer{color:var(--muted);font-size:12px}
+@media (prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}}
+</style></head><body><main>
+<h1>{{TITLE}}</h1>
+<div class="meta" id="meta"></div>
+<div class="v"><video controls playsinline preload="auto" src="{{VIDEO}}"></video>
+{{LAYERS}}</div>
+<section class="log" id="log"></section>
+<footer id="foot"></footer>
+</main>
+<script type="application/json" id="zn-data">{{DATA}}</script>
+<script>
+(() => {
+const D = JSON.parse(document.getElementById("zn-data").textContent);
+const L = (k) => D.strings[k] || k;
+const v = document.querySelector("video");
+const $ = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+
+// The marks: a layer each, shown in its time.
+const marks = [...document.querySelectorAll(".m")].map((e) => [e, e.dataset.t.split(";").map((s) => s.split(",").map(Number))]);
+if (marks.length) (function f() { const t = v.currentTime; for (const [e, r] of marks) e.style.display = r.some(([a, b]) => t >= a && t < b) ? "block" : "none"; requestAnimationFrame(f); })();
+
+// The header.
+const meta = document.getElementById("meta");
+for (const [k, val] of D.meta.rows) { const s = $("span"); s.append($("b", null, k + ": "), document.createTextNode(val)); meta.append(s); }
+if (D.meta.masked) meta.append($("span", "masked", D.meta.masked));
+document.getElementById("foot").textContent = D.meta.foot;
+
+const ev = D.events;
+const log = document.getElementById("log");
+document.body.dataset.rows = String(ev.length);
+if (!ev.length) { log.append($("div", "empty", L("report-no-log"))); document.body.dataset.znimokReport = "ok"; return; }
+
+const kindOf = (e) => e.k === "console" || e.k === "log" ? "console" : e.k === "error" ? "error" : e.k === "net" ? "net" : e.k === "ws" ? "ws" : e.k === "nav" ? "nav" : e.k === "dl" ? "dl" : "info";
+const cls = (e) => e.s === 2 ? 4 : e.s === 1 ? 3 : e.k === "dl" ? 2 : e.k === "nav" ? 1 : 0;
+const CHIPS = [["devp-chip-all", () => true], ["devp-chip-errors", (e) => e.s === 2], ["devp-chip-warnings", (e) => e.s === 1],
+  ["devp-chip-network", (e) => e.k === "net" || e.k === "ws"], ["devp-chip-console", (e) => ["console", "log", "error"].includes(e.k)],
+  ["devp-chip-nav", (e) => e.k === "nav"], ["devp-chip-datalayer", (e) => e.k === "dl"]];
+const fmt = (s) => { s = Math.max(0, s); const m = Math.floor(s / 60); const r = s - m * 60; return m + ":" + (r < 10 ? "0" : "") + r.toFixed(2); };
+const oneLine = (s, n = 300) => { s = String(s == null ? "" : s).replace(/[\u0000-\u001f]/g, " "); return s.length > n ? s.slice(0, n) + "…" : s; };
+const tail = (s) => { s = String(s || ""); const i = s.lastIndexOf("/"); return i >= 0 && i < s.length - 1 ? s.slice(i + 1) : s; };
+function label(e) {
+  switch (kindOf(e)) {
+    case "net": return (e.method || "") + " " + (e.err ? "✕" : (e.status || 0));
+    case "ws": return e.dir === "out" ? "WS ↑" : "WS ↓";
+    case "console": return e.lvl === "warning" ? "warn" : (e.lvl || "log");
+    case "dl": return "dataLayer";
+    case "info": return e.k || "info";
+    default: return kindOf(e);
+  }
+}
+function message(e) {
+  switch (kindOf(e)) {
+    case "net": return oneLine((e.url || "") + (e.err ? " — " + e.err : ""));
+    case "ws": return oneLine(e.data);
+    case "nav": return oneLine(e.url);
+    case "dl": {
+      let rest = e.data;
+      if (rest && typeof rest === "object" && !Array.isArray(rest)) { rest = Object.assign({}, rest); delete rest.event; if (!Object.keys(rest).length) rest = null; }
+      const r = rest == null ? "" : JSON.stringify(rest);
+      return oneLine(e.ev ? (r ? e.ev + "  " + r : e.ev) : r);
+    }
+    default: return oneLine(e.text != null ? e.text : e.url);
+  }
+}
+const source = (e) => tail(e.k === "net" ? (e.dur != null ? e.dur + " ms" : "") : e.src);
+function matches(e, q) {
+  if (!q) return true;
+  const has = (x) => x != null && String(typeof x === "object" ? JSON.stringify(x) : x).toLowerCase().includes(q);
+  if (e.k === "dl") return has(e.ev) || has(e.data);
+  return has(e.text) || has(e.url) || has(e.src) || has(e.postData) || has(e.data) || has(e.method) || (!e.b64 && has(e.body)) || has(e.status);
+}
+
+// The bar: search, chips, downloads.
+const bar = $("div", "bar");
+const search = $("input"); search.type = "search"; search.placeholder = L("devp-search");
+bar.append(search);
+const chipEls = CHIPS.map(([k], i) => { const b = $("button", "chip"); b.type = "button"; b.onclick = () => { chip = i; refilter(); }; bar.append(b); return b; });
+const dls = $("div", "dl");
+const save = (name, data) => { const a = $("a", null, name); a.tabIndex = 0; a.onclick = () => { const u = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: "application/json" })); const l = document.createElement("a"); l.href = u; l.download = name; l.click(); setTimeout(() => URL.revokeObjectURL(u), 1000); }; return a; };
+dls.append(save("log.json", ev));
+const dlOnly = ev.filter((e) => e.k === "dl");
+if (dlOnly.length) dls.append(save("dataLayer.json", dlOnly.map((e) => ({ at: e.at, event: e.ev, data: e.data }))));
+bar.append(dls);
+const left = $("div"); left.append(bar);
+const list = $("div", "list"); list.tabIndex = -1; left.append(list);
+const det = $("div", "det");
+log.append(left, det);
+
+let chip = 0, q = "", shown = [], sel = -1, tab = 0, cur = -1;
+function refilter() {
+  q = search.value.trim().toLowerCase();
+  const inQ = ev.filter((e) => matches(e, q));
+  chipEls.forEach((b, i) => { b.textContent = L(CHIPS[i][0]) + "  " + inQ.filter(CHIPS[i][1]).length; b.classList.toggle("on", i === chip); });
+  shown = [];
+  ev.forEach((e, i) => { if (CHIPS[chip][1](e) && matches(e, q)) shown.push(i); });
+  list.textContent = "";
+  if (!shown.length) list.append($("div", "empty", L("devp-empty")));
+  for (const i of shown) {
+    const e = ev[i], c = cls(e);
+    const r = $("div", "row"); r.tabIndex = 0; r.dataset.i = i;
+    r.append($("span", "tm", fmt(e.at)), $("span", "kd c" + c, label(e)), $("span", "msg" + (c === 4 ? " c4" : ""), message(e)), $("span", "src", source(e)));
+    r.onclick = () => pick(i, true);
+    r.onkeydown = (k) => { if (k.key === "Enter") pick(i, true); };
+    if (i === sel) r.classList.add("sel");
+    list.append(r);
+  }
+  cur = -1; follow(false);
+  document.body.dataset.shown = String(shown.length);
+}
+search.oninput = refilter;
+
+function follow(scroll) {
+  const t = v.currentTime + 0.001;
+  let lo = 0, hi = shown.length;
+  while (lo < hi) { const m = (lo + hi) >> 1; if (ev[shown[m]].at <= t) lo = m + 1; else hi = m; }
+  const n = lo - 1;
+  if (n === cur) return;
+  const rows = list.children;
+  if (cur >= 0 && rows[cur]) rows[cur].classList.remove("cur");
+  cur = n;
+  if (cur >= 0 && rows[cur] && rows[cur].classList) { rows[cur].classList.add("cur"); if (scroll) rows[cur].scrollIntoView({ block: "nearest" }); }
+}
+v.addEventListener("timeupdate", () => follow(!v.paused));
+v.addEventListener("seeked", () => follow(true));
+
+// The details.
+const size = (n) => n >= 1048576 ? (n / 1048576).toFixed(1) + " MB" : n >= 1024 ? Math.round(n / 1024) + " KB" : n + " B";
+function pretty(s) {
+  if (s == null) return "";
+  if (typeof s !== "string") return JSON.stringify(s, null, 2);
+  const t = s.trimStart();
+  if (t[0] === "{" || t[0] === "[") { try { return JSON.stringify(JSON.parse(s), null, 2); } catch (x) { /* not JSON */ } }
+  if (s.includes("=") && !/\s/.test(s) && s.split("&").every((p) => p.includes("="))) {
+    const dec = (x) => { try { return decodeURIComponent(x.replace(/\+/g, " ")); } catch (y) { return x; } };
+    return s.split("&").map((p) => { const i = p.indexOf("="); return dec(p.slice(0, i)) + ": " + dec(p.slice(i + 1)); }).join("\n");
+  }
+  return s;
+}
+const binary = (e) => L("devp-binary").replace("{size}", size(Math.floor((e.bodyCut || (e.body || "").length) / 4) * 3));
+function headers(e) {
+  let s = L("devp-general") + "\n";
+  const row = (k, val) => { if (val != null && val !== "") s += "  " + k + ": " + val + "\n"; };
+  row(L("devp-h-url"), e.url); row(L("devp-h-method"), e.method);
+  if (e.status) row(L("devp-h-status"), (e.status + " " + (e.statusText || "")).trim());
+  row(L("devp-h-remote"), e.remote); row(L("devp-h-protocol"), e.proto);
+  if (e.initiator) row(L("devp-h-initiator"), (e.initiator.type || "") + (e.initiator.url ? " " + e.initiator.url + (e.initiator.line != null ? ":" + (e.initiator.line + 1) : "") : ""));
+  if (e.cache) row(L("devp-h-cache"), "✓");
+  if (e.redirect) row("→", e.redirect);
+  row(L("devp-h-error"), e.err);
+  for (const [title, h] of [[L("devp-res-headers"), e.resHeaders], [L("devp-req-headers"), e.reqHeaders]]) {
+    if (!h || !Object.keys(h).length) continue;
+    s += "\n" + title + "\n";
+    for (const k of Object.keys(h).sort((a, b) => a.toLowerCase() < b.toLowerCase() ? -1 : 1)) s += "  " + k + ": " + h[k] + "\n";
+  }
+  return s;
+}
+function timing(e) {
+  const total = Math.max(1, e.dur || 0), t = e.timing || {}, out = [];
+  const at = (k) => typeof t[k] === "number" && t[k] >= 0 ? t[k] : null;
+  const push = (k, a, b) => { if (a != null && b != null && b > a) out.push([L("devp-t-" + k), a / total, Math.max(0.002, (b - a) / total), (b - a).toFixed(1) + " ms"]); };
+  const firsts = [at("dnsStart"), at("connectStart"), at("sendStart")].filter((x) => x != null);
+  if (firsts.length) push("queue", 0, Math.min(...firsts));
+  push("dns", at("dnsStart"), at("dnsEnd")); push("connect", at("connectStart"), at("connectEnd")); push("tls", at("sslStart"), at("sslEnd"));
+  push("send", at("sendStart"), at("sendEnd")); push("wait", at("sendEnd"), at("receiveHeadersEnd")); push("download", at("receiveHeadersEnd"), total);
+  push("total", 0, total);
+  return out;
+}
+const frameLine = (f) => typeof f === "string" ? f : "at " + (f.fn || "(anonymous)") + " (" + (f.url || "") + (f.line != null ? ":" + f.line + (f.col != null ? ":" + f.col : "") : "") + ")";
+function text(e) {
+  const k = kindOf(e);
+  if (k === "ws") return pretty(e.data);
+  if (k === "nav") return e.url || "";
+  if (k === "dl") {
+    let s = (e.pre ? L("devp-dl-pre") + "\n\n" : "") + (e.frame ? L("devp-dl-frame") + "\n\n" : "");
+    return s + (typeof e.data === "string" && e.cut ? e.data + "\n\n… " + size(e.cut) : JSON.stringify(e.data, null, 2));
+  }
+  let s = String(e.text || "");
+  if (Array.isArray(e.args) && e.args.length > 1) for (const a of e.args) s += "\n\n" + pretty(a);
+  if (e.src) s += "\n\n" + e.src;
+  if (typeof e.stack === "string" && e.stack) s += "\n\n" + L("devp-stack") + "\n" + e.stack;
+  else if (Array.isArray(e.stack) && e.stack.length) s += "\n\n" + L("devp-stack") + "\n" + e.stack.map(frameLine).join("\n");
+  return s || L("devp-nothing");
+}
+function pick(i, seek) {
+  sel = i; tab = 0;
+  for (const r of list.children) if (r.classList) r.classList.toggle("sel", Number(r.dataset.i) === i);
+  if (seek) { v.currentTime = Math.max(0, ev[i].at); }
+  details();
+}
+function details() {
+  det.textContent = "";
+  if (sel < 0) { log.classList.remove("open"); return; }
+  log.classList.add("open");
+  const e = ev[sel];
+  const head = $("div", "dhead");
+  head.append($("span", null, label(e) + "  " + message(e)));
+  const x = $("button", null, "✕"); x.type = "button"; x.title = L("common-close"); x.onclick = () => { sel = -1; for (const r of list.children) if (r.classList) r.classList.remove("sel"); details(); };
+  head.append(x);
+  det.append(head);
+  if (kindOf(e) !== "net") { det.append($("pre", null, text(e))); return; }
+  const has = [true, typeof e.postData === "string", typeof e.body === "string", typeof e.body === "string", !!e.timing || e.dur != null];
+  const tabs = $("div", "tabs");
+  ["devp-tab-headers", "devp-tab-payload", "devp-tab-preview", "devp-tab-response", "devp-tab-timing"].forEach((k, i) => {
+    const b = $("button", "tab" + (i === tab ? " on" : ""), L(k)); b.type = "button"; b.disabled = !has[i]; b.onclick = () => { tab = i; details(); }; tabs.append(b);
+  });
+  det.append(tabs);
+  if (tab === 4) {
+    const box = $("div", "tim");
+    for (const [name, a, w, ms] of timing(e)) {
+      const r = $("div", "tr"), bar = $("div"), i = $("i");
+      i.style.marginLeft = (a * 100) + "%"; i.style.width = (w * 100) + "%";
+      bar.append(i); r.append($("span", null, name), bar, $("span", "ms", ms)); box.append(r);
+    }
+    det.append(box);
+    return;
+  }
+  let s;
+  if (tab === 1) s = pretty(e.postData);
+  else if (tab === 2) s = e.b64 ? binary(e) : pretty(e.body);
+  else if (tab === 3) s = e.b64 ? binary(e) : String(e.body || "") + (e.bodyCut ? "\n\n… " + size(e.bodyCut) : "");
+  else s = headers(e);
+  det.append($("pre", null, s || L("devp-nothing")));
+}
+refilter();
+document.body.dataset.znimokReport = "ok";
+})();
+</script></body></html>

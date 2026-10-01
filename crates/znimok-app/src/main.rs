@@ -683,8 +683,9 @@ fn pick_open(app: &Shared) -> Option<PathBuf> {
     let dir = app.borrow().lib_dir.clone();
     let mut exts: Vec<&str> = io::IMAGE_EXTENSIONS.to_vec();
     exts.push("znimok");
+    exts.push("zreport");
     rfd::FileDialog::new()
-        .add_filter("Znimok, PNG, JPEG, WebP, GIF, BMP", &exts)
+        .add_filter("Znimok, .zreport, PNG, JPEG, WebP, GIF, BMP", &exts)
         .set_directory(dir)
         .pick_file()
 }
@@ -1460,6 +1461,9 @@ fn wire(ui: &AppWindow, app: &Shared) {
     });
     on!(ui, app, on_devp_search, |a, w, q| {
         a.devp_search(&w, &q);
+    });
+    on!(ui, app, on_setting_text, |a, w, key, text| {
+        a.setting_text(&w, &key, &text);
     });
     {
         // Reported while laying out, possibly from inside the app's own code (as lib-layout).
