@@ -122,6 +122,9 @@ pub struct RecordingResult {
     /// What each written track is, in track order (separate layout): the source's kind and its
     /// device name (ZK-89). Empty when the tracks are mixed or there are none.
     pub audio_sources: Vec<(AudioKind, String)>,
+    /// Per track, its loudness for the timeline (ZK-189): one byte per 10 ms of what was written
+    /// (video time), `√(peak) · 255`.
+    pub audio_peaks: Vec<Vec<u8>>,
     pub warning: Option<AudioWarning>,
     /// The first error; the file is still finalised when anything was written.
     pub error: Option<VideoError>,
@@ -236,9 +239,35 @@ pub struct Recorder<C: Clock, S: FrameSource, K: VideoSink<Frame = S::Frame>> {
     cfr: Cfr,
     audio: Option<AudioSide>,
     events: Option<(EventQueue, EventGate)>,
+    /// The loudness of each track being measured (ZK-189).
+    peak_acc: Vec<PeakAcc>,
     pause_wall: f64,
     closed: bool,
     result: RecordingResult,
+}
+
+/// A track's loudness, 10 ms at a time (ZK-189).
+#[derive(Clone, Copy, Debug, Default)]
+struct PeakAcc {
+    peak: i32,
+    frames: u32,
+}
+
+impl PeakAcc {
+    /// Interleaved stereo s16 in; a byte out for every 480 frames.
+    fn feed(&mut self, pcm: &[i16], out: &mut Vec<u8>) {
+        for f in pcm.chunks(crate::audio::CHANNELS) {
+            for s in f {
+                self.peak = self.peak.max(i32::from(*s).abs());
+            }
+            self.frames += 1;
+            if self.frames == crate::audio::MIN_CHUNK as u32 {
+                let v = (self.peak as f32 / 32768.0).sqrt();
+                out.push((v * 255.0).round().clamp(0.0, 255.0) as u8);
+                *self = Self::default();
+            }
+        }
+    }
 }
 
 /// Which warning a failed audio source gives (`VidRecord` 32217–32219).
@@ -322,6 +351,7 @@ impl<C: Clock, S: FrameSource, K: VideoSink<Frame = S::Frame>> Recorder<C, S, K>
             None
         };
         result.audio_tracks = tracks;
+        result.audio_peaks = vec![Vec::new(); tracks];
         if config.audio_layout == AudioLayout::Separate
             && let Some(c) = audio.as_ref().and_then(|a| a.capture.as_ref())
         {
@@ -339,6 +369,7 @@ impl<C: Clock, S: FrameSource, K: VideoSink<Frame = S::Frame>> Recorder<C, S, K>
             control,
             audio,
             events: None,
+            peak_acc: vec![PeakAcc::default(); tracks],
             pause_wall: 0.0,
             closed: false,
             result,
@@ -392,6 +423,12 @@ impl<C: Clock, S: FrameSource, K: VideoSink<Frame = S::Frame>> Recorder<C, S, K>
             AudioStep::Emit { upto, sample } => {
                 for (track, buf) in b.iter_mut().enumerate() {
                     let pcm = buf.take_s16(upto);
+                    if let (Some(out), Some(acc)) = (
+                        self.result.audio_peaks.get_mut(track),
+                        self.peak_acc.get_mut(track),
+                    ) {
+                        acc.feed(&pcm, out);
+                    }
                     if !pcm.is_empty() {
                         // LH ignores audio write errors: the video goes on.
                         let _ = self.sink.write_audio(track, &pcm, sample);

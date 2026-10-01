@@ -527,6 +527,25 @@ fn separate_tracks_and_mixed_track() {
         let total: i64 = t.iter().map(|(s, _)| s.frames).sum();
         assert_eq!(total, r.frames * 1600);
     }
+    // ZK-189: each track's loudness, a byte per 10 ms of what was written: √0.5 · 255 ≈ 180.
+    assert_eq!(r.audio_peaks.len(), 2);
+    for p in &r.audio_peaks {
+        let written: i64 = r.frames * 1600 / 480;
+        assert!(
+            (p.len() as i64 - written).abs() <= 1,
+            "{} of {written}",
+            p.len()
+        );
+        // The tail is the silence that pads the audio to the end of the video.
+        let body = &p[..p.len().saturating_sub(3)];
+        let odd: Vec<(usize, u8)> = body
+            .iter()
+            .copied()
+            .enumerate()
+            .filter(|(_, v)| !(178..=182).contains(v))
+            .collect();
+        assert!(odd.is_empty(), "{odd:?} of {}", p.len());
+    }
     let mixed = audio::mix_tracks_s16(&[&sink.track(0)[3].1[..4], &sink.track(1)[3].1[..4]]);
     assert_eq!(mixed[0], to_s16(2.0 * 16383.0 / 32767.0));
 

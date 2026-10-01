@@ -81,6 +81,7 @@ fn video_sample() -> Vec<u8> {
             volume: 80,
             muted: false,
             offset_ms: 15,
+            peaks: (0..200).map(|i| (i * 7 % 256) as u8).collect(),
         },
     ];
     v.mouse = (0..20)

@@ -221,6 +221,7 @@ fields like an `OBJ `; unknown fields are skipped:
 | `volm` | `u8` | volume at export, % (0…200, clamped) | 100 |
 | `mute` | `bool` | left out of the mix | false |
 | `offs` | `i32` | shift against the video at export, ms (±60 000, clamped; positive = later) | 0 |
+| `peak` | `u8` step, then bytes | loudness for the timeline (ZK-189): the step in ms (10), then a byte per step — the peak of that stretch, `√peak · 255`; another step is ignored | when measured (recordings since 0.0.2) |
 
 ### `MOUS` — mouse log
 

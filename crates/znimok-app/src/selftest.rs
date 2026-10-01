@@ -4040,6 +4040,24 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
                 vui.get_vid_mode() && playing_ok,
                 format!("mode {} · player {playing_ok}", vui.get_vid_mode()),
             );
+            // ZK-189: the track's loudness was measured while recording (a byte per 10 ms) and
+            // the timeline's sound lane has a waveform for it.
+            {
+                use slint::Model;
+                let peaks: Vec<usize> = va
+                    .borrow()
+                    .s
+                    .as_ref()
+                    .and_then(|s| s.video.as_ref())
+                    .map(|v| v.video.audio.iter().map(|t| t.peaks.len()).collect())
+                    .unwrap_or_default();
+                let waves = vui.get_tl_waves().row_count();
+                r.check(
+                    "video: the sound track's loudness is kept and drawn on the timeline",
+                    peaks.is_empty() || (peaks.iter().all(|&n| n >= 100) && waves == peaks.len()),
+                    format!("peaks {peaks:?} · waveforms {waves}"),
+                );
+            }
             va.borrow_mut().close_document(&vui);
             let _ = std::fs::remove_file(&p);
         }

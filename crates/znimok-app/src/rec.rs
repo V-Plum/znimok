@@ -390,6 +390,10 @@ fn wrap(
             ..Default::default()
         })
         .collect();
+    // Their loudness for the timeline (ZK-189).
+    for (t, p) in video.audio.iter_mut().zip(&result.audio_peaks) {
+        t.peaks = p.clone();
+    }
     doc.timeline = Some(video.edit.to_timeline());
     let opts = znimok_format::WriteOptions {
         app_version: format!("Znimok {}", env!("CARGO_PKG_VERSION")),

@@ -290,6 +290,8 @@ pub struct App {
     overlay_prev: Vec<IRect>,
     pub gpu: Option<Gpu>,
     pub dpr: f64,
+    /// What the timeline's waveforms were last drawn for (ZK-189): skip when nothing changed.
+    wave_key: Option<(i32, u64, u64, u64, u64, u64)>,
     dirty: bool,
     /// The video frame on the canvas changed: everything is repainted (ZK-181).
     frame_changed: bool,
@@ -529,6 +531,7 @@ impl App {
             overlay_prev: Vec::new(),
             gpu: None,
             dpr: 1.0,
+            wave_key: None,
             dirty: true,
             frame_changed: false,
             fit_pending: true,
@@ -8853,6 +8856,39 @@ fn audio_devices(kind: znimok_video::traits::AudioKind) -> Vec<(String, String)>
     }
 }
 
+/// A mirrored waveform `w`×`h` (RGBA): column `x` shows the loudest of `peaks` (a byte per
+/// `step` seconds) over `[off + x·per_px, off + (x+1)·per_px)`; at least a thin line (ZK-189).
+fn wave_pixels(
+    peaks: &[u8],
+    off: f64,
+    per_px: f64,
+    step: f64,
+    (w, h): (u32, u32),
+    dpr: f64,
+    colour: [u8; 4],
+) -> Vec<u8> {
+    let mut out = vec![0u8; (w * h * 4) as usize];
+    let mid = h as f64 / 2.0;
+    for x in 0..w {
+        let t0 = off + x as f64 * per_px;
+        let i0 = ((t0 / step) as usize).min(peaks.len());
+        let i1 = (((t0 + per_px) / step).ceil() as usize)
+            .max(i0 + 1)
+            .min(peaks.len());
+        let level = peaks
+            .get(i0..i1)
+            .and_then(|s| s.iter().max())
+            .map_or(0.0, |&p| p as f64 / 255.0);
+        let half = (level * mid).max(0.6 * dpr);
+        let (y0, y1) = ((mid - half).floor() as u32, (mid + half).ceil() as u32);
+        for y in y0..y1.min(h) {
+            let i = ((y * w + x) * 4) as usize;
+            out[i..i + 4].copy_from_slice(&colour);
+        }
+    }
+    out
+}
+
 /// The About page's links (ZK-198), in the order of its buttons.
 const ABOUT_LINKS: [&str; 4] = [
     "https://v-plum.github.io/znimok/",
@@ -9718,6 +9754,68 @@ impl App {
         ui.set_vid_backward(v.backward && v.playing);
         self.video_tone();
         self.video_strip(ui);
+        self.video_waves(ui);
+    }
+
+    /// The sound lane of the timeline (ZK-189): per track, its loudness over the visible time
+    /// as a mirrored waveform in the track's colour (dimmed when muted), one picture per track
+    /// at the timeline's width and the screen's density. A track whose loudness is not known
+    /// (an older file) is a plain line.
+    fn video_waves(&mut self, ui: &AppWindow) {
+        let dpr = self.dpr.max(0.5);
+        let Some(s) = self.s.as_ref() else { return };
+        let (Some(v), Some(part)) = (s.vid.as_ref(), s.video.as_ref()) else {
+            return;
+        };
+        let tracks = &part.video.audio;
+        let view = v.view;
+        let muted = tracks
+            .iter()
+            .enumerate()
+            .fold(0u64, |m, (i, t)| m | (u64::from(t.muted) << i));
+        let key = (
+            view.width,
+            view.off.to_bits(),
+            view.visible().to_bits(),
+            muted | ((tracks.len() as u64) << 32),
+            dpr.to_bits(),
+            // Another video: its length and its loudness data.
+            u64::from(part.video.info.frames)
+                ^ (tracks.iter().map(|t| t.peaks.len() as u64).sum::<u64>() << 32),
+        );
+        if self.wave_key == Some(key) {
+            return;
+        }
+        self.wave_key = Some(key);
+        const LANE_H: f64 = 22.0;
+        let n = tracks.len().max(1);
+        let sw = ((view.width.max(1) as f64) * dpr).round().max(1.0) as u32;
+        let sh = ((LANE_H / n as f64) * dpr).round().max(2.0) as u32;
+        let step = znimok_format::video::PEAK_MS as f64 / 1000.0;
+        let per_px = view.visible() / view.width.max(1) as f64 / dpr;
+        let images: Vec<slint::Image> = tracks
+            .iter()
+            .map(|t| {
+                let (r, g, b) = match t.source {
+                    znimok_format::video::AudioSource::System => (0x3D, 0x7B, 0xF5),
+                    znimok_format::video::AudioSource::Microphone => (0x34, 0xC4, 0x8A),
+                };
+                let a = if t.muted { 90 } else { 235 };
+                let mut buf = slint::SharedPixelBuffer::<slint::Rgba8Pixel>::new(sw, sh);
+                let px = wave_pixels(
+                    &t.peaks,
+                    view.off,
+                    per_px,
+                    step,
+                    (sw, sh),
+                    dpr,
+                    [r, g, b, a],
+                );
+                buf.make_mut_bytes().copy_from_slice(&px);
+                slint::Image::from_rgba8(buf)
+            })
+            .collect();
+        ui.set_tl_waves(std::rc::Rc::new(VecModel::from(images)).into());
     }
 
     /// The frame to show: the player decodes it; without one the timeline still moves.
@@ -10226,4 +10324,35 @@ fn s_bars(a: &App, x: i32, y: i32) -> Option<(ObjectId, crate::video::Grip, (i64
     let bars = v.mark_bars(&t.marks, &s.ed.doc.objects, s.ed.selection());
     let (id, grip) = crate::video::Vid::bar_at(&bars, x, y)?;
     Some((id, grip, *t.marks.get(&id)?))
+}
+
+#[cfg(test)]
+mod wave_tests {
+    use super::wave_pixels;
+
+    /// ZK-189: a loud first second and a quiet second one — tall columns, then a thin line; the
+    /// column's height follows the loudest peak of its stretch, mirrored about the middle.
+    #[test]
+    fn waveform_columns_follow_the_peaks() {
+        let mut peaks = vec![255u8; 100];
+        peaks.extend(vec![0u8; 100]);
+        let (w, h) = (20u32, 20u32);
+        // 2 s over 20 px: 0.1 s (10 bytes) per column.
+        let px = wave_pixels(&peaks, 0.0, 0.1, 0.01, (w, h), 1.0, [1, 2, 3, 255]);
+        let column = |x: u32| {
+            (0..h)
+                .filter(|&y| px[((y * w + x) * 4 + 3) as usize] != 0)
+                .count()
+        };
+        assert_eq!(column(0), 20, "loud: the whole height");
+        assert!(column(15) <= 2, "silent: a thin line, {}", column(15));
+        assert_ne!(
+            px[((10 * w) * 4 + 3) as usize],
+            0,
+            "the middle row is drawn"
+        );
+        // Unknown loudness (no peaks): a line all along.
+        let none = wave_pixels(&[], 0.0, 0.1, 0.01, (w, h), 1.0, [1, 2, 3, 255]);
+        assert!((0..w).all(|x| none[((10 * w + x) * 4 + 3) as usize] != 0));
+    }
 }

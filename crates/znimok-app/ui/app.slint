@@ -1915,6 +1915,8 @@ export component AppWindow inherits Window {
     in property <string> vid-trim-left;
     in property <string> vid-note;
     in property <[VidTrack]> vid-tracks;
+    // The sound lane's waveforms, one per track (ZK-189).
+    in property <[image]> tl-waves;
     // 0 no sound, 1 system, 2 microphone, 3 both — and which tracks the recording has.
     in property <int> vid-sound-mode;
     in property <bool> vid-has-system;
@@ -3694,8 +3696,16 @@ export component AppWindow inherits Window {
                                     SmallButton { text: "Esc"; clicked => { root.vid-action("deselect", 0); } }
                                 }
                             }
-                            // sound: one line per track (the waveform comes with ZK-189)
-                            for t[i] in root.vid-tracks: Rectangle { x: 8px; y: 86px + i * 10px; width: parent.width - 16px; height: 2px; background: t.muted ? Theme.line : t.colour; }
+                            // sound (ZK-189): a waveform per track in the lane between the strip and the
+                            // marks; a line until its picture is there
+                            for t[i] in root.vid-tracks: Rectangle {
+                                x: 8px;
+                                y: 80px + i * (22px / max(1, root.vid-tracks.length));
+                                width: parent.width - 16px;
+                                height: 22px / max(1, root.vid-tracks.length);
+                                if i < root.tl-waves.length: Image { width: parent.width; height: parent.height; source: root.tl-waves[i]; image-fit: fill; }
+                                if i >= root.tl-waves.length: Rectangle { y: (parent.height - 2px) / 2; height: 2px; background: t.muted ? Theme.line : t.colour; }
+                            }
                             // marks lanes (ZK-94): a bar per mark, dragged by its body or its ends
                             Rectangle { y: 104px; height: 1px; background: Theme.line; }
                             Rectangle { y: 156px; height: 1px; background: Theme.line; }
