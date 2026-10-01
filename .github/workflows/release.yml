@@ -165,7 +165,8 @@ jobs:
           Copy-Item upd/Znimok-0.0.2-windows-x64.msi $updates
           & $cli update install --msi (Join-Path $updates "Znimok-0.0.2-windows-x64.msi") --version 0.0.2 `
             --app $cli --app-arg update --app-arg mark-started --app-arg 0.0.2
-          $o = Wait-Outcome "installed 0.0.2"; "outcome: $o"
+          # The note is JSON since ZK-211: {"kind":"installed","version":"0.0.2","time_ms":…}.
+          $o = Wait-Outcome '"kind":"installed","time_ms":*,"version":"0.0.2"'; "outcome: $o"
           if ((Installed-Version) -ne "0.0.2") { throw "after the update: $(Installed-Version)" }
           if (-not (Test-Path (Join-Path $updates "installed\Znimok-0.0.2-windows-x64.msi"))) { throw "0.0.2 not kept for a way back" }
 
@@ -174,7 +175,7 @@ jobs:
           Copy-Item upd/Znimok-0.0.3-windows-x64.msi $updates
           & $cli update install --msi (Join-Path $updates "Znimok-0.0.3-windows-x64.msi") --version 0.0.3 `
             --app $cli --app-arg update --app-arg mark-started --app-arg 9.9.9
-          $o = Wait-Outcome "did not start"; "outcome: $o"
+          $o = Wait-Outcome '"kind":"rolled_back"'; "outcome: $o"
           if ((Installed-Version) -ne "0.0.2") { throw "after the way back: $(Installed-Version)" }
 
           # 3) An installer outside the updates folder is refused.

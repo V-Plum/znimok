@@ -4064,6 +4064,21 @@ upd-release-page = Сторінка релізу
 # @max: 40
 upd-outcome-title = Оновлення
 
+# @where: The note after an update: it worked; $version is the new version
+# @kind: body
+# @max: 60
+upd-outcome-installed = Znimok оновлено до { $version }
+
+# @where: The note after an update: the new version did not start, the previous one is back; $reason from the installer
+# @kind: body
+# @max: 160
+upd-outcome-rolled-back = { $version } не запустилась ({ $reason }) — повернуто попередню версію
+
+# @where: The note after an update that failed; $reason from the installer
+# @kind: body
+# @max: 120
+upd-outcome-failed = Оновлення не вдалося: { $reason }
+
 # @where: Updates page: where updates come from
 # @kind: body
 # @max: 160

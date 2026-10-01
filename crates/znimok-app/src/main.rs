@@ -441,8 +441,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             // macOS: Sparkle from the bundle, when it is there (ZK-143).
             #[cfg(target_os = "macos")]
             update::mac::init();
-            if let Some(text) = update::take_outcome() {
+            if let Some(outcome) = update::take_outcome() {
                 with_ctx(|a, ui| {
+                    use znimok_update::apply::Outcome;
+                    let f = |k: &str, pairs: &[(&'static str, String)]| {
+                        a.tr.tr_args(k, &crate::app::fargs(pairs))
+                    };
+                    let text = match outcome {
+                        Outcome::Installed { version } => {
+                            f("upd-outcome-installed", &[("version", version)])
+                        }
+                        Outcome::RolledBack { version, reason } => f(
+                            "upd-outcome-rolled-back",
+                            &[("version", version), ("reason", reason)],
+                        ),
+                        Outcome::Failed { reason } => {
+                            f("upd-outcome-failed", &[("reason", reason)])
+                        }
+                    };
                     let (title, close) = (a.tr.tr("upd-outcome-title"), a.tr.tr("common-close"));
                     dialog::ask(ui, title, text, vec![close], 0, Some(0), |_, _| {});
                 });

@@ -4044,6 +4044,21 @@ upd-release-page = Release page
 # @max: 40
 upd-outcome-title = Update
 
+# @where: The note after an update: it worked; $version is the new version
+# @kind: body
+# @max: 60
+upd-outcome-installed = Znimok was updated to { $version }
+
+# @where: The note after an update: the new version did not start, the previous one is back; $reason from the installer
+# @kind: body
+# @max: 160
+upd-outcome-rolled-back = { $version } did not start ({ $reason }) — the previous version is back
+
+# @where: The note after an update that failed; $reason from the installer
+# @kind: body
+# @max: 120
+upd-outcome-failed = The update failed: { $reason }
+
 # @where: Updates page: where updates come from
 # @kind: body
 # @max: 160

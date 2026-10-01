@@ -37,9 +37,88 @@ pub fn mark_started(updates: &Path, version: &str) -> std::io::Result<()> {
     std::fs::write(marker(updates, version), b"")
 }
 
-/// What the last update did, for the app to show once (`None` when nothing to tell).
-pub fn last_outcome(updates: &Path) -> Option<String> {
-    std::fs::read_to_string(updates.join("last-outcome.txt")).ok()
+/// The note `install` leaves for the app: the outcome and when (ms since the epoch).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Recorded {
+    pub outcome: Outcome,
+    pub time_ms: i64,
+}
+
+fn note_path(updates: &Path) -> PathBuf {
+    updates.join("last-outcome.txt")
+}
+
+/// What the last update did (`None` when nothing to tell, or a note this version cannot read).
+pub fn last_outcome(updates: &Path) -> Option<Recorded> {
+    let text = std::fs::read_to_string(note_path(updates)).ok()?;
+    let v: serde_json::Value = serde_json::from_str(&text).ok()?;
+    let s = |k: &str| {
+        v.get(k)
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("")
+            .to_string()
+    };
+    let outcome = match s("kind").as_str() {
+        "installed" => Outcome::Installed {
+            version: s("version"),
+        },
+        "rolled_back" => Outcome::RolledBack {
+            version: s("version"),
+            reason: s("reason"),
+        },
+        "failed" => Outcome::Failed {
+            reason: s("reason"),
+        },
+        _ => return None,
+    };
+    Some(Recorded {
+        outcome,
+        time_ms: v
+            .get("time_ms")
+            .and_then(serde_json::Value::as_i64)
+            .unwrap_or(0),
+    })
+}
+
+/// The note as the running app should show it, once (the note goes either way — ZK-211: a
+/// note left by an older version was shown after a later update): «installed» only when the
+/// version that runs is the one installed; the other outcomes only while fresh (`max_age`) —
+/// after a rollback the running version is the previous one.
+pub fn take_outcome(
+    updates: &Path,
+    running: &str,
+    now_ms: i64,
+    max_age_ms: i64,
+) -> Option<Outcome> {
+    let r = last_outcome(updates);
+    let _ = std::fs::rename(note_path(updates), updates.join("last-outcome.shown.txt"));
+    let r = r?;
+    let fresh = now_ms - r.time_ms <= max_age_ms;
+    match &r.outcome {
+        Outcome::Installed { version } if version == running => Some(r.outcome),
+        Outcome::Installed { .. } => None,
+        _ if fresh => Some(r.outcome),
+        _ => None,
+    }
+}
+
+/// Writes the note for the app.
+pub fn record(updates: &Path, outcome: &Outcome) {
+    let time_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_millis() as i64);
+    let v = match outcome {
+        Outcome::Installed { version } => {
+            serde_json::json!({"kind": "installed", "version": version, "time_ms": time_ms})
+        }
+        Outcome::RolledBack { version, reason } => serde_json::json!(
+            {"kind": "rolled_back", "version": version, "reason": reason, "time_ms": time_ms}
+        ),
+        Outcome::Failed { reason } => {
+            serde_json::json!({"kind": "failed", "reason": reason, "time_ms": time_ms})
+        }
+    };
+    let _ = std::fs::write(note_path(updates), v.to_string());
 }
 
 /// Whether msiexec succeeded (0; 3010 / 1641 = success, restart wanted).
@@ -142,14 +221,7 @@ mod win {
         wait: Duration,
     ) -> Outcome {
         let outcome = run(updates, msi, version, app, wait);
-        let text = match &outcome {
-            Outcome::Installed { version } => format!("installed {version}"),
-            Outcome::RolledBack { version, reason } => {
-                format!("{version} did not start ({reason}); the previous version is back")
-            }
-            Outcome::Failed { reason } => format!("update failed: {reason}"),
-        };
-        let _ = std::fs::write(updates.join("last-outcome.txt"), text);
+        record(updates, &outcome);
         outcome
     }
 
@@ -237,6 +309,58 @@ mod win {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// ZK-211: the note is shown once, and only to the version it is about — a note left by an
+    /// older version (the app updated by hand since) goes unseen; a rollback or a failure shows
+    /// while fresh, whatever version runs.
+    #[test]
+    fn outcome_note_is_for_its_version_and_shown_once() {
+        let updates =
+            std::env::temp_dir().join(format!("znimok-outcome-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&updates);
+        std::fs::create_dir_all(&updates).unwrap();
+        let day = 24 * 3600 * 1000;
+        let now = 1_790_000_000_000;
+        let installed = |v: &str| Outcome::Installed {
+            version: v.to_string(),
+        };
+        record(&updates, &installed("0.0.4"));
+        let r = last_outcome(&updates).unwrap();
+        assert_eq!(r.outcome, installed("0.0.4"));
+        assert!(r.time_ms > now);
+        // Read by 0.0.5 (installed by hand after): nothing, and the note is gone.
+        assert_eq!(take_outcome(&updates, "0.0.5", now, day), None);
+        assert_eq!(
+            take_outcome(&updates, "0.0.4", now, day),
+            None,
+            "shown once"
+        );
+        record(&updates, &installed("0.0.5"));
+        assert_eq!(
+            take_outcome(&updates, "0.0.5", now, day),
+            Some(installed("0.0.5"))
+        );
+        // A failure is shown while fresh (the note's time is now), by any version.
+        let failed = Outcome::Failed {
+            reason: "msiexec exit code 1603".into(),
+        };
+        record(&updates, &failed);
+        assert_eq!(
+            take_outcome(&updates, "0.0.4", r.time_ms + 1000, day),
+            Some(failed.clone())
+        );
+        record(&updates, &failed);
+        assert_eq!(
+            take_outcome(&updates, "0.0.4", r.time_ms + 3 * day, day),
+            None,
+            "stale"
+        );
+        // A note this version cannot read (the old plain text) is dropped quietly.
+        std::fs::write(updates.join("last-outcome.txt"), "installed 0.0.3").unwrap();
+        assert_eq!(take_outcome(&updates, "0.0.3", now, day), None);
+        assert!(!updates.join("last-outcome.txt").exists());
+        let _ = std::fs::remove_dir_all(&updates);
+    }
 
     #[test]
     fn exit_codes() {
