@@ -405,6 +405,7 @@ fn doc_name() -> String {
 /// The finished MP4 → a video document in the library: the first frame is the poster, a
 /// thumbnail for the card; the stream is copied in, never held in memory whole.
 #[cfg(windows)]
+#[allow(clippy::too_many_arguments)]
 fn wrap(
     mp4: &std::path::Path,
     lib: &std::path::Path,
