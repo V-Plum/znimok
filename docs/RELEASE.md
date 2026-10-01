@@ -50,7 +50,9 @@ python tools/verify_release.py v0.1.0      # downloads the draft (gh), checks su
       prompt), `Znimok.app/Contents/MacOS/znimok --version`.
 - [ ] Claude Desktop: install the `.mcpb`, `znimok agents enable`, ask for a screenshot.
 
-Then publish the draft (remove «pre-release» once past 0.x).
+Then publish the draft as a regular release, never a pre-release: the app's updater follows
+`releases/latest`, which skips drafts and pre-releases (ZK-209). That the version is a preview
+is said by the README and the version number.
 
 ## winget and Homebrew (ZK-81) — after the release is published
 
