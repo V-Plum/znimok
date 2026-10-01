@@ -3331,6 +3331,52 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
         // ZK-196: «Бібліотека» in the top bar (the button itself) closes it and brings the grid.
         lw.invoke_back();
         let back = lib.borrow().doc_path().is_none() && lw.get_page() == 0;
+        // ZK-210: a video card opened in the library window opens as a video (the «Відео» mode,
+        // its log lane), and the mode goes with it.
+        let vc = dir.join("Znimok-selftest-inplace-video.znimok");
+        let mut video = znimok_format::Video::new(znimok_format::VideoInfo {
+            width: 160,
+            height: 100,
+            fps_milli: 30_000,
+            frames: 30,
+            duration_hns: 10_000_000,
+            codec: znimok_format::video::CODEC_H264,
+        });
+        video.devlog = Some(znimok_format::video::DevLog {
+            wall0_ms: 0,
+            events: vec![znimok_format::video::DevEvent {
+                ms: 100,
+                json: r#"{"k":"nav","s":0,"url":"https://example.org/"}"#.into(),
+            }],
+        });
+        let bytes = znimok_format::write_video(
+            &znimok_core::Document::from_raster(
+                String::from("Відео в бібліотеці"),
+                znimok_core::Raster::solid(160, 100, znimok_core::Rgb::BLUE),
+            ),
+            &video,
+            &[0u8; 2048],
+            &znimok_format::WriteOptions::default(),
+        );
+        if std::fs::write(&vc, bytes).is_ok() {
+            lib.borrow_mut().card_click(&lw, &vc, 0);
+            let as_video = lib.borrow().is_video() && lw.get_vid_mode() && lw.get_devp_has();
+            lw.invoke_back();
+            let off = !lw.get_vid_mode() && !lw.get_devp_has() && !lib.borrow().is_video();
+            r.check(
+                "open in place: a video card opens as a video in the library window, and back",
+                as_video && off,
+                format!("as video {as_video} · off after {off}"),
+            );
+            let _ = std::fs::remove_file(&vc);
+            lib.borrow_mut().refresh_library(&lw);
+        } else {
+            r.check(
+                "open in place: a video file for the check",
+                false,
+                String::new(),
+            );
+        }
         r.check(
             "open in place: «Library» in the top bar goes back to the grid",
             back,
