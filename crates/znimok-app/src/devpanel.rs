@@ -4,8 +4,8 @@
 //! response, timing; the console's full text and stack).
 //!
 //! The events are the extension's JSON as recorded (`DEVT`, ZK-97): `k` the kind (`console`,
-//! `log`, `error`, `net`, `ws`, `nav`, `tab`, `info`), `s` the severity (0 plain, 1 warning,
-//! 2 error).
+//! `log`, `error`, `net`, `ws`, `nav`, `tab`, `info`, `dl` — a dataLayer push, ZK-195), `s` the
+//! severity (0 plain, 1 warning, 2 error).
 
 use serde_json::Value;
 use znimok_format::video::DevLog;
@@ -19,6 +19,8 @@ pub enum Kind {
     Ws,
     Nav,
     Info,
+    /// A value pushed into `dataLayer` (GTM, gtag; ZK-195).
+    Dl,
 }
 
 pub struct Entry {
@@ -29,15 +31,16 @@ pub struct Entry {
     pub v: Value,
 }
 
-/// The filter chips: all, errors, warnings, network, console, navigations.
-pub const CHIPS: usize = 6;
+/// The filter chips: all, errors, warnings, network, console, navigations, dataLayer.
+pub const CHIPS: usize = 7;
 
-/// The tick colours: 0 network and the rest (grey), 1 navigation (blue), 2 warning (amber),
-/// 3 error (red) — the higher wins where ticks meet.
+/// The tick colours: 0 network and the rest (grey), 1 navigation (blue), 2 dataLayer (violet),
+/// 3 warning (amber), 4 error (red) — the higher wins where ticks meet.
 pub fn class(e: &Entry) -> i32 {
     match (e.sev, e.kind) {
-        (2, _) => 3,
-        (1, _) => 2,
+        (2, _) => 4,
+        (1, _) => 3,
+        (_, Kind::Dl) => 2,
         (_, Kind::Nav) => 1,
         _ => 0,
     }
@@ -82,6 +85,7 @@ impl DevPanel {
                     "net" => Kind::Net,
                     "ws" => Kind::Ws,
                     "nav" => Kind::Nav,
+                    "dl" => Kind::Dl,
                     _ => Kind::Info,
                 };
                 let sev = v["s"].as_u64().unwrap_or(0).min(2) as u8;
@@ -115,6 +119,7 @@ impl DevPanel {
             3 => matches!(e.kind, Kind::Net | Kind::Ws),
             4 => matches!(e.kind, Kind::Console | Kind::Error),
             5 => e.kind == Kind::Nav,
+            6 => e.kind == Kind::Dl,
             _ => true,
         }
     }
@@ -139,6 +144,13 @@ impl DevPanel {
             return true;
         }
         let q = self.query.to_lowercase();
+        // dataLayer: the event's name and every value in it.
+        if e.kind == Kind::Dl {
+            return e.v["ev"]
+                .as_str()
+                .is_some_and(|s| s.to_lowercase().contains(&q))
+                || e.v["data"].to_string().to_lowercase().contains(&q);
+        }
         let has = |k: &str| {
             e.v[k]
                 .as_str()
@@ -225,6 +237,7 @@ pub fn label(e: &Entry) -> String {
         },
         Kind::Error => "error".into(),
         Kind::Nav => "nav".into(),
+        Kind::Dl => "dataLayer".into(),
         Kind::Info => v["k"].as_str().unwrap_or("info").into(),
     }
 }
@@ -242,6 +255,23 @@ pub fn message(e: &Entry) -> String {
         }
         Kind::Ws => v["data"].as_str().unwrap_or("").to_string(),
         Kind::Nav => v["url"].as_str().unwrap_or("").to_string(),
+        // The event's name, then what else it carries.
+        Kind::Dl => {
+            let mut rest = v["data"].clone();
+            if let Some(o) = rest.as_object_mut() {
+                o.remove("event");
+            }
+            let rest = match &rest {
+                Value::Object(o) if o.is_empty() => String::new(),
+                Value::Null => String::new(),
+                r => r.to_string(),
+            };
+            match v["ev"].as_str().filter(|s| !s.is_empty()) {
+                Some(ev) if rest.is_empty() => ev.to_string(),
+                Some(ev) => format!("{ev}  {rest}"),
+                None => rest,
+            }
+        }
         _ => v["text"]
             .as_str()
             .or_else(|| v["url"].as_str())
@@ -298,6 +328,10 @@ pub struct Words {
     /// `{size}` replaced.
     pub binary: String,
     pub nothing: String,
+    /// A dataLayer value the page held before the recording started.
+    pub dl_pre: String,
+    /// A dataLayer value from a frame inside the page.
+    pub dl_frame: String,
 }
 
 pub struct Timing {
@@ -353,6 +387,29 @@ pub fn detail(e: &Entry, tab: usize, w: &Words) -> Detail {
             d.text = v["data"].as_str().map(pretty).unwrap_or_default();
         }
         Kind::Nav => d.text = v["url"].as_str().unwrap_or("").to_string(),
+        Kind::Dl => {
+            let mut s = String::new();
+            if v["pre"] == Value::Bool(true) {
+                s.push_str(&w.dl_pre);
+                s.push_str("\n\n");
+            }
+            if v["frame"] == Value::Bool(true) {
+                s.push_str(&w.dl_frame);
+                s.push_str("\n\n");
+            }
+            match &v["data"] {
+                // Cut by the extension's limit: the JSON as it came.
+                Value::String(raw) if v["cut"].is_u64() => {
+                    s.push_str(raw);
+                    s.push_str(&format!(
+                        "\n\n… {}",
+                        size_text(v["cut"].as_u64().unwrap_or(0) as usize)
+                    ));
+                }
+                data => s.push_str(&serde_json::to_string_pretty(data).unwrap_or_default()),
+            }
+            d.text = s;
+        }
         _ => {
             let mut s = v["text"].as_str().unwrap_or("").to_string();
             // The console's arguments as objects, when they say more than the joined line.
@@ -373,7 +430,7 @@ pub fn detail(e: &Entry, tab: usize, w: &Words) -> Detail {
                 s.push_str(&format!("\n\n{}", w.stack));
                 for f in st {
                     s.push('\n');
-                    s.push_str(f.as_str().unwrap_or(&f.to_string()));
+                    s.push_str(&frame_line(f));
                 }
             }
             d.text = s;
@@ -392,6 +449,24 @@ pub fn detail(e: &Entry, tab: usize, w: &Words) -> Detail {
         d.text = w.nothing.clone();
     }
     d
+}
+
+/// A frame of a call stack as DevTools writes it: `at fn (url:line:col)`.
+fn frame_line(f: &Value) -> String {
+    if let Some(s) = f.as_str() {
+        return s.to_string();
+    }
+    let func = f["fn"]
+        .as_str()
+        .filter(|s| !s.is_empty())
+        .unwrap_or("(anonymous)");
+    let url = f["url"].as_str().unwrap_or("");
+    match (f["line"].as_i64(), f["col"].as_i64()) {
+        (Some(l), Some(c)) => format!("at {func} ({url}:{l}:{c})"),
+        (Some(l), None) => format!("at {func} ({url}:{l})"),
+        _ if !url.is_empty() => format!("at {func} ({url})"),
+        _ => format!("at {func}"),
+    }
 }
 
 fn headers(v: &Value, w: &Words) -> String {
@@ -676,6 +751,14 @@ mod tests {
                     900,
                     r#"{"k":"error","s":2,"text":"TypeError: x is undefined","src":"https://example.org/app.js:40","stack":"at f (app.js:40)"}"#,
                 ),
+                ev(
+                    700,
+                    r#"{"k":"dl","s":0,"ev":"purchase","data":{"event":"purchase","value":42,"user":{"email":"a@example.org"}}}"#,
+                ),
+                ev(
+                    50,
+                    r#"{"k":"dl","s":0,"ev":"gtag config G-1","data":["config","G-1"],"pre":true}"#,
+                ),
                 ev(950, "not json"),
             ],
         }
@@ -684,40 +767,54 @@ mod tests {
     #[test]
     fn chips_search_and_the_playhead() {
         let mut p = DevPanel::new(&log());
-        assert_eq!(p.entries.len(), 4);
-        assert_eq!(p.counts(), [4, 1, 1, 1, 2, 1]);
+        // In time order as the log keeps them (the fixture is sorted by DEVT already; here the
+        // pre-existing push at 50 ms comes first).
+        p.entries.sort_by_key(|e| e.ms);
+        p.refilter();
+        assert_eq!(p.entries.len(), 6);
+        assert_eq!(p.counts(), [6, 1, 1, 1, 2, 1, 2]);
         p.chip = 3;
         p.refilter();
-        assert_eq!(p.shown, vec![1]);
+        assert_eq!(p.shown, vec![2]);
+        p.chip = 6;
+        p.refilter();
+        assert_eq!(p.shown, vec![0, 4]);
+        // The search reaches into a push's values.
+        p.chip = 0;
+        p.query = "a@example".into();
+        p.refilter();
+        assert_eq!(p.shown, vec![4]);
         p.chip = 0;
         p.query = "TYPEERROR".into();
         p.refilter();
-        assert_eq!(p.shown, vec![3]);
+        assert_eq!(p.shown, vec![5]);
         // The search reaches into a request's payload too.
         p.query = "\"a\"".into();
         p.refilter();
-        assert_eq!(p.shown, vec![1]);
+        assert_eq!(p.shown, vec![2]);
         p.query.clear();
         p.refilter();
-        assert_eq!(p.current(50), None);
-        assert_eq!(p.current(300), Some(1));
-        assert_eq!(p.current(10_000), Some(3));
+        assert_eq!(p.current(10), None);
+        assert_eq!(p.current(300), Some(2));
+        assert_eq!(p.current(10_000), Some(5));
         assert_eq!(p.next_error(0), Some(900));
         assert_eq!(p.next_error(900), Some(900));
     }
 
     #[test]
     fn ticks_merge_and_keep_the_worst() {
-        let p = DevPanel::new(&log());
-        // All four events within a pixel: one tick, red.
-        assert_eq!(p.ticks(|ms| ms / 1000, 100), vec![(0, 3)]);
+        let mut p = DevPanel::new(&log());
+        p.entries.sort_by_key(|e| e.ms);
+        // All the events within a pixel: one tick, red.
+        assert_eq!(p.ticks(|ms| ms / 1000, 100), vec![(0, 4)]);
         let t = p.ticks(|ms| ms / 10, 100);
-        assert_eq!(t, vec![(10, 1), (30, 0), (50, 2), (90, 3)]);
+        assert_eq!(t, vec![(5, 2), (10, 1), (30, 0), (50, 3), (70, 2), (90, 4)]);
     }
 
     #[test]
     fn a_request_in_tabs() {
-        let p = DevPanel::new(&log());
+        let mut p = DevPanel::new(&log());
+        p.entries.sort_by_key(|e| e.ms);
         let w = Words {
             general: "General".into(),
             res_headers: "Response headers".into(),
@@ -734,8 +831,10 @@ mod tests {
             cut: "cut".into(),
             binary: "binary {size}".into(),
             nothing: "-".into(),
+            dl_pre: "before".into(),
+            dl_frame: "frame".into(),
         };
-        let e = &p.entries[1];
+        let e = &p.entries[2];
         assert_eq!(label(e), "POST 200");
         assert_eq!(source(e), "40 ms");
         let h = detail(e, TAB_HEADERS, &w);
@@ -751,9 +850,26 @@ mod tests {
         );
         assert_eq!(body_name(e), "save.json");
         assert_eq!(body_bytes(e).unwrap(), b"{\"ok\":true}");
-        let err = detail(&p.entries[3], 0, &w);
+        let err = detail(&p.entries[5], 0, &w);
         assert!(!err.tabs && err.text.contains("Stack\nat f (app.js:40)"));
-        assert_eq!(source(&p.entries[3]), "app.js:40");
+        assert_eq!(source(&p.entries[5]), "app.js:40");
+        // dataLayer: the event and its values in the row; the JSON laid out; «before» marked.
+        let buy = &p.entries[4];
+        assert_eq!(label(buy), "dataLayer");
+        assert_eq!(
+            message(buy),
+            r#"purchase  {"user":{"email":"a@example.org"},"value":42}"#
+        );
+        assert!(detail(buy, 0, &w).text.contains("\"value\": 42"));
+        let pre = detail(&p.entries[0], 0, &w).text;
+        assert!(pre.starts_with("before\n\n["), "{pre}");
+        // A stack as the extension sends it.
+        assert_eq!(
+            frame_line(
+                &serde_json::json!({"fn": "", "url": "https://x/app.js", "line": 3, "col": 7})
+            ),
+            "at (anonymous) (https://x/app.js:3:7)"
+        );
     }
 
     #[test]

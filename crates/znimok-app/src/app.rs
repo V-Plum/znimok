@@ -10538,6 +10538,7 @@ impl App {
                 "devp-chip-network",
                 "devp-chip-console",
                 "devp-chip-nav",
+                "devp-chip-datalayer",
             ];
             let chips: Vec<crate::DevChip> = p
                 .counts()
@@ -10580,6 +10581,8 @@ impl App {
                 .tr
                 .tr_args("devp-binary", &args(&[("size", "{size}".into())])),
             nothing: self.tr.tr("devp-nothing"),
+            dl_pre: self.tr.tr("devp-dl-pre"),
+            dl_frame: self.tr.tr("devp-dl-frame"),
         };
         let Some(p) = self
             .s

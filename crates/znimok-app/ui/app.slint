@@ -65,7 +65,7 @@ export struct TlPiece { x: length, w: length, kind: int }
 export struct TlMark { x: length, w: length, lane: int, colour: color, selected: bool }
 export struct VidTrack { label: string, colour: color, muted: bool, volume: int }
 // The DevTools log (ZK-191): a tick of the log lane (cls 0 network and the rest, 1 navigation,
-// 2 warning, 3 error), a filter chip, a row of the list, a phase of a request's timing.
+// 2 dataLayer, 3 warning, 4 error), a filter chip, a row of the list, a phase of a request's timing.
 export struct DevTick { x: length, cls: int }
 export struct DevChip { label: string, count: int }
 export struct DevRow { time: string, label: string, text: string, src: string, cls: int }
@@ -3827,13 +3827,13 @@ export component AppWindow inherits Window {
                             // the whole timeline
                             for t in root.devp-ticks: Rectangle {
                                 x: 8px + t.x;
-                                y: t.cls == 3 ? 22px : 162px;
-                                width: t.cls == 3 ? 1px : 2px;
-                                height: t.cls == 3 ? parent.height - 22px : 28px;
-                                background: t.cls == 3 ? #FF5A5F40 : (t.cls == 2 ? #F5A524 : (t.cls == 1 ? Theme.accent : Theme.text3));
+                                y: t.cls == 4 ? 22px : 162px;
+                                width: t.cls == 4 ? 1px : 2px;
+                                height: t.cls == 4 ? parent.height - 22px : 28px;
+                                background: t.cls == 4 ? #FF5A5F40 : (t.cls == 3 ? #F5A524 : (t.cls == 2 ? #A970FF : (t.cls == 1 ? Theme.accent : Theme.text3)));
                             }
                             for t in root.devp-ticks: Rectangle {
-                                visible: t.cls == 3;
+                                visible: t.cls == 4;
                                 x: 8px + t.x - 0.5px;
                                 y: 162px;
                                 width: 2px;
@@ -3936,8 +3936,8 @@ export component AppWindow inherits Window {
                                         padding-right: 6px;
                                         spacing: 8px;
                                         Text { width: 64px; text: r.time; color: Theme.text3; font-family: "JetBrains Mono"; font-size: 11px; vertical-alignment: center; }
-                                        Text { width: 64px; text: r.label; color: r.cls == 3 ? #FF5A5F : (r.cls == 2 ? #F5A524 : (r.cls == 1 ? Theme.accent : Theme.text2)); font-size: 11px; font-weight: 600; vertical-alignment: center; overflow: elide; }
-                                        Text { horizontal-stretch: 1; min-width: 0px; text: r.text; color: r.cls == 3 ? #FF5A5F : Theme.text; font-size: 12px; vertical-alignment: center; overflow: elide; }
+                                        Text { width: 64px; text: r.label; color: r.cls == 4 ? #FF5A5F : (r.cls == 3 ? #F5A524 : (r.cls == 2 ? #A970FF : (r.cls == 1 ? Theme.accent : Theme.text2))); font-size: 11px; font-weight: 600; vertical-alignment: center; overflow: elide; }
+                                        Text { horizontal-stretch: 1; min-width: 0px; text: r.text; color: r.cls == 4 ? #FF5A5F : Theme.text; font-size: 12px; vertical-alignment: center; overflow: elide; }
                                         Text { width: 130px; text: r.src; color: Theme.text3; font-size: 11px; horizontal-alignment: right; vertical-alignment: center; overflow: elide; }
                                     }
                                     row-touch := TouchArea { clicked => { root.devp-action("row", i); } }
