@@ -548,18 +548,18 @@ fn mp4(
                 .map(move |(k, c)| (first + k as i64 * i64::from(RATE), c))
         })
         .collect();
-    let mut next_block = 0usize;
+    let next_block = std::cell::Cell::new(0usize);
     if blocks.is_empty() {
         writer.end_audio();
     }
     // One block of sound if the writer takes it; the sound closed after its last block.
-    let mut feed = |w: &mut AvWriter| -> Result<bool, String> {
-        let Some((at, pcm)) = blocks.get(next_block) else {
+    let feed = |w: &mut AvWriter| -> Result<bool, String> {
+        let Some((at, pcm)) = blocks.get(next_block.get()) else {
             return Ok(false);
         };
         if w.append_pcm(0, pcm, *at)? {
-            next_block += 1;
-            if next_block == blocks.len() {
+            next_block.set(next_block.get() + 1);
+            if next_block.get() == blocks.len() {
                 w.end_audio();
             }
             return Ok(true);
@@ -596,7 +596,7 @@ fn mp4(
             progress.set(written as f64 / total as f64 * 0.99);
         }
     }
-    while next_block < blocks.len() {
+    while next_block.get() < blocks.len() {
         if !feed(&mut writer)? {
             std::thread::sleep(std::time::Duration::from_millis(2));
         }
