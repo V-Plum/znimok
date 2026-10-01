@@ -60,6 +60,32 @@ Only in these cases:
 5. **A crash report** is sent only by you: the app keeps it locally and may offer to open an issue page on
    GitHub. You decide what to attach.
 
+## The browser extension (Znimok — DevTools log)
+
+The extension for Chrome and Edge exists for one thing: while Znimok records the screen, it records the
+browser tab's developer log next to the video, so a bug can be watched together with what the page did.
+
+- **When it works.** Only while a Znimok recording is running (or you start one from the extension's
+  button). Outside a recording it reads nothing. It attaches to the active tab only; Chrome shows its own
+  bar "Znimok started debugging this browser" for exactly that time.
+- **What it reads in that tab.** What the browser's DevTools show: console messages and errors with their
+  stack, network requests and responses (addresses, headers including cookies and authorization, request
+  bodies, response bodies up to 4 MB, timings, WebSocket frames), page navigations and the page's
+  `dataLayer` / `gtag` events. This can include personal or secret data the page sends — the extension
+  exists for debugging, and records it in full on purpose.
+- **Where it goes.** Only to the Znimok app on the same computer, through the browser's Native Messaging
+  channel; the app stores it inside the recording's document (`.znimok`) on your disk. The extension
+  sends nothing to the internet, to us or to anyone else, keeps no copies of its own, and has no
+  analytics.
+- **Your control.** Turn the browser log off in Znimok's Settings → Recording, or remove the extension.
+  Before sharing a recording, Znimok's export can hide secrets (cookies, tokens, passwords) in the log,
+  or leave the log out; deleting the document deletes the log.
+- **Permissions.** `debugger` (to read the DevTools data of the recorded tab), `tabs` and `activeTab`
+  (which tab is active, its address and title), `scripting` (a short mark in the tab's title so Znimok can
+  find that window for "Record this window"), `nativeMessaging` (the channel to the app), `storage` (the
+  extension's own settings), `alarms` (keeping the connection alive during a recording),
+  `contextMenus` (the "Record this window" item).
+
 ## What Znimok does not do
 
 - no telemetry, usage statistics, analytics or device identifiers — and no switch for them, because there is

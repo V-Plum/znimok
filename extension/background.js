@@ -415,15 +415,13 @@ chrome.debugger.onEvent.addListener((src, method, p) => {
 
 // ---- «Record this window» (CAPS-107) ----
 
-const uk = /^uk/i.test(chrome.i18n.getUILanguage());
-const L = uk ? {
-  tipRec: "Znimok — запис {t} · клік — зупинити",
-  tipPaused: "Znimok — пауза {t} · клік — зупинити",
-  menuPause: "Пауза", menuResume: "Продовжити", menuStop: "Зупинити запис",
-} : {
-  tipRec: "Znimok — recording {t} · click to stop",
-  tipPaused: "Znimok — paused {t} · click to stop",
-  menuPause: "Pause", menuResume: "Resume", menuStop: "Stop recording",
+// Texts from _locales (ZK-182).
+const L = {
+  tipRec: chrome.i18n.getMessage("tipRec"),
+  tipPaused: chrome.i18n.getMessage("tipPaused"),
+  menuPause: chrome.i18n.getMessage("menuPause"),
+  menuResume: chrome.i18n.getMessage("menuResume"),
+  menuStop: chrome.i18n.getMessage("menuStop"),
 };
 
 function elapsed() {
