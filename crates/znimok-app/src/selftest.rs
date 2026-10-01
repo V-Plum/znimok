@@ -3728,6 +3728,32 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
             ui.get_devp_selected() == 0 && nav == "https://example.org/form",
             format!("selected {} · {nav:?}", ui.get_devp_selected()),
         );
+        // ZK-218: a narrow window — the chips scroll in their column, the details' title stays
+        // in its own (it ran over the chips).
+        let sf = ui.window().scale_factor();
+        let size = ui.window().size();
+        let (w, h) = (size.width as f32 / sf, size.height as f32 / sf);
+        NARROW.with(|n| n.set((w, h)));
+        ui.window().set_size(slint::LogicalSize::new(w * 0.62, h));
+    }));
+    thread_local! {
+        static NARROW: std::cell::Cell<(f32, f32)> = const { std::cell::Cell::new((0.0, 0.0)) };
+    }
+    steps.push(Box::new(|_, ui, r| {
+        r.snapshot_window(ui.window(), "41-devlog-narrow");
+        let (w, h) = NARROW.with(|n| n.get());
+        ui.window().set_size(slint::LogicalSize::new(w, h));
+    }));
+    steps.push(Box::new(|app, ui, r| {
+        let dir = app.borrow().lib_dir.clone();
+        let devlog = app
+            .borrow()
+            .s
+            .as_ref()
+            .and_then(|s| s.video.as_ref())
+            .and_then(|v| v.video.devlog.clone())
+            .unwrap();
+        let mp4: Vec<u8> = (0..4096u32).map(|i| (i * 7) as u8).collect();
         ui.invoke_devp_action("toggle".into(), 0);
         // ZK-98: the developer report in the export sheet — the card on, the two forms, hiding as
         // Settings say (ask: the sheet's switch).
@@ -3743,14 +3769,15 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
         ui.invoke_exp_set("rzip".into(), 0);
         r.check(
             "developer report: the sheet offers it with the log — one page or .zreport, hiding on",
-            cfg!(not(windows)) || (card == Some(true)
-                && ui.get_exp_format() == 4
-                && ui.get_vexp_has_log()
-                && ui.get_vexp_hide_mode() == 0
-                && !before_zip
-                && zip_on
-                && hide_off
-                && ui.get_vexp_hide()),
+            cfg!(not(windows))
+                || (card == Some(true)
+                    && ui.get_exp_format() == 4
+                    && ui.get_vexp_has_log()
+                    && ui.get_vexp_hide_mode() == 0
+                    && !before_zip
+                    && zip_on
+                    && hide_off
+                    && ui.get_vexp_hide()),
             format!(
                 "card {:?} · log {} · mode {} · zip {before_zip}→{zip_on} · hide off {hide_off}",
                 card,
@@ -3761,7 +3788,7 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
         ui.invoke_exp_close();
         // A .zreport opened: its recording comes into the library, with the log on its time.
         let zr = dir.join("Znimok-selftest-report.zreport");
-        let zev = znimok_report::log_events(video.devlog.as_ref().unwrap(), |ms| Some(f64::from(ms) / 1000.0));
+        let zev = znimok_report::log_events(&devlog, |ms| Some(f64::from(ms) / 1000.0));
         let mut zbuf = Vec::new();
         let zmeta = znimok_report::Meta {
             title: "Звіт із браузера".into(),
@@ -3771,7 +3798,16 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
             seconds: 3.0,
             ..Default::default()
         };
-        let wrote = znimok_report::write_zreport(&mut zbuf, &zmeta, &Default::default(), &zev, &mp4, None, "").is_ok()
+        let wrote = znimok_report::write_zreport(
+            &mut zbuf,
+            &zmeta,
+            &Default::default(),
+            &zev,
+            &mp4,
+            None,
+            "",
+        )
+        .is_ok()
             && std::fs::write(&zr, &zbuf).is_ok();
         app.borrow_mut().open_path(ui, &zr);
         let (zapp, _zui) = &opened(app, ui);

@@ -3907,16 +3907,18 @@ export component AppWindow inherits Window {
                         }
                     }
                     HorizontalLayout {
-                        VerticalLayout {
-                            min-width: 0px;
-                            horizontal-stretch: 1;
+                        Rectangle {
+                          min-width: 0px;
+                          horizontal-stretch: 1;
+                          clip: true;
+                          VerticalLayout {
                             padding: 8px;
                             spacing: 6px;
                             HorizontalLayout {
                                 height: 28px;
                                 spacing: 6px;
                                 Rectangle {
-                                    width: 200px;
+                                    width: 160px;
                                     LineEdit {
                                         y: (parent.height - self.height) / 2;
                                         width: parent.width;
@@ -3925,6 +3927,15 @@ export component AppWindow inherits Window {
                                         edited(t) => { root.devp-search(t); }
                                     }
                                 }
+                                // The chips scroll sideways when the column is too narrow for them all.
+                                Flickable {
+                                    horizontal-stretch: 1;
+                                    min-width: 0px;
+                                    content-height: self.height;
+                                    content-width: chips-row.preferred-width;
+                                    chips-row := HorizontalLayout {
+                                        spacing: 6px;
+                                        alignment: start;
                                 for c[i] in root.devp-chips: Rectangle {
                                     y: 3px;
                                     height: 22px;
@@ -3944,7 +3955,8 @@ export component AppWindow inherits Window {
                                     }
                                     devchip-touch := TouchArea { clicked => { root.devp-action("chip", i); } }
                                 }
-                                Rectangle { horizontal-stretch: 1; }
+                                    }
+                                }
                                 SmallButton { y: 3px; icon: "M6 9 l6 6 6 -6"; tip: @tr("devp-hide" => "Hide the log"); clicked => { root.devp-action("toggle", 0); } }
                             }
                             if root.devp-rows.length == 0: Text {
@@ -3974,6 +3986,7 @@ export component AppWindow inherits Window {
                                     row-touch := TouchArea { clicked => { root.devp-action("row", i); } }
                                 }
                             }
+                          }
                         }
                         if root.devp-detail-open: Rectangle { width: 1px; background: Theme.line; }
                         if root.devp-detail-open: VerticalLayout {
