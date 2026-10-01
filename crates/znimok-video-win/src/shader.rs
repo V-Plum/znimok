@@ -43,6 +43,32 @@ impl FrameGeometry {
     }
 }
 
+/// Where a desktop pixel lands in the video at this moment (ZK-90): the source texture's origin
+/// on the desktop (a display's corner, a window's DWM bounds), then the frame's crop and fit.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct DesktopMap {
+    pub origin: (i32, i32),
+    pub geometry: FrameGeometry,
+}
+
+impl DesktopMap {
+    /// Output pixels of a desktop point (may be outside the video).
+    pub fn to_video(&self, x: i32, y: i32) -> (f32, f32) {
+        let (scale, _) = self.geometry.fit();
+        let g = &self.geometry;
+        (
+            (x - self.origin.0 - g.crop.0) as f32 / scale,
+            (y - self.origin.1 - g.crop.1) as f32 / scale,
+        )
+    }
+
+    /// Whether an output point is on the part of the video the source covers.
+    pub fn inside(&self, (x, y): (f32, f32)) -> bool {
+        let (_, (w, h)) = self.geometry.fit();
+        x >= 0.0 && y >= 0.0 && x < w as f32 && y < h as f32
+    }
+}
+
 /// A click ring in output pixels.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Ring {

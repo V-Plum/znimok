@@ -5004,11 +5004,6 @@ tray-stop-record = Зупинити запис
 # @max: 240
 rec-how = Клавіша запису або «Записати відео» в треї відкривають ту саму накладку, що й для знімків: потягнути — ділянка, клік — вікно, Пробіл — увесь екран. Та сама клавіша або «Стоп» завершують; відео йде в бібліотеку.
 
-# @where: Settings → Recording: what the cursor switch does for now
-# @kind: body
-# @max: 160
-rec-cursor-later = Вказівник потрапляє у відео так, як його малює система; кільця кліків — з наступним оновленням.
-
 # @where: A recording could not start; $reason from the system
 # @kind: toast
 # @max: 160
@@ -5018,6 +5013,11 @@ rec-error-start = Не вдалося почати запис: { $reason }
 # @kind: toast
 # @max: 160
 rec-error-save = Не вдалося зберегти запис: { $reason }
+
+# @where: Settings → Recording, under «Cursor and click highlight»
+# @kind: hint
+# @max: 220
+rec-cursor-hint = Вказівник малюється у відео, клік — кільцем, що розходиться, утримана кнопка — сталим; кліки по плашці запису не записуються. Кліки також зберігаються журналом у документі.
 
 # @where: Settings → Recording, under the sound choice
 # @kind: hint

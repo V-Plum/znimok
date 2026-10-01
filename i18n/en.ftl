@@ -4962,11 +4962,6 @@ tray-stop-record = Stop recording
 # @max: 240
 rec-how = The recording hotkey or «Record video» in the tray opens the same overlay as for screenshots: drag — a region, click — a window, Space — the whole screen. The same key or «Stop» ends it; the video goes to the library.
 
-# @where: Settings → Recording: what the cursor switch does for now
-# @kind: body
-# @max: 160
-rec-cursor-later = The pointer is in the video as the system draws it; the click rings come with the next update.
-
 # @where: A recording could not start; $reason from the system
 # @kind: toast
 # @max: 160
@@ -4976,6 +4971,11 @@ rec-error-start = Could not start recording: { $reason }
 # @kind: toast
 # @max: 160
 rec-error-save = The recording could not be saved: { $reason }
+
+# @where: Settings → Recording, under «Cursor and click highlight»
+# @kind: hint
+# @max: 220
+rec-cursor-hint = The pointer is drawn into the video, a click is a spreading ring and a held button a steady one; clicks on the recording bar are not recorded. The clicks are also kept as a log in the document.
 
 # @where: Settings → Recording, under the sound choice
 # @kind: hint

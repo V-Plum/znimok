@@ -22,6 +22,8 @@ pub mod clock;
 #[cfg(windows)]
 pub mod decoder;
 #[cfg(windows)]
+pub mod input;
+#[cfg(windows)]
 pub mod interop;
 #[cfg(windows)]
 pub mod mf;
@@ -44,6 +46,8 @@ pub use audio::{AudioDevice, WasapiSource, devices as audio_devices};
 pub use clock::QpcClock;
 #[cfg(windows)]
 pub use decoder::{MfDecoder, Nv12Frame};
+#[cfg(windows)]
+pub use input::{MouseInput, MouseOpts};
 #[cfg(windows)]
 pub use recording::{Finished, RecordRequest, Recording, Started};
 #[cfg(windows)]
