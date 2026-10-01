@@ -3443,6 +3443,133 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
         );
     }));
 
+    // ZK-191: a recording with the browser's DevTools log — the log lane's ticks, the panel under
+    // the timeline (chips, search, the row at the playhead), a request's details in tabs, «to the
+    // next error», a click on a tick.
+    steps.push(Box::new(|app, ui, r| {
+        let dir = app.borrow().lib_dir.clone();
+        let path = dir.join("Znimok-selftest-devlog.znimok");
+        let doc = znimok_core::Document::from_raster(
+            String::from("Лог"),
+            znimok_core::Raster::solid(160, 100, znimok_core::Rgb::BLUE),
+        );
+        let info = znimok_format::VideoInfo {
+            width: 160,
+            height: 100,
+            fps_milli: 30_000,
+            frames: 90,
+            duration_hns: 30_000_000,
+            codec: znimok_format::video::CODEC_H264,
+        };
+        let mut video = znimok_format::Video::new(info);
+        let ev = |ms: i32, json: &str| znimok_format::video::DevEvent {
+            ms,
+            json: json.to_string(),
+        };
+        video.devlog = Some(znimok_format::video::DevLog {
+            wall0_ms: 1_759_000_000_000,
+            events: vec![
+                ev(500, r#"{"k":"nav","s":0,"url":"https://example.org/form"}"#),
+                ev(
+                    1500,
+                    r#"{"k":"net","s":0,"method":"POST","url":"https://example.org/api/save","status":200,"mime":"application/json","postData":"{\"name\":\"Олена\"}","body":"{\"ok\":true}","dur":42,"timing":{"dnsStart":1,"dnsEnd":3,"sendStart":5,"sendEnd":6,"receiveHeadersEnd":30},"reqHeaders":{"Accept":"*/*"},"resHeaders":{"Content-Type":"application/json"}}"#,
+                ),
+                ev(
+                    2500,
+                    r#"{"k":"error","s":2,"text":"TypeError: form is undefined","src":"https://example.org/app.js:40","stack":"at submit (app.js:40)"}"#,
+                ),
+            ],
+        });
+        let mp4: Vec<u8> = (0..4096u32).map(|i| (i * 7) as u8).collect();
+        let bytes = znimok_format::write_video(
+            &doc,
+            &video,
+            &mp4,
+            &znimok_format::WriteOptions::default(),
+        );
+        let written = std::fs::write(&path, bytes).is_ok();
+        app.borrow_mut().open_path(ui, &path);
+        let (app, ui) = &opened(app, ui);
+        ui.invoke_tl_layout(900.0);
+        let ticks: Vec<(i32, i32)> = ui
+            .get_devp_ticks()
+            .iter()
+            .map(|t| (t.x.round() as i32, t.cls))
+            .collect();
+        let lane = ui.get_devp_has() && !ui.get_devp_open();
+        r.check(
+            "DevTools log: the lane shows a tick per event (navigation blue, request grey, error red)",
+            written && lane && ticks == vec![(150, 1), (450, 0), (750, 3)],
+            format!("written {written} · lane {lane} · {ticks:?}"),
+        );
+        ui.invoke_devp_action("toggle".into(), 0);
+        let rows = ui.get_devp_rows().row_count();
+        let chips: Vec<i32> = ui.get_devp_chips().iter().map(|c| c.count).collect();
+        r.check(
+            "DevTools log: the panel opens with every event and the chips' counts",
+            ui.get_devp_open() && rows == 3 && chips == vec![3, 1, 0, 1, 1, 1],
+            format!("open {} · rows {rows} · chips {chips:?}", ui.get_devp_open()),
+        );
+        ui.invoke_vid_transport("home".into());
+        ui.invoke_devp_action("next-error".into(), 0);
+        let frame = app.borrow().s.as_ref().and_then(|s| s.vid.as_ref()).map(|v| v.frame);
+        let detail = ui.get_devp_detail().to_string();
+        r.check(
+            "DevTools log: «to the next error» moves the video to it and opens its stack",
+            frame == Some(75)
+                && ui.get_devp_selected() == 2
+                && ui.get_devp_current() == 2
+                && !ui.get_devp_tabbed()
+                && detail.contains("TypeError: form is undefined")
+                && detail.contains("at submit (app.js:40)"),
+            format!("frame {frame:?} · selected {} · current {} · {detail:?}", ui.get_devp_selected(), ui.get_devp_current()),
+        );
+        ui.invoke_devp_action("row".into(), 1);
+        let headers = ui.get_devp_detail().to_string();
+        let has: Vec<bool> = ui.get_devp_has_tab().iter().collect();
+        ui.invoke_devp_action("tab".into(), 1);
+        let payload = ui.get_devp_detail().to_string();
+        ui.invoke_devp_action("tab".into(), 4);
+        let phases = ui.get_devp_timing().row_count();
+        r.check(
+            "DevTools log: a request in tabs — headers, the payload formatted, timing phases",
+            ui.get_devp_tabbed()
+                && has == vec![true; 5]
+                && headers.contains("POST")
+                && headers.contains("Content-Type: application/json")
+                && payload.contains("\"name\": \"Олена\"")
+                && phases == 6
+                && ui.get_devp_can_save(),
+            format!("has {has:?} · headers {headers:?} · payload {payload:?} · phases {phases}"),
+        );
+        ui.invoke_devp_search("олена".into());
+        let found = ui.get_devp_rows().row_count();
+        ui.set_devp_query("".into());
+        ui.invoke_devp_search("".into());
+        ui.invoke_devp_action("chip".into(), 1);
+        let errors = ui.get_devp_rows().row_count();
+        ui.invoke_devp_action("chip".into(), 0);
+        r.check(
+            "DevTools log: the search reaches into a request's payload; the chips filter",
+            found == 1 && errors == 1,
+            format!("search {found} · errors {errors}"),
+        );
+        // A click on the navigation's tick: its row opens.
+        ui.invoke_devp_action("close".into(), 0);
+        {
+            let mut a = app.borrow_mut();
+            a.tl_pointer(ui, 0, 151, 175, false);
+            a.tl_pointer(ui, 2, 151, 175, false);
+        }
+        let nav = ui.get_devp_detail().to_string();
+        r.check(
+            "DevTools log: a click on a tick of the lane opens its event",
+            ui.get_devp_selected() == 0 && nav == "https://example.org/form",
+            format!("selected {} · {nav:?}", ui.get_devp_selected()),
+        );
+        ui.invoke_devp_action("toggle".into(), 0);
+    }));
+
     // ZK-145: a video document opened in the app and saved again stays a video (its stream
     // intact); the library shows it with ▶ and its length.
     steps.push(Box::new(|app, ui, r| {

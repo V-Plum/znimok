@@ -251,6 +251,18 @@ recording, and whether a browser is connected. Installing until the extension is
 Store: the release's `znimok-extension-….zip` → chrome://extensions → "Developer mode" → "Load
 unpacked". Znimok registers itself for the browsers; no administrator rights needed.
 
+**The DevTools log in the video editor.** When a recording has the browser's log, a "log" lane with
+ticks appears under the marks lane of the timeline: errors red (with a faint line across the whole
+timeline), warnings amber, navigations blue, network grey. The chevron by the lane's name opens a
+panel under the timeline: a search (request and response bodies included), the filters "All",
+"Errors", "Warnings", "Network", "Console", "Navigation" with counts, and the list of events (time,
+kind, message, file:line). The row the video has reached is highlighted; while it plays, the list
+scrolls along. A click on a row or on a tick of the lane moves the video to that moment and opens the
+details: for a request the tabs "Headers", "Payload", "Preview" (JSON laid out), "Response", "Timing"
+(the request's phases as bars), as in DevTools; for the console and errors the full text and stack.
+Long text is shown up to 256 KB; "Save as…" keeps the whole response, binary ones too. The triangle
+button in the transport is "To the next error".
+
 **Exporting a video.** The top button in the "Video" mode is "Copy MP4" (Ctrl+C): the file goes to
 the clipboard, to paste into a chat or a folder. The menu next to it: "Copy GIF", "Copy frame"
 (Ctrl+Shift+C), "Export file…" (Ctrl+E), "Save to the library" (a new video document), "Frame as

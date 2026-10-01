@@ -80,6 +80,8 @@ pub struct Vid {
     pub scrubbing: bool,
     /// The last pointer press was on the timeline: its keys (I / O / S / Del) act on it.
     pub focus: bool,
+    /// The browser's DevTools log of the recording, when it has one (ZK-191).
+    pub dev: Option<crate::devpanel::DevPanel>,
 }
 
 pub const SPEEDS: [f64; 4] = [0.5, 1.0, 1.5, 2.0];
@@ -119,6 +121,7 @@ impl Vid {
             press: None,
             scrubbing: false,
             focus: false,
+            dev: None,
         }
     }
 
