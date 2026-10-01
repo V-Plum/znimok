@@ -106,22 +106,33 @@ fn window_frame_equals_dwm_bounds() {
          $f.Left = 120; $f.Top = 120; $f.BackColor = [Drawing.Color]::FromArgb(0, 200, 0); \
          $f.TopMost = $true; [Windows.Forms.Application]::Run($f)"
     );
-    let _w = Win(Command::new("powershell")
+    let mut ps = Win(Command::new("powershell")
         .args(["-NoProfile", "-Command", &script])
+        .stderr(std::process::Stdio::piped())
         .spawn()
         .unwrap());
     let c = WinCapture::new();
     let t0 = Instant::now();
+    // A fresh CI runner can take long to load WinForms the first time (ZK-208): wait generously,
+    // and if PowerShell died, say how.
     let w = loop {
         if let Some(w) = c.windows().unwrap().into_iter().find(|w| w.title == title) {
             break w;
         }
+        if let Ok(Some(status)) = ps.0.try_wait() {
+            let mut err = String::new();
+            if let Some(mut e) = ps.0.stderr.take() {
+                let _ = std::io::Read::read_to_string(&mut e, &mut err);
+            }
+            panic!("PowerShell завершився ({status}) без вікна: {err}");
+        }
         assert!(
-            t0.elapsed() < Duration::from_secs(20),
-            "тестове вікно не з'явилось"
+            t0.elapsed() < Duration::from_secs(90),
+            "тестове вікно не з'явилось за 90 с"
         );
         std::thread::sleep(Duration::from_millis(200));
     };
+    eprintln!("тестове вікно з'явилось за {:?}", t0.elapsed());
     std::thread::sleep(Duration::from_millis(500));
     let f = c
         .capture(
