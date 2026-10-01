@@ -6879,6 +6879,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "znimok-export"
+version = "0.0.1"
+dependencies = [
+ "gif",
+ "znimok-core",
+ "znimok-format",
+ "znimok-play",
+ "znimok-render",
+ "znimok-video",
+ "znimok-video-win",
+]
+
+[[package]]
 name = "znimok-format"
 version = "0.0.1"
 dependencies = [
@@ -7131,6 +7144,7 @@ dependencies = [
 name = "znimok-video"
 version = "0.0.1"
 dependencies = [
+ "gif",
  "znimok-core",
 ]
 
