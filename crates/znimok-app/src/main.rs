@@ -103,6 +103,21 @@ fn with_ctx(f: impl FnOnce(&mut App, &AppWindow)) {
     });
 }
 
+/// As `with_ctx`, but does nothing when the app is already borrowed further up the stack (a call
+/// that may come from inside `with_ctx`, ZK-212). Returns whether `f` ran.
+fn try_with_ctx(f: impl FnOnce(&mut App, &AppWindow)) -> bool {
+    CTX.with(|c| {
+        if let Some((app, ui)) = c.borrow().as_ref()
+            && let Some(ui) = ui.upgrade()
+            && let Ok(mut a) = app.try_borrow_mut()
+        {
+            f(&mut a, &ui);
+            return true;
+        }
+        false
+    })
+}
+
 /// Wires a callback that needs the app and the window; the closure gets both borrowed.
 macro_rules! on {
     ($ui:ident, $app:ident, $setter:ident, |$a:ident, $w:ident $(, $arg:ident)*| $body:block) => {{

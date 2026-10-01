@@ -115,14 +115,18 @@ pub fn sound_mode() -> i32 {
 /// The next sound choice, kept in the settings (A in the recording overlay, ZK-189).
 pub fn cycle_sound() -> i32 {
     let next = (sound_mode() + 1) % 4;
-    crate::with_ctx(|a, ui| a.setting(ui, "rec-sound", next));
-    next
+    if crate::try_with_ctx(|a, ui| a.setting(ui, "rec-sound", next)) {
+        next
+    } else {
+        sound_mode()
+    }
 }
 
 /// «sound: system» for the overlay's hint strip.
 pub fn sound_text(mode: i32) -> String {
     let mut out = String::new();
-    crate::with_ctx(|a, _| {
+    // Never a second borrow of the app (ZK-212): busy → no label this time.
+    crate::try_with_ctx(|a, _| {
         let key = match mode {
             1 => "rec-system-audio",
             2 => "rec-microphone",

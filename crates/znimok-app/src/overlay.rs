@@ -466,7 +466,15 @@ pub fn open(frozen: Frozen, editor_was_visible: bool) -> Result<(), slint::Platf
         let video = crate::rec::video_mode();
         ui.set_video(video);
         if video {
-            ui.set_sound_text(crate::rec::sound_text(crate::rec::sound_mode()).into());
+            // Not here: the overlay opens from inside `with_ctx` (start_capture), and the label
+            // needs the app's settings and translator — borrowing the app again panicked
+            // (ZK-212). On the next turn of the event loop the app is free.
+            let weak = ui.as_weak();
+            slint::Timer::single_shot(std::time::Duration::ZERO, move || {
+                if let Some(ui) = weak.upgrade() {
+                    ui.set_sound_text(crate::rec::sound_text(crate::rec::sound_mode()).into());
+                }
+            });
         }
         // Switching to another program (Cmd+Tab, Alt+Tab) cancels — once the overlay has had
         // the focus (it may never get it when a global hotkey leaves another program in front).
