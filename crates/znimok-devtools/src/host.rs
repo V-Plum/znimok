@@ -107,18 +107,13 @@ pub fn run(cfg: &Config) -> i32 {
                     }
                     Err(_) => continue,
                 };
-                loop {
-                    match c.call(
-                        "devtools.wait",
-                        json!({"since": since, "timeout_ms": 15000}),
-                    ) {
-                        Ok(r) => {
-                            since = r["seq"].as_u64().unwrap_or(since);
-                            for m in r["msgs"].as_array().into_iter().flatten() {
-                                say(m);
-                            }
-                        }
-                        Err(_) => break,
+                while let Ok(r) = c.call(
+                    "devtools.wait",
+                    json!({"since": since, "timeout_ms": 15000}),
+                ) {
+                    since = r["seq"].as_u64().unwrap_or(since);
+                    for m in r["msgs"].as_array().into_iter().flatten() {
+                        say(m);
                     }
                 }
             }
