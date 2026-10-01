@@ -8025,7 +8025,8 @@ impl App {
             Some(b) => format!("≈ {}", self.human_size(b)),
             None => "…".to_string(),
         };
-        let mac_mp4 = !cfg!(windows);
+        // MP4, HTML and the report need a video encoder: Windows (MF) and macOS (VideoToolbox).
+        let mac_mp4 = !cfg!(any(windows, target_os = "macos"));
         let card = |title: &str, sub: String, desc: &str, estimate: String, enabled: bool| {
             crate::ExportCard {
                 title: self.tr.tr(title).into(),
@@ -8039,11 +8040,7 @@ impl App {
             card(
                 "vexp-mp4",
                 "H.264".into(),
-                if mac_mp4 {
-                    "vexp-mac-mp4"
-                } else {
-                    "vexp-mp4-desc"
-                },
+                "vexp-mp4-desc",
                 est(0),
                 !mac_mp4,
             ),

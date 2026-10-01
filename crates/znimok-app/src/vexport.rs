@@ -136,16 +136,17 @@ pub fn fit_gif(
     }
 }
 
-/// An exported MP4 as a new video document in the library (its first frame the poster): the
-/// document's path.
+/// What a finished MP4 is: its poster (the first frame), size, length and whether it has sound.
+struct Probe {
+    poster: znimok_core::Raster,
+    width: u32,
+    height: u32,
+    duration_hns: i64,
+    audio: bool,
+}
+
 #[cfg(windows)]
-pub fn wrap_into_library(
-    mp4: &Path,
-    lib: &Path,
-    name: &str,
-    fps: u32,
-    sound: bool,
-) -> Result<PathBuf, String> {
+fn probe(mp4: &Path) -> Result<Probe, String> {
     use znimok_video::traits::{Decoded, VideoDecoder};
     let mut dec = znimok_video_win::MfDecoder::open(mp4).map_err(|e| e.to_string())?;
     let info = dec.info().clone();
@@ -156,7 +157,41 @@ pub fn wrap_into_library(
             None => return Err("no frames".into()),
         }
     };
-    drop(dec);
+    Ok(Probe {
+        poster,
+        width: info.width,
+        height: info.height,
+        duration_hns: info.duration_hns,
+        audio: info.audio,
+    })
+}
+
+/// macOS (ZK-205): the poster by AVAssetReader, the rest from the file's own boxes.
+#[cfg(target_os = "macos")]
+fn probe(mp4: &Path) -> Result<Probe, String> {
+    let (w, h, rgba) = znimok_video_mac::poster::first_frame(mp4)?;
+    let info = znimok_video::check::mp4::read_mp4_file(mp4).map_err(|e| e.to_string())?;
+    Ok(Probe {
+        poster: znimok_core::Raster::new(w, h, rgba),
+        width: w,
+        height: h,
+        duration_hns: (info.duration_s() * 1e7).round() as i64,
+        audio: info.audio().is_some(),
+    })
+}
+
+/// An exported MP4 as a new video document in the library (its first frame the poster): the
+/// document's path.
+#[cfg(any(windows, target_os = "macos"))]
+pub fn wrap_into_library(
+    mp4: &Path,
+    lib: &Path,
+    name: &str,
+    fps: u32,
+    sound: bool,
+) -> Result<PathBuf, String> {
+    let info = probe(mp4)?;
+    let poster = info.poster.clone();
     let mut doc = znimok_core::Document::from_raster(name.to_string(), poster.clone());
     doc.meta.created_ms = chrono::Local::now().timestamp_millis();
     doc.meta.source = "export".into();
@@ -218,7 +253,7 @@ pub fn wrap_into_library(
     Ok(path)
 }
 
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "macos")))]
 pub fn wrap_into_library(
     _mp4: &Path,
     _lib: &Path,
