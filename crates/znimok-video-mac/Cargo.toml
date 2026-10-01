@@ -1,0 +1,27 @@
+[package]
+name = "znimok-video-mac"
+description = "macOS backend of Znimok video (ZK-88): ScreenCaptureKit frames and sound → AVAssetWriter (VideoToolbox H.264, AAC) → MP4; the same writer for exports (ZK-205)"
+version.workspace = true
+edition.workspace = true
+license-file.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+znimok-video = { path = "../znimok-video" }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+screencapturekit = { version = "11", features = ["macos_15_0"] }
+objc2 = "0.6"
+objc2-foundation = "0.3"
+objc2-core-foundation = "0.3"
+objc2-core-media = "0.3"
+objc2-core-video = "0.3"
+objc2-core-audio-types = "0.3"
+objc2-av-foundation = { version = "0.3", features = ["objc2-core-media"] }
+objc2-avf-audio = "0.3"
+block2 = "0.6"
