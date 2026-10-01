@@ -169,8 +169,9 @@ pub fn start(choice: Choice) {
         return;
     }
     match start_inner(&choice) {
-        Ok(()) => {}
+        Ok(()) => crate::commands::emit("recordStart"),
         Err(reason) => {
+            crate::commands::emit("failed");
             crate::wins::come_back();
             crate::with_ctx(|a, ui| {
                 let msg =
@@ -425,6 +426,11 @@ pub fn toggle_pause() {
             None => a.paused_since = Some(Instant::now()),
         }
         let paused = a.paused_since.is_some();
+        crate::commands::emit(if paused {
+            "recordPause"
+        } else {
+            "recordResume"
+        });
         crate::devlog::hub().pause(paused);
         a.bar.set_paused(paused);
         for e in &a.edges {
@@ -662,6 +668,7 @@ fn saved(r: Result<(PathBuf, znimok_core::Raster), String>, name: String, displa
                     ("size", human_size(size)),
                 ]),
             );
+            crate::commands::emit("recordStop");
             LAST_SAVED.with(|l| *l.borrow_mut() = Some(path.clone()));
             crate::pill::show(poster, path, name, heading, sub, display);
         }
@@ -671,6 +678,7 @@ fn saved(r: Result<(PathBuf, znimok_core::Raster), String>, name: String, displa
             } else {
                 a.tr.tr_args("rec-error-save", &crate::app::fargs(&[("reason", reason)]))
             };
+            crate::commands::emit("failed");
             a.toast(ui, msg);
             crate::show_window(ui);
         }
