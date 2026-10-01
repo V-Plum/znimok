@@ -5683,3 +5683,32 @@ devp-dl-pre = Уже був у dataLayer, коли почався запис.
 # @kind: body
 # @max: 80
 devp-dl-frame = З фрейму всередині сторінки.
+
+## The search by text on screenshots (ZK-186)
+
+
+# @where: Settings → Library: switch, search the text on screenshots too
+# @kind: label
+# @max: 50
+libset-search-text = Шукати й за текстом на знімках
+
+# @where: Settings → Library: what the search by text does and keeps
+# @kind: body
+# @max: 300
+libset-search-text-hint = Znimok читає текст на ваших знімках на цьому комп'ютері, поволі у фоні, і тримає його лише в локальному індексі бібліотеки — не у файлах і ніде в мережі. Якщо вимкнути, прочитане забувається.
+
+# @where: Settings → Library: progress of reading; $done of $count screenshots
+# @kind: body
+# @max: 80
+libset-text-reading = Читаю текст: { $done } з { $count }…
+
+# @where: Settings → Library: all screenshots are read; $count of them
+# @kind: body
+# @max: 80
+libset-text-ready =
+    { $count ->
+        [one] Текст { $count } знімка доступний для пошуку.
+        [few] Текст { $count } знімків доступний для пошуку.
+        [many] Текст { $count } знімків доступний для пошуку.
+       *[other] Текст { $count } знімка доступний для пошуку.
+    }

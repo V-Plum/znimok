@@ -35,6 +35,8 @@ pub struct Entry {
     pub video_ms: Option<u64>,
     /// Pinned (ZK-178): its own group first, never trashed by the library's limit.
     pub pinned: bool,
+    /// The text on the picture and in its text marks, from the index (ZK-186), for the search.
+    pub text: String,
 }
 
 impl Entry {
@@ -62,6 +64,7 @@ impl Entry {
         self.name.to_lowercase().contains(&f)
             || self.description.to_lowercase().contains(&f)
             || self.tags.iter().any(|t| t.to_lowercase().contains(&f))
+            || self.text.to_lowercase().contains(&f)
     }
 }
 
@@ -99,6 +102,7 @@ pub fn read_entry(path: &Path) -> Option<Entry> {
         tags: p.meta.tags,
         description: p.meta.description,
         thumb_png: p.thumbnail_png,
+        text: String::new(),
         video_ms: (p.kind == znimok_format::DocKind::Video).then(|| {
             p.video
                 .map(|v| (v.duration_hns / 10_000).max(0) as u64)
@@ -283,9 +287,37 @@ pub fn scan(dir: &Path, index: Option<&Index>) -> Vec<Entry> {
         .collect();
     if let Some(i) = index {
         i.prune(files.iter().filter_map(|(p, _)| key(p)));
+        // The text read for the search (ZK-186), where it is for this very file.
+        let stamps: std::collections::HashMap<&Path, Stamp> =
+            files.iter().map(|(p, s)| (p.as_path(), *s)).collect();
+        for e in &mut v {
+            if let Some((st, t)) = i.text(&e.path)
+                && stamps.get(e.path.as_path()) == Some(&st)
+            {
+                e.text = t;
+            }
+        }
     }
     v.sort_by_key(|e| std::cmp::Reverse(e.created_ms));
     v
+}
+
+/// The screenshots whose text is not read yet for the file as it is now (ZK-186): newest first.
+pub fn needs_text(index: &Index, entries: &[Entry]) -> Vec<PathBuf> {
+    entries
+        .iter()
+        .filter(|e| e.video_ms.is_none())
+        .filter(|e| {
+            let now = stamp_of(&e.path);
+            now.is_some() && index.text(&e.path).map(|(st, _)| st) != now
+        })
+        .map(|e| e.path.clone())
+        .collect()
+}
+
+/// A file's stamp now.
+pub fn stamp_of(p: &Path) -> Option<Stamp> {
+    std::fs::metadata(p).ok().map(|m| Stamp::of(&m))
 }
 
 /// How many file heads were read (for the self-test: an indexed rescan reads none).
@@ -352,6 +384,8 @@ pub struct Index {
 }
 
 const CARDS: redb::TableDefinition<&str, &[u8]> = redb::TableDefinition::new("cards");
+/// The text on each screenshot (ZK-186): the stamp it was read for, then UTF-8.
+const TEXT: redb::TableDefinition<&str, &[u8]> = redb::TableDefinition::new("text");
 
 impl Index {
     /// The index of the library at `lib`, in the cache folder (one file per library).
@@ -402,9 +436,9 @@ impl Index {
         let Ok(tx) = self.db.begin_write() else {
             return;
         };
-        {
-            let Ok(mut t) = tx.open_table(CARDS) else {
-                return;
+        for table in [CARDS, TEXT] {
+            let Ok(mut t) = tx.open_table(table) else {
+                continue;
             };
             let gone: Vec<String> = match t.iter() {
                 Ok(it) => it
@@ -418,6 +452,48 @@ impl Index {
                 let _ = t.remove(k.as_str());
             }
         }
+        let _ = tx.commit();
+    }
+
+    /// The text read for a file (ZK-186) and the stamp it was read for.
+    pub fn text(&self, p: &Path) -> Option<(Stamp, String)> {
+        let k = key(p)?;
+        let tx = self.db.begin_read().ok()?;
+        let t = tx.open_table(TEXT).ok()?;
+        let v = t.get(k.as_str()).ok()??;
+        let b = v.value();
+        let mtime_ms = i64::from_le_bytes(b.get(0..8)?.try_into().ok()?);
+        let size = u64::from_le_bytes(b.get(8..16)?.try_into().ok()?);
+        Some((
+            Stamp { mtime_ms, size },
+            String::from_utf8_lossy(b.get(16..)?).into_owned(),
+        ))
+    }
+
+    pub fn put_text(&self, p: &Path, st: Stamp, text: &str) {
+        let Some(k) = key(p) else { return };
+        let mut v = Vec::with_capacity(16 + text.len());
+        v.extend_from_slice(&st.mtime_ms.to_le_bytes());
+        v.extend_from_slice(&st.size.to_le_bytes());
+        v.extend_from_slice(text.as_bytes());
+        let Ok(tx) = self.db.begin_write() else {
+            return;
+        };
+        {
+            let Ok(mut t) = tx.open_table(TEXT) else {
+                return;
+            };
+            let _ = t.insert(k.as_str(), v.as_slice());
+        }
+        let _ = tx.commit();
+    }
+
+    /// Forgets all the text (the search by text turned off).
+    pub fn clear_text(&self) {
+        let Ok(tx) = self.db.begin_write() else {
+            return;
+        };
+        let _ = tx.delete_table(TEXT);
         let _ = tx.commit();
     }
 }
@@ -498,6 +574,7 @@ fn decode(b: &[u8], p: &Path, st: Stamp) -> Option<Entry> {
             tags.split('\n').map(str::to_string).collect()
         },
         description,
+        text: String::new(),
         thumb_png: (!thumb.is_empty()).then_some(thumb),
         video_ms: (video >= 0).then_some(video as u64),
         pinned,
@@ -576,6 +653,7 @@ mod tests {
     fn index_card_round_trip() {
         let e = Entry {
             path: PathBuf::from("x.znimok"),
+            text: String::new(),
             name: "Знімок".into(),
             created_ms: 1_700_000_000_000,
             width: 1600,
@@ -629,6 +707,7 @@ mod tests {
     fn d_entry() -> Entry {
         Entry {
             path: PathBuf::from("y"),
+            text: String::new(),
             name: String::new(),
             created_ms: 0,
             width: 1,

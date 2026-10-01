@@ -400,6 +400,9 @@ pub struct Library {
     pub video_limit_mb: u64,
     /// Days a deleted document stays in the library's trash (ZK-175).
     pub trash_days: u32,
+    /// Search the text on the screenshots too (ZK-186): read on the device in the background,
+    /// kept in the local index only. Off until the person turns it on (privacy policy).
+    pub search_text: bool,
 }
 
 impl Default for Library {
@@ -410,6 +413,7 @@ impl Default for Library {
             retention: Retention::default(),
             video_limit_mb: 5120,
             trash_days: 7,
+            search_text: false,
         }
     }
 }

@@ -5637,3 +5637,30 @@ devp-dl-pre = Already in dataLayer when the recording started.
 # @kind: body
 # @max: 80
 devp-dl-frame = From a frame inside the page.
+
+## The search by text on screenshots (ZK-186)
+
+
+# @where: Settings → Library: switch, search the text on screenshots too
+# @kind: label
+# @max: 50
+libset-search-text = Search the text on screenshots too
+
+# @where: Settings → Library: what the search by text does and keeps
+# @kind: body
+# @max: 300
+libset-search-text-hint = Znimok reads the text on your screenshots on this computer, slowly in the background, and keeps it only in the library's local index — not in the files and nowhere online. Turned off, what was read is forgotten.
+
+# @where: Settings → Library: progress of reading; $done of $count screenshots
+# @kind: body
+# @max: 80
+libset-text-reading = Reading the text: { $done } of { $count }…
+
+# @where: Settings → Library: all screenshots are read; $count of them
+# @kind: body
+# @max: 80
+libset-text-ready =
+    { $count ->
+        [one] The text of one screenshot is searchable.
+       *[other] The text of { $count } screenshots is searchable.
+    }

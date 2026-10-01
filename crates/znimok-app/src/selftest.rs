@@ -3419,6 +3419,56 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
         }
     }));
 
+    // ZK-186: the search by text on the screenshots — off by default; turned on, the text in a
+    // screenshot's pixels is read in the background (the newest first) and the search finds it;
+    // turned off, it is forgotten.
+    steps.push(Box::new(|_, _, r| {
+        let Some((lib, lw)) = crate::wins::library() else {
+            r.check("text search: the library window", false, String::new());
+            return;
+        };
+        if lib.borrow().doc_path().is_some() {
+            lib.borrow_mut().close_document(&lw);
+        }
+        let off_by_default = !lib.borrow().prefs().library.search_text;
+        lib.borrow_mut().new_document(
+            &lw,
+            text_page(),
+            "file",
+            Some("selftest text search".into()),
+        );
+        let saved = lib.borrow_mut().save_now(&lw);
+        lib.borrow_mut().close_document(&lw);
+        lib.borrow_mut().setting(&lw, "lib-search-text", 1);
+        r.check(
+            "text search: off by default; turned on, reading starts",
+            off_by_default && saved && lw.get_pref_lib_search_text(),
+            format!("off by default {off_by_default} · saved {saved}"),
+        );
+    }));
+    for _ in 0..40 {
+        steps.push(Box::new(|_, _, _| {}));
+    }
+    steps.push(Box::new(|_, _, r| {
+        let Some((lib, lw)) = crate::wins::library() else {
+            return;
+        };
+        let engine = znimok_models::ocr::system().is_some();
+        lw.invoke_search("reads text 2026".into());
+        let found = slint::Model::row_count(&lw.get_cards());
+        let status = lw.get_lib_text_status().to_string();
+        lib.borrow_mut().setting(&lw, "lib-search-text", 0);
+        lib.borrow_mut().refresh_library(&lw);
+        lw.invoke_search("reads text 2026".into());
+        let after_off = slint::Model::row_count(&lw.get_cards());
+        lw.invoke_search("".into());
+        r.check(
+            "text search: a word only in the pixels finds its screenshot; off, it no longer does",
+            !engine || (found >= 1 && after_off == 0),
+            format!("engine {engine} · found {found} · after off {after_off} · {status:?}"),
+        );
+    }));
+
     // ZK-141: a scrolling capture over a synthetic page (a fake screen and a fake wheel): the
     // stitched document has the whole page, with the sticky header and footer once.
     steps.push(Box::new(|_, _, _| {
