@@ -2246,6 +2246,27 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
             r.snapshot(ui, "24b-settings-shots");
             ui.set_settings_page(10);
             r.snapshot(ui, "24c-settings-recording");
+            // ZK-189: «Both» shows a device row for each source, «default» first.
+            let before = ui.get_pref_rec_sound();
+            ui.invoke_setting("rec-sound".into(), 3);
+            r.snapshot(ui, "24d-settings-sound");
+            use slint::Model;
+            let sys = ui.get_rec_sys_devices();
+            let mic = ui.get_rec_mic_devices();
+            let default = app.borrow().tr.tr("rec-default-device");
+            r.check(
+                "sound choice: a device row per source, the default one first",
+                sys.row_count() >= 1
+                    && mic.row_count() >= 1
+                    && sys.row_data(0).is_some_and(|n| n == default.as_str())
+                    && ui.get_rec_sys_device() == 0,
+                format!(
+                    "system {} · microphone {}",
+                    sys.row_count(),
+                    mic.row_count()
+                ),
+            );
+            ui.invoke_setting("rec-sound".into(), before);
             ui.set_settings_page(0);
             ui.invoke_setting("gesture-plain".into(), 1);
             let g = app.borrow().prefs().capture.gestures;
@@ -4095,6 +4116,24 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
                 vui.get_vid_mode() && playing_ok,
                 format!("mode {} · player {playing_ok}", vui.get_vid_mode()),
             );
+            // ZK-189: the track's loudness was measured while recording (a byte per 10 ms) and
+            // the timeline's sound lane has a waveform for it.
+            {
+                use slint::Model;
+                let peaks: Vec<usize> = va
+                    .borrow()
+                    .s
+                    .as_ref()
+                    .and_then(|s| s.video.as_ref())
+                    .map(|v| v.video.audio.iter().map(|t| t.peaks.len()).collect())
+                    .unwrap_or_default();
+                let waves = vui.get_tl_waves().row_count();
+                r.check(
+                    "video: the sound track's loudness is kept and drawn on the timeline",
+                    peaks.is_empty() || (peaks.iter().all(|&n| n >= 100) && waves == peaks.len()),
+                    format!("peaks {peaks:?} · waveforms {waves}"),
+                );
+            }
             va.borrow_mut().close_document(&vui);
             let _ = std::fs::remove_file(&p);
         }
@@ -4128,6 +4167,24 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
         if crate::overlay::open(frozen, false).is_ok()
             && let Some(ov) = crate::overlay::handle()
         {
+            // ZK-189: A cycles the sound, the strip says it, the choice is kept (then put back).
+            let before = crate::rec::sound_mode();
+            let shown = ov.get_sound_text().to_string();
+            ov.invoke_key("a".into(), false, false);
+            let next = crate::rec::sound_mode();
+            let now_shown = ov.get_sound_text().to_string();
+            ov.invoke_key("ф".into(), false, false);
+            let again = crate::rec::sound_mode();
+            r.check(
+                "recording overlay: A (Ф) cycles the sound, the strip says it, the settings keep it",
+                ov.get_video()
+                    && next == (before + 1) % 4
+                    && again == (before + 2) % 4
+                    && !shown.is_empty()
+                    && now_shown != shown,
+                format!("{before} → {next} → {again} · «{shown}» → «{now_shown}»"),
+            );
+            crate::with_ctx(|a, ui| a.setting(ui, "rec-sound", before));
             let osf = ov.window().scale_factor();
             let lw = ov.window().size().width as f32 / osf;
             let lh = ov.window().size().height as f32 / osf;

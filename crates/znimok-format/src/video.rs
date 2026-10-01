@@ -294,7 +294,15 @@ pub struct AudioTrack {
     pub muted: bool,
     /// Shift against the video at export, ms (±60 000; positive = later).
     pub offset_ms: i32,
+    /// The loudness drawn on the timeline (ZK-189): one byte per [`PEAK_MS`] of the recording,
+    /// the peak of that stretch on 0…255 (square-root scale, so quiet speech still shows). Empty
+    /// = not known (an older file, an imported video). Field `peak` of `TRK ` (`u8` step in ms,
+    /// then the bytes); readers before it skip it by length.
+    pub peaks: Vec<u8>,
 }
+
+/// Milliseconds per byte of [`AudioTrack::peaks`].
+pub const PEAK_MS: u32 = 10;
 
 impl Default for AudioTrack {
     fn default() -> Self {
@@ -304,6 +312,7 @@ impl Default for AudioTrack {
             volume: 100,
             muted: false,
             offset_ms: 0,
+            peaks: Vec::new(),
         }
     }
 }
@@ -525,6 +534,12 @@ pub(crate) fn write_blocks(w: &mut Writer, v: &Video, crop: Option<IRect>) {
                     if t.offset_ms != 0 {
                         w.record(b"offs", |w| w.i32(t.offset_ms));
                     }
+                    if !t.peaks.is_empty() {
+                        w.record(b"peak", |w| {
+                            w.u8(PEAK_MS as u8);
+                            w.bytes(&t.peaks);
+                        });
+                    }
                 });
             }
         });
@@ -671,6 +686,11 @@ pub(crate) fn read_audi(
                 b"volm" => track.volume = f.u8()?.min(200),
                 b"mute" => track.muted = f.bool()?,
                 b"offs" => track.offset_ms = f.i32()?.clamp(-60_000, 60_000),
+                // Another step than ours is not drawn (none is written yet).
+                b"peak" if u32::from(f.u8()?) == PEAK_MS => {
+                    let n = f.remaining();
+                    track.peaks = f.take(n)?.to_vec();
+                }
                 _ => {} // unknown field: skipped by length
             }
         }

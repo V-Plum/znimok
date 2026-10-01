@@ -69,6 +69,7 @@ fn rich() -> (Document, Video) {
             volume: 150,
             muted: true,
             offset_ms: -40,
+            peaks: vec![0, 12, 255, 7],
         },
     ];
     v.mouse = vec![

@@ -589,6 +589,46 @@ component MenuItemRow inherits Rectangle {
     }
 }
 
+// A sound device to record from (ZK-189): the name of the chosen one, a menu of the others.
+component DeviceRow inherits HorizontalLayout {
+    in property <string> label;
+    in property <[string]> names;
+    in property <int> current;
+    callback picked(int);
+    spacing: 10px;
+    Text { text: root.label; color: Theme.text2; font-size: 12px; vertical-alignment: center; width: 120px; }
+    pick := Rectangle {
+        height: 30px;
+        horizontal-stretch: 1;
+        border-radius: 8px;
+        background: pick-ta.has-hover ? Theme.hover : Theme.elevated;
+        animate background { duration: 120ms; }
+        HorizontalLayout {
+            padding-left: 10px;
+            padding-right: 8px;
+            spacing: 6px;
+            Text { text: root.names[root.current]; color: Theme.text; font-size: 12px; vertical-alignment: center; overflow: elide; horizontal-stretch: 1; }
+            Path { width: 10px; height: 6px; y: (parent.height - self.height) / 2; commands: "M0 0 L5 5 L10 0"; stroke: Theme.text2; stroke-width: 1.5px; fill: transparent; }
+        }
+        pick-ta := TouchArea { clicked => { menu.show(); } }
+        menu := PopupWindow {
+            x: 0;
+            y: parent.height + 4px;
+            width: pick.width;
+            Rectangle {
+                background: Theme.elevated;
+                border-radius: 12px;
+                drop-shadow-blur: 24px;
+                drop-shadow-color: #00000080;
+                VerticalLayout {
+                    padding: 6px;
+                    for n[i] in root.names: MenuItemRow { text: (i == root.current ? "✓  " : "     ") + n; clicked => { root.picked(i); } }
+                }
+            }
+        }
+    }
+}
+
 // Check box: a rounded square that fills with the accent and draws its tick (tactile press).
 component CheckBox inherits Rectangle {
     in property <string> text;
@@ -1500,6 +1540,9 @@ export component Overlay inherits Window {
     in property <int> act-alt: 1;
     // The hint strip at all (ZK-156).
     in property <bool> show-hints: true;
+    // A recording's overlay (ZK-189): its own hint strip, with the sound choice.
+    in property <bool> video;
+    in property <string> sound-text;
     pure function act-text(a: int) -> string {
         return a == 1 ? @tr("capture-over-screen" => "over the screen") : (a == 2 ? @tr("capture-to-clipboard" => "to clipboard") : @tr("capture-to-editor" => "to editor"));
     }
@@ -1577,15 +1620,17 @@ export component Overlay inherits Window {
             width: self.preferred-width;
             height: 20px;
             spacing: 18px;
-            HintChip { key: @tr("capture-release" => "release"); text: root.act-text(root.act-plain); }
-            HintChip { key: "Shift"; text: root.act-text(root.act-shift); }
-            HintChip { key: root.mac ? "⌥" : "Alt"; text: root.act-text(root.act-alt); }
+            if !root.video: HintChip { key: @tr("capture-release" => "release"); text: root.act-text(root.act-plain); }
+            if !root.video: HintChip { key: "Shift"; text: root.act-text(root.act-shift); }
+            if !root.video: HintChip { key: root.mac ? "⌥" : "Alt"; text: root.act-text(root.act-alt); }
+            if root.video: HintChip { key: @tr("capture-release" => "release"); text: @tr("capture-record" => "record"); }
             HintChip { key: "Space"; text: @tr("capture-whole-screen" => "whole screen"); }
             HintChip { key: @tr("capture-click" => "click"); text: @tr("capture-window" => "window"); }
-            HintChip { key: @tr("capture-wheel" => "wheel"); text: @tr("capture-magnifier" => "magnifier"); }
-            HintChip { key: @tr("capture-double" => "double click"); text: @tr("capture-delayed" => "after 3 s"); }
-            HintChip { key: "Q"; text: @tr("capture-qr" => "QR code"); }
-            HintChip { key: "S"; text: @tr("capture-scroll" => "with scrolling"); }
+            if root.video: HintChip { key: "A"; text: root.sound-text; }
+            if !root.video: HintChip { key: @tr("capture-wheel" => "wheel"); text: @tr("capture-magnifier" => "magnifier"); }
+            if !root.video: HintChip { key: @tr("capture-double" => "double click"); text: @tr("capture-delayed" => "after 3 s"); }
+            if !root.video: HintChip { key: "Q"; text: @tr("capture-qr" => "QR code"); }
+            if !root.video: HintChip { key: "S"; text: @tr("capture-scroll" => "with scrolling"); }
             HintChip { key: "Esc"; text: @tr("capture-cancel" => "cancel"); }
         }
     }
@@ -1870,6 +1915,8 @@ export component AppWindow inherits Window {
     in property <string> vid-trim-left;
     in property <string> vid-note;
     in property <[VidTrack]> vid-tracks;
+    // The sound lane's waveforms, one per track (ZK-189).
+    in property <[image]> tl-waves;
     // 0 no sound, 1 system, 2 microphone, 3 both — and which tracks the recording has.
     in property <int> vid-sound-mode;
     in property <bool> vid-has-system;
@@ -2141,6 +2188,11 @@ export component AppWindow inherits Window {
     in property <int> pref-rec-quality: 1;
     in property <bool> pref-rec-follow: true;
     in property <int> pref-rec-sound;
+    // Devices of the sound choice (ZK-189): the default first, then the active ones.
+    in property <[string]> rec-sys-devices: ["—"];
+    in property <int> rec-sys-device;
+    in property <[string]> rec-mic-devices: ["—"];
+    in property <int> rec-mic-device;
     in property <bool> pref-rec-cursor: true;
     in-out property <string> pref-ret-mb;
     // The videos' own size limit, MB (ZK-100).
@@ -2970,6 +3022,8 @@ export component AppWindow inherits Window {
                                         SegOption { text: @tr("vid-sound-both" => "Both"); on: root.pref-rec-sound == 3; clicked => { root.setting("rec-sound", 3); } }
                                     }
                                 }
+                                if root.pref-rec-sound == 1 || root.pref-rec-sound == 3: DeviceRow { label: @tr("rec-system-audio" => "System sound"); names: root.rec-sys-devices; current: root.rec-sys-device; picked(i) => { root.setting("rec-sys-device", i); } }
+                                if root.pref-rec-sound == 2 || root.pref-rec-sound == 3: DeviceRow { label: @tr("rec-microphone" => "Microphone"); names: root.rec-mic-devices; current: root.rec-mic-device; picked(i) => { root.setting("rec-mic-device", i); } }
                                 Text { text: @tr("rec-sound-tracks" => "Each source is a track of its own: in the editor it can be muted or made quieter. The system sound is what this computer plays; the microphone needs Windows' permission (Privacy → Microphone)."); color: Theme.text3; font-size: 11px; wrap: word-wrap; }
                                 SwitchRow { text: @tr("rec-cursor-clicks" => "Cursor and click highlight"); checked: root.pref-rec-cursor; toggled => { root.setting("rec-cursor", self.checked ? 1 : 0); } }
                                 Text { text: @tr("rec-cursor-hint" => "The pointer is drawn into the video, a click is a spreading ring and a held button a steady one; clicks on the recording bar are not recorded. The clicks are also kept as a log in the document."); color: Theme.text3; font-size: 11px; wrap: word-wrap; }
@@ -3679,8 +3733,16 @@ export component AppWindow inherits Window {
                                     SmallButton { text: "Esc"; clicked => { root.vid-action("deselect", 0); } }
                                 }
                             }
-                            // sound: one line per track (the waveform comes with ZK-189)
-                            for t[i] in root.vid-tracks: Rectangle { x: 8px; y: 86px + i * 10px; width: parent.width - 16px; height: 2px; background: t.muted ? Theme.line : t.colour; }
+                            // sound (ZK-189): a waveform per track in the lane between the strip and the
+                            // marks; a line until its picture is there
+                            for t[i] in root.vid-tracks: Rectangle {
+                                x: 8px;
+                                y: 80px + i * (22px / max(1, root.vid-tracks.length));
+                                width: parent.width - 16px;
+                                height: 22px / max(1, root.vid-tracks.length);
+                                if i < root.tl-waves.length: Image { width: parent.width; height: parent.height; source: root.tl-waves[i]; image-fit: fill; }
+                                if i >= root.tl-waves.length: Rectangle { y: (parent.height - 2px) / 2; height: 2px; background: t.muted ? Theme.line : t.colour; }
+                            }
                             // marks lanes (ZK-94): a bar per mark, dragged by its body or its ends
                             Rectangle { y: 104px; height: 1px; background: Theme.line; }
                             Rectangle { y: 156px; height: 1px; background: Theme.line; }
