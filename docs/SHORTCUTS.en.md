@@ -18,7 +18,7 @@ Ukrainian layout (V/м, R/к, E/у, L/д and so on).
 | Capture in 3 seconds | double click, or click and drag at once | the same |
 | Scrolling capture | S | S |
 | Read QR codes and barcodes | Q | Q |
-| Start / stop recording (the overlay chooses what) | Alt+Shift+5 | ⌃⇧5 (with the next update) |
+| Start / stop recording (the overlay chooses what) | Alt+Shift+5 | ⌃⇧5 |
 | Recording sound: none → system → microphone → both (in the recording overlay) | A | A |
 | The part's text to the clipboard | X | X |
 | Copy text from the screen (hotkey) | Alt+Shift+T | ⌃⇧T |
