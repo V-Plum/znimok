@@ -255,7 +255,7 @@ with the video (both take their time from the system clock; the recording's paus
 log). The log lies in the recording's document. It is debugging data, so it is written in full;
 sensitive parts can be hidden on export. While the log is written the browser shows its
 "extension is debugging this browser" bar. The extension's "Record this window" starts recording the
-browser's window (Windows only for now); while it records, a click on its icon stops it, pause is in the
+browser's window; while it records, a click on its icon stops it, pause is in the
 right-click menu. Settings → "Recording" → "Browser": write the log, let the extension start a
 recording, and whether a browser is connected. Installing until the extension is in the Chrome Web
 Store: the release's `znimok-extension-….zip` → chrome://extensions → "Developer mode" → "Load

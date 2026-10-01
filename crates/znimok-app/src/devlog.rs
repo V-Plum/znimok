@@ -87,17 +87,14 @@ fn record_window(r: &Value) {
     if crate::rec::is_recording() || crate::overlay::is_open() {
         return fail("busy");
     }
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "macos"))]
     {
-        use znimok_platform::WindowList;
         let marker = r.get("marker").and_then(Value::as_str).unwrap_or("");
         if marker.is_empty() {
             return fail("not-found");
         }
-        let cap = znimok_win::WinCapture::new();
-        let found: Vec<_> = cap
-            .windows()
-            .unwrap_or_default()
+        let (windows, displays) = windows_and_displays();
+        let found: Vec<_> = windows
             .into_iter()
             .filter(|w| w.title.contains(marker))
             .collect();
@@ -107,11 +104,25 @@ fn record_window(r: &Value) {
             _ => return fail("ambiguous"),
         };
         hub().reply(json!({"rec": "found", "rid": rid}));
-        let display = znimok_win::raw::monitors()
-            .into_iter()
-            .find(|m| Some(&m.info.id) == w.display.as_ref())
-            .or_else(|| znimok_win::raw::monitors().into_iter().next())
-            .map(|m| m.info.bounds)
+        // Its display: as the system says, else the one its centre is on.
+        let (cx, cy) = (
+            w.bounds.x + w.bounds.width as i32 / 2,
+            w.bounds.y + w.bounds.height as i32 / 2,
+        );
+        let display = displays
+            .iter()
+            .find(|d| Some(&d.id) == w.display.as_ref())
+            .or_else(|| {
+                displays.iter().find(|d| {
+                    let b = d.bounds;
+                    cx >= b.x
+                        && cx < b.x + b.width as i32
+                        && cy >= b.y
+                        && cy < b.y + b.height as i32
+                })
+            })
+            .or_else(|| displays.first())
+            .map(|d| d.bounds)
             .unwrap_or(w.bounds);
         // The mark is still in the title for a moment: start once the extension took it away.
         let rid2 = rid.clone();
@@ -131,6 +142,36 @@ fn record_window(r: &Value) {
             }
         });
     }
-    #[cfg(not(windows))]
+    #[cfg(not(any(windows, target_os = "macos")))]
     fail("unsupported");
+}
+
+/// The windows on screen (with their titles) and the displays.
+#[cfg(windows)]
+fn windows_and_displays() -> (
+    Vec<znimok_platform::WindowInfo>,
+    Vec<znimok_platform::DisplayInfo>,
+) {
+    use znimok_platform::WindowList;
+    let windows = znimok_win::WinCapture::new().windows().unwrap_or_default();
+    let displays = znimok_win::raw::monitors()
+        .into_iter()
+        .map(|m| m.info)
+        .collect();
+    (windows, displays)
+}
+
+/// The windows on screen (titles need «Screen Recording», which recording has anyway) and the
+/// displays, in points (ZK-207).
+#[cfg(target_os = "macos")]
+fn windows_and_displays() -> (
+    Vec<znimok_platform::WindowInfo>,
+    Vec<znimok_platform::DisplayInfo>,
+) {
+    use znimok_platform::{Capture, WindowList};
+    let cap = znimok_mac::MacCapture::new();
+    (
+        cap.windows().unwrap_or_default(),
+        cap.displays().unwrap_or_default(),
+    )
 }
