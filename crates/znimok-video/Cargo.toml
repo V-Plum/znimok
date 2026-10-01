@@ -13,3 +13,4 @@ workspace = true
 
 [dependencies]
 znimok-core = { path = "../znimok-core" }
+gif = "0.14"

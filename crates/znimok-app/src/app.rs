@@ -290,6 +290,8 @@ pub struct App {
     overlay_prev: Vec<IRect>,
     pub gpu: Option<Gpu>,
     pub dpr: f64,
+    /// What the timeline's waveforms were last drawn for (ZK-189): skip when nothing changed.
+    wave_key: Option<(i32, u64, u64, u64, u64, u64)>,
     dirty: bool,
     /// The video frame on the canvas changed: everything is repainted (ZK-181).
     frame_changed: bool,
@@ -344,6 +346,13 @@ pub struct App {
     exp: Option<ExportSheet>,
     /// What was exported last in this session: Ctrl+Shift+E repeats it (ZK-187).
     exp_last: Option<znimok_settings::ExportPrefs>,
+    /// The export sheet shows the video's formats (ZK-190); the choices, estimates, a running job.
+    vexp_open: bool,
+    vexp: crate::vexport::VidExport,
+    vexp_sizes: [Option<u64>; 3],
+    vexp_serial: u64,
+    vexp_run: Option<std::sync::Arc<znimok_export::Progress>>,
+    vexp_timer: Option<slint::Timer>,
     stamp_id: u32,
     /// Size step of new stamps (ZK-173), an index into [`COUNTER_SIZES`] like the counter's.
     stamp_size_i: usize,
@@ -533,6 +542,7 @@ impl App {
             overlay_prev: Vec::new(),
             gpu: None,
             dpr: 1.0,
+            wave_key: None,
             dirty: true,
             frame_changed: false,
             fit_pending: true,
@@ -568,6 +578,12 @@ impl App {
             text: None,
             exp: None,
             exp_last: None,
+            vexp_open: false,
+            vexp: Default::default(),
+            vexp_sizes: [None; 3],
+            vexp_serial: 0,
+            vexp_run: None,
+            vexp_timer: None,
             stamp_id: 0,
             stamp_size_i: 1,
             alpha_merge: None,
@@ -1396,6 +1412,29 @@ impl App {
         ui.set_pref_rec_sound(
             i32::from(p.video.audio.system) | (i32::from(p.video.audio.microphone) << 1),
         );
+        // The devices of the sound choice (ZK-189): «default» first, then what is plugged in now.
+        let devices = |kind, chosen: &Option<String>| {
+            let found = audio_devices(kind);
+            let mut names: Vec<SharedString> = vec![self.tr.tr("rec-default-device").into()];
+            names.extend(found.iter().map(|d| SharedString::from(d.1.as_str())));
+            let at = chosen
+                .as_ref()
+                .and_then(|id| found.iter().position(|d| &d.0 == id))
+                .map_or(0, |i| i as i32 + 1);
+            (std::rc::Rc::new(slint::VecModel::from(names)).into(), at)
+        };
+        let (names, at) = devices(
+            znimok_video::traits::AudioKind::System,
+            &p.video.audio.system_device,
+        );
+        ui.set_rec_sys_devices(names);
+        ui.set_rec_sys_device(at);
+        let (names, at) = devices(
+            znimok_video::traits::AudioKind::Microphone,
+            &p.video.audio.microphone_device,
+        );
+        ui.set_rec_mic_devices(names);
+        ui.set_rec_mic_device(at);
         ui.set_pref_rec_cursor(p.video.cursor);
         ui.set_pref_lib_dir(self.lib_dir.display().to_string().into());
         ui.set_pref_file(
@@ -1582,6 +1621,28 @@ impl App {
                 p.video.audio.system = value & 1 != 0;
                 p.video.audio.microphone = value & 2 != 0;
             }),
+            // A device of the sound choice (ZK-189): 0 = the default one.
+            "rec-sys-device" | "rec-mic-device" => {
+                let kind = if key == "rec-sys-device" {
+                    znimok_video::traits::AudioKind::System
+                } else {
+                    znimok_video::traits::AudioKind::Microphone
+                };
+                let id = (value > 0)
+                    .then(|| {
+                        audio_devices(kind)
+                            .get(value as usize - 1)
+                            .map(|d| d.0.clone())
+                    })
+                    .flatten();
+                self.save_prefs(ui, |p| match kind {
+                    znimok_video::traits::AudioKind::System => p.video.audio.system_device = id,
+                    znimok_video::traits::AudioKind::Microphone => {
+                        p.video.audio.microphone_device = id
+                    }
+                });
+                self.settings_sync(ui);
+            }
             "rec-cursor" => self.save_prefs(ui, |p| {
                 p.video.cursor = on;
                 p.video.clicks = on;
@@ -4779,6 +4840,16 @@ impl App {
                 Some('z') if shift => self.redo(ui),
                 Some('z') => self.undo(ui),
                 Some('y') => self.redo(ui),
+                // A video (ZK-190): Ctrl+Shift+C the frame as a picture, Ctrl+Shift+N the frame as
+                // a new screenshot.
+                Some('c') if shift && self.is_video() => {
+                    self.vid_share(ui, "copy-frame");
+                    return KeyAction::None;
+                }
+                Some('n') if shift && self.is_video() => {
+                    self.vid_share(ui, "frame-shot");
+                    return KeyAction::None;
+                }
                 Some('c') => return KeyAction::Copy,
                 Some('v') => self.paste_as_mark(ui),
                 // Over the screen: Ctrl+S = to the library; no file dialogs above the frame.
@@ -7258,6 +7329,11 @@ impl App {
 
     pub fn copy(&mut self, ui: &AppWindow) {
         self.finish_text(ui);
+        // A video: its MP4 to the clipboard (ZK-190).
+        if self.is_video() {
+            self.vid_share(ui, "copy-mp4");
+            return;
+        }
         self.set_last_share(ui, false);
         let Some((w, h, rgba)) = self.flatten() else {
             return;
@@ -7336,6 +7412,11 @@ impl App {
 
     /// Opens the export sheet with the choices last kept.
     pub fn export_open(&mut self, ui: &AppWindow) {
+        if self.is_video() {
+            self.vexport_open(ui);
+            return;
+        }
+        ui.set_exp_video(false);
         let Some((w, h, rgba)) = self.flatten() else {
             return;
         };
@@ -7499,6 +7580,10 @@ impl App {
     /// A control of the sheet changed.
     pub fn export_set(&mut self, ui: &AppWindow, key: &str, v: i32) {
         use znimok_settings::{ExportFormat as F, ExportScale as S, ExportTo as T};
+        if self.vexp_open {
+            self.vexport_set(ui, key, v);
+            return;
+        }
         if key == "metadata" {
             // The same switch as in Settings → Sharing.
             self.setting(ui, "metadata", v);
@@ -7568,6 +7653,10 @@ impl App {
     }
 
     pub fn export_close(&mut self, ui: &AppWindow) {
+        if self.vexp_open {
+            self.vexport_close(ui);
+            return;
+        }
         self.exp = None;
         ui.set_exp_open(false);
     }
@@ -7579,6 +7668,10 @@ impl App {
         ui: &AppWindow,
     ) -> Option<(Option<PathBuf>, String, znimok_settings::ExportFormat)> {
         use znimok_settings::ExportTo as T;
+        if self.vexp_open {
+            self.vexport_go(ui);
+            return None;
+        }
         let e = self.exp.as_ref()?;
         let prefs = e.prefs.clone();
         let name = file_safe(ui.get_exp_name().trim());
@@ -7720,9 +7813,540 @@ impl App {
         ok
     }
 
+    // ------------------------------------------------------------------ video export (ZK-190)
+
+    /// The job for this video's export to `dest`.
+    fn vexport_job(&self, kind: znimok_export::Kind, dest: PathBuf) -> Option<znimok_export::Job> {
+        let s = self.s.as_ref()?;
+        let part = s.video.as_ref()?;
+        let mut doc = s.ed.doc.clone();
+        doc.shown_frame = None;
+        Some(znimok_export::Job {
+            source: znimok_play::Source::of_part(part, crate::library::cache_dir().join("video")),
+            doc,
+            video: part.video.clone(),
+            kind,
+            dest,
+        })
+    }
+
+    fn vexport_gpu(&self) -> Option<znimok_play::Gpu> {
+        self.gpu.as_ref().map(|g| znimok_play::Gpu {
+            device: g.device.clone(),
+            queue: g.queue.clone(),
+        })
+    }
+
+    /// The sheet for a video: MP4 / GIF / HTML / the frame / the report, with estimates.
+    pub fn vexport_open(&mut self, ui: &AppWindow) {
+        self.vexp_open = true;
+        self.vexp_sizes = [None; 3];
+        // The preview: the frame shown, small.
+        let still = self
+            .s
+            .as_ref()
+            .and_then(|s| s.vid.as_ref())
+            .and_then(|v| v.raster.as_ref().map(|(_, r)| r.clone()));
+        let pic = still.unwrap_or_else(|| {
+            std::sync::Arc::new(
+                self.s
+                    .as_ref()
+                    .map(|s| s.ed.doc.source().clone())
+                    .unwrap_or_else(|| Raster::solid(16, 9, znimok_core::Rgb::new(0, 0, 0))),
+            )
+        });
+        let k = (360.0 / f64::from(pic.width))
+            .min(200.0 / f64::from(pic.height))
+            .min(1.0);
+        let (pw, ph) = (
+            ((f64::from(pic.width) * k).round() as u32).max(1),
+            ((f64::from(pic.height) * k).round() as u32).max(1),
+        );
+        let small = znimok_export::scale_rgba(&pic.rgba, (pic.width, pic.height), (pw, ph));
+        let buf = slint::SharedPixelBuffer::<slint::Rgba8Pixel>::clone_from_slice(&small, pw, ph);
+        ui.set_exp_preview(slint::Image::from_rgba8(buf));
+        ui.set_exp_name(self.doc_name().into());
+        ui.set_exp_video(true);
+        ui.set_exp_open(true);
+        self.vexport_show(ui);
+        self.vexport_estimate();
+    }
+
+    fn vexport_show(&self, ui: &AppWindow) {
+        use crate::vexport::*;
+        let p = &self.vexp;
+        let est = |i: usize| match self.vexp_sizes.get(i).copied().flatten() {
+            Some(b) => format!("≈ {}", self.human_size(b)),
+            None => "…".to_string(),
+        };
+        let mac_mp4 = !cfg!(windows);
+        let card = |title: &str, sub: String, desc: &str, estimate: String, enabled: bool| {
+            crate::ExportCard {
+                title: self.tr.tr(title).into(),
+                sub: sub.into(),
+                desc: self.tr.tr(desc).into(),
+                estimate: estimate.into(),
+                enabled,
+            }
+        };
+        let cards = vec![
+            card(
+                "vexp-mp4",
+                "H.264".into(),
+                if mac_mp4 {
+                    "vexp-mac-mp4"
+                } else {
+                    "vexp-mp4-desc"
+                },
+                est(0),
+                !mac_mp4,
+            ),
+            card(
+                "vexp-gif",
+                self.tr.tr_args(
+                    "vexp-gif-sub",
+                    &args(&[("w", p.gif_w.to_string()), ("fps", p.gif_fps.to_string())]),
+                ),
+                "vexp-gif-desc",
+                est(1),
+                true,
+            ),
+            card(
+                "vexp-html",
+                self.tr.tr("vexp-html-sub"),
+                "vexp-html-desc",
+                est(2),
+                !mac_mp4,
+            ),
+            card(
+                "vid-frame-as-shot",
+                "PNG".into(),
+                "vexp-frame-desc",
+                String::new(),
+                true,
+            ),
+            card(
+                "vexp-report",
+                self.tr.tr("vexp-soon"),
+                "vexp-report-desc",
+                String::new(),
+                false,
+            ),
+        ];
+        ui.set_exp_cards(std::rc::Rc::new(slint::VecModel::from(cards)).into());
+        ui.set_exp_format(p.kind as i32);
+        ui.set_vexp_width(GIF_WIDTHS.iter().position(|w| *w == p.gif_w).unwrap_or(1) as i32);
+        ui.set_vexp_fps(GIF_FPS.iter().position(|f| *f == p.gif_fps).unwrap_or(1) as i32);
+        ui.set_vexp_dither(p.dither);
+        ui.set_vexp_limit(p.limit as i32);
+        ui.set_vexp_limit_text(
+            match LIMITS[p.limit.min(LIMITS.len() - 1)] {
+                0 => self.tr.tr("vexp-limit-off"),
+                m => self.tr.tr_args("size-mb", &args(&[("n", m.to_string())])),
+            }
+            .into(),
+        );
+        ui.set_vexp_over(p.kind == GIF && self.vexp_sizes[1].is_some_and(|b| b > 25 * 1024 * 1024));
+        ui.set_exp_to(p.to as i32);
+        ui.set_vexp_library_ok(p.kind == MP4);
+        ui.set_exp_estimate(
+            if p.kind <= HTML {
+                est(p.kind)
+            } else {
+                String::new()
+            }
+            .into(),
+        );
+        // «0:38 after trimming · 1280 × 720 · marks and frame applied»
+        if let Some(s) = self.s.as_ref()
+            && let (Some(v), Some(part)) = (s.vid.as_ref(), s.video.as_ref())
+        {
+            let (_, out) = znimok_export::out_geometry(&s.ed.doc, &part.video);
+            let marks = s.ed.doc.objects.iter().any(|o| !o.hidden);
+            let framed = s.ed.doc.crop.is_some() || part.video.out_size.is_some();
+            let what = match (marks, framed) {
+                (true, true) => self.tr.tr("vexp-applied-both"),
+                (true, false) => self.tr.tr("vexp-applied-marks"),
+                (false, true) => self.tr.tr("vexp-applied-frame"),
+                (false, false) => String::new(),
+            };
+            let mut a = args(&[
+                (
+                    "time",
+                    crate::video::fmt_time(v.kept() as f64 / v.fps.max(1e-6)),
+                ),
+                ("w", out.0.to_string()),
+                ("h", out.1.to_string()),
+            ]);
+            a.set("what", what);
+            ui.set_exp_subtitle(self.tr.tr_args("vexp-subtitle", &a).into());
+        }
+        ui.set_exp_go(
+            match (p.kind, p.to) {
+                (FRAME, _) => self.tr.tr("vid-frame-as-shot"),
+                (_, TO_CLIPBOARD) => self.tr.tr("export-go-copy"),
+                (MP4, TO_LIBRARY) => self.tr.tr("export-go-library"),
+                (k, _) => self.tr.tr_args(
+                    "export-go",
+                    &args(&[("format", format_name(k).to_string())]),
+                ),
+            }
+            .into(),
+        );
+        ui.set_vexp_progress(match &self.vexp_run {
+            Some(p) => p.done.load(std::sync::atomic::Ordering::Relaxed) as f32 / 1000.0,
+            None => -1.0,
+        });
+    }
+
+    /// Estimates: MP4 and HTML from the bit rate, the GIF from probe frames on a worker.
+    fn vexport_estimate(&mut self) {
+        let Some(s) = self.s.as_ref() else { return };
+        let Some(part) = s.video.as_ref() else { return };
+        let Some(v) = s.vid.as_ref() else { return };
+        let secs = v.kept() as f64 / v.fps.max(1e-6);
+        let info = part.video.info;
+        let (_, out) = znimok_export::out_geometry(&s.ed.doc, &part.video);
+        let mp4 = if znimok_export::untouched(&s.ed.doc, &part.video) {
+            part.payload.len()
+        } else {
+            let bits = znimok_export::bitrate(
+                part.payload.len(),
+                info.duration_hns as f64 / 1e7,
+                (info.width, info.height),
+                out,
+                info.fps(),
+            );
+            (f64::from(bits) / 8.0 * secs + 20_000.0 * secs) as u64
+        };
+        let marks = s.ed.doc.objects.iter().filter(|o| !o.hidden).count() as u64;
+        self.vexp_sizes[0] = Some(mp4);
+        self.vexp_sizes[2] = Some(mp4 * 4 / 3 + 40_000 * marks + 4_000);
+        self.vexp_sizes[1] = None;
+        self.vexp_serial += 1;
+        let serial = self.vexp_serial;
+        let (w, fps, dither) = (self.vexp.gif_w, self.vexp.gif_fps, self.vexp.dither);
+        let job = self.vexport_job(
+            znimok_export::Kind::Gif {
+                width: w,
+                fps: f64::from(fps),
+                dither,
+            },
+            PathBuf::new(),
+        );
+        let (Some(job), Some(gpu)) = (job, self.vexport_gpu()) else {
+            return;
+        };
+        let me = self.me();
+        std::thread::spawn(move || {
+            let est = znimok_export::estimate_gif(&job, &gpu, w, f64::from(fps), dither).ok();
+            let _ = slint::invoke_from_event_loop(move || {
+                me.with(|a, ui| {
+                    if a.vexp_serial == serial {
+                        a.vexp_sizes[1] = est;
+                        if a.vexp_open {
+                            a.vexport_show(ui);
+                        }
+                    }
+                });
+            });
+        });
+    }
+
+    /// A control of the video sheet.
+    fn vexport_set(&mut self, ui: &AppWindow, key: &str, v: i32) {
+        use crate::vexport::*;
+        let mut estimate = false;
+        match key {
+            "format" => self.vexp.kind = (v.max(0) as usize).min(REPORT),
+            "vwidth" => {
+                self.vexp.gif_w = GIF_WIDTHS[(v.max(0) as usize).min(3)];
+                estimate = true;
+            }
+            "vfps" => {
+                self.vexp.gif_fps = GIF_FPS[(v.max(0) as usize).min(3)];
+                estimate = true;
+            }
+            "vdither" => {
+                self.vexp.dither = v != 0;
+                estimate = true;
+            }
+            "vlimit" => self.vexp.limit = (v.max(0) as usize).min(LIMITS.len() - 1),
+            "to" => self.vexp.to = (v.max(0) as usize).min(2),
+            _ => return,
+        }
+        // Only an MP4 goes to the library; the others fall back to a file.
+        if self.vexp.to == TO_LIBRARY && self.vexp.kind != MP4 {
+            self.vexp.to = TO_FILE;
+        }
+        self.vexport_show(ui);
+        if estimate {
+            self.vexport_estimate();
+        }
+    }
+
+    /// The sheet's main button.
+    fn vexport_go(&mut self, ui: &AppWindow) {
+        use crate::vexport::*;
+        if self.vexp_run.is_some() {
+            return;
+        }
+        match self.vexp.kind {
+            FRAME => {
+                self.vexport_close(ui);
+                self.frame_as_shot(ui);
+            }
+            REPORT => {}
+            _ => {
+                let name = file_safe(ui.get_exp_name().trim());
+                let name = if name.is_empty() {
+                    self.doc_name()
+                } else {
+                    name
+                };
+                let p = self.vexp.clone();
+                self.vexport_start(ui, &p, &name, true);
+            }
+        }
+    }
+
+    /// Runs an export with these choices; the sheet (if open) shows its progress.
+    fn vexport_start(
+        &mut self,
+        ui: &AppWindow,
+        p: &crate::vexport::VidExport,
+        name: &str,
+        sheet: bool,
+    ) {
+        use crate::vexport::*;
+        let ext = p.ext();
+        let dest = match p.to {
+            TO_FILE => {
+                let mut dlg = rfd::FileDialog::new()
+                    .add_filter(format_name(p.kind), &[ext])
+                    .set_file_name(format!("{name}.{ext}"));
+                if let Some(d) = self.prefs().editor.export_dir.filter(|d| d.is_dir()) {
+                    dlg = dlg.set_directory(d);
+                }
+                let Some(mut path) = dlg.save_file() else {
+                    return;
+                };
+                if path.extension().is_none() {
+                    path.set_extension(ext);
+                }
+                path
+            }
+            _ => {
+                let dir = crate::library::cache_dir().join("exports");
+                let _ = std::fs::create_dir_all(&dir);
+                dir.join(format!("{name}.{ext}"))
+            }
+        };
+        let Some(kind) = p.engine_kind(true) else {
+            return;
+        };
+        let (Some(job), Some(gpu)) = (self.vexport_job(kind, dest.clone()), self.vexport_gpu())
+        else {
+            let msg = self.tr.tr("export-error");
+            self.toast(ui, msg);
+            return;
+        };
+        let progress = std::sync::Arc::new(znimok_export::Progress::default());
+        self.vexp_run = Some(progress.clone());
+        let me = self.me();
+        let p2 = p.clone();
+        let lib = self.lib_dir.clone();
+        let name2 = name.to_string();
+        let fps = self
+            .s
+            .as_ref()
+            .and_then(|s| s.vid.as_ref())
+            .map_or(30, |v| v.fps.round().max(1.0) as u32);
+        std::thread::spawn(move || {
+            let mut job = job;
+            let mut note = String::new();
+            // A GIF over the limit: lower the rate, then the width (and say so).
+            if let (GIF, Some(limit)) = (p2.kind, p2.limit_bytes()) {
+                match fit_gif(&job, &gpu, p2.gif_w, p2.gif_fps, p2.dither, limit) {
+                    Ok((w, f, true)) => {
+                        job.kind = znimok_export::Kind::Gif {
+                            width: w,
+                            fps: f64::from(f),
+                            dither: p2.dither,
+                        };
+                        note = format!("{w}|{f}");
+                    }
+                    Ok(_) => {}
+                    Err(e) => eprintln!("export: estimate: {e}"),
+                }
+            }
+            let r = znimok_export::run(&job, &gpu, &progress);
+            // To the library: the MP4 becomes a video document.
+            let r = r.and_then(|o| {
+                if p2.to == TO_LIBRARY && p2.kind == MP4 {
+                    let path = wrap_into_library(&dest, &lib, &name2, fps, true)?;
+                    let _ = std::fs::remove_file(&dest);
+                    Ok((o, path))
+                } else {
+                    Ok((o, dest))
+                }
+            });
+            let _ = slint::invoke_from_event_loop(move || {
+                me.with(|a, ui| a.vexport_done(ui, &p2, r, &note));
+            });
+        });
+        // The progress on the sheet, ten times a second.
+        let me = self.me();
+        let t = slint::Timer::default();
+        t.start(
+            slint::TimerMode::Repeated,
+            std::time::Duration::from_millis(100),
+            move || {
+                me.with(|a, ui| {
+                    if a.vexp_open {
+                        a.vexport_show(ui);
+                    }
+                });
+            },
+        );
+        self.vexp_timer = Some(t);
+        if !sheet || !self.vexp_open {
+            let msg = self.tr.tr_args(
+                "vexp-working-toast",
+                &args(&[("format", format_name(p.kind).to_string())]),
+            );
+            self.toast(ui, msg);
+        }
+        self.vexport_show(ui);
+    }
+
+    /// An export finished (or failed, or was cancelled).
+    pub fn vexport_done(
+        &mut self,
+        ui: &AppWindow,
+        p: &crate::vexport::VidExport,
+        r: Result<(znimok_export::Outcome, PathBuf), String>,
+        note: &str,
+    ) {
+        use crate::vexport::*;
+        self.vexp_run = None;
+        self.vexp_timer = None;
+        let fmt = format_name(p.kind).to_string();
+        let msg = match r {
+            Ok((_, path)) => {
+                let shown = path
+                    .file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_default();
+                let mut m = match p.to {
+                    TO_CLIPBOARD => match copy_file(&path) {
+                        Ok(()) => self
+                            .tr
+                            .tr_args("vexp-copied", &args(&[("format", fmt.clone())])),
+                        Err(e) => format!("{} ({e})", self.tr.tr("clipboard-error")),
+                    },
+                    TO_LIBRARY => {
+                        crate::wins::library_later(|a, ui| a.refresh_library(ui));
+                        self.tr.tr("vexp-library-done")
+                    }
+                    _ => {
+                        let dir = path.parent().map(Path::to_path_buf);
+                        self.save_prefs(ui, |pr| pr.editor.export_dir = dir);
+                        self.tr
+                            .tr_args("export-done-toast", &args(&[("name", shown)]))
+                    }
+                };
+                if let Some((w, f)) = note.split_once('|') {
+                    m.push_str(" · ");
+                    m.push_str(&self.tr.tr_args(
+                        "vexp-lowered",
+                        &args(&[("w", w.to_string()), ("fps", f.to_string())]),
+                    ));
+                }
+                if self.vexp_open {
+                    self.vexport_close(ui);
+                }
+                self.set_last_share(ui, p.to != TO_CLIPBOARD);
+                m
+            }
+            Err(e) if e == znimok_export::CANCELLED => self.tr.tr("vexp-cancelled"),
+            Err(e) => self.tr.tr_args("vexp-error", &args(&[("reason", e)])),
+        };
+        self.toast(ui, msg);
+        if self.vexp_open {
+            self.vexport_show(ui);
+        }
+    }
+
+    fn vexport_close(&mut self, ui: &AppWindow) {
+        if let Some(p) = &self.vexp_run {
+            // Closing while it runs cancels it.
+            p.cancel.store(true, std::sync::atomic::Ordering::Relaxed);
+        }
+        self.vexp_open = false;
+        ui.set_exp_open(false);
+        ui.set_exp_video(false);
+    }
+
+    /// The video's share menu: copy MP4 / GIF / the frame, export, to the library, frame as shot.
+    pub fn vid_share(&mut self, ui: &AppWindow, what: &str) {
+        use crate::vexport::*;
+        self.finish_text(ui);
+        let name = self.doc_name();
+        match what {
+            "copy-mp4" | "copy-gif" | "library" => {
+                if self.vexp_run.is_some() {
+                    return;
+                }
+                let mut p = self.vexp.clone();
+                p.kind = if what == "copy-gif" { GIF } else { MP4 };
+                p.to = if what == "library" {
+                    TO_LIBRARY
+                } else {
+                    TO_CLIPBOARD
+                };
+                self.vexport_start(ui, &p, &name, false);
+            }
+            "copy-frame" => {
+                // The frame shown with its marks, as a picture.
+                let Some(s) = self.s.as_ref() else { return };
+                let Some(v) = s.vid.as_ref() else { return };
+                let Some((f, r)) = v.raster.clone() else {
+                    return;
+                };
+                let (frame, out) = s
+                    .video
+                    .as_ref()
+                    .map(|p| znimok_export::out_geometry(&s.ed.doc, &p.video))
+                    .unwrap_or((s.ed.doc.frame(), (r.width, r.height)));
+                let _ = out;
+                let mut comp = znimok_export::Composer::new(
+                    &s.ed.doc,
+                    frame,
+                    (frame.w.max(2) as u32, frame.h.max(2) as u32),
+                );
+                let rgba = comp.compose(r, f);
+                let msg = match io::copy_image(frame.w.max(2) as u32, frame.h.max(2) as u32, rgba) {
+                    Ok(()) => self.tr.tr("clipboard-copied"),
+                    Err(e) => format!("{} ({e})", self.tr.tr("clipboard-error")),
+                };
+                self.toast(ui, msg);
+            }
+            "export" => self.vexport_open(ui),
+            "frame-shot" => self.frame_as_shot(ui),
+            _ => {}
+        }
+    }
+
     /// For the self-test: the sheet's current estimates (PNG, JPEG, WebP).
     pub fn export_sizes(&self) -> Option<[Option<u64>; 3]> {
         self.exp.as_ref().map(|e| e.sizes)
+    }
+
+    /// For the self-test: the video sheet's estimates (MP4, GIF, HTML) and whether one runs.
+    #[cfg_attr(not(windows), allow(dead_code))]
+    pub fn vexport_state(&self) -> ([Option<u64>; 3], bool) {
+        (self.vexp_sizes, self.vexp_run.is_some())
     }
 
     pub fn export_to(&mut self, ui: &AppWindow, path: &Path) {
@@ -8900,6 +9524,53 @@ fn clip_rect(r: IRect, to: IRect) -> Option<IRect> {
 
 /// This build (ZK-140): the version and, for builds made by CI, the commit — so a newly
 /// installed build differs even while every preview is 0.0.0.
+/// Sound devices as (id, name), the default first (ZK-189); none where recording is not here.
+fn audio_devices(kind: znimok_video::traits::AudioKind) -> Vec<(String, String)> {
+    #[cfg(windows)]
+    return znimok_video_win::audio_devices(kind)
+        .into_iter()
+        .map(|d| (d.id, d.name))
+        .collect();
+    #[cfg(not(windows))]
+    {
+        let _ = kind;
+        Vec::new()
+    }
+}
+
+/// A mirrored waveform `w`×`h` (RGBA): column `x` shows the loudest of `peaks` (a byte per
+/// `step` seconds) over `[off + x·per_px, off + (x+1)·per_px)`; at least a thin line (ZK-189).
+fn wave_pixels(
+    peaks: &[u8],
+    off: f64,
+    per_px: f64,
+    step: f64,
+    (w, h): (u32, u32),
+    dpr: f64,
+    colour: [u8; 4],
+) -> Vec<u8> {
+    let mut out = vec![0u8; (w * h * 4) as usize];
+    let mid = h as f64 / 2.0;
+    for x in 0..w {
+        let t0 = off + x as f64 * per_px;
+        let i0 = ((t0 / step) as usize).min(peaks.len());
+        let i1 = (((t0 + per_px) / step).ceil() as usize)
+            .max(i0 + 1)
+            .min(peaks.len());
+        let level = peaks
+            .get(i0..i1)
+            .and_then(|s| s.iter().max())
+            .map_or(0.0, |&p| p as f64 / 255.0);
+        let half = (level * mid).max(0.6 * dpr);
+        let (y0, y1) = ((mid - half).floor() as u32, (mid + half).ceil() as u32);
+        for y in y0..y1.min(h) {
+            let i = ((y * w + x) * 4) as usize;
+            out[i..i + 4].copy_from_slice(&colour);
+        }
+    }
+    out
+}
+
 /// The About page's links (ZK-198), in the order of its buttons.
 const ABOUT_LINKS: [&str; 4] = [
     "https://v-plum.github.io/znimok/",
@@ -9782,6 +10453,68 @@ impl App {
         ui.set_vid_backward(v.backward && v.playing);
         self.video_tone();
         self.video_strip(ui);
+        self.video_waves(ui);
+    }
+
+    /// The sound lane of the timeline (ZK-189): per track, its loudness over the visible time
+    /// as a mirrored waveform in the track's colour (dimmed when muted), one picture per track
+    /// at the timeline's width and the screen's density. A track whose loudness is not known
+    /// (an older file) is a plain line.
+    fn video_waves(&mut self, ui: &AppWindow) {
+        let dpr = self.dpr.max(0.5);
+        let Some(s) = self.s.as_ref() else { return };
+        let (Some(v), Some(part)) = (s.vid.as_ref(), s.video.as_ref()) else {
+            return;
+        };
+        let tracks = &part.video.audio;
+        let view = v.view;
+        let muted = tracks
+            .iter()
+            .enumerate()
+            .fold(0u64, |m, (i, t)| m | (u64::from(t.muted) << i));
+        let key = (
+            view.width,
+            view.off.to_bits(),
+            view.visible().to_bits(),
+            muted | ((tracks.len() as u64) << 32),
+            dpr.to_bits(),
+            // Another video: its length and its loudness data.
+            u64::from(part.video.info.frames)
+                ^ (tracks.iter().map(|t| t.peaks.len() as u64).sum::<u64>() << 32),
+        );
+        if self.wave_key == Some(key) {
+            return;
+        }
+        self.wave_key = Some(key);
+        const LANE_H: f64 = 22.0;
+        let n = tracks.len().max(1);
+        let sw = ((view.width.max(1) as f64) * dpr).round().max(1.0) as u32;
+        let sh = ((LANE_H / n as f64) * dpr).round().max(2.0) as u32;
+        let step = znimok_format::video::PEAK_MS as f64 / 1000.0;
+        let per_px = view.visible() / view.width.max(1) as f64 / dpr;
+        let images: Vec<slint::Image> = tracks
+            .iter()
+            .map(|t| {
+                let (r, g, b) = match t.source {
+                    znimok_format::video::AudioSource::System => (0x3D, 0x7B, 0xF5),
+                    znimok_format::video::AudioSource::Microphone => (0x34, 0xC4, 0x8A),
+                };
+                let a = if t.muted { 90 } else { 235 };
+                let mut buf = slint::SharedPixelBuffer::<slint::Rgba8Pixel>::new(sw, sh);
+                let px = wave_pixels(
+                    &t.peaks,
+                    view.off,
+                    per_px,
+                    step,
+                    (sw, sh),
+                    dpr,
+                    [r, g, b, a],
+                );
+                buf.make_mut_bytes().copy_from_slice(&px);
+                slint::Image::from_rgba8(buf)
+            })
+            .collect();
+        ui.set_tl_waves(std::rc::Rc::new(VecModel::from(images)).into());
     }
 
     /// The frame to show: the player decodes it; without one the timeline still moves.
@@ -10367,4 +11100,35 @@ fn s_bars(a: &App, x: i32, y: i32) -> Option<(ObjectId, crate::video::Grip, (i64
     let bars = v.mark_bars(&t.marks, &s.ed.doc.objects, s.ed.selection());
     let (id, grip) = crate::video::Vid::bar_at(&bars, x, y)?;
     Some((id, grip, *t.marks.get(&id)?))
+}
+
+#[cfg(test)]
+mod wave_tests {
+    use super::wave_pixels;
+
+    /// ZK-189: a loud first second and a quiet second one — tall columns, then a thin line; the
+    /// column's height follows the loudest peak of its stretch, mirrored about the middle.
+    #[test]
+    fn waveform_columns_follow_the_peaks() {
+        let mut peaks = vec![255u8; 100];
+        peaks.extend(vec![0u8; 100]);
+        let (w, h) = (20u32, 20u32);
+        // 2 s over 20 px: 0.1 s (10 bytes) per column.
+        let px = wave_pixels(&peaks, 0.0, 0.1, 0.01, (w, h), 1.0, [1, 2, 3, 255]);
+        let column = |x: u32| {
+            (0..h)
+                .filter(|&y| px[((y * w + x) * 4 + 3) as usize] != 0)
+                .count()
+        };
+        assert_eq!(column(0), 20, "loud: the whole height");
+        assert!(column(15) <= 2, "silent: a thin line, {}", column(15));
+        assert_ne!(
+            px[((10 * w) * 4 + 3) as usize],
+            0,
+            "the middle row is drawn"
+        );
+        // Unknown loudness (no peaks): a line all along.
+        let none = wave_pixels(&[], 0.0, 0.1, 0.01, (w, h), 1.0, [1, 2, 3, 255]);
+        assert!((0..w).all(|x| none[((10 * w + x) * 4 + 3) as usize] != 0));
+    }
 }

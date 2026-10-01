@@ -2039,6 +2039,16 @@ capture-scroll = with scrolling
 # @max: 20
 capture-cancel = cancel
 
+# @where: Capture overlay of a recording, hint strip: what releasing does
+# @kind: hint
+# @max: 20
+capture-record = record
+
+# @where: Capture overlay of a recording, hint strip beside the A key: $mode is the sound choice in lower case («system sound»)
+# @kind: hint
+# @max: 40
+capture-sound = sound: { $mode }
+
 # @where: Mode switch, top right
 # @kind: option
 # @max: 12
@@ -5044,3 +5054,181 @@ vid-out-title = Size on export
 # @kind: body
 # @max: 160
 vid-out-note = The frame is scaled on export; the recording stays as it is. Sides are even (the encoder needs it).
+
+## Video export (ZK-190)
+
+
+# @where: The header button and menu of a video: the MP4 file to the clipboard
+# @kind: button
+# @max: 18
+vid-copy-mp4 = Copy MP4
+
+# @where: Share menu of a video: a GIF file to the clipboard
+# @kind: menu
+# @max: 24
+vid-copy-gif = Copy GIF
+
+# @where: Share menu of a video: the frame shown with its marks, as a picture
+# @kind: menu
+# @max: 24
+vid-copy-frame = Copy frame
+
+# @where: Share menu of a video: the exported MP4 as a new library document
+# @kind: menu
+# @max: 30
+vid-save-library = Save to the library
+
+# @where: Video export sheet: the MP4 card title
+# @kind: label
+# @max: 10
+vexp-mp4 = MP4
+
+# @where: Video export sheet: the MP4 card
+# @kind: body
+# @max: 90
+vexp-mp4-desc = Plays in any player and chat; sound mixed into one track.
+
+# @where: Video export sheet on macOS: MP4 is not there yet
+# @kind: body
+# @max: 90
+vexp-mac-mp4 = MP4 on this Mac comes with the next update; GIF works.
+
+# @where: Video export sheet: the GIF card title
+# @kind: label
+# @max: 10
+vexp-gif = GIF
+
+# @where: Video export sheet: the GIF card, its width and rate; $w, $fps
+# @kind: label
+# @max: 24
+vexp-gif-sub = { $w } px · { $fps } fps
+
+# @where: Video export sheet: the GIF card
+# @kind: body
+# @max: 90
+vexp-gif-desc = Plays anywhere without a player; no sound, 255 colours.
+
+# @where: Video export sheet: the HTML card title
+# @kind: label
+# @max: 10
+vexp-html = HTML
+
+# @where: Video export sheet: the HTML card, under its title
+# @kind: label
+# @max: 20
+vexp-html-sub = one page
+
+# @where: Video export sheet: the HTML card
+# @kind: body
+# @max: 90
+vexp-html-desc = The video with its marks as a live layer; opens in any browser.
+
+# @where: Video export sheet: the frame-as-screenshot card
+# @kind: body
+# @max: 90
+vexp-frame-desc = The current frame with its marks, as a new screenshot.
+
+# @where: Video export sheet: the card of the report with the browser log (not yet)
+# @kind: label
+# @max: 40
+vexp-report = Report with the DevTools log
+
+# @where: Video export sheet: a card not available yet
+# @kind: label
+# @max: 20
+vexp-soon = soon
+
+# @where: Video export sheet: the report card (not yet)
+# @kind: body
+# @max: 90
+vexp-report-desc = Comes with the browser extension.
+
+# @where: Video export sheet, GIF: the size limit label
+# @kind: label
+# @max: 24
+vexp-limit = Not more than
+
+# @where: Video export sheet, GIF: no size limit
+# @kind: label
+# @max: 16
+vexp-limit-off = no limit
+
+# @where: Video export sheet, GIF: under the size limit
+# @kind: body
+# @max: 140
+vexp-limit-note = Over the limit, Znimok lowers the frame rate, then the width, and says what it changed.
+
+# @where: Video export sheet: what the MP4 export does
+# @kind: body
+# @max: 200
+vexp-mp4-note = H.264 with the hardware encoder; the sound tracks that are on are mixed into one; what is cut is left out with short fades at the joints.
+
+# @where: Video export sheet: what the HTML export does
+# @kind: body
+# @max: 200
+vexp-html-note = The video and its marks in one file: the marks stay a layer over the video, shown in their time; a hide and a marker go into the video itself.
+
+# @where: Video export sheet: what the frame card does
+# @kind: body
+# @max: 160
+vexp-frame-note = The frame on the canvas, full size, with the marks shown on it — a new screenshot in a window of its own.
+
+# @where: Video export sheet: the clipboard gets a file
+# @kind: body
+# @max: 120
+vexp-clipboard-note = The clipboard gets the file: paste it into a chat or a folder.
+
+# @where: Video export sheet: progress; $pct
+# @kind: label
+# @max: 30
+vexp-working = Exporting… { $pct } %
+
+# @where: Toast when a quick export starts; $format
+# @kind: toast
+# @max: 60
+vexp-working-toast = Making the { $format }…
+
+# @where: Toast: an exported video file is on the clipboard; $format
+# @kind: toast
+# @max: 90
+vexp-copied = { $format } copied — paste it into a chat or a folder
+
+# @where: Toast: the exported MP4 is a new library document
+# @kind: toast
+# @max: 60
+vexp-library-done = The MP4 is in the library
+
+# @where: Toast addition: what the GIF limit changed; $w, $fps
+# @kind: toast
+# @max: 60
+vexp-lowered = to fit: { $w } px, { $fps } fps
+
+# @where: Toast: the export was cancelled
+# @kind: toast
+# @max: 40
+vexp-cancelled = Export cancelled
+
+# @where: Toast: the export failed; $reason
+# @kind: toast
+# @max: 120
+vexp-error = Export failed: { $reason }
+
+# @where: Video export sheet header: kept length, size, what applies; $time, $w, $h, $what
+# @kind: label
+# @max: 90
+vexp-subtitle = { $time } after trimming · { $w } × { $h } { $what }
+
+# @where: Video export sheet header: marks and the frame are applied
+# @kind: label
+# @max: 40
+vexp-applied-both = · marks and frame applied
+
+# @where: Video export sheet header: marks are applied
+# @kind: label
+# @max: 30
+vexp-applied-marks = · marks applied
+
+# @where: Video export sheet header: the frame (crop / size) is applied
+# @kind: label
+# @max: 30
+vexp-applied-frame = · frame applied

@@ -59,8 +59,7 @@ impl Source {
     }
 
     /// A plain file with the MP4 (copied out of the document into the cache once when needed).
-    #[cfg_attr(windows, allow(dead_code))]
-    fn as_file(&self) -> Result<PathBuf, String> {
+    pub fn as_file(&self) -> Result<PathBuf, String> {
         match self {
             Source::File(p) => Ok(p.clone()),
             Source::InFile {
@@ -74,7 +73,6 @@ impl Source {
 
 /// The MP4 inside a document as a file of its own in `cache` (named after the document and the
 /// payload's place, so a re-saved document gets a new copy).
-#[cfg_attr(windows, allow(dead_code))]
 fn extract(
     path: &std::path::Path,
     ranges: &[Range<u64>],
@@ -686,6 +684,88 @@ impl Engine {
             }),
             Err(e) => eprintln!("player: readback: {e}"),
         }
+    }
+}
+
+/// A device of its own for work away from the window (export, tests): DX12 on Windows, Metal on
+/// macOS, the adapter's limits, NV12 textures where the adapter has them.
+pub fn headless_gpu() -> Result<Gpu, String> {
+    let mut desc = wgpu::InstanceDescriptor::new_without_display_handle();
+    desc.backends = wgpu::Backends::from_env().unwrap_or(if cfg!(target_os = "macos") {
+        wgpu::Backends::METAL
+    } else if cfg!(windows) {
+        wgpu::Backends::DX12
+    } else {
+        wgpu::Backends::all()
+    });
+    let instance = wgpu::Instance::new(desc);
+    let adapter = pollster::block_on(instance.request_adapter(&Default::default()))
+        .or_else(|_| {
+            pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
+                force_fallback_adapter: true,
+                ..Default::default()
+            }))
+        })
+        .map_err(|e| format!("no GPU adapter: {e}"))?;
+    let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
+        label: Some("znimok headless"),
+        required_features: adapter.features() & wgpu::Features::TEXTURE_FORMAT_NV12,
+        required_limits: adapter.limits(),
+        ..Default::default()
+    }))
+    .map_err(|e| format!("no GPU device: {e}"))?;
+    Ok(Gpu { device, queue })
+}
+
+/// Every frame of a recording in order, as RGBA in CPU memory (ZK-95: export). Decoded and
+/// converted on the GPU like the player's, then read back.
+pub struct Frames {
+    dec: Box<dyn Decoder>,
+    conv: Converter,
+    out: Option<wgpu::Texture>,
+}
+
+impl Frames {
+    pub fn open(gpu: &Gpu, source: &Source) -> Result<Self, String> {
+        let conv = Converter::new(gpu)?;
+        let dec = open_decoder(gpu, source)?;
+        Ok(Self {
+            dec,
+            conv,
+            out: None,
+        })
+    }
+
+    pub fn size(&self) -> (u32, u32) {
+        self.dec.size()
+    }
+
+    pub fn fps(&self) -> f64 {
+        self.dec.fps()
+    }
+
+    /// Frames from the key frame at or before `frame` follow (macOS: from `frame`).
+    pub fn seek(&mut self, frame: i64) -> Result<(), String> {
+        self.dec.seek(frame)
+    }
+
+    /// The next decoded frame: its first index, how many frame slots it covers, its pixels.
+    pub fn next_frame(&mut self) -> Result<Option<(i64, i64, Raster)>, String> {
+        let Some((a, n)) = self.dec.next()? else {
+            return Ok(None);
+        };
+        let (w, h) = self.dec.size();
+        if self
+            .out
+            .as_ref()
+            .is_none_or(|t| (t.width(), t.height()) != (w, h))
+        {
+            self.out = Some(self.conv.target(w, h));
+        }
+        let out = self.out.clone().unwrap();
+        self.dec.convert(&self.conv, &out, false)?;
+        let px = self.conv.read(&out)?;
+        Ok(Some((a, n, Raster::new(w, h, px))))
     }
 }
 

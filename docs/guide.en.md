@@ -202,7 +202,8 @@ Windows HEIC/AVIF need Microsoft's free extensions).
 
 **Recording (Windows).** Alt+Shift+5 or "Record video" in the tray opens the same overlay as for
 screenshots: drag — a region, click — a window (followed as it moves, or recorded "as a region" —
-in the settings), Space — the whole screen. While it records, a thin red edge runs round the part
+in the settings), Space — the whole screen, A — the sound (none / system / microphone / both; the
+choice is kept). While it records, a thin red edge runs round the part
 (outside it, so it is not in the video) and a bar next to it shows the time, "Pause" and "Stop"; the
 time is in the tray too. The same key or "Stop" ends it: the video is in the library at once, with ▶
 and its length on the card, and the card in the corner offers to open it. Settings → "Recording":
@@ -236,6 +237,18 @@ the video into its time. Outside its time a mark is neither seen nor selectable.
 plays, a hide shows as a hatched plate and a marker as a translucent one; paused, they work on the
 frame's pixels again. "Frame as screenshot" takes that frame's marks along, editable. Changes of
 time undo like everything else.
+
+**Exporting a video.** The top button in the "Video" mode is "Copy MP4" (Ctrl+C): the file goes to
+the clipboard, to paste into a chat or a folder. The menu next to it: "Copy GIF", "Copy frame"
+(Ctrl+Shift+C), "Export file…" (Ctrl+E), "Save to the library" (a new video document), "Frame as
+screenshot" (Ctrl+Shift+N). The export sheet says what comes out ("0:38 after trimming · 1280 × 720 ·
+marks and frame applied") and offers **MP4** (H.264, the sound tracks that are on mixed into one,
+short fades at the joints of what is cut), **GIF** (480–1280 wide, 5–20 fps, dithering, "Not more
+than N MB" — when the estimate is over, Znimok lowers the frame rate, then the width, and says what
+it changed), **HTML** (one page with the video, the marks a live layer in their time; a hide and a
+marker go into the video itself) and **frame as screenshot**; each with a size estimate. A video
+without any edit goes out as it is, without re-encoding. The progress shows while it runs; closing
+the sheet cancels it. On macOS the GIF works for now; MP4 and HTML come with the next update.
 
 ## Sharing the result
 

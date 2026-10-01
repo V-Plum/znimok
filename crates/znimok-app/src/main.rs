@@ -34,6 +34,7 @@ mod tray;
 #[cfg(test)]
 mod ui_tests;
 mod update;
+mod vexport;
 mod video;
 mod wins;
 
@@ -1424,6 +1425,9 @@ fn wire(ui: &AppWindow, app: &Shared) {
     });
     on!(ui, app, on_vid_action, |a, w, what, arg| {
         a.vid_action(&w, &what, arg);
+    });
+    on!(ui, app, on_vid_share, |a, w, what| {
+        a.vid_share(&w, &what);
     });
     on!(ui, app, on_vid_out_edited, |a, w, field, text| {
         a.vid_out_edited(&w, &field, &text);

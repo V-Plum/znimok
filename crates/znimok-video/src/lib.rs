@@ -36,6 +36,7 @@ pub mod clock;
 pub mod edit;
 pub mod events;
 pub mod export;
+pub mod gifenc;
 pub mod pause;
 pub mod recorder;
 pub mod settings;

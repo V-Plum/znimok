@@ -19,6 +19,7 @@ Ukrainian layout (V/м, R/к, E/у, L/д and so on).
 | Scrolling capture | S | S |
 | Read QR codes and barcodes | Q | Q |
 | Start / stop recording (the overlay chooses what) | Alt+Shift+5 | ⌃⇧5 (with the next update) |
+| Recording sound: none → system → microphone → both (in the recording overlay) | A | A |
 | The part's text to the clipboard | X | X |
 | Copy text from the screen (hotkey) | Alt+Shift+T | ⌃⇧T |
 | Loupe zoom | wheel | wheel or trackpad |
@@ -114,6 +115,10 @@ Settings → Screenshots; the hint strip at the bottom of the overlay shows the 
 | Cut the piece / keep only it | Delete / Shift+Delete | Delete / ⇧Delete |
 | Mute | M | M |
 | Loop | Ctrl+L | ⌘L |
+| Copy MP4 | Ctrl+C | ⌘C |
+| Copy frame (with its marks) | Ctrl+Shift+C | ⇧⌘C |
+| Frame as screenshot | Ctrl+Shift+N | ⇧⌘N |
+| Export video… | Ctrl+E | ⌘E |
 
 ## Esc
 
