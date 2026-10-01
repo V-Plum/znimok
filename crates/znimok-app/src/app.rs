@@ -11671,4 +11671,3 @@ mod wave_tests {
         assert!((0..w).all(|x| none[((10 * w + x) * 4 + 3) as usize] != 0));
     }
 }
-
