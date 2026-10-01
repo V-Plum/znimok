@@ -6813,6 +6813,7 @@ dependencies = [
  "znimok-agents",
  "znimok-codes",
  "znimok-core",
+ "znimok-export",
  "znimok-format",
  "znimok-gpu",
  "znimok-i18n",

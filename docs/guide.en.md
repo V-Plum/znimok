@@ -233,6 +233,18 @@ plays, a hide shows as a hatched plate and a marker as a translucent one; paused
 frame's pixels again. "Frame as screenshot" takes that frame's marks along, editable. Changes of
 time undo like everything else.
 
+**Exporting a video.** The top button in the "Video" mode is "Copy MP4" (Ctrl+C): the file goes to
+the clipboard, to paste into a chat or a folder. The menu next to it: "Copy GIF", "Copy frame"
+(Ctrl+Shift+C), "Export file…" (Ctrl+E), "Save to the library" (a new video document), "Frame as
+screenshot" (Ctrl+Shift+N). The export sheet says what comes out ("0:38 after trimming · 1280 × 720 ·
+marks and frame applied") and offers **MP4** (H.264, the sound tracks that are on mixed into one,
+short fades at the joints of what is cut), **GIF** (480–1280 wide, 5–20 fps, dithering, "Not more
+than N MB" — when the estimate is over, Znimok lowers the frame rate, then the width, and says what
+it changed), **HTML** (one page with the video, the marks a live layer in their time; a hide and a
+marker go into the video itself) and **frame as screenshot**; each with a size estimate. A video
+without any edit goes out as it is, without re-encoding. The progress shows while it runs; closing
+the sheet cancels it. On macOS the GIF works for now; MP4 and HTML come with the next update.
+
 ## Sharing the result
 
 - **Copy** (Ctrl+C) — the image to the clipboard. The Copy button can be dragged into a chat or a

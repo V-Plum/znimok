@@ -30,6 +30,7 @@ znimok-i18n = { path = "../znimok-i18n" }
 znimok-log = { path = "../znimok-log" }
 znimok-video = { path = "../znimok-video" }
 znimok-play = { path = "../znimok-play" }
+znimok-export = { path = "../znimok-export" }
 slint = { version = "~1.18", default-features = false, features = ["std", "compat-1-2", "backend-winit", "renderer-femtovg-wgpu", "unstable-wgpu-30", "unstable-winit-030", "system-tray"] }
 png = "0.18"
 global-hotkey = "0.8"
