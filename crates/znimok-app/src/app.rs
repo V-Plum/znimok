@@ -8323,6 +8323,26 @@ impl App {
         });
     }
 
+    /// The report's estimate, from the MP4's: the page's video, the log as JSON (twice in a
+    /// .zreport: the page and log.json), the viewer. On its own so the .zreport switch leaves
+    /// the GIF's estimate alone (ZK-216).
+    fn vexport_report_size(&mut self) {
+        let Some(mp4) = self.vexp_sizes[0] else {
+            return;
+        };
+        let Some(s) = self.s.as_ref() else { return };
+        let Some(part) = s.video.as_ref() else { return };
+        let marks = s.ed.doc.objects.iter().filter(|o| !o.hidden).count() as u64;
+        let log: u64 = part.video.devlog.as_ref().map_or(0, |l| {
+            l.events.iter().map(|e| e.json.len() as u64 + 16).sum()
+        });
+        self.vexp_sizes[3] = Some(if self.vexp.zreport {
+            mp4 + 40_000 * marks + 2 * log + 60_000
+        } else {
+            mp4 * 4 / 3 + 40_000 * marks + log + 40_000
+        });
+    }
+
     /// Estimates: MP4 and HTML from the bit rate, the GIF from probe frames on a worker.
     fn vexport_estimate(&mut self) {
         let Some(s) = self.s.as_ref() else { return };
@@ -8346,16 +8366,7 @@ impl App {
         let marks = s.ed.doc.objects.iter().filter(|o| !o.hidden).count() as u64;
         self.vexp_sizes[0] = Some(mp4);
         self.vexp_sizes[2] = Some(mp4 * 4 / 3 + 40_000 * marks + 4_000);
-        // The report: the page's video, the log as JSON (twice in a .zreport: the page and
-        // log.json), the viewer.
-        let log: u64 = part.video.devlog.as_ref().map_or(0, |l| {
-            l.events.iter().map(|e| e.json.len() as u64 + 16).sum()
-        });
-        self.vexp_sizes[3] = Some(if self.vexp.zreport {
-            mp4 + 40_000 * marks + 2 * log + 60_000
-        } else {
-            mp4 * 4 / 3 + 40_000 * marks + log + 40_000
-        });
+        self.vexport_report_size();
         self.vexp_sizes[1] = None;
         self.vexp_serial += 1;
         let serial = self.vexp_serial;
@@ -8409,7 +8420,7 @@ impl App {
             "to" => self.vexp.to = (v.max(0) as usize).min(2),
             "rzip" => {
                 self.vexp.zreport = v != 0;
-                estimate = true;
+                self.vexport_report_size();
             }
             "rhide" => self.vexp.hide = v != 0,
             _ => return,
