@@ -28,6 +28,9 @@ pub fn read_and_show(raster: Raster, me: crate::wins::WeakCtx) {
 /// The question with the codes (or that there are none).
 pub fn show(a: &crate::app::App, ui: &AppWindow, codes: Vec<Code>) {
     LAST.with(|l| *l.borrow_mut() = codes.clone());
+    if !codes.is_empty() {
+        crate::commands::emit("codesRead");
+    }
     if codes.is_empty() {
         dialog::ask(
             ui,

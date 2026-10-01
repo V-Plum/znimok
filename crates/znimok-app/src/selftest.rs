@@ -1960,6 +1960,36 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
         );
         ui.invoke_zoom_fit();
     }));
+    // ZK-213: the command layer — a command queued over IPC runs on the next poll, the state
+    // other programs see follows, and an event wakes a waiter.
+    steps.push(Box::new(|app, ui, r| {
+        let hub = crate::commands::hub();
+        let before = app.borrow().tool_and_zoom().0;
+        let queued = hub
+            .handle("editor.tool", &serde_json::json!({"name": "ellipse"}))
+            .and_then(Result::ok)
+            .is_some_and(|v| v["queued"] == true);
+        crate::commands::poll();
+        let tool = app.borrow().tool_and_zoom().0;
+        let state = hub.state();
+        let (seq0, ..) = hub.wait(0, std::time::Duration::ZERO);
+        crate::commands::emit("shotTaken");
+        let (seq1, events, _) = hub.wait(seq0, std::time::Duration::ZERO);
+        r.check(
+            "command layer: editor.tool runs on the poll, app.state follows, an event reaches app.wait",
+            queued
+                && before != crate::app::tool::ELLIPSE
+                && tool == crate::app::tool::ELLIPSE
+                && state["page"] == "editor"
+                && state["tool"] == "ellipse"
+                && state["can_undo"] == ui.get_can_undo()
+                && seq1 == seq0 + 1
+                && events.len() == 1
+                && events[0]["name"] == "shotTaken",
+            format!("queued {queued} · tool {before}→{tool} · state {state} · events {events:?}"),
+        );
+        app.borrow_mut().set_tool(ui, before);
+    }));
     // Tooltip bubble: arm it as a hover over the Undo button would, wait past the delay.
     steps.push(Box::new(|_, ui, _| {
         let tip = ui.global::<crate::Tip>();

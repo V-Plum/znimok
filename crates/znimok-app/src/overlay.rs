@@ -883,6 +883,7 @@ fn finish(frozen: Frozen, outcome: Outcome, editor_was_visible: bool) {
             };
             let _ = slint::invoke_from_event_loop(move || {
                 crate::with_ctx(|a, ui| {
+                    crate::commands::emit("shotTaken");
                     a.over_open(ui, raster, frame, source, display);
                 })
             });
@@ -924,6 +925,7 @@ fn deliver(
     display: znimok_platform::Rect,
 ) {
     crate::with_ctx(|a, ui| {
+        crate::commands::emit("shotTaken");
         if to_clipboard {
             let (w, h) = (raster.width, raster.height);
             let copied = io::copy_image(w, h, raster.rgba.clone());

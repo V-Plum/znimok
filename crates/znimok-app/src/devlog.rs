@@ -20,6 +20,7 @@ pub fn start_server() -> Option<znimok_ipc::Server> {
         |method: &str, params: Value| {
             hub()
                 .handle(method, &params)
+                .or_else(|| crate::commands::hub().handle(method, &params))
                 .unwrap_or_else(|| Err(znimok_ipc::RpcError::method_not_found(method)))
         },
     );

@@ -4903,6 +4903,11 @@ impl App {
 
     // ------------------------------------------------------------------ keys and tools
 
+    /// The tool and the zoom, for the command layer's state (ZK-213).
+    pub fn tool_and_zoom(&self) -> (usize, f64) {
+        (self.tool, self.view.scale)
+    }
+
     pub fn set_tool(&mut self, ui: &AppWindow, t: usize) {
         self.finish_text(ui);
         self.eyedrop_cancel(ui);
@@ -5356,6 +5361,9 @@ impl App {
         ui.set_text_busy(false);
         let status = match reading {
             Ok((lines, missing)) => {
+                if !lines.is_empty() {
+                    crate::commands::emit("textRead");
+                }
                 let mut status = if lines.is_empty() {
                     self.tr.tr("text-none")
                 } else {
@@ -7487,6 +7495,7 @@ impl App {
                 // The Copy button turns into a tick for a second (ZK-126); a repeat restarts it.
                 ui.set_copied(false);
                 ui.set_copied(true);
+                crate::commands::emit("copied");
                 self.tr.tr("clipboard-copied")
             }
             Err(e) => format!("{} ({e})", self.tr.tr("clipboard-error")),
@@ -7953,6 +7962,9 @@ impl App {
                 self.save_prefs(ui, |p| p.editor.export = keep);
             }
             self.set_last_share(ui, true);
+        }
+        if ok {
+            crate::commands::emit("exportDone");
         }
         ok
     }

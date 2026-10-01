@@ -11,6 +11,7 @@
 mod app;
 mod capture;
 mod codes;
+mod commands;
 mod crash;
 mod devlog;
 mod devpanel;
@@ -290,7 +291,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     devtools_timer.start(
         slint::TimerMode::Repeated,
         std::time::Duration::from_millis(200),
-        devlog::poll,
+        || {
+            devlog::poll();
+            commands::poll();
+        },
     );
     if selftest_dir.is_none() {
         // Once the loop runs and the window exists: the report question is asked in it.
@@ -571,21 +575,26 @@ fn hotkey_pressed(a: hotkeys::Action) {
     if !app.borrow().prefs().capture.enabled {
         return;
     }
+    perform(&app, &ui, a);
+}
+
+/// What a capture action does — for the hotkeys and for the command layer (ZK-213).
+fn perform(app: &Shared, ui: &AppWindow, a: hotkeys::Action) {
     match a {
-        hotkeys::Action::Region => new_shot(&app, &ui),
+        hotkeys::Action::Region => new_shot(app, ui),
         hotkeys::Action::Screen => {
             if overlay::is_open() || !capture::available() {
                 return;
             }
-            start_capture(&app, &ui, true);
+            start_capture(app, ui, true);
         }
         // A window of its own (ZK-107); nothing in the clipboard: the library says so.
         hotkeys::Action::Clipboard => {
-            if !app.borrow_mut().open_clipboard(&ui) {
-                show_window(&ui);
+            if !app.borrow_mut().open_clipboard(ui) {
+                show_window(ui);
             }
         }
-        hotkeys::Action::Editor => app.borrow_mut().open_blank(&ui),
+        hotkeys::Action::Editor => app.borrow_mut().open_blank(ui),
         // As the tray's «Зчитати коди»: the screen under the pointer, the answer in the window.
         hotkeys::Action::ReadCodes => {
             if !overlay::is_open() && capture::available() {
@@ -596,14 +605,128 @@ fn hotkey_pressed(a: hotkeys::Action) {
         hotkeys::Action::ReadText => {
             if !overlay::is_open() && capture::available() {
                 overlay::set_text_mode(true);
-                new_shot(&app, &ui);
+                new_shot(app, ui);
             }
         }
         // ZK-180: the overlay chooses what to record; the same key stops it.
         hotkeys::Action::Video => {
-            rec::toggle(|| new_shot(&app, &ui));
+            rec::toggle(|| new_shot(app, ui));
         }
     }
+}
+
+/// The window the editor's commands go to: the newest editor, else the library window when it
+/// holds a document.
+fn front_document() -> Option<(Shared, AppWindow)> {
+    wins::newest_editor().or_else(|| wins::library().filter(|(a, _)| a.borrow().s.is_some()))
+}
+
+/// A command of the layer (ZK-213) on the UI thread; nothing when the state does not allow it.
+pub(crate) fn run_command(method: &str, params: &serde_json::Value) {
+    let ctx = CTX.with(|c| c.borrow().clone());
+    let Some((app, weak)) = ctx else { return };
+    let Some(ui) = weak.upgrade() else { return };
+    let text = |k: &str| {
+        params
+            .get(k)
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("")
+    };
+    match method {
+        "capture.start" => {
+            let a = match text("mode") {
+                "screen" => hotkeys::Action::Screen,
+                "clipboard" => hotkeys::Action::Clipboard,
+                "editor" => hotkeys::Action::Editor,
+                "codes" => hotkeys::Action::ReadCodes,
+                "text" => hotkeys::Action::ReadText,
+                _ => hotkeys::Action::Region,
+            };
+            perform(&app, &ui, a);
+        }
+        "record.toggle" => rec::toggle(|| new_shot(&app, &ui)),
+        "record.pause" if rec::is_recording() && !rec::is_paused() => rec::toggle_pause(),
+        "record.resume" if rec::is_paused() => rec::toggle_pause(),
+        "record.stop" if rec::is_recording() => rec::stop(),
+        "editor.undo" | "editor.redo" | "editor.tool" | "editor.zoom" | "video.scrub" => {
+            let Some((app, ui)) = front_document() else {
+                return;
+            };
+            let mut a = app.borrow_mut();
+            match method {
+                "editor.undo" => a.undo(&ui),
+                "editor.redo" => a.redo(&ui),
+                "editor.tool" => {
+                    let name = text("name");
+                    let i = params
+                        .get("index")
+                        .and_then(serde_json::Value::as_u64)
+                        .map(|i| i as usize)
+                        .or_else(|| {
+                            crate::app::tool::NAMES
+                                .iter()
+                                .position(|n| n.strip_prefix("tool-") == Some(name))
+                        });
+                    if let Some(i) = i {
+                        a.set_tool(&ui, i);
+                    }
+                }
+                "editor.zoom" => match text("step") {
+                    "fit" => a.zoom_fit(&ui),
+                    "100" => a.zoom_100(&ui),
+                    "-1" | "out" => a.zoom_step(&ui, -1),
+                    _ => a.zoom_step(&ui, 1),
+                },
+                _ => {
+                    let n = params
+                        .get("frames")
+                        .and_then(serde_json::Value::as_i64)
+                        .unwrap_or(1)
+                        .clamp(-120, 120);
+                    if a.is_video() {
+                        let what = if n < 0 { "back" } else { "fwd" };
+                        for _ in 0..n.unsigned_abs() {
+                            a.vid_transport(&ui, what);
+                        }
+                    }
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
+/// The state other programs see (ZK-213): refreshed after each round of commands.
+pub(crate) fn refresh_state() {
+    use serde_json::json;
+    let mut state = json!({"page": "library"});
+    if let Some((app, ui)) = front_document().or_else(wins::library)
+        && let Ok(a) = app.try_borrow()
+    {
+        let page = match ui.get_page() {
+            1 => "editor",
+            0 => "library",
+            _ => "settings",
+        };
+        let (tool, zoom) = a.tool_and_zoom();
+        state = json!({
+            "page": page,
+            "document": a.s.is_some().then(|| a.doc_name()),
+            "video": a.is_video(),
+            "tool": crate::app::tool::NAMES.get(tool).and_then(|n| n.strip_prefix("tool-")),
+            "zoom": (zoom * 100.0).round() as i64,
+            "can_undo": ui.get_can_undo(),
+            "can_redo": ui.get_can_redo(),
+        });
+    }
+    if overlay::is_open() {
+        state["page"] = json!("overlay");
+    }
+    if rec::is_recording() {
+        state["page"] = json!("recording");
+        state["recording"] = json!({"paused": rec::is_paused(), "time": rec::bar_time()});
+    }
+    commands::hub().set_state(state);
 }
 
 /// Leaving the document (another one, a shot, closing): saves, or — autosave off and changes
@@ -796,9 +919,11 @@ fn start_capture(_app: &Shared, _ui: &AppWindow, whole: bool) {
                     Ok(frozen) if whole => {
                         wins::come_back();
                         a.new_document(ui, frozen.raster, "screen", None);
+                        commands::emit("shotTaken");
                     }
                     Ok(frozen) => {
                         if let Err(e) = overlay::open(frozen, was_visible) {
+                            commands::emit("failed");
                             wins::come_back();
                             show_window(ui);
                             a.toast(ui, e.to_string());
@@ -807,6 +932,7 @@ fn start_capture(_app: &Shared, _ui: &AppWindow, whole: bool) {
                     // macOS without the Screen Recording permission (ZK-129): the permission, or
                     // the system picker now — without it, with macOS's sharing badge on the shot.
                     Err(capture::Fail::Permission) => {
+                        commands::emit("failed");
                         wins::come_back();
                         show_window(ui);
                         let (title, body, pick, close) = (
