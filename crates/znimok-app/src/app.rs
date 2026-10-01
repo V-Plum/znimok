@@ -1656,10 +1656,13 @@ impl App {
                 }
             }),
             "rec-follow" => self.save_prefs(ui, |p| p.video.follow_window = on),
-            "rec-sound" => self.save_prefs(ui, |p| {
-                p.video.audio.system = value & 1 != 0;
-                p.video.audio.microphone = value & 2 != 0;
-            }),
+            "rec-sound" => {
+                self.save_prefs(ui, |p| {
+                    p.video.audio.system = value & 1 != 0;
+                    p.video.audio.microphone = value & 2 != 0;
+                });
+                crate::commands::emit("soundChanged");
+            }
             // A device of the sound choice (ZK-189): 0 = the default one.
             "rec-sys-device" | "rec-mic-device" => {
                 let kind = if key == "rec-sys-device" {
@@ -1990,7 +1993,10 @@ impl App {
             // An open document: its window goes first (autosave is on, or the user saved).
             crate::wins::close_editor_of(path);
             match library::move_to_trash(&self.lib_dir, path) {
-                Ok(to) => self.undo_trash.push((to, path.clone())),
+                Ok(to) => {
+                    crate::commands::emit("trashed");
+                    self.undo_trash.push((to, path.clone()));
+                }
                 Err(e) => failed = Some(e),
             }
         }
@@ -2949,6 +2955,7 @@ impl App {
             }
             return;
         }
+        crate::commands::emit("documentOpened");
         self.s = Some(Session {
             ed,
             path,
@@ -3303,10 +3310,22 @@ impl App {
 
     fn apply(&mut self, ui: &AppWindow, cmd: Command) -> Option<Applied> {
         let s = self.s.as_mut()?;
+        // What the mouse feels (ZK-214).
+        let event = match &cmd {
+            Command::AddObject { .. } => "markAdded",
+            Command::DeleteObjects { .. } => "markDeleted",
+            Command::SetCrop { .. } => "cropped",
+            Command::Undo => "undo",
+            Command::Redo => "redo",
+            _ => "",
+        };
         match s.ed.apply(cmd) {
             Ok(a) => {
-                if !a.is_empty() {
+                if !a.is_empty() || a.created.is_some() {
                     s.changed_at = Instant::now();
+                    if !event.is_empty() {
+                        crate::commands::emit(event);
+                    }
                 }
                 self.dirty = true;
                 Some(a)
@@ -4915,6 +4934,9 @@ impl App {
         let was_crop = self.tool == tool::CROP;
         if was_crop && t != tool::CROP {
             self.commit_crop(ui);
+        }
+        if t != self.tool {
+            crate::commands::emit("toolChanged");
         }
         self.tool = t;
         ui.set_tool(self.tool as i32);
@@ -7326,6 +7348,9 @@ impl App {
         self.view.origin = o0;
         if (s1 - s0).abs() < 1e-6 && (o1 - o0).hypot() < 1e-3 {
             return;
+        }
+        if (s1 - s0).abs() >= 1e-6 {
+            crate::commands::emit("zoomChanged");
         }
         self.anim = Some(ViewAnim {
             s0,

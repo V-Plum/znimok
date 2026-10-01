@@ -602,7 +602,7 @@ fn perform(app: &Shared, ui: &AppWindow, a: hotkeys::Action) {
             if overlay::is_open() || !capture::available() {
                 return;
             }
-            start_capture(app, ui, true);
+            start_capture(app, ui, Pick::Whole(overlay::Next::default()));
         }
         // A window of its own (ZK-107); nothing in the clipboard: the library says so.
         hotkeys::Action::Clipboard => {
@@ -648,17 +648,81 @@ pub(crate) fn run_command(method: &str, params: &serde_json::Value) {
             .and_then(serde_json::Value::as_str)
             .unwrap_or("")
     };
+    // `to: "clipboard"` sends the shot to the clipboard, `delay: 3` takes it after a countdown
+    // of that many seconds (ZK-214).
+    let delay = params
+        .get("delay")
+        .and_then(serde_json::Value::as_u64)
+        .unwrap_or(0)
+        .min(30);
+    let next = |intent| overlay::Next {
+        intent,
+        clip: text("to") == "clipboard",
+        delayed: delay > 0,
+    };
+    if delay > 0 {
+        overlay::set_countdown_ms(delay * 1000);
+    }
+    let ready = || !overlay::is_open() && !rec::is_recording() && capture::available();
     match method {
-        "capture.start" => {
-            let a = match text("mode") {
-                "screen" => hotkeys::Action::Screen,
-                "clipboard" => hotkeys::Action::Clipboard,
-                "editor" => hotkeys::Action::Editor,
-                "codes" => hotkeys::Action::ReadCodes,
-                "text" => hotkeys::Action::ReadText,
-                _ => hotkeys::Action::Region,
+        "capture.start" => match text("mode") {
+            "screen" | "window" if ready() => {
+                let n = next(overlay::Intent::Keep);
+                let pick = if text("mode") == "window" {
+                    Pick::Window(n)
+                } else {
+                    Pick::Whole(n)
+                };
+                start_capture(&app, &ui, pick);
+            }
+            "screen" | "window" => {}
+            "clipboard" => perform(&app, &ui, hotkeys::Action::Clipboard),
+            "editor" => perform(&app, &ui, hotkeys::Action::Editor),
+            "codes" => perform(&app, &ui, hotkeys::Action::ReadCodes),
+            mode => {
+                if !ready() {
+                    return;
+                }
+                overlay::set_next(next(match mode {
+                    "text" => overlay::Intent::Text,
+                    "codes-region" => overlay::Intent::Codes,
+                    "scroll" => overlay::Intent::Scroll,
+                    _ => overlay::Intent::Keep,
+                }));
+                new_shot(&app, &ui);
+            }
+        },
+        // A recording of the region chosen in the overlay, of the whole display or of the
+        // active window — after the countdown with `delay` (ZK-214).
+        "record.start" if ready() => {
+            let n = next(overlay::Intent::Keep);
+            match text("what") {
+                "screen" => {
+                    rec::set_video_mode(true);
+                    start_capture(&app, &ui, Pick::Whole(n));
+                }
+                "window" => {
+                    rec::set_video_mode(true);
+                    start_capture(&app, &ui, Pick::Window(n));
+                }
+                _ => {
+                    overlay::set_next(n);
+                    rec::toggle(|| new_shot(&app, &ui));
+                }
+            }
+        }
+        "record.start" => {}
+        // The sound of the next recording: none | system | mic | both, or the next one.
+        "record.sound" => {
+            let mode = match text("mode") {
+                "none" => 0,
+                "system" => 1,
+                "mic" | "microphone" => 2,
+                "both" => 3,
+                _ => (rec::sound_mode() + 1) % 4,
             };
-            perform(&app, &ui, a);
+            app.borrow_mut().setting(&ui, "rec-sound", mode);
+            overlay::sound_changed(mode);
         }
         "record.toggle" => rec::toggle(|| new_shot(&app, &ui)),
         "record.pause" if rec::is_recording() && !rec::is_paused() => rec::toggle_pause(),
@@ -742,6 +806,8 @@ pub(crate) fn refresh_state() {
         state["page"] = json!("recording");
         state["recording"] = json!({"paused": rec::is_paused(), "time": rec::bar_time()});
     }
+    state["sound"] =
+        json!(["none", "system", "mic", "both"][rec::sound_mode().clamp(0, 3) as usize]);
     commands::hub().set_state(state);
 }
 
@@ -911,12 +977,20 @@ fn new_shot(app: &Shared, ui: &AppWindow) {
     if !capture::available() {
         return;
     }
-    start_capture(app, ui, false);
+    start_capture(app, ui, Pick::Overlay);
 }
 
-/// Freezes the display under the pointer; `whole` = straight into the editor (the whole-screen
-/// hotkey), otherwise the overlay to choose what to keep.
-fn start_capture(_app: &Shared, _ui: &AppWindow, whole: bool) {
+/// What the frozen display becomes: the overlay to choose, or — without it — the whole display
+/// or its active window (the whole-screen hotkey, the command layer's actions, ZK-214).
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum Pick {
+    Overlay,
+    Whole(overlay::Next),
+    Window(overlay::Next),
+}
+
+/// Freezes the display under the pointer, then `pick`.
+fn start_capture(_app: &Shared, _ui: &AppWindow, pick: Pick) {
     // Already editing over the screen (ZK-58): finish that first.
     if wins::over_active() {
         return;
@@ -932,10 +1006,16 @@ fn start_capture(_app: &Shared, _ui: &AppWindow, whole: bool) {
             let r = capture::freeze();
             let _ = slint::invoke_from_event_loop(move || {
                 with_ctx(|a, ui| match r {
-                    Ok(frozen) if whole => {
-                        wins::come_back();
-                        a.new_document(ui, frozen.raster, "screen", None);
-                        commands::emit("shotTaken");
+                    // Out of `with_ctx` first: the shot borrows the app (ZK-212).
+                    Ok(frozen) if !matches!(pick, Pick::Overlay) => {
+                        let (window, next) = match pick {
+                            Pick::Window(n) => (true, n),
+                            Pick::Whole(n) => (false, n),
+                            Pick::Overlay => (false, overlay::Next::default()),
+                        };
+                        slint::Timer::single_shot(Duration::ZERO, move || {
+                            overlay::keep(frozen, window, next, was_visible);
+                        });
                     }
                     Ok(frozen) => {
                         if let Err(e) = overlay::open(frozen, was_visible) {
