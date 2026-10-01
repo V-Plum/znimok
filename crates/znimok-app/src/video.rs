@@ -524,6 +524,13 @@ pub fn nv12_to_rgba(f: &znimok_video_win::Nv12Frame) -> Raster {
     Raster::new(f.width, f.height, rgba)
 }
 
+/// A size on export `w` wide with the frame's proportions, both sides even (ZK-188).
+pub fn out_for(frame: znimok_core::IRect, w: u32) -> (u32, u32) {
+    let w = (w.max(2) + 1) & !1;
+    let h = ((w as f64 * frame.h.max(1) as f64 / frame.w.max(1) as f64).round() as u32 + 1) & !1;
+    (w, h.max(2))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -560,11 +567,4 @@ mod tests {
         assert!(g.ticks.len() >= 6, "{:?}", g.ticks);
         assert!(g.pieces.is_empty());
     }
-}
-
-/// A size on export `w` wide with the frame's proportions, both sides even (ZK-188).
-pub fn out_for(frame: znimok_core::IRect, w: u32) -> (u32, u32) {
-    let w = (w.max(2) + 1) & !1;
-    let h = ((w as f64 * frame.h.max(1) as f64 / frame.w.max(1) as f64).round() as u32 + 1) & !1;
-    (w, h.max(2))
 }
