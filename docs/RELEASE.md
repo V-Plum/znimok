@@ -80,6 +80,7 @@ Two keys, both made on 30.09.2026:
 |---|---|---|---|
 | ECDSA P-256 | `C:\AIHome\keys\znimok_signing_p256.pem` · secret `ZNIMOK_SIGNING_KEY` (the PEM) | `keys/znimok-release-p256.pub.pem` | `SHA256SUMS` of every release (`SHA256SUMS.sig`); the app and `znimok update` check it before an installer runs |
 | Ed25519 (Sparkle) | `C:\AIHome\keys\znimok_sparkle_ed25519.pem` · secret `ZNIMOK_SPARKLE_KEY` (the 32-byte seed, base64 — what Sparkle's `sign_update --ed-key-file` takes) | `keys/znimok-sparkle-ed25519.pub.pem`; `SUPublicEDKey` = `p50rDlGE6KaWMf+pVP4wg11kaaew9Ka4CvoCDKXtBQc=` | the macOS appcast (ZK-143) |
+| Code signing, macOS (self-signed RSA 2048, «Znimok (self-signed)», to 2046) | `C:\AIHome\keys\znimok_macos_codesign.p12` + `.pass` · secrets `ZNIMOK_MAC_CERT_P12` (the p12, base64) and `ZNIMOK_MAC_CERT_PASS` | `keys/znimok-macos-codesign.cert.pem` (SHA-1 `9BC1F567ED71E41657E92C7312CB2D8EA8A27CDF`) | Znimok.app and its Quick Look extension (ZK-183): the designated requirement stays the same across releases, so Screen Recording, Microphone and the Keychain keep their permission; without the secrets the build is ad-hoc with a warning |
 
 - `C:\AIHome\keys\` is mirrored to the NAS with the rest of `C:\AIHome` (`backup_to_nas.ps1`).
 - `znimok-update` embeds the committed P-256 key at build time (`build.rs`); without it the app
@@ -129,3 +130,11 @@ Developer ID (macOS) and Authenticode (Windows) come with ZK-80.
 - Dev builds (`bundle.sh`) carry the framework but no feed: the Updates page says updates are
   not set up. To try the whole flow: `ZNIMOK_SPARKLE_FEED=<appcast url> open Znimok.app`.
 - Sparkle 2.10 needs macOS 12; the appcast says `minimumSystemVersion` 15.0 (ours).
+
+Setting the macOS signing secrets (once; the p12 was exported with SHA-1/3DES so `security import`
+reads it, and its password has no line break):
+
+```sh
+base64 -w0 C:/AIHome/keys/znimok_macos_codesign.p12 | gh secret set ZNIMOK_MAC_CERT_P12
+gh secret set ZNIMOK_MAC_CERT_PASS < C:/AIHome/keys/znimok_macos_codesign.pass
+```
