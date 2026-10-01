@@ -4551,7 +4551,6 @@ vid-tracks-note = Доріжки окремі; при експорті звод�
 # @max: 24
 vid-size-frame = Розмір і кадр
 
-
 # @where: Events count
 # @kind: status
 # @max: 16

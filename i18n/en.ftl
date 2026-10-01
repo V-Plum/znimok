@@ -4523,7 +4523,6 @@ vid-tracks-note = Tracks are separate; export mixes them into one.
 # @max: 24
 vid-size-frame = Size and crop
 
-
 # @where: Events count
 # @kind: status
 # @max: 16
