@@ -4551,10 +4551,6 @@ vid-tracks-note = Доріжки окремі; при експорті звод�
 # @max: 24
 vid-size-frame = Розмір і кадр
 
-# @where: Events tab section
-# @kind: label
-# @max: 16
-vid-devtools = Лог DevTools
 
 # @where: Events count
 # @kind: status
@@ -5313,3 +5309,221 @@ vexp-applied-marks = · позначки застосовано
 # @kind: label
 # @max: 30
 vexp-applied-frame = · кадр застосовано
+
+## The DevTools log panel (ZK-191)
+
+
+# @where: Video timeline: the DevTools log lane title (short, lower case like the other lanes)
+# @kind: label
+# @max: 10
+vid-lane-log = лог
+
+# @where: Video timeline: tooltip, opens the DevTools log panel
+# @kind: label
+# @max: 40
+devp-show = Показати лог
+
+# @where: Video timeline: tooltip, hides the DevTools log panel
+# @kind: label
+# @max: 40
+devp-hide = Сховати лог
+
+# @where: Video transport: button, jumps to the next error of the browser log
+# @kind: label
+# @max: 40
+devp-next-error = До наступної помилки
+
+# @where: DevTools log panel: search field placeholder
+# @kind: label
+# @max: 30
+devp-search = Пошук у лозі
+
+# @where: DevTools log panel: no row matches the search and filter
+# @kind: body
+# @max: 60
+devp-empty = Нічого не знайдено.
+
+# @where: DevTools log panel: button, saves a response body to a file
+# @kind: label
+# @max: 24
+devp-save = Зберегти як…
+
+# @where: Toast: a response body was saved; $name the file name
+# @kind: body
+# @max: 80
+devp-saved = Збережено: { $name }
+
+# @where: Toast: a response body could not be saved
+# @kind: body
+# @max: 80
+devp-save-failed = Не вдалося зберегти файл.
+
+# @where: DevTools log panel: tab of a request (as in Chrome DevTools)
+# @kind: label
+# @max: 14
+devp-tab-headers = Заголовки
+
+# @where: DevTools log panel: tab, the request body (as in Chrome DevTools)
+# @kind: label
+# @max: 14
+devp-tab-payload = Тіло запиту
+
+# @where: DevTools log panel: tab, the response formatted (as in Chrome DevTools)
+# @kind: label
+# @max: 14
+devp-tab-preview = Перегляд
+
+# @where: DevTools log panel: tab, the raw response (as in Chrome DevTools)
+# @kind: label
+# @max: 14
+devp-tab-response = Відповідь
+
+# @where: DevTools log panel: tab, the request phases (as in Chrome DevTools)
+# @kind: label
+# @max: 14
+devp-tab-timing = Час
+
+# @where: DevTools log panel: filter chip, every event (a count follows)
+# @kind: label
+# @max: 16
+devp-chip-all = Усі
+
+# @where: DevTools log panel: filter chip, errors (a count follows)
+# @kind: label
+# @max: 16
+devp-chip-errors = Помилки
+
+# @where: DevTools log panel: filter chip, warnings (a count follows)
+# @kind: label
+# @max: 16
+devp-chip-warnings = Попередження
+
+# @where: DevTools log panel: filter chip, requests and WebSocket frames (a count follows)
+# @kind: label
+# @max: 16
+devp-chip-network = Мережа
+
+# @where: DevTools log panel: filter chip, console messages and exceptions (a count follows)
+# @kind: label
+# @max: 16
+devp-chip-console = Консоль
+
+# @where: DevTools log panel: filter chip, page navigations (a count follows)
+# @kind: label
+# @max: 16
+devp-chip-nav = Переходи
+
+# @where: DevTools log panel, Headers tab: section title (as «General» in Chrome DevTools)
+# @kind: label
+# @max: 30
+devp-general = Загальне
+
+# @where: DevTools log panel, Headers tab: section title
+# @kind: label
+# @max: 30
+devp-res-headers = Заголовки відповіді
+
+# @where: DevTools log panel, Headers tab: section title
+# @kind: label
+# @max: 30
+devp-req-headers = Заголовки запиту
+
+# @where: DevTools log panel, Headers tab: field, the request address
+# @kind: label
+# @max: 20
+devp-h-url = Адреса
+
+# @where: DevTools log panel, Headers tab: field, GET / POST…
+# @kind: label
+# @max: 20
+devp-h-method = Метод
+
+# @where: DevTools log panel, Headers tab: field, the HTTP status
+# @kind: label
+# @max: 20
+devp-h-status = Статус
+
+# @where: DevTools log panel, Headers tab: field, the server IP address
+# @kind: label
+# @max: 20
+devp-h-remote = Адреса сервера
+
+# @where: DevTools log panel, Headers tab: field, h2 / http/1.1
+# @kind: label
+# @max: 20
+devp-h-protocol = Протокол
+
+# @where: DevTools log panel, Headers tab: field, what started the request
+# @kind: label
+# @max: 20
+devp-h-initiator = Ініціатор
+
+# @where: DevTools log panel, Headers tab: field, served from the cache
+# @kind: label
+# @max: 20
+devp-h-cache = З кешу
+
+# @where: DevTools log panel, Headers tab: field, why the request failed
+# @kind: label
+# @max: 20
+devp-h-error = Помилка
+
+# @where: DevTools log panel: title above a call stack
+# @kind: label
+# @max: 20
+devp-stack = Стек викликів
+
+# @where: DevTools log panel: under a long text, only its start is shown
+# @kind: body
+# @max: 120
+devp-cut = Показано лише перші 256 КБ; «Зберегти як…» збереже все.
+
+# @where: DevTools log panel: a binary response; $size its size
+# @kind: body
+# @max: 120
+devp-binary = Двійкові дані, { $size }. «Зберегти як…» збереже їх.
+
+# @where: DevTools log panel: an event without details
+# @kind: body
+# @max: 40
+devp-nothing = Даних немає.
+
+# @where: DevTools log panel, Timing tab: phase, waiting before the request (as «Queueing» in DevTools)
+# @kind: label
+# @max: 20
+devp-t-queue = Черга
+
+# @where: DevTools log panel, Timing tab: phase, the DNS lookup
+# @kind: label
+# @max: 20
+devp-t-dns = Пошук DNS
+
+# @where: DevTools log panel, Timing tab: phase, the connection
+# @kind: label
+# @max: 20
+devp-t-connect = З’єднання
+
+# @where: DevTools log panel, Timing tab: phase, the TLS handshake
+# @kind: label
+# @max: 20
+devp-t-tls = TLS
+
+# @where: DevTools log panel, Timing tab: phase, sending the request
+# @kind: label
+# @max: 20
+devp-t-send = Надсилання
+
+# @where: DevTools log panel, Timing tab: phase, waiting for the server (TTFB)
+# @kind: label
+# @max: 20
+devp-t-wait = Очікування (TTFB)
+
+# @where: DevTools log panel, Timing tab: phase, receiving the response
+# @kind: label
+# @max: 20
+devp-t-download = Завантаження
+
+# @where: DevTools log panel, Timing tab: the whole request
+# @kind: label
+# @max: 20
+devp-t-total = Усього

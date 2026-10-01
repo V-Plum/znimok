@@ -4523,10 +4523,6 @@ vid-tracks-note = Tracks are separate; export mixes them into one.
 # @max: 24
 vid-size-frame = Size and crop
 
-# @where: Events tab section
-# @kind: label
-# @max: 16
-vid-devtools = DevTools log
 
 # @where: Events count
 # @kind: status
@@ -5269,3 +5265,221 @@ vexp-applied-marks = · marks applied
 # @kind: label
 # @max: 30
 vexp-applied-frame = · frame applied
+
+## The DevTools log panel (ZK-191)
+
+
+# @where: Video timeline: the DevTools log lane title (short, lower case like the other lanes)
+# @kind: label
+# @max: 10
+vid-lane-log = log
+
+# @where: Video timeline: tooltip, opens the DevTools log panel
+# @kind: label
+# @max: 40
+devp-show = Show the log
+
+# @where: Video timeline: tooltip, hides the DevTools log panel
+# @kind: label
+# @max: 40
+devp-hide = Hide the log
+
+# @where: Video transport: button, jumps to the next error of the browser log
+# @kind: label
+# @max: 40
+devp-next-error = To the next error
+
+# @where: DevTools log panel: search field placeholder
+# @kind: label
+# @max: 30
+devp-search = Search the log
+
+# @where: DevTools log panel: no row matches the search and filter
+# @kind: body
+# @max: 60
+devp-empty = Nothing matches.
+
+# @where: DevTools log panel: button, saves a response body to a file
+# @kind: label
+# @max: 24
+devp-save = Save as…
+
+# @where: Toast: a response body was saved; $name the file name
+# @kind: body
+# @max: 80
+devp-saved = Saved: { $name }
+
+# @where: Toast: a response body could not be saved
+# @kind: body
+# @max: 80
+devp-save-failed = Could not save the file.
+
+# @where: DevTools log panel: tab of a request (as in Chrome DevTools)
+# @kind: label
+# @max: 14
+devp-tab-headers = Headers
+
+# @where: DevTools log panel: tab, the request body (as in Chrome DevTools)
+# @kind: label
+# @max: 14
+devp-tab-payload = Payload
+
+# @where: DevTools log panel: tab, the response formatted (as in Chrome DevTools)
+# @kind: label
+# @max: 14
+devp-tab-preview = Preview
+
+# @where: DevTools log panel: tab, the raw response (as in Chrome DevTools)
+# @kind: label
+# @max: 14
+devp-tab-response = Response
+
+# @where: DevTools log panel: tab, the request phases (as in Chrome DevTools)
+# @kind: label
+# @max: 14
+devp-tab-timing = Timing
+
+# @where: DevTools log panel: filter chip, every event (a count follows)
+# @kind: label
+# @max: 16
+devp-chip-all = All
+
+# @where: DevTools log panel: filter chip, errors (a count follows)
+# @kind: label
+# @max: 16
+devp-chip-errors = Errors
+
+# @where: DevTools log panel: filter chip, warnings (a count follows)
+# @kind: label
+# @max: 16
+devp-chip-warnings = Warnings
+
+# @where: DevTools log panel: filter chip, requests and WebSocket frames (a count follows)
+# @kind: label
+# @max: 16
+devp-chip-network = Network
+
+# @where: DevTools log panel: filter chip, console messages and exceptions (a count follows)
+# @kind: label
+# @max: 16
+devp-chip-console = Console
+
+# @where: DevTools log panel: filter chip, page navigations (a count follows)
+# @kind: label
+# @max: 16
+devp-chip-nav = Navigation
+
+# @where: DevTools log panel, Headers tab: section title (as «General» in Chrome DevTools)
+# @kind: label
+# @max: 30
+devp-general = General
+
+# @where: DevTools log panel, Headers tab: section title
+# @kind: label
+# @max: 30
+devp-res-headers = Response headers
+
+# @where: DevTools log panel, Headers tab: section title
+# @kind: label
+# @max: 30
+devp-req-headers = Request headers
+
+# @where: DevTools log panel, Headers tab: field, the request address
+# @kind: label
+# @max: 20
+devp-h-url = URL
+
+# @where: DevTools log panel, Headers tab: field, GET / POST…
+# @kind: label
+# @max: 20
+devp-h-method = Method
+
+# @where: DevTools log panel, Headers tab: field, the HTTP status
+# @kind: label
+# @max: 20
+devp-h-status = Status
+
+# @where: DevTools log panel, Headers tab: field, the server IP address
+# @kind: label
+# @max: 20
+devp-h-remote = Remote address
+
+# @where: DevTools log panel, Headers tab: field, h2 / http/1.1
+# @kind: label
+# @max: 20
+devp-h-protocol = Protocol
+
+# @where: DevTools log panel, Headers tab: field, what started the request
+# @kind: label
+# @max: 20
+devp-h-initiator = Initiator
+
+# @where: DevTools log panel, Headers tab: field, served from the cache
+# @kind: label
+# @max: 20
+devp-h-cache = From cache
+
+# @where: DevTools log panel, Headers tab: field, why the request failed
+# @kind: label
+# @max: 20
+devp-h-error = Error
+
+# @where: DevTools log panel: title above a call stack
+# @kind: label
+# @max: 20
+devp-stack = Stack
+
+# @where: DevTools log panel: under a long text, only its start is shown
+# @kind: body
+# @max: 120
+devp-cut = Only the first 256 KB are shown; «Save as…» keeps it all.
+
+# @where: DevTools log panel: a binary response; $size its size
+# @kind: body
+# @max: 120
+devp-binary = Binary data, { $size }. «Save as…» keeps it.
+
+# @where: DevTools log panel: an event without details
+# @kind: body
+# @max: 40
+devp-nothing = No data.
+
+# @where: DevTools log panel, Timing tab: phase, waiting before the request (as «Queueing» in DevTools)
+# @kind: label
+# @max: 20
+devp-t-queue = Queueing
+
+# @where: DevTools log panel, Timing tab: phase, the DNS lookup
+# @kind: label
+# @max: 20
+devp-t-dns = DNS lookup
+
+# @where: DevTools log panel, Timing tab: phase, the connection
+# @kind: label
+# @max: 20
+devp-t-connect = Connection
+
+# @where: DevTools log panel, Timing tab: phase, the TLS handshake
+# @kind: label
+# @max: 20
+devp-t-tls = TLS
+
+# @where: DevTools log panel, Timing tab: phase, sending the request
+# @kind: label
+# @max: 20
+devp-t-send = Request sent
+
+# @where: DevTools log panel, Timing tab: phase, waiting for the server (TTFB)
+# @kind: label
+# @max: 20
+devp-t-wait = Waiting (TTFB)
+
+# @where: DevTools log panel, Timing tab: phase, receiving the response
+# @kind: label
+# @max: 20
+devp-t-download = Download
+
+# @where: DevTools log panel, Timing tab: the whole request
+# @kind: label
+# @max: 20
+devp-t-total = Total

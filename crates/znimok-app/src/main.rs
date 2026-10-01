@@ -13,6 +13,7 @@ mod capture;
 mod codes;
 mod crash;
 mod devlog;
+mod devpanel;
 mod dialog;
 #[cfg(target_os = "macos")]
 mod dnd_mac;
@@ -1453,6 +1454,12 @@ fn wire(ui: &AppWindow, app: &Shared) {
     });
     on!(ui, app, on_tl_wheel, |a, w, x, dy, ctrl| {
         a.tl_wheel(&w, x as i32, dy, ctrl);
+    });
+    on!(ui, app, on_devp_action, |a, w, what, i| {
+        a.devp_action(&w, &what, i);
+    });
+    on!(ui, app, on_devp_search, |a, w, q| {
+        a.devp_search(&w, &q);
     });
     {
         // Reported while laying out, possibly from inside the app's own code (as lib-layout).
