@@ -3237,7 +3237,6 @@ libset-keep-videos = Відео — не більше
 # @max: 48
 libset-oldest-trash = Найстаріші — у кошик, а не назавжди
 
-
 # @where: Library header: a segment — show everything
 # @kind: button
 # @max: 10
