@@ -27,16 +27,11 @@ pub fn confirm_start() {
     let _ = znimok_update::apply::mark_started(&updates_dir(), VERSION);
 }
 
-/// What the last update did, once: the note is moved aside after it is read.
-pub fn take_outcome() -> Option<String> {
-    let dir = updates_dir();
-    let text = znimok_update::apply::last_outcome(&dir)?;
-    let _ = std::fs::rename(
-        dir.join("last-outcome.txt"),
-        dir.join("last-outcome.shown.txt"),
-    );
-    let text = text.trim().to_string();
-    (!text.is_empty()).then_some(text)
+/// What the last update did, once (ZK-211: only the note about this very version, or a fresh
+/// rollback / failure; the note is moved aside after it is read).
+pub fn take_outcome() -> Option<znimok_update::apply::Outcome> {
+    let now = chrono::Utc::now().timestamp_millis();
+    znimok_update::apply::take_outcome(&updates_dir(), VERSION, now, 24 * 3600 * 1000)
 }
 
 /// The result of a check.
