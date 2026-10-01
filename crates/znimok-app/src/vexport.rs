@@ -104,7 +104,8 @@ pub fn ext(kind: usize) -> &'static str {
 pub fn format_name(kind: usize) -> &'static str {
     match kind {
         GIF => "GIF",
-        HTML => "HTML",
+        // The report is a page too (ZK-217); `VidExport::name` says .zreport when it is one.
+        HTML | REPORT => "HTML",
         _ => "MP4",
     }
 }
