@@ -443,7 +443,175 @@ fn mp4(
     })
 }
 
-#[cfg(not(windows))]
+/// macOS (ZK-205): the same frames and the same mix as on Windows, written by AVAssetWriter
+/// (VideoToolbox H.264, AAC). AVAssetWriter interleaves its inputs and holds the one ahead until
+/// the other catches up, so the sound is fed while the video input waits, and closed when it
+/// ends.
+#[cfg(target_os = "macos")]
+fn mp4(
+    job: &Job,
+    gpu: &Gpu,
+    progress: &Progress,
+    part: &Path,
+    sound: bool,
+) -> Result<Outcome, String> {
+    use znimok_video::export::{AudioCut, split_video_frames};
+    use znimok_video_mac::audio_read::{AudioTrackReader, CHANNELS, RATE};
+    use znimok_video_mac::writer::{AvWriter, WriterConfig};
+    let info = job.video.info;
+    let fps = info.fps();
+    let frames = i64::from(info.frames);
+    let keep = keep_of(&job.doc, frames);
+    let total = kept_frames(&keep).max(1);
+    let (frame, out) = out_geometry(&job.doc, &job.video);
+    let mp4_file = job.source.as_file()?;
+    let bytes = std::fs::metadata(&mp4_file).map(|m| m.len()).unwrap_or(0);
+    // AVFoundation tells a file by its extension: the source as an .mp4 beside it if it is not.
+    let readable = if mp4_file.extension().is_some_and(|e| e == "mp4") {
+        mp4_file.clone()
+    } else {
+        let p = part.with_extension("src.mp4");
+        std::fs::copy(&mp4_file, &p).map_err(|e| e.to_string())?;
+        p
+    };
+    // The sound: every track that is on, at its volume and offset, mixed.
+    let mut mixed: Vec<i16> = Vec::new();
+    if sound {
+        let readers = AudioTrackReader::open_all(&readable)?;
+        let mut tracks: Vec<Vec<i16>> = Vec::new();
+        for (i, mut r) in readers.into_iter().enumerate() {
+            let t = job.video.audio.get(i).cloned().unwrap_or_default();
+            if t.muted {
+                continue;
+            }
+            let gain = f32::from(t.volume) / 100.0;
+            let shift = i64::from(t.offset_ms) * i64::from(RATE) / 1000;
+            let mut buf: Vec<i16> = Vec::new();
+            while let Some((ts, pcm)) = r.next_block()? {
+                progress.cancelled()?;
+                let at = (ts as f64 * f64::from(RATE) / 1e7).round() as i64 + shift;
+                if at < 0 {
+                    continue;
+                }
+                let o = at as usize * CHANNELS as usize;
+                if buf.len() < o + pcm.len() {
+                    buf.resize(o + pcm.len(), 0);
+                }
+                for (k, v) in pcm.iter().enumerate() {
+                    buf[o + k] = (f32::from(*v) * gain).clamp(-32768.0, 32767.0) as i16;
+                }
+            }
+            tracks.push(buf);
+        }
+        let refs: Vec<&[i16]> = tracks.iter().map(Vec::as_slice).collect();
+        mixed = znimok_video::audio::mix_tracks_s16(&refs);
+    }
+    if readable != mp4_file {
+        let _ = std::fs::remove_file(&readable);
+    }
+    let has_sound = !mixed.is_empty();
+    let out_fps = fps.round().max(1.0) as u32;
+    let mut writer = AvWriter::create(
+        part,
+        &WriterConfig {
+            width: out.0,
+            height: out.1,
+            fps: out_fps,
+            bitrate: bitrate(
+                bytes,
+                info.duration_hns as f64 / 1e7,
+                (info.width, info.height),
+                out,
+                fps,
+            ),
+            keyframe_interval: (out_fps / 4).max(1),
+            audio_tracks: usize::from(has_sound),
+            audio_bitrate: 160_000,
+            real_time: false,
+        },
+    )?;
+    let audio = if has_sound {
+        AudioCut::new(&keep, fps, i64::from(RATE), CHANNELS as usize, frames).cut(0, &mixed)
+    } else {
+        Vec::new()
+    };
+    drop(mixed);
+    // The sound in blocks of at most a second, each with its first sample's index.
+    let step = (RATE * CHANNELS) as usize;
+    let blocks: Vec<(i64, &[i16])> = audio
+        .iter()
+        .flat_map(|a| {
+            let first = (a.time_hns as f64 * f64::from(RATE) / 1e7).round() as i64;
+            a.pcm
+                .chunks(step)
+                .enumerate()
+                .map(move |(k, c)| (first + k as i64 * i64::from(RATE), c))
+        })
+        .collect();
+    let mut next_block = 0usize;
+    if blocks.is_empty() {
+        writer.end_audio();
+    }
+    // One block of sound if the writer takes it; the sound closed after its last block.
+    let mut feed = |w: &mut AvWriter| -> Result<bool, String> {
+        let Some((at, pcm)) = blocks.get(next_block) else {
+            return Ok(false);
+        };
+        if w.append_pcm(0, pcm, *at)? {
+            next_block += 1;
+            if next_block == blocks.len() {
+                w.end_audio();
+            }
+            return Ok(true);
+        }
+        Ok(false)
+    };
+    let mut src = Frames::open(gpu, &job.source)?;
+    let mut comp = Composer::new(&job.doc, frame, out);
+    let first = keep.first().map_or(0, |s| s.a);
+    src.seek(first)?;
+    let mut written = 0i64;
+    while let Some((idx, n, raster)) = src.next_frame()? {
+        progress.cancelled()?;
+        if keep.last().is_some_and(|s| idx >= s.b) {
+            break;
+        }
+        let raster = Arc::new(raster);
+        for o in split_video_frames(&keep, idx, n, fps) {
+            let rgba = comp.compose(raster.clone(), o.src_frame);
+            let pb = writer.pixel_buffer_from_rgba(&rgba)?;
+            let slot = (o.time_hns as f64 * f64::from(out_fps) / 1e7).round() as i64;
+            let mut idle = 0;
+            while !writer.append_frame(&pb.0, slot)? {
+                if !feed(&mut writer)? {
+                    idle += 1;
+                    if idle > 15_000 {
+                        return Err("AVAssetWriter stopped taking frames".into());
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(2));
+                }
+                progress.cancelled()?;
+            }
+            written += 1;
+            progress.set(written as f64 / total as f64 * 0.99);
+        }
+    }
+    while next_block < blocks.len() {
+        if !feed(&mut writer)? {
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        progress.cancelled()?;
+    }
+    writer.finish()?;
+    Ok(Outcome {
+        frames: written,
+        bytes: std::fs::metadata(part).map(|m| m.len()).unwrap_or(0),
+        copied: false,
+        hardware: true,
+    })
+}
+
+#[cfg(not(any(windows, target_os = "macos")))]
 fn mp4(
     _job: &Job,
     _gpu: &Gpu,
@@ -451,7 +619,7 @@ fn mp4(
     _part: &Path,
     _sound: bool,
 ) -> Result<Outcome, String> {
-    Err("MP4 export on this system comes with its video encoder (ZK-88)".into())
+    Err("MP4 export on this system comes with its video encoder".into())
 }
 
 /// The size of a GIF `width` wide for the frame (even height not needed; at least 2).
