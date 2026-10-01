@@ -6,13 +6,22 @@
 //! AVAssetReader cannot seek: a new reader starts a tenth of a frame inside the wanted one
 //! (starting a quarter frame early gave frame t−1 stamped as t), VideoToolbox decodes from the
 //! key frame before it, and the first frame out is the wanted one.
+//!
+//! The MP4 inside a `.znimok` is read in place (ZK-200): the asset's URL has a scheme of our own,
+//! and an `AVAssetResourceLoaderDelegate` answers AVFoundation's byte-range requests from the
+//! document's payload ranges — no copy in the cache.
 
+use std::io::{BufReader, Read, Seek, SeekFrom};
 use std::ptr::NonNull;
+use std::sync::Mutex;
 
+use dispatch2::{DispatchQueue, DispatchRetained};
 use objc2::rc::{Retained, autoreleasepool};
-use objc2::runtime::AnyObject;
+use objc2::runtime::{AnyObject, NSObject, NSObjectProtocol, ProtocolObject};
+use objc2::{AnyThread, DefinedClass, define_class, msg_send};
 use objc2_av_foundation::{
-    AVAssetReader, AVAssetReaderTrackOutput, AVAssetTrack, AVMediaTypeVideo, AVURLAsset,
+    AVAssetReader, AVAssetReaderTrackOutput, AVAssetResourceLoader, AVAssetResourceLoaderDelegate,
+    AVAssetResourceLoadingRequest, AVAssetTrack, AVMediaTypeVideo, AVURLAsset,
 };
 use objc2_core_foundation::{CFRetained, CFString};
 use objc2_core_media::{CMSampleBuffer, CMTime, CMTimeFlags, CMTimeRange, kCMTimePositiveInfinity};
@@ -23,12 +32,138 @@ use objc2_core_video::{
     CVPixelBufferLockFlags, CVPixelBufferUnlockBaseAddress, kCVPixelBufferMetalCompatibilityKey,
     kCVPixelBufferPixelFormatTypeKey, kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange,
 };
-use objc2_foundation::{NSDictionary, NSNumber, NSString, NSURL};
+use objc2_foundation::{NSData, NSDictionary, NSNumber, NSString, NSURL};
 use objc2_metal::{MTLPixelFormat, MTLTextureType};
 use wgpu::hal::api::Metal;
 
-use crate::Decoder;
 use crate::convert::{Converter, Gpu, Planes};
+use crate::{Decoder, Source};
+
+/// What the loader reads: the document's payload as one stream.
+struct Payload {
+    reader: Mutex<znimok_format::video::PayloadReader<BufReader<std::fs::File>>>,
+    len: u64,
+}
+
+define_class!(
+    // SAFETY: NSObject has no subclassing requirements; the delegate only reads its ivars.
+    #[unsafe(super(NSObject))]
+    #[ivars = Payload]
+    struct PayloadLoader;
+
+    unsafe impl NSObjectProtocol for PayloadLoader {}
+
+    unsafe impl AVAssetResourceLoaderDelegate for PayloadLoader {
+        #[unsafe(method(resourceLoader:shouldWaitForLoadingOfRequestedResource:))]
+        fn should_wait(
+            &self,
+            _loader: &AVAssetResourceLoader,
+            req: &AVAssetResourceLoadingRequest,
+        ) -> bool {
+            self.answer(req);
+            true
+        }
+    }
+);
+
+impl PayloadLoader {
+    fn new(p: Payload) -> Retained<Self> {
+        let this = Self::alloc().set_ivars(p);
+        // SAFETY: NSObject's init on a freshly allocated instance.
+        unsafe { msg_send![super(this), init] }
+    }
+
+    /// Fills a request from the payload and finishes it (on the delegate queue).
+    fn answer(&self, req: &AVAssetResourceLoadingRequest) {
+        let p = self.ivars();
+        // SAFETY: AVFoundation's request objects, used on the queue they were given on.
+        unsafe {
+            if let Some(info) = req.contentInformationRequest() {
+                info.setContentType(Some(&NSString::from_str("public.mpeg-4")));
+                info.setContentLength(p.len as i64);
+                info.setByteRangeAccessSupported(true);
+            }
+            if let Some(d) = req.dataRequest() {
+                let off = d.requestedOffset().max(0) as u64;
+                let want = if d.requestsAllDataToEndOfResource() {
+                    p.len.saturating_sub(off)
+                } else {
+                    (d.requestedLength().max(0) as u64).min(p.len.saturating_sub(off))
+                };
+                let mut left = want;
+                let mut pos = off;
+                let mut buf = vec![0u8; 1 << 20];
+                while left > 0 {
+                    let n = (left as usize).min(buf.len());
+                    let got = match p.reader.lock() {
+                        Ok(mut r) => r
+                            .seek(SeekFrom::Start(pos))
+                            .and_then(|_| r.read(&mut buf[..n]))
+                            .unwrap_or(0),
+                        Err(_) => 0,
+                    };
+                    if got == 0 {
+                        break;
+                    }
+                    d.respondWithData(&NSData::with_bytes(&buf[..got]));
+                    pos += got as u64;
+                    left -= got as u64;
+                }
+            }
+            req.finishLoading();
+        }
+    }
+}
+
+/// An asset of the MP4 at `path`, or of the payload ranges of a document (read in place); what
+/// must outlive the asset comes along.
+fn asset_of(
+    source: &Source,
+) -> Result<
+    (
+        Retained<AVURLAsset>,
+        Option<(Retained<PayloadLoader>, DispatchRetained<DispatchQueue>)>,
+    ),
+    String,
+> {
+    match source {
+        Source::File(path) => {
+            let abs = std::path::absolute(path).map_err(|e| e.to_string())?;
+            let url = NSURL::fileURLWithPath(&NSString::from_str(&abs.to_string_lossy()));
+            // SAFETY: a plain AVFoundation constructor.
+            Ok((
+                unsafe { AVURLAsset::URLAssetWithURL_options(&url, None) },
+                None,
+            ))
+        }
+        Source::InFile { path, ranges, .. } => {
+            let payload = znimok_format::video::Payload {
+                ranges: ranges.clone(),
+            };
+            let f = std::fs::File::open(path).map_err(|e| format!("{}: {e}", path.display()))?;
+            let reader = znimok_format::video::PayloadReader::new(BufReader::new(f), &payload);
+            let loader = PayloadLoader::new(Payload {
+                reader: Mutex::new(reader),
+                len: payload.len(),
+            });
+            let queue = DispatchQueue::new("znimok.payload", None);
+            // A scheme AVFoundation does not know, so every byte is asked of the delegate.
+            let url =
+                NSURL::URLWithString(&NSString::from_str("znimok-payload://document/video.mp4"))
+                    .ok_or("NSURL")?;
+            // SAFETY: AVFoundation calls on objects we own; the delegate and its queue live as
+            // long as the player keeps them.
+            let asset = unsafe {
+                let asset = AVURLAsset::URLAssetWithURL_options(&url, None);
+                asset
+                    .resourceLoader()
+                    .setDelegate_queue(Some(ProtocolObject::from_ref(&*loader)), Some(&queue));
+                asset
+            };
+            Ok((asset, Some((loader, queue))))
+        }
+    }
+}
 
 fn cm_time(seconds: f64) -> CMTime {
     CMTime {
@@ -58,6 +193,8 @@ struct InFlight {
 pub struct AvPlayer {
     gpu: Gpu,
     asset: Retained<AVURLAsset>,
+    /// The loader of a document's payload and its queue (kept alive with the asset).
+    _loader: Option<(Retained<PayloadLoader>, DispatchRetained<DispatchQueue>)>,
     track: Retained<AVAssetTrack>,
     reader: Option<(Retained<AVAssetReader>, Retained<AVAssetReaderTrackOutput>)>,
     cache: Option<CFRetained<CVMetalTextureCache>>,
@@ -71,19 +208,16 @@ pub struct AvPlayer {
 }
 
 impl AvPlayer {
-    pub fn open(gpu: &Gpu, path: &std::path::Path) -> Result<Self, String> {
-        let abs = std::path::absolute(path).map_err(|e| e.to_string())?;
-        let url = NSURL::fileURLWithPath(&NSString::from_str(&abs.to_string_lossy()));
+    pub fn open(gpu: &Gpu, source: &Source) -> Result<Self, String> {
+        let (asset, loader) = asset_of(source)?;
         // SAFETY: plain AVFoundation calls on objects we own.
-        let (asset, track, fps, size) = unsafe {
-            let asset = AVURLAsset::URLAssetWithURL_options(&url, None);
+        let (track, fps, size) = unsafe {
             #[allow(deprecated)]
             let tracks = asset.tracksWithMediaType(AVMediaTypeVideo.ok_or("AVMediaTypeVideo")?);
             let track = tracks.firstObject().ok_or("no video track")?;
             let fps = f64::from(track.nominalFrameRate());
             let s = track.naturalSize();
             (
-                asset,
                 track,
                 fps,
                 (s.width.round() as u32, s.height.round() as u32),
@@ -107,6 +241,7 @@ impl AvPlayer {
         let mut me = Self {
             gpu: gpu.clone(),
             asset,
+            _loader: loader,
             track,
             reader: None,
             cache,

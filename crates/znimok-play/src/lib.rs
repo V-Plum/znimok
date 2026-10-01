@@ -175,7 +175,7 @@ fn open_decoder(gpu: &Gpu, source: &Source) -> Result<Box<dyn Decoder>, String> 
     }
     #[cfg(target_os = "macos")]
     {
-        Ok(Box::new(mac::AvPlayer::open(gpu, &source.as_file()?)?))
+        Ok(Box::new(mac::AvPlayer::open(gpu, source)?))
     }
     #[cfg(not(any(windows, target_os = "macos")))]
     {
