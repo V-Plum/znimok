@@ -5044,3 +5044,40 @@ vid-out-title = Size on export
 # @kind: body
 # @max: 160
 vid-out-note = The frame is scaled on export; the recording stays as it is. Sides are even (the encoder needs it).
+
+## The browser log (ZK-97)
+
+
+# @where: Settings → Recording: section title, the browser log
+# @kind: label
+# @max: 24
+rec-browser = Browser
+
+# @where: Settings → Recording: switch, the DevTools log of a recording
+# @kind: label
+# @max: 70
+rec-devlog = Write the browser's DevTools log with a recording
+
+# @where: Settings → Recording: switch, the extension may start recordings
+# @kind: label
+# @max: 70
+rec-ext-control = Let the extension start a recording of its window
+
+# @where: Settings → Recording: the extension is connected; $count browsers
+# @kind: body
+# @max: 80
+rec-browsers-on =
+    { $count ->
+        [one] The extension is connected (one browser).
+       *[other] The extension is connected ({ $count } browsers).
+    }
+
+# @where: Settings → Recording: no browser with the extension is connected
+# @kind: body
+# @max: 90
+rec-browsers-off = No browser with the Znimok extension is connected.
+
+# @where: Settings → Recording: what the browser log writes and how to install the extension
+# @kind: body
+# @max: 500
+rec-devlog-hint = The Znimok extension for Chrome and Edge writes the page's console, errors, network (headers, request and response bodies) and navigations in sync with the video — everything the DevTools panels show, for debugging; sensitive parts can be hidden on export. Until it is in the Chrome Web Store: the znimok-extension archive of a release → chrome://extensions → Developer mode → Load unpacked.

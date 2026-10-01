@@ -1,0 +1,36 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Znimok</title>
+<style>
+  :root { --bg: #ffffff; --fg: #16181d; --dim: #5c6270; --ok: #2e7d32; --no: #b3261e; --line: #e4e6eb; --rec: #e53935; --recfg: #ffffff; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #17191e; --fg: #eceef2; --dim: #9aa1ad; --ok: #81c784; --no: #ef9a9a; --line: #2c3038; --rec: #e53935; --recfg: #ffffff; } }
+  body { margin: 0; padding: 12px 14px; width: 290px; background: var(--bg); color: var(--fg); font: 13px "Segoe UI", system-ui, sans-serif; }
+  h1 { font-size: 14px; margin: 0 0 8px; display: flex; gap: 8px; align-items: center; }
+  h1 img { width: 20px; height: 20px; }
+  .row { display: flex; justify-content: space-between; padding: 4px 0; border-top: 1px solid var(--line); }
+  .row:first-of-type { border-top: 0; }
+  .k { color: var(--dim); }
+  .ok { color: var(--ok); } .no { color: var(--no); }
+  p { color: var(--dim); margin: 8px 0 0; line-height: 1.35; }
+  #go { margin-top: 12px; width: 100%; padding: 9px; border: 0; border-radius: 8px; background: var(--rec); color: var(--recfg); font: inherit; font-weight: 600; cursor: pointer; }
+  #go:disabled { opacity: .45; cursor: default; }
+  #go:focus-visible { outline: 2px solid var(--fg); outline-offset: 2px; }
+  label { display: flex; gap: 6px; align-items: flex-start; margin-top: 8px; line-height: 1.35; cursor: pointer; }
+  label input { margin: 2px 0 0; }
+  #err { color: var(--no); }
+  #err:empty { display: none; }
+</style>
+</head>
+<body>
+<h1><img src="icon32.png" alt=""><span data-i="title">Znimok</span></h1>
+<div class="row"><span class="k" data-i="app">Znimok</span><span id="conn">…</span></div>
+<div class="row"><span class="k" data-i="rec">Recording</span><span id="rec">…</span></div>
+<button id="go" data-i="go" disabled>● Record this window</button>
+<label><input type="checkbox" id="page" checked><span data-i="page">Page only — no tabs or address bar</span></label>
+<p id="err"></p>
+<p id="hint"></p>
+<script src="popup.js"></script>
+</body>
+</html>

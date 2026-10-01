@@ -6804,6 +6804,7 @@ dependencies = [
  "pollster",
  "redb",
  "rfd",
+ "serde_json",
  "slint",
  "slint-build",
  "uuid",
@@ -6813,9 +6814,11 @@ dependencies = [
  "znimok-agents",
  "znimok-codes",
  "znimok-core",
+ "znimok-devtools",
  "znimok-format",
  "znimok-gpu",
  "znimok-i18n",
+ "znimok-ipc",
  "znimok-log",
  "znimok-mac",
  "znimok-models",
@@ -6852,9 +6855,11 @@ dependencies = [
  "znimok-agents",
  "znimok-codes",
  "znimok-core",
+ "znimok-devtools",
  "znimok-format",
  "znimok-html",
  "znimok-i18n",
+ "znimok-ipc",
  "znimok-models",
  "znimok-render",
  "znimok-settings",
@@ -6876,6 +6881,17 @@ dependencies = [
  "serde",
  "serde_json",
  "uuid",
+]
+
+[[package]]
+name = "znimok-devtools"
+version = "0.0.1"
+dependencies = [
+ "serde_json",
+ "windows",
+ "windows-core",
+ "znimok-format",
+ "znimok-ipc",
 ]
 
 [[package]]

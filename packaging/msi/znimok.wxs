@@ -57,6 +57,11 @@
         <RegistryValue Root="HKCU" Key="Software\Znimok\Installed" Name="cli" Type="integer" Value="1" KeyPath="yes" />
         <!-- `znimok` on the user's PATH: the CLI and `claude mcp add znimok` (then `znimok mcp`). -->
         <Environment Id="UserPath" Name="PATH" Value="[INSTALLFOLDER]" Part="last" Action="set" System="no" Permanent="no" />
+        <!-- The CLI is the browsers' DevTools-log host (ZK-97): the app registers it on start; the
+             uninstall takes the registration away. -->
+        <RemoveRegistryKey Action="removeOnUninstall" Root="HKCU" Key="Software\Google\Chrome\NativeMessagingHosts\com.znimok.devtools" />
+        <RemoveRegistryKey Action="removeOnUninstall" Root="HKCU" Key="Software\Microsoft\Edge\NativeMessagingHosts\com.znimok.devtools" />
+        <RemoveRegistryKey Action="removeOnUninstall" Root="HKCU" Key="Software\Chromium\NativeMessagingHosts\com.znimok.devtools" />
       </Component>
       <Component Id="Thumbnails" Guid="{16D6D7F6-C481-45C6-A322-C37DD78D6E25}">
         <File Id="ThumbDll" Source="$(var.Bin)\znimok_thumbnail.dll" />

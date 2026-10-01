@@ -2142,6 +2142,11 @@ export component AppWindow inherits Window {
     in property <bool> pref-rec-follow: true;
     in property <int> pref-rec-sound;
     in property <bool> pref-rec-cursor: true;
+    // ZK-97: the browser's log, the extension may start, how many browsers are connected.
+    in property <bool> pref-rec-devlog: true;
+    in property <bool> pref-rec-ext-control: true;
+    in property <string> rec-browsers;
+    in property <bool> rec-browsers-on;
     in-out property <string> pref-ret-mb;
     // The videos' own size limit, MB (ZK-100).
     in-out property <string> pref-video-mb;
@@ -2973,6 +2978,13 @@ export component AppWindow inherits Window {
                                 Text { text: @tr("rec-sound-tracks" => "Each source is a track of its own: in the editor it can be muted or made quieter. The system sound is what this computer plays; the microphone needs Windows' permission (Privacy → Microphone)."); color: Theme.text3; font-size: 11px; wrap: word-wrap; }
                                 SwitchRow { text: @tr("rec-cursor-clicks" => "Cursor and click highlight"); checked: root.pref-rec-cursor; toggled => { root.setting("rec-cursor", self.checked ? 1 : 0); } }
                                 Text { text: @tr("rec-cursor-hint" => "The pointer is drawn into the video, a click is a spreading ring and a held button a steady one; clicks on the recording bar are not recorded. The clicks are also kept as a log in the document."); color: Theme.text3; font-size: 11px; wrap: word-wrap; }
+                                // ZK-97: the browser's DevTools log of a recording.
+                                Rectangle { height: 1px; background: Theme.line; }
+                                Text { text: @tr("rec-browser" => "Browser"); color: Theme.text2; font-size: 12px; }
+                                SwitchRow { text: @tr("rec-devlog" => "Write the browser's DevTools log with a recording"); checked: root.pref-rec-devlog; toggled => { root.setting("rec-devlog", self.checked ? 1 : 0); } }
+                                SwitchRow { text: @tr("rec-ext-control" => "Let the extension start a recording of its window"); checked: root.pref-rec-ext-control; toggled => { root.setting("rec-ext-control", self.checked ? 1 : 0); } }
+                                Text { text: root.rec-browsers; color: root.rec-browsers-on ? Theme.text2 : Theme.attention; font-size: 12px; wrap: word-wrap; }
+                                Text { text: @tr("rec-devlog-hint" => "The Znimok extension for Chrome and Edge writes the page's console, errors, network (headers, request and response bodies) and navigations in sync with the video — everything the DevTools panels show, for debugging; sensitive parts can be hidden on export. Until it is in the Chrome Web Store: the znimok-extension archive of a release → chrome://extensions → Developer mode → Load unpacked."); color: Theme.text3; font-size: 11px; wrap: word-wrap; }
                             }
                             if root.settings-page == 9: VerticalLayout {
                                 spacing: 14px;

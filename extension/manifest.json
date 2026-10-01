@@ -1,0 +1,37 @@
+{
+  "manifest_version": 3,
+  "name": "Znimok — DevTools log",
+  "short_name": "Znimok",
+  "version": "0.1.0",
+  "description": "Writes the page's console, errors, network (headers and bodies) and navigations in sync with a Znimok screen recording, and starts recording this window from the toolbar.",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAqDzjIZdbv+2uRswgXvquXwM2LKhQ0yboVZPVXGH86eexNs6FwvL81+C1K5+V+dxQ/w0Xz594M6n0lv8j/D0vVoWLayHxAirDeBjn5sIY1qoMtUVmkGoMBmnNpi9mR4qbwxKAJpn5qZKS27u4+BHAh9duXrK9mzDeq/SVxpdIEPgW3pQkGnRMSDiWli2eyJH0ULrBcMXaGKB8ZQ7cccf7W5wfEp1fRR8dW6Jb/B/UnJdai8Q/TGHwaNQQEziO9fG0x7KxVdmnnQqL3ur545u/o4r82RlECXOsJ4fvObxvv7HkR5k044uhMSAThA3xZvlqVL7zULoFJyCkr5D6RbwjlQIDAQAB",
+  "minimum_chrome_version": "116",
+  "permissions": [
+    "debugger",
+    "tabs",
+    "alarms",
+    "activeTab",
+    "scripting",
+    "contextMenus",
+    "storage",
+    "nativeMessaging"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "Znimok",
+    "default_popup": "popup.html"
+  },
+  "commands": {
+    "toggle-recording": {
+      "description": "Start or stop recording this window"
+    }
+  },
+  "icons": {
+    "16": "icon16.png",
+    "32": "icon32.png",
+    "48": "icon48.png",
+    "128": "icon128.png"
+  }
+}

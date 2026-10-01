@@ -993,6 +993,17 @@ fn update(cmd: UpdateCmd, out: &dyn Fn(serde_json::Value, String)) -> Result<(),
 }
 
 fn main() -> ExitCode {
+    // Started by a browser as the DevTools log's Native Messaging host (ZK-97): its first
+    // argument is the extension's origin, the rest is the browser's.
+    let args: Vec<std::ffi::OsString> = std::env::args_os().collect();
+    if znimok_devtools::host::is_host_invocation(&args) {
+        // ZNIMOK_IPC_SUFFIX: another app's endpoint (the end-to-end test's).
+        let cfg = znimok_ipc::Config {
+            suffix: std::env::var("ZNIMOK_IPC_SUFFIX").ok(),
+            ..Default::default()
+        };
+        return ExitCode::from(znimok_devtools::host::run(&cfg) as u8);
+    }
     let cli = match Cli::try_parse() {
         Ok(c) => c,
         Err(e) => {

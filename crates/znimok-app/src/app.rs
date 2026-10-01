@@ -1397,6 +1397,19 @@ impl App {
             i32::from(p.video.audio.system) | (i32::from(p.video.audio.microphone) << 1),
         );
         ui.set_pref_rec_cursor(p.video.cursor);
+        ui.set_pref_rec_devlog(p.video.devtools_log);
+        ui.set_pref_rec_ext_control(p.video.extension_control);
+        let hosts = crate::devlog::hub().hosts();
+        ui.set_rec_browsers_on(hosts > 0);
+        ui.set_rec_browsers(
+            if hosts > 0 {
+                self.tr
+                    .tr_args("rec-browsers-on", &count_args("count", hosts as i64))
+            } else {
+                self.tr.tr("rec-browsers-off")
+            }
+            .into(),
+        );
         ui.set_pref_lib_dir(self.lib_dir.display().to_string().into());
         ui.set_pref_file(
             self.store
@@ -1586,6 +1599,8 @@ impl App {
                 p.video.cursor = on;
                 p.video.clicks = on;
             }),
+            "rec-devlog" => self.save_prefs(ui, |p| p.video.devtools_log = on),
+            "rec-ext-control" => self.save_prefs(ui, |p| p.video.extension_control = on),
             "trash-days" => {
                 let n = ui
                     .get_pref_trash_days()
