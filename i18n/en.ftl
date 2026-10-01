@@ -3221,6 +3221,22 @@ libset-keep-videos = Videos — no more than
 # @max: 48
 libset-oldest-trash = The oldest go to the trash, not away for good
 
+
+# @where: Library header: a segment — show everything
+# @kind: button
+# @max: 10
+lib-kind-all = All
+
+# @where: Library header: a segment — screenshots only
+# @kind: button
+# @max: 12
+lib-kind-shots = Shots
+
+# @where: Library header: a segment — videos only
+# @kind: button
+# @max: 12
+lib-kind-videos = Videos
+
 # @where: Switch
 # @kind: label
 # @max: 60

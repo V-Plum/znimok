@@ -3237,6 +3237,22 @@ libset-keep-videos = Відео — не більше
 # @max: 48
 libset-oldest-trash = Найстаріші — у кошик, а не назавжди
 
+
+# @where: Library header: a segment — show everything
+# @kind: button
+# @max: 10
+lib-kind-all = Усе
+
+# @where: Library header: a segment — screenshots only
+# @kind: button
+# @max: 12
+lib-kind-shots = Знімки
+
+# @where: Library header: a segment — videos only
+# @kind: button
+# @max: 12
+lib-kind-videos = Відео
+
 # @where: Switch
 # @kind: label
 # @max: 60
