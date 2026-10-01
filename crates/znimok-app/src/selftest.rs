@@ -3787,7 +3787,8 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
             };
             r.check(
                 "real video: frames are decoded on the GPU and shown while playing (ZK-92)",
-                live && frame > 5 && ui.get_vid_live() && !picture && path.is_some(),
+                // Resting at the end with the frame's CPU copy, the canvas draws it (ZK-94).
+                live && frame > 5 && ui.get_vid_live() && (!picture || !playing) && path.is_some(),
                 format!(
                     "frame {frame} · playing {playing} · on screen {live} · path {path:?} · canvas draws the picture {picture}"
                 ),
@@ -3861,6 +3862,57 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
         for _ in 0..6 {
             steps.push(Box::new(|_, _, _| {}));
         }
+        // ZK-190: the export sheet of a video — its formats with estimates; «Copy GIF» puts a GIF
+        // file on the clipboard; «Save to the library» makes a new video document of the MP4.
+        steps.push(Box::new(|app, ui, r| {
+            let (app, ui) = &current(app, ui);
+            ui.invoke_export();
+            let cards = ui.get_exp_cards().row_count();
+            let (sizes, _) = app.borrow().vexport_state();
+            r.check(
+                "video export: the sheet shows MP4 / GIF / HTML / frame / report, the MP4 estimated",
+                ui.get_exp_open() && ui.get_exp_video() && cards == 5 && sizes[0].is_some_and(|b| b > 0),
+                format!("open {} · video {} · {cards} cards · {sizes:?}", ui.get_exp_open(), ui.get_exp_video()),
+            );
+            ui.invoke_exp_close();
+            REAL_LIB_BEFORE.with(|n| n.set(library_videos(&app.borrow().lib_dir)));
+            ui.invoke_vid_share("copy-gif".into());
+        }));
+        for _ in 0..40 {
+            steps.push(Box::new(|app, ui, _| {
+                let (app, _) = &current(app, ui);
+                let _ = app.borrow().vexport_state();
+            }));
+        }
+        steps.push(Box::new(|app, ui, r| {
+            let (app, ui) = &current(app, ui);
+            let (_, running) = app.borrow().vexport_state();
+            let clip = clipboard_files();
+            let gif = clip
+                .iter()
+                .find(|p| p.extension().is_some_and(|e| e == "gif"));
+            let ok = gif.is_some_and(|p| std::fs::read(p).is_ok_and(|b| b.starts_with(b"GIF89a")));
+            r.check(
+                "video export: «Copy GIF» puts a GIF file on the clipboard",
+                !running && ok,
+                format!("running {running} · clipboard {clip:?}"),
+            );
+            ui.invoke_vid_share("library".into());
+        }));
+        for _ in 0..40 {
+            steps.push(Box::new(|_, _, _| {}));
+        }
+        steps.push(Box::new(|app, ui, r| {
+            let (app, _) = &current(app, ui);
+            let (_, running) = app.borrow().vexport_state();
+            let before = REAL_LIB_BEFORE.with(|n| n.get());
+            let after = library_videos(&app.borrow().lib_dir);
+            r.check(
+                "video export: «Save to the library» adds a video document",
+                !running && after == before + 1,
+                format!("running {running} · videos {before} → {after}"),
+            );
+        }));
         steps.push(Box::new(|app, ui, r| {
             let (app, ui) = &current(app, ui);
             // Trim on a real stream, then a frame as a screenshot with the decoded pixels.
@@ -3980,10 +4032,13 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
     steps.push(Box::new(|_, _, r| {
         let t = crate::rec::bar_time();
         crate::rec::toggle_pause();
+        // The bar shows the time as of the pause (its last tick may be a moment older): the
+        // next step checks that it then stands still.
         let paused_at = crate::rec::bar_time();
+        REC_PAUSED_AT.with(|p| *p.borrow_mut() = paused_at.clone());
         r.check(
-            "recording: the time runs on the bar; pause holds it",
-            t.as_deref().is_some_and(|t| t != "0:00") && paused_at == t,
+            "recording: the time runs on the bar",
+            t.as_deref().is_some_and(|t| t != "0:00") && paused_at.is_some(),
             format!("{t:?} → paused {paused_at:?}"),
         );
     }));
@@ -3996,12 +4051,16 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
     #[cfg(windows)]
     steps.push(Box::new(|_, _, r| {
         let held = crate::rec::bar_time();
+        let at_pause = REC_PAUSED_AT.with(|p| p.borrow_mut().take());
         crate::rec::toggle_pause();
         crate::rec::stop();
         r.check(
             "recording: the time stood still while paused; stop hides the indicators",
-            held.is_some() && !crate::rec::is_recording() && crate::rec::indicators().is_none(),
-            format!("{held:?}"),
+            held.is_some()
+                && held == at_pause
+                && !crate::rec::is_recording()
+                && crate::rec::indicators().is_none(),
+            format!("{at_pause:?} → {held:?}"),
         );
     }));
     // The file is finished and wrapped on a worker thread.
@@ -4778,9 +4837,43 @@ thread_local! {
     static OVERLAY_DISPLAY: std::cell::Cell<Option<(i32, i32)>> = const { std::cell::Cell::new(None) };
     /// The document made from ZNIMOK_SELFTEST_VIDEO, removed at the end (ZK-181).
     static REAL_VIDEO: std::cell::RefCell<Option<PathBuf>> = const { std::cell::RefCell::new(None) };
+    /// The recording bar's time right after the pause (ZK-180).
+    static REC_PAUSED_AT: std::cell::RefCell<Option<String>> = const { std::cell::RefCell::new(None) };
+    /// Video documents in the library before the export to it (ZK-190).
+    static REAL_LIB_BEFORE: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
     /// The frame the real video's reverse run started from (ZK-92).
     static REAL_FROM: std::cell::Cell<i64> = const { std::cell::Cell::new(0) };
     static MULTI_WINDOWS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
     /// ZK-107: editor windows before the two-window step opened its second one.
     static WINDOWS_BEFORE: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// Video documents in a library folder.
+#[cfg(windows)]
+fn library_videos(dir: &std::path::Path) -> usize {
+    std::fs::read_dir(dir)
+        .map(|it| {
+            it.filter_map(Result::ok)
+                .filter(|e| {
+                    crate::library::read_entry(&e.path())
+                        .is_some_and(|x| x.meta_line().starts_with('▶'))
+                })
+                .count()
+        })
+        .unwrap_or(0)
+}
+
+/// Files on the clipboard.
+#[cfg(windows)]
+fn clipboard_files() -> Vec<PathBuf> {
+    use znimok_platform::{ClipItem, Clipboard};
+    znimok_win::WinClipboard::new()
+        .read()
+        .unwrap_or_default()
+        .into_iter()
+        .flat_map(|i| match i {
+            ClipItem::Files(f) => f,
+            _ => Vec::new(),
+        })
+        .collect()
 }

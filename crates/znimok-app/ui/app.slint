@@ -2136,6 +2136,8 @@ export component AppWindow inherits Window {
     // wheel (x, delta, Ctrl) and the track area's width.
     callback vid-transport(string);
     callback vid-action(string, int);
+    // ZK-190: the video's share menu (copy-mp4, copy-gif, copy-frame, export, library, frame-shot).
+    callback vid-share(string);
     // ZK-188: W or H of the size on export typed in.
     callback vid-out-edited(string, string);
     callback tl-pointer(int, length, length, bool);
@@ -3265,7 +3267,7 @@ export component AppWindow inherits Window {
                                         alignment: center;
                                         Icon { width: 18px; height: 18px; tint: white; d: "M11 9 h7 a2 2 0 0 1 2 2 v7 a2 2 0 0 1 -2 2 h-7 a2 2 0 0 1 -2 -2 v-7 a2 2 0 0 1 2 -2 z M5 15 V5 a2 2 0 0 1 2 -2 h10"; }
                                     }
-                                    Text { text: @tr("doc-copy" => "Copy"); color: white; font-size: 13px; font-weight: 600; vertical-alignment: center; wrap: no-wrap; }
+                                    Text { text: root.vid-mode ? @tr("vid-copy-mp4" => "Copy MP4") : @tr("doc-copy" => "Copy"); color: white; font-size: 13px; font-weight: 600; vertical-alignment: center; wrap: no-wrap; }
                                 }
                                 // After a copy the title gives way to a tick for a second; the button keeps its width.
                                 Icon {
@@ -3328,10 +3330,17 @@ export component AppWindow inherits Window {
                                 drop-shadow-color: #00000080;
                                 VerticalLayout {
                                     padding: 6px;
-                                    MenuItemRow { text: @tr("share-copy-image" => "Copy image"); shortcut: Keys.k("Ctrl+C", "⌘C") + (Keys.last-share == 0 ? "  Enter" : ""); clicked => { root.copy(); } }
-                                    MenuItemRow { text: @tr("share-export" => "Export file…"); shortcut: Keys.k("Ctrl+Shift+S", "⇧⌘S") + (Keys.last-share == 1 ? "  Enter" : ""); clicked => { root.export(); } }
+                                    // A video (ZK-190): the MP4, a GIF, the frame, the sheet, the library.
+                                    if root.vid-mode: MenuItemRow { text: @tr("vid-copy-mp4" => "Copy MP4"); shortcut: Keys.k("Ctrl+C", "⌘C"); clicked => { root.vid-share("copy-mp4"); } }
+                                    if root.vid-mode: MenuItemRow { text: @tr("vid-copy-gif" => "Copy GIF"); clicked => { root.vid-share("copy-gif"); } }
+                                    if root.vid-mode: MenuItemRow { text: @tr("vid-copy-frame" => "Copy frame"); shortcut: Keys.k("Ctrl+Shift+C", "⇧⌘C"); clicked => { root.vid-share("copy-frame"); } }
+                                    if root.vid-mode: MenuItemRow { text: @tr("share-export" => "Export file…"); shortcut: Keys.k("Ctrl+E", "⌘E"); clicked => { root.vid-share("export"); } }
+                                    if root.vid-mode: MenuItemRow { text: @tr("vid-save-library" => "Save to the library"); clicked => { root.vid-share("library"); } }
+                                    if root.vid-mode: MenuItemRow { text: @tr("vid-frame-as-shot" => "Frame as screenshot"); shortcut: Keys.k("Ctrl+Shift+N", "⇧⌘N"); clicked => { root.vid-share("frame-shot"); } }
+                                    if !root.vid-mode: MenuItemRow { text: @tr("share-copy-image" => "Copy image"); shortcut: Keys.k("Ctrl+C", "⌘C") + (Keys.last-share == 0 ? "  Enter" : ""); clicked => { root.copy(); } }
+                                    if !root.vid-mode: MenuItemRow { text: @tr("share-export" => "Export file…"); shortcut: Keys.k("Ctrl+Shift+S", "⇧⌘S") + (Keys.last-share == 1 ? "  Enter" : ""); clicked => { root.export(); } }
                                     MenuItemRow { text: @tr("doc-save-as" => "Save as…"); clicked => { root.save-as(); } }
-                                    MenuItemRow { text: @tr("share-system" => "Share…"); enabled: false; }
+                                    if !root.vid-mode: MenuItemRow { text: @tr("share-system" => "Share…"); enabled: false; }
                                     Rectangle { height: 1px; background: Theme.line; }
                                     MenuItemRow { text: @tr("export-metadata-menu" => "Write metadata"); shortcut: root.export-meta ? "✓" : ""; clicked => { root.toggle-export-meta(); } }
                                 }
@@ -4659,6 +4668,17 @@ export component AppWindow inherits Window {
     callback exp-width-set(string);
     callback exp-go-clicked();
     callback exp-close();
+    // ZK-190: the sheet shows a video's formats; the GIF's width / rate (indices), dithering,
+    // the size limit (index), a warning, whether the library is a place, the progress (−1 idle).
+    in property <bool> exp-video;
+    in property <int> vexp-width: 1;
+    in property <int> vexp-fps: 1;
+    in property <bool> vexp-dither: true;
+    in property <int> vexp-limit;
+    in property <string> vexp-limit-text;
+    in property <bool> vexp-over;
+    in property <bool> vexp-library-ok: true;
+    in property <float> vexp-progress: -1;
     changed exp-open => {
         if (root.exp-open) {
             Tip.armed = false;
@@ -4712,7 +4732,7 @@ export component AppWindow inherits Window {
                 HorizontalLayout {
                     spacing: 12px;
                     height: 28px;
-                    Text { text: @tr("export-title" => "Export file"); color: Theme.text; font-size: 18px; font-weight: 800; vertical-alignment: center; }
+                    Text { text: root.exp-video ? @tr("vexp-title" => "Export video") : @tr("export-title" => "Export file"); color: Theme.text; font-size: 18px; font-weight: 800; vertical-alignment: center; }
                     Text { text: root.exp-subtitle; color: Theme.text3; font-size: 12px; vertical-alignment: center; horizontal-stretch: 1; overflow: elide; }
                     IconButton { width: 32px; height: 28px; icon: "M6 6 L18 18 M18 6 L6 18"; label: @tr("common-close" => "Close") + "  Esc"; clicked => { root.exp-close(); } }
                 }
@@ -4760,7 +4780,95 @@ export component AppWindow inherits Window {
                     }
                     // the chosen format's settings
                     Rectangle { width: 1px; background: Theme.line; }
-                    VerticalLayout {
+                    // ---- the video's formats (ZK-190)
+                    if root.exp-video: VerticalLayout {
+                        horizontal-stretch: 1;
+                        spacing: 10px;
+                        alignment: start;
+                        if root.exp-format == 1: VerticalLayout {
+                            spacing: 8px;
+                            Text { text: @tr("vexp-width" => "Width"); color: Theme.text3; font-size: 11px; font-weight: 600; letter-spacing: 0.4px; }
+                            HorizontalLayout {
+                                spacing: 4px;
+                                for w[i] in ["480", "640", "800", "1280"]: SegOption { text: w; on: root.vexp-width == i; clicked => { root.exp-set("vwidth", i); } }
+                            }
+                            Text { text: @tr("vexp-fps" => "Frames/s"); color: Theme.text3; font-size: 11px; font-weight: 600; letter-spacing: 0.4px; }
+                            HorizontalLayout {
+                                spacing: 4px;
+                                for f[i] in ["5", "10", "15", "20"]: SegOption { text: f; on: root.vexp-fps == i; clicked => { root.exp-set("vfps", i); } }
+                            }
+                            SwitchRow { text: @tr("vexp-dither" => "Dithering"); checked: root.vexp-dither; toggled => { root.exp-set("vdither", self.checked ? 1 : 0); } }
+                            HorizontalLayout {
+                                Text { text: @tr("vexp-limit" => "Not more than"); color: Theme.text3; font-size: 11px; font-weight: 600; letter-spacing: 0.4px; horizontal-stretch: 1; }
+                                Text { text: root.vexp-limit-text; color: Theme.text; font-size: 12px; font-family: "JetBrains Mono"; }
+                            }
+                            MiniSlider {
+                                height: 20px;
+                                value: root.vexp-limit / 6;
+                                moved(v) => { root.exp-set("vlimit", round(v * 6)); }
+                            }
+                            Text { text: @tr("vexp-limit-note" => "Over the limit, Znimok lowers the frame rate, then the width, and says what it changed."); color: Theme.text3; font-size: 11px; wrap: word-wrap; }
+                            if root.vexp-over: Text { text: @tr("vexp-gif-warning" => "GIFs over 25 MB load poorly in chats. MP4 or WebP suits such clips better."); color: Theme.attention; font-size: 11px; wrap: word-wrap; }
+                        }
+                        if root.exp-format == 0: Text { text: @tr("vexp-mp4-note" => "H.264 with the hardware encoder; the sound tracks that are on are mixed into one; what is cut is left out with short fades at the joints."); color: Theme.text2; font-size: 12px; wrap: word-wrap; }
+                        if root.exp-format == 2: Text { text: @tr("vexp-html-note" => "The video and its marks in one file: the marks stay a layer over the video, shown in their time; a hide and a marker go into the video itself."); color: Theme.text2; font-size: 12px; wrap: word-wrap; }
+                        if root.exp-format == 3: Text { text: @tr("vexp-frame-note" => "The frame on the canvas, full size, with the marks shown on it — a new screenshot in a window of its own."); color: Theme.text2; font-size: 12px; wrap: word-wrap; }
+                        if root.exp-format <= 2: Rectangle {
+                            border-radius: 10px;
+                            background: Theme.elevated;
+                            height: vest-lay.preferred-height;
+                            vest-lay := HorizontalLayout {
+                                padding: 12px;
+                                Text { text: @tr("export-size" => "Size"); color: Theme.text2; font-size: 12px; horizontal-stretch: 1; }
+                                Text { text: root.exp-estimate; color: Theme.accent; font-size: 12px; font-family: "JetBrains Mono"; }
+                            }
+                        }
+                        if root.exp-format <= 2: Text { text: @tr("export-name" => "Name"); color: Theme.text3; font-size: 11px; font-weight: 600; letter-spacing: 0.4px; }
+                        if root.exp-format <= 2: Rectangle {
+                            height: 30px;
+                            border-radius: 7px;
+                            background: Theme.elevated;
+                            border-width: 1px;
+                            border-color: vname-in.has-focus ? Theme.accent : Theme.control-on;
+                            vname-in := TextInput {
+                                x: 10px;
+                                width: parent.width - 20px;
+                                height: parent.height;
+                                vertical-alignment: center;
+                                color: Theme.text;
+                                font-size: 13px;
+                                single-line: true;
+                                text <=> root.exp-name;
+                                accessible-label: @tr("export-name-a11y" => "File name");
+                            }
+                        }
+                        if root.exp-format <= 2: Text { text: @tr("export-where" => "Where"); color: Theme.text3; font-size: 11px; font-weight: 600; letter-spacing: 0.4px; }
+                        if root.exp-format <= 2: HorizontalLayout {
+                            spacing: 4px;
+                            SegOption { text: @tr("export-to-clipboard" => "To clipboard"); on: root.exp-to == 0; clicked => { root.exp-set("to", 0); } }
+                            SegOption { text: @tr("export-to-file" => "File…"); on: root.exp-to == 1; clicked => { root.exp-set("to", 1); } }
+                            SegOption { text: @tr("export-to-library" => "To the library"); enabled: root.vexp-library-ok; on: root.exp-to == 2; clicked => { root.exp-set("to", 2); } }
+                        }
+                        if root.exp-format <= 2 && root.exp-to == 0: Text { text: @tr("vexp-clipboard-note" => "The clipboard gets the file: paste it into a chat or a folder."); color: Theme.text3; font-size: 11px; wrap: word-wrap; }
+                        if root.vexp-progress >= 0: VerticalLayout {
+                            spacing: 6px;
+                            Rectangle {
+                                height: 6px;
+                                border-radius: 3px;
+                                background: Theme.control-on;
+                                Rectangle { x: 0; width: parent.width * root.vexp-progress; border-radius: 3px; background: Theme.accent; animate width { duration: 120ms; } }
+                            }
+                            Text { text: @tr("vexp-working" => "Exporting… {0} %", round(root.vexp-progress * 100)); color: Theme.text2; font-size: 12px; }
+                        }
+                        HorizontalLayout {
+                            padding-top: 6px;
+                            spacing: 8px;
+                            alignment: end;
+                            TextButton { text: @tr("common-cancel" => "Cancel"); clicked => { root.exp-close(); } }
+                            TextButton { primary: true; enabled: root.vexp-progress < 0 && root.exp-format != 4; text: root.exp-go; clicked => { root.exp-go-clicked(); } }
+                        }
+                    }
+                    if !root.exp-video: VerticalLayout {
                         horizontal-stretch: 1;
                         spacing: 10px;
                         alignment: start;

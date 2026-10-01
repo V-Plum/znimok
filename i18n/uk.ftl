@@ -5135,3 +5135,181 @@ rec-browsers-off = Жоден браузер із розширенням Znimok 
 # @kind: body
 # @max: 500
 rec-devlog-hint = Розширення Znimok для Chrome і Edge пише консоль сторінки, помилки, мережу (заголовки, тіла запитів і відповідей) і переходи синхронно з відео — усе, що показують панелі DevTools, для налагодження; чутливе можна приховати при експорті. Доки його немає в Chrome Web Store: архів znimok-extension з релізу → chrome://extensions → Режим розробника → Завантажити розпаковане.
+
+## Video export (ZK-190)
+
+
+# @where: The header button and menu of a video: the MP4 file to the clipboard
+# @kind: button
+# @max: 18
+vid-copy-mp4 = Копіювати MP4
+
+# @where: Share menu of a video: a GIF file to the clipboard
+# @kind: menu
+# @max: 24
+vid-copy-gif = Копіювати GIF
+
+# @where: Share menu of a video: the frame shown with its marks, as a picture
+# @kind: menu
+# @max: 24
+vid-copy-frame = Копіювати кадр
+
+# @where: Share menu of a video: the exported MP4 as a new library document
+# @kind: menu
+# @max: 30
+vid-save-library = Зберегти в бібліотеку
+
+# @where: Video export sheet: the MP4 card title
+# @kind: label
+# @max: 10
+vexp-mp4 = MP4
+
+# @where: Video export sheet: the MP4 card
+# @kind: body
+# @max: 90
+vexp-mp4-desc = Грає в будь-якому програвачі й чаті; звук зведено в одну доріжку.
+
+# @where: Video export sheet on macOS: MP4 is not there yet
+# @kind: body
+# @max: 90
+vexp-mac-mp4 = MP4 на цьому Mac — з наступним оновленням; GIF працює.
+
+# @where: Video export sheet: the GIF card title
+# @kind: label
+# @max: 10
+vexp-gif = GIF
+
+# @where: Video export sheet: the GIF card, its width and rate; $w, $fps
+# @kind: label
+# @max: 24
+vexp-gif-sub = { $w } px · { $fps } к/с
+
+# @where: Video export sheet: the GIF card
+# @kind: body
+# @max: 90
+vexp-gif-desc = Грає будь-де без програвача; без звуку, 255 кольорів.
+
+# @where: Video export sheet: the HTML card title
+# @kind: label
+# @max: 10
+vexp-html = HTML
+
+# @where: Video export sheet: the HTML card, under its title
+# @kind: label
+# @max: 20
+vexp-html-sub = одна сторінка
+
+# @where: Video export sheet: the HTML card
+# @kind: body
+# @max: 90
+vexp-html-desc = Відео з позначками живим шаром; відкривається в будь-якому браузері.
+
+# @where: Video export sheet: the frame-as-screenshot card
+# @kind: body
+# @max: 90
+vexp-frame-desc = Поточний кадр із позначками — новим знімком.
+
+# @where: Video export sheet: the card of the report with the browser log (not yet)
+# @kind: label
+# @max: 40
+vexp-report = Звіт з логом DevTools
+
+# @where: Video export sheet: a card not available yet
+# @kind: label
+# @max: 20
+vexp-soon = згодом
+
+# @where: Video export sheet: the report card (not yet)
+# @kind: body
+# @max: 90
+vexp-report-desc = З’явиться разом із розширенням для браузера.
+
+# @where: Video export sheet, GIF: the size limit label
+# @kind: label
+# @max: 24
+vexp-limit = Не більше ніж
+
+# @where: Video export sheet, GIF: no size limit
+# @kind: label
+# @max: 16
+vexp-limit-off = без межі
+
+# @where: Video export sheet, GIF: under the size limit
+# @kind: body
+# @max: 140
+vexp-limit-note = Якщо більше — Znimok знизить частоту кадрів, потім ширину, і скаже, що змінив.
+
+# @where: Video export sheet: what the MP4 export does
+# @kind: body
+# @max: 200
+vexp-mp4-note = H.264 апаратним кодеком; увімкнені звукові доріжки зводяться в одну; вирізане пропускається з короткими згасаннями на стиках.
+
+# @where: Video export sheet: what the HTML export does
+# @kind: body
+# @max: 200
+vexp-html-note = Відео й позначки в одному файлі: позначки — шар над відео, у свій час; приховування й маркер — у самому відео.
+
+# @where: Video export sheet: what the frame card does
+# @kind: body
+# @max: 160
+vexp-frame-note = Кадр із полотна в повному розмірі з видимими позначками — новий знімок в окремому вікні.
+
+# @where: Video export sheet: the clipboard gets a file
+# @kind: body
+# @max: 120
+vexp-clipboard-note = У буфер іде файл — вставте його в чат або теку.
+
+# @where: Video export sheet: progress; $pct
+# @kind: label
+# @max: 30
+vexp-working = Експорт… { $pct } %
+
+# @where: Toast when a quick export starts; $format
+# @kind: toast
+# @max: 60
+vexp-working-toast = Готую { $format }…
+
+# @where: Toast: an exported video file is on the clipboard; $format
+# @kind: toast
+# @max: 90
+vexp-copied = { $format } скопійовано — вставте в чат або теку
+
+# @where: Toast: the exported MP4 is a new library document
+# @kind: toast
+# @max: 60
+vexp-library-done = MP4 — у бібліотеці
+
+# @where: Toast addition: what the GIF limit changed; $w, $fps
+# @kind: toast
+# @max: 60
+vexp-lowered = щоб вмістилось: { $w } px, { $fps } к/с
+
+# @where: Toast: the export was cancelled
+# @kind: toast
+# @max: 40
+vexp-cancelled = Експорт скасовано
+
+# @where: Toast: the export failed; $reason
+# @kind: toast
+# @max: 120
+vexp-error = Не вдалося експортувати: { $reason }
+
+# @where: Video export sheet header: kept length, size, what applies; $time, $w, $h, $what
+# @kind: label
+# @max: 90
+vexp-subtitle = { $time } після обрізання · { $w } × { $h } { $what }
+
+# @where: Video export sheet header: marks and the frame are applied
+# @kind: label
+# @max: 40
+vexp-applied-both = · позначки й кадр застосовано
+
+# @where: Video export sheet header: marks are applied
+# @kind: label
+# @max: 30
+vexp-applied-marks = · позначки застосовано
+
+# @where: Video export sheet header: the frame (crop / size) is applied
+# @kind: label
+# @max: 30
+vexp-applied-frame = · кадр застосовано

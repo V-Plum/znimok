@@ -1,0 +1,29 @@
+[package]
+name = "znimok-export"
+description = "Video export (ZK-95): the recording with its cuts, marks in time, frame, tone and size — MP4 (Media Foundation on Windows, the sound tracks mixed with fades at the joints) and GIF (LH's encoder: median-cut palette, Floyd–Steinberg, frame differences); an untouched video is copied as it is"
+version.workspace = true
+edition.workspace = true
+license-file.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+znimok-core = { path = "../znimok-core" }
+znimok-format = { path = "../znimok-format" }
+znimok-render = { path = "../znimok-render" }
+znimok-video = { path = "../znimok-video" }
+znimok-play = { path = "../znimok-play" }
+png = "0.18"
+
+[target.'cfg(windows)'.dependencies]
+znimok-video-win = { path = "../znimok-video-win" }
+
+[dev-dependencies]
+gif = "0.14"
+
+[target.'cfg(windows)'.dev-dependencies]
+znimok-video-win = { path = "../znimok-video-win" }

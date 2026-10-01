@@ -6815,6 +6815,7 @@ dependencies = [
  "znimok-codes",
  "znimok-core",
  "znimok-devtools",
+ "znimok-export",
  "znimok-format",
  "znimok-gpu",
  "znimok-i18n",
@@ -6892,6 +6893,20 @@ dependencies = [
  "windows-core",
  "znimok-format",
  "znimok-ipc",
+]
+
+[[package]]
+name = "znimok-export"
+version = "0.0.1"
+dependencies = [
+ "gif",
+ "png",
+ "znimok-core",
+ "znimok-format",
+ "znimok-play",
+ "znimok-render",
+ "znimok-video",
+ "znimok-video-win",
 ]
 
 [[package]]
@@ -7147,6 +7162,7 @@ dependencies = [
 name = "znimok-video"
 version = "0.0.1"
 dependencies = [
+ "gif",
  "znimok-core",
 ]
 
