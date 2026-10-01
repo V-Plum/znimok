@@ -1,0 +1,126 @@
+{
+  "extName": {
+    "message": "Znimok — DevTools log",
+    "description": "The extension's name in the browser and the Chrome Web Store"
+  },
+  "extDesc": {
+    "message": "Records the tab's console, errors and network next to a Znimok screen recording — to watch a bug together with what the page did.",
+    "description": "The store's summary: at most 132 characters"
+  },
+  "actionTitle": {
+    "message": "Znimok",
+    "description": "The toolbar button's tooltip when nothing is recorded"
+  },
+  "cmdToggle": {
+    "message": "Start or stop recording this window",
+    "description": "Keyboard shortcut description (chrome://extensions/shortcuts)"
+  },
+  "tipRec": {
+    "message": "Znimok — recording {t} · click to stop",
+    "description": "Toolbar tooltip while recording; {t} is the time"
+  },
+  "tipPaused": {
+    "message": "Znimok — paused {t} · click to stop",
+    "description": "Toolbar tooltip while paused; {t} is the time"
+  },
+  "menuPause": {
+    "message": "Pause",
+    "description": "Right-click menu of the icon"
+  },
+  "menuResume": {
+    "message": "Resume",
+    "description": "Right-click menu of the icon"
+  },
+  "menuStop": {
+    "message": "Stop recording",
+    "description": "Right-click menu of the icon"
+  },
+  "popupTitle": {
+    "message": "Znimok",
+    "description": "Popup heading"
+  },
+  "popupApp": {
+    "message": "Znimok",
+    "description": "Popup: the app's row"
+  },
+  "popupRec": {
+    "message": "Recording",
+    "description": "Popup: the recording's row"
+  },
+  "popupOn": {
+    "message": "connected",
+    "description": "Popup: the app is connected"
+  },
+  "popupOff": {
+    "message": "not found",
+    "description": "Popup: the app is not found"
+  },
+  "popupRecOn": {
+    "message": "on — writing the log",
+    "description": "Popup: a recording is on"
+  },
+  "popupRecOff": {
+    "message": "no",
+    "description": "Popup: no recording"
+  },
+  "popupGo": {
+    "message": "● Record this window",
+    "description": "Popup: the main button"
+  },
+  "popupBusy": {
+    "message": "Looking for the window…",
+    "description": "Popup: while the window is looked for"
+  },
+  "popupPage": {
+    "message": "Page only — no tabs or address bar",
+    "description": "Popup: the checkbox"
+  },
+  "hintOff": {
+    "message": "Start Znimok — the extension finds the app by itself.",
+    "description": "Popup hint when the app is not found"
+  },
+  "hintOn": {
+    "message": "While recording, clicking the extension icon stops it; pause is in the right-click menu.",
+    "description": "Popup hint"
+  },
+  "hintLog": {
+    "message": "While the log is written, the browser shows the \"extension is debugging this browser\" bar — a page-only recording doesn't show it. The log writes what the Network panel shows (headers, request and response bodies); sensitive parts can be hidden on export.",
+    "description": "Popup hint when the log is on"
+  },
+  "whyNoApp": {
+    "message": "Znimok not found — start the app.",
+    "description": "Popup error"
+  },
+  "whyDisabled": {
+    "message": "Starting recording from the extension is turned off in Znimok (Settings → Recording).",
+    "description": "Popup error"
+  },
+  "whyBusy": {
+    "message": "A recording is already running or a region is being picked.",
+    "description": "Popup error"
+  },
+  "whyNotFound": {
+    "message": "Could not find this browser window.",
+    "description": "Popup error"
+  },
+  "whyAmbiguous": {
+    "message": "Several windows show the same tab — switch to another tab or start with Alt+Shift+5.",
+    "description": "Popup error"
+  },
+  "whyMinimized": {
+    "message": "The window is minimized.",
+    "description": "Popup error"
+  },
+  "whyUnsupported": {
+    "message": "Recording from the extension on this system comes with the next update.",
+    "description": "Popup error"
+  },
+  "whyTimeout": {
+    "message": "Znimok didn't answer.",
+    "description": "Popup error"
+  },
+  "whyFailed": {
+    "message": "Could not start recording.",
+    "description": "Popup error"
+  }
+}

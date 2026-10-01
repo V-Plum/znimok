@@ -1,0 +1,126 @@
+{
+  "extName": {
+    "message": "Znimok — журнал DevTools",
+    "description": "The extension's name in the browser and the Chrome Web Store"
+  },
+  "extDesc": {
+    "message": "Записує консоль, помилки й мережу вкладки поруч із записом екрана Znimok — щоб бачити баг разом із тим, що робила сторінка.",
+    "description": "The store's summary: at most 132 characters"
+  },
+  "actionTitle": {
+    "message": "Znimok",
+    "description": "The toolbar button's tooltip when nothing is recorded"
+  },
+  "cmdToggle": {
+    "message": "Почати або зупинити запис цього вікна",
+    "description": "Keyboard shortcut description (chrome://extensions/shortcuts)"
+  },
+  "tipRec": {
+    "message": "Znimok — запис {t} · клік — зупинити",
+    "description": "Toolbar tooltip while recording; {t} is the time"
+  },
+  "tipPaused": {
+    "message": "Znimok — пауза {t} · клік — зупинити",
+    "description": "Toolbar tooltip while paused; {t} is the time"
+  },
+  "menuPause": {
+    "message": "Пауза",
+    "description": "Right-click menu of the icon"
+  },
+  "menuResume": {
+    "message": "Продовжити",
+    "description": "Right-click menu of the icon"
+  },
+  "menuStop": {
+    "message": "Зупинити запис",
+    "description": "Right-click menu of the icon"
+  },
+  "popupTitle": {
+    "message": "Znimok",
+    "description": "Popup heading"
+  },
+  "popupApp": {
+    "message": "Znimok",
+    "description": "Popup: the app's row"
+  },
+  "popupRec": {
+    "message": "Запис",
+    "description": "Popup: the recording's row"
+  },
+  "popupOn": {
+    "message": "підключено",
+    "description": "Popup: the app is connected"
+  },
+  "popupOff": {
+    "message": "не знайдено",
+    "description": "Popup: the app is not found"
+  },
+  "popupRecOn": {
+    "message": "іде — пишу лог",
+    "description": "Popup: a recording is on"
+  },
+  "popupRecOff": {
+    "message": "ні",
+    "description": "Popup: no recording"
+  },
+  "popupGo": {
+    "message": "● Записати це вікно",
+    "description": "Popup: the main button"
+  },
+  "popupBusy": {
+    "message": "Шукаю вікно…",
+    "description": "Popup: while the window is looked for"
+  },
+  "popupPage": {
+    "message": "Лише сторінка — без вкладок і адресного рядка",
+    "description": "Popup: the checkbox"
+  },
+  "hintOff": {
+    "message": "Запустіть Znimok — розширення знайде застосунок саме.",
+    "description": "Popup hint when the app is not found"
+  },
+  "hintOn": {
+    "message": "Поки йде запис, клік по значку розширення зупиняє його; пауза — у меню правої кнопки.",
+    "description": "Popup hint"
+  },
+  "hintLog": {
+    "message": "Поки пишеться лог, браузер показує смугу «розширення налагоджує браузер» — у записі лише сторінки її не видно. Лог пише все, що показує панель Network (заголовки, тіла запитів і відповідей); приховати чутливе можна при експорті.",
+    "description": "Popup hint when the log is on"
+  },
+  "whyNoApp": {
+    "message": "Znimok не знайдено — запустіть застосунок.",
+    "description": "Popup error"
+  },
+  "whyDisabled": {
+    "message": "Запуск запису з розширення вимкнено в Znimok (Налаштування → Запис).",
+    "description": "Popup error"
+  },
+  "whyBusy": {
+    "message": "Запис уже йде або вибирається ділянка.",
+    "description": "Popup error"
+  },
+  "whyNotFound": {
+    "message": "Не вдалося знайти це вікно браузера.",
+    "description": "Popup error"
+  },
+  "whyAmbiguous": {
+    "message": "Кілька вікон із такою самою вкладкою — перейдіть на іншу вкладку або почніть запис клавішею Alt+Shift+5.",
+    "description": "Popup error"
+  },
+  "whyMinimized": {
+    "message": "Вікно згорнуте.",
+    "description": "Popup error"
+  },
+  "whyUnsupported": {
+    "message": "Запис з розширення на цій системі — з наступним оновленням.",
+    "description": "Popup error"
+  },
+  "whyTimeout": {
+    "message": "Znimok не відповів.",
+    "description": "Popup error"
+  },
+  "whyFailed": {
+    "message": "Не вдалося почати запис.",
+    "description": "Popup error"
+  }
+}
