@@ -185,5 +185,8 @@ fn plays_the_kept_clip() {
         }
     }
     assert_eq!(got.len(), 4, "{got:?}");
+    // Read in place on both systems (ZK-200): nothing was copied into the cache.
+    let copied = std::fs::read_dir(dir.join("cache")).map_or(0, |d| d.count());
+    assert_eq!(copied, 0, "the MP4 was copied out of the document");
     let _ = std::fs::remove_dir_all(&dir);
 }

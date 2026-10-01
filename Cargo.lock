@@ -7079,6 +7079,7 @@ dependencies = [
 name = "znimok-play"
 version = "0.0.1"
 dependencies = [
+ "dispatch2",
  "objc2 0.6.4",
  "objc2-av-foundation",
  "objc2-core-foundation",
