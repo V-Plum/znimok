@@ -10756,6 +10756,7 @@ impl App {
         let rows: Vec<crate::TlMark> = bars
             .iter()
             .map(|b| crate::TlMark {
+                id: b.id as i32,
                 x: b.x as f32,
                 w: b.w as f32,
                 lane: b.lane as i32,
@@ -11242,15 +11243,53 @@ impl App {
     /// The pointer over the timeline's tracks: `kind` 0 down, 1 move, 2 up; `x`, `y` in the
     /// track area. The ruler scrubs; the strip takes a trim handle, a range or a click.
     pub fn tl_pointer(&mut self, ui: &AppWindow, kind: i32, x: i32, y: i32, _shift: bool) {
-        let Some(v) = self.s.as_mut().and_then(|s| s.vid.as_mut()) else {
-            return;
-        };
         const RULER: i32 = 22;
         const STRIP_TOP: i32 = 26;
         const STRIP_BOTTOM: i32 = 78;
         const MARKS_TOP: i32 = 104;
         const MARKS_BOTTOM: i32 = 156;
         const LOG_TOP: i32 = 156;
+        // The pointer passing over (3) or leaving (4): what it is over lights up and sets the
+        // cursor — a trim handle, a bar, a bar's end (ZK-219: nothing said the handles and the
+        // bars could be dragged).
+        if kind >= 3 {
+            let (mut hot, mut mark, mut grip) = (0, -1, 0);
+            if kind == 3 {
+                if (STRIP_TOP..=STRIP_BOTTOM).contains(&y)
+                    && let Some(v) = self.s.as_ref().and_then(|s| s.vid.as_ref())
+                {
+                    hot = match v
+                        .view
+                        .handle_at(x, v.tl.edit(), znimok_video::edit::HANDLE_GRAB_PX)
+                    {
+                        Some(znimok_video::edit::Handle::In) => 1,
+                        Some(znimok_video::edit::Handle::Out) => 2,
+                        None => 0,
+                    };
+                } else if (MARKS_TOP..MARKS_BOTTOM).contains(&y)
+                    && let Some((id, g, _)) = s_bars(self, x, y)
+                {
+                    mark = id as i32;
+                    grip = match g {
+                        crate::video::Grip::Start => 1,
+                        crate::video::Grip::End => 2,
+                        crate::video::Grip::Move => 0,
+                    };
+                }
+            }
+            if ui.get_tl_hot() != hot
+                || ui.get_tl_hot_mark() != mark
+                || ui.get_tl_hot_grip() != grip
+            {
+                ui.set_tl_hot(hot);
+                ui.set_tl_hot_mark(mark);
+                ui.set_tl_hot_grip(grip);
+            }
+            return;
+        }
+        let Some(v) = self.s.as_mut().and_then(|s| s.vid.as_mut()) else {
+            return;
+        };
         // A bar being dragged (ZK-94): its new time, one undo step.
         if kind != 0 && v.mark_press.is_some() {
             let mut p = v.mark_press.unwrap();

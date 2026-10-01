@@ -134,7 +134,13 @@ impl Vid {
     }
 
     /// The document's timeline changed under us (undo, redo, a load): the timeline follows.
+    /// Not while a trim handle is being dragged (ZK-219): the edit is ahead of the document
+    /// until the drag commits, and following it then threw the drag away (the handles never
+    /// moved).
     pub fn adopt(&mut self, t: &Timeline) {
+        if self.tl.dragging().is_some() {
+            return;
+        }
         let mine = self.tl.edit().to_timeline();
         if (&mine.parts, mine.in_point, mine.out_point) != (&t.parts, t.in_point, t.out_point)
             && let Some(e) = VideoEdit::from_timeline(t)
