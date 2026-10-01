@@ -2049,6 +2049,16 @@ capture-scroll = з прокруткою
 # @max: 20
 capture-cancel = скасувати
 
+# @where: Capture overlay of a recording, hint strip: what releasing does
+# @kind: hint
+# @max: 20
+capture-record = записати
+
+# @where: Capture overlay of a recording, hint strip beside the A key: $mode is the sound choice in lower case («system sound»)
+# @kind: hint
+# @max: 40
+capture-sound = звук: { $mode }
+
 # @where: Mode switch, top right
 # @kind: option
 # @max: 12

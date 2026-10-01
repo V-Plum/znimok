@@ -95,6 +95,42 @@ pub fn take_video_mode() -> bool {
     VIDEO_MODE.with(|m| m.replace(false))
 }
 
+/// The overlay being opened is for a recording (it shows the sound choice, ZK-189).
+pub fn video_mode() -> bool {
+    VIDEO_MODE.with(|m| m.get())
+}
+
+/// The sound of the next recording: 0 none, 1 system, 2 microphone, 3 both.
+pub fn sound_mode() -> i32 {
+    crate::with_prefs(|p| p.video.audio.system as i32 | (p.video.audio.microphone as i32) << 1)
+        .unwrap_or(0)
+}
+
+/// The next sound choice, kept in the settings (A in the recording overlay, ZK-189).
+pub fn cycle_sound() -> i32 {
+    let next = (sound_mode() + 1) % 4;
+    crate::with_ctx(|a, ui| a.setting(ui, "rec-sound", next));
+    next
+}
+
+/// «sound: system» for the overlay's hint strip.
+pub fn sound_text(mode: i32) -> String {
+    let mut out = String::new();
+    crate::with_ctx(|a, _| {
+        let key = match mode {
+            1 => "rec-system-audio",
+            2 => "rec-microphone",
+            3 => "vid-sound-both",
+            _ => "vid-no-sound",
+        };
+        out = a.tr.tr_args(
+            "capture-sound",
+            &crate::app::fargs(&[("mode", a.tr.tr(key).to_lowercase())]),
+        );
+    });
+    out
+}
+
 /// The recording hotkey / tray item: stop the running recording, or open the overlay to choose
 /// what to record.
 pub fn toggle(start_overlay: impl FnOnce()) {
@@ -424,6 +460,10 @@ fn wrap(
             ..Default::default()
         })
         .collect();
+    // Their loudness for the timeline (ZK-189).
+    for (t, p) in video.audio.iter_mut().zip(&result.audio_peaks) {
+        t.peaks = p.clone();
+    }
     // The clicks, in video time and video pixels (the MOUS log, ZK-90).
     video.mouse = result
         .events
