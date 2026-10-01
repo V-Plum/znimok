@@ -1014,6 +1014,10 @@ criteria = "safe-to-deploy"
 version = "0.3.2"
 criteria = "safe-to-deploy"
 
+[[exemptions.objc2-audio-toolbox]]
+version = "0.3.2"
+criteria = "safe-to-deploy"
+
 [[exemptions.objc2-av-foundation]]
 version = "0.3.2"
 criteria = "safe-to-deploy"

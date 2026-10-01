@@ -5164,11 +5164,6 @@ vexp-mp4 = MP4
 # @max: 90
 vexp-mp4-desc = Грає в будь-якому програвачі й чаті; звук зведено в одну доріжку.
 
-# @where: Video export sheet on macOS: MP4 is not there yet
-# @kind: body
-# @max: 90
-vexp-mac-mp4 = MP4 на цьому Mac — з наступним оновленням; GIF працює.
-
 # @where: Video export sheet: the GIF card title
 # @kind: label
 # @max: 10

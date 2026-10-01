@@ -203,7 +203,7 @@ Windows HEIC/AVIF need Microsoft's free extensions).
 
 ## Video (preview)
 
-**Recording (Windows).** Alt+Shift+5 or "Record video" in the tray opens the same overlay as for
+**Recording (Windows and macOS).** Alt+Shift+5 (⌃⇧5 on a Mac) or "Record video" in the tray opens the same overlay as for
 screenshots: drag — a region, click — a window (followed as it moves, or recorded "as a region" —
 in the settings), Space — the whole screen, A — the sound (none / system / microphone / both; the
 choice is kept). While it records, a thin red edge runs round the part
@@ -215,7 +215,13 @@ computer plays), the microphone or both — each source a track of its own; the 
 permission (Privacy → Microphone), without it the recording goes on without it and Znimok says so. The pointer is drawn into
 the video, a click as a spreading ring (the colour is in the settings), a held button as a steady
 one; clicks on the recording bar are not recorded, the rest are kept as a log in the document. A window that stands still is recorded too: its first frame is taken
-at once and repeated until the window changes. On macOS recording comes with the next update.
+at once and repeated until the window changes.
+
+**Recording on macOS.** ScreenCaptureKit captures (it needs the Screen Recording permission, and
+Microphone for the microphone), VideoToolbox encodes. The system sound and the microphone are
+recorded without extra drivers (macOS 15+). The system draws the pointer and its clicks (the same
+switches); there is no click log in the document on a Mac. Znimok's own windows (the bar, the edge)
+stay out of a screen recording.
 
 **Editor.** A video document opens in the "Video" mode: the same tools, and under the canvas a transport (Space —
 play / pause, ◁ — play backwards, ← → — a frame, Shift+← → — a second, Home / End, speed 0.5–2×) and a
@@ -277,7 +283,7 @@ than N MB" — when the estimate is over, Znimok lowers the frame rate, then the
 it changed), **HTML** (one page with the video, the marks a live layer in their time; a hide and a
 marker go into the video itself) and **frame as screenshot**; each with a size estimate. A video
 without any edit goes out as it is, without re-encoding. The progress shows while it runs; closing
-the sheet cancels it. On macOS the GIF works for now; MP4 and HTML come with the next update.
+the sheet cancels it. On macOS VideoToolbox encodes the MP4.
 
 **The developer report.** The last card of the video export sheet is "Report with the DevTools
 log". It is the video with its marks and, beside it, the browser's log as in the editor: filters,

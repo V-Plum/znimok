@@ -6,13 +6,17 @@
 //! in the video, the mouse goes through), a control bar with the time, «Pause» and «Stop»
 //! (kept out of every capture), the time in the tray. The same hotkey stops it.
 //!
-//! The MP4 is written to the cache as `.part` by `znimok-video-win`; once it is complete it is
-//! wrapped into a video document (poster = the first frame, a thumbnail for the library) on a
-//! worker thread and moved into the library; the card after a capture says so.
+//! The MP4 is written to the cache as `.part` by `znimok-video-win` (Windows) or
+//! `znimok-video-mac` (macOS, ZK-88); once it is complete it is wrapped into a video document
+//! (poster = the first frame, a thumbnail for the library) on a worker thread and moved into the
+//! library; the card after a capture says so.
 //!
-//! macOS: the recording backend is ZK-88 — until then the hotkey says so.
-// Until ZK-88 most of this runs on Windows only.
-#![cfg_attr(not(windows), allow(dead_code, unused_imports, unused_variables))]
+//! On macOS ScreenCaptureKit draws the pointer and its clicks itself (the settings' switches)
+//! and leaves this app's own windows out of a display's capture; the clicks are not logged.
+#![cfg_attr(
+    not(any(windows, target_os = "macos")),
+    allow(dead_code, unused_imports, unused_variables)
+)]
 
 use std::cell::RefCell;
 use std::path::PathBuf;
@@ -45,6 +49,8 @@ thread_local! {
 struct Active {
     #[cfg(windows)]
     rec: Option<znimok_video_win::Recording>,
+    #[cfg(target_os = "macos")]
+    rec: Option<znimok_video_mac::Recording>,
     /// The cursor and the clicks (ZK-90): the hook lives as long as the recording.
     #[cfg(windows)]
     mouse: Option<znimok_video_win::MouseInput>,
@@ -138,7 +144,7 @@ pub fn toggle(start_overlay: impl FnOnce()) {
         stop();
         return;
     }
-    if cfg!(not(windows)) {
+    if cfg!(not(any(windows, target_os = "macos"))) {
         crate::with_ctx(|a, ui| {
             let msg = a.tr.tr("rec-not-here");
             a.toast(ui, msg);
@@ -172,9 +178,97 @@ pub fn start(choice: Choice) {
     }
 }
 
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "macos")))]
 fn start_inner(_choice: &Choice) -> Result<(), String> {
-    Err("ZK-88".into())
+    Err("no recording on this system".into())
+}
+
+/// macOS (ZK-88): a display (whole or a region of it, in points) or a window, through
+/// ScreenCaptureKit; sound and the pointer as the settings say.
+#[cfg(target_os = "macos")]
+fn start_inner(choice: &Choice) -> Result<(), String> {
+    use znimok_platform::Capture;
+    use znimok_video_mac::{RecordRequest, Recording, Target};
+    let p = crate::with_prefs(|p| p.video.clone()).unwrap_or_default();
+    let target = match (choice.window, p.follow_window) {
+        (Some(id), true) => Target::Window { id: id as u32 },
+        _ => {
+            let displays = znimok_mac::MacCapture::new()
+                .displays()
+                .map_err(|e| e.to_string())?;
+            let d = displays
+                .iter()
+                .find(|d| d.bounds == choice.display)
+                .or_else(|| displays.iter().find(|d| d.primary))
+                .ok_or_else(|| "no display".to_string())?;
+            let id: u32 = d.id.0.parse().map_err(|_| "no display".to_string())?;
+            let whole = choice.frame == d.bounds;
+            Target::Display {
+                id,
+                region: (!whole).then(|| {
+                    (
+                        f64::from(choice.frame.x - d.bounds.x),
+                        f64::from(choice.frame.y - d.bounds.y),
+                        f64::from(choice.frame.width),
+                        f64::from(choice.frame.height),
+                    )
+                }),
+            }
+        }
+    };
+    let dir = crate::library::cache_dir().join("recordings");
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let mp4 = dir.join(format!(
+        "rec-{}.mp4",
+        chrono::Local::now().format("%Y%m%d-%H%M%S")
+    ));
+    let mut req = RecordRequest::new(target, mp4.clone());
+    let fps = if p.fps >= 45 { 60 } else { 30 };
+    req.fps = fps;
+    req.quality = match p.quality {
+        znimok_settings::Quality::Small => znimok_video::settings::Quality::Smaller,
+        znimok_settings::Quality::Normal => znimok_video::settings::Quality::Normal,
+        znimok_settings::Quality::High => znimok_video::settings::Quality::High,
+    };
+    req.system_audio = p.audio.system;
+    req.microphone = p.audio.microphone;
+    req.cursor = p.cursor;
+    req.clicks = p.clicks;
+    let rec = Recording::start(req).map_err(|e| e.to_string())?;
+    let size = rec.started().size;
+    let bar = crate::RecBar::new().map_err(|e| e.to_string())?;
+    let edges = if choice.source == "screen" {
+        Vec::new()
+    } else {
+        (0..4).filter_map(|_| crate::RecEdge::new().ok()).collect()
+    };
+    bar.on_pause(toggle_pause);
+    bar.on_stop(stop);
+    let timer = slint::Timer::default();
+    timer.start(slint::TimerMode::Repeated, Duration::from_millis(250), tick);
+    REC.with(|r| {
+        *r.borrow_mut() = Some(Active {
+            rec: Some(rec),
+            mp4,
+            size,
+            fps,
+            source: choice.source,
+            display: choice.display,
+            frame: choice.frame,
+            window: choice.window.filter(|_| p.follow_window),
+            started: Instant::now(),
+            paused_since: None,
+            paused_total: Duration::ZERO,
+            bar,
+            edges,
+            timer,
+        })
+    });
+    show_indicators();
+    // The browser's log (ZK-97): the extension starts writing now.
+    crate::devlog::hub().start(znimok_devtools::now_ms());
+    tick();
+    Ok(())
 }
 
 #[cfg(windows)]
@@ -318,7 +412,7 @@ pub fn toggle_pause() {
     REC.with(|r| {
         let mut r = r.borrow_mut();
         let Some(a) = r.as_mut() else { return };
-        #[cfg(windows)]
+        #[cfg(any(windows, target_os = "macos"))]
         if let Some(rec) = &a.rec {
             rec.control().toggle_pause();
         }
@@ -338,7 +432,7 @@ pub fn toggle_pause() {
 
 /// Stop: the indicators go at once; the file is finished and wrapped on a worker thread.
 pub fn stop() {
-    #[cfg_attr(not(windows), allow(unused_mut))]
+    #[cfg_attr(not(any(windows, target_os = "macos")), allow(unused_mut))]
     let Some(mut a) = REC.with(|r| r.borrow_mut().take()) else {
         return;
     };
@@ -350,11 +444,12 @@ pub fn stop() {
     set_tray(false, String::new());
     // The browser's log ends with the recording (ZK-97).
     let devlog = crate::devlog::hub().stop();
-    #[cfg(not(windows))]
+    #[cfg(not(any(windows, target_os = "macos")))]
     let _ = devlog;
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "macos"))]
     {
         // The hook goes first: nothing after Stop is the recording's.
+        #[cfg(windows)]
         if let Some(mut m) = a.mouse.take() {
             m.stop();
         }
@@ -383,7 +478,7 @@ pub fn stop() {
             });
         });
     }
-    #[cfg(not(windows))]
+    #[cfg(not(any(windows, target_os = "macos")))]
     let _ = a;
 }
 
@@ -402,9 +497,30 @@ fn doc_name() -> String {
     name
 }
 
+/// The first frame of a finished recording (its poster).
+#[cfg(windows)]
+fn first_frame(mp4: &std::path::Path) -> Result<znimok_core::Raster, String> {
+    use znimok_video::traits::{Decoded, VideoDecoder};
+    let mut dec = znimok_video_win::MfDecoder::open(mp4).map_err(|e| e.to_string())?;
+    loop {
+        match dec.next().map_err(|e| e.to_string())? {
+            Some(Decoded::Video { frame, .. }) => return Ok(crate::video::nv12_to_rgba(&frame)),
+            Some(_) => continue,
+            None => return Err("no frames".into()),
+        }
+    }
+}
+
+/// The first frame of a finished recording (its poster).
+#[cfg(target_os = "macos")]
+fn first_frame(mp4: &std::path::Path) -> Result<znimok_core::Raster, String> {
+    let (w, h, rgba) = znimok_video_mac::poster::first_frame(mp4)?;
+    Ok(znimok_core::Raster::new(w, h, rgba))
+}
+
 /// The finished MP4 → a video document in the library: the first frame is the poster, a
 /// thumbnail for the card; the stream is copied in, never held in memory whole.
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 #[allow(clippy::too_many_arguments)]
 fn wrap(
     mp4: &std::path::Path,
@@ -416,17 +532,7 @@ fn wrap(
     result: &znimok_video::recorder::RecordingResult,
     devlog: Option<znimok_format::video::DevLog>,
 ) -> Result<(PathBuf, znimok_core::Raster), String> {
-    use znimok_video::traits::{Decoded, VideoDecoder};
-    let poster = {
-        let mut dec = znimok_video_win::MfDecoder::open(mp4).map_err(|e| e.to_string())?;
-        loop {
-            match dec.next().map_err(|e| e.to_string())? {
-                Some(Decoded::Video { frame, .. }) => break crate::video::nv12_to_rgba(&frame),
-                Some(_) => continue,
-                None => return Err("no frames".into()),
-            }
-        }
-    };
+    let poster = first_frame(mp4)?;
     let poster = if (poster.width, poster.height) == size {
         poster
     } else {
@@ -568,7 +674,7 @@ fn saved(r: Result<(PathBuf, znimok_core::Raster), String>, name: String, displa
 }
 
 /// A recording that went without some of its sound says why (ZK-89).
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 fn sound_warning(w: Option<znimok_video::recorder::AudioWarning>) {
     use znimok_video::recorder::AudioWarning as W;
     let Some(w) = w else { return };
@@ -708,6 +814,19 @@ fn tick() {
     let ended = REC.with(|r| {
         let mut r = r.borrow_mut();
         let Some(a) = r.as_mut() else { return false };
+        #[cfg(target_os = "macos")]
+        {
+            if a.rec.as_ref().is_some_and(|rec| !rec.is_running()) {
+                return true;
+            }
+            // The frame follows a recorded window as it moves.
+            if let Some(b) = a.window.and_then(|id| znimok_mac::window_bounds(id as u32))
+                && b != a.frame
+            {
+                a.frame = b;
+                place(a);
+            }
+        }
         #[cfg(windows)]
         {
             if a.rec.as_ref().is_some_and(|rec| !rec.is_running()) {

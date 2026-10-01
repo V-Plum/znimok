@@ -3174,6 +3174,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "objc2-audio-toolbox"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6948501a91121d6399b79abaa33a8aa4ea7857fe019f341b8c23ad6e81b79b08"
+dependencies = [
+ "bitflags 2.13.2",
+ "block2 0.6.2",
+ "objc2 0.6.4",
+ "objc2-foundation 0.3.2",
+]
+
+[[package]]
 name = "objc2-av-foundation"
 version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3202,7 +3214,11 @@ version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "13a380031deed8e99db00065c45937da434ca987c034e13b87e4441f9e4090be"
 dependencies = [
+ "bitflags 2.13.2",
+ "block2 0.6.2",
  "objc2 0.6.4",
+ "objc2-audio-toolbox",
+ "objc2-core-audio-types",
  "objc2-foundation 0.3.2",
 ]
 
@@ -6831,6 +6847,7 @@ dependencies = [
  "znimok-stitch",
  "znimok-update",
  "znimok-video",
+ "znimok-video-mac",
  "znimok-video-win",
  "znimok-win",
 ]
@@ -6908,6 +6925,7 @@ dependencies = [
  "znimok-render",
  "znimok-report",
  "znimok-video",
+ "znimok-video-mac",
  "znimok-video-win",
 ]
 
@@ -7177,6 +7195,23 @@ version = "0.0.3"
 dependencies = [
  "gif",
  "znimok-core",
+]
+
+[[package]]
+name = "znimok-video-mac"
+version = "0.0.3"
+dependencies = [
+ "block2 0.6.2",
+ "objc2 0.6.4",
+ "objc2-av-foundation",
+ "objc2-avf-audio",
+ "objc2-core-audio-types",
+ "objc2-core-foundation",
+ "objc2-core-media",
+ "objc2-core-video",
+ "objc2-foundation 0.3.2",
+ "screencapturekit",
+ "znimok-video",
 ]
 
 [[package]]

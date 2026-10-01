@@ -37,4 +37,4 @@ pub use fileassoc::{BUNDLE_ID, DOCUMENT_UTI, MacFileAssoc};
 pub use share::MacShare;
 
 #[cfg(target_os = "macos")]
-pub use mac::MacCapture;
+pub use mac::{MacCapture, window_bounds};

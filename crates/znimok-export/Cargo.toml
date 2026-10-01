@@ -23,8 +23,14 @@ png = "0.18"
 [target.'cfg(windows)'.dependencies]
 znimok-video-win = { path = "../znimok-video-win" }
 
+[target.'cfg(target_os = "macos")'.dependencies]
+znimok-video-mac = { path = "../znimok-video-mac" }
+
 [dev-dependencies]
 gif = "0.14"
 
 [target.'cfg(windows)'.dev-dependencies]
 znimok-video-win = { path = "../znimok-video-win" }
+
+[target.'cfg(target_os = "macos")'.dev-dependencies]
+znimok-video-mac = { path = "../znimok-video-mac" }

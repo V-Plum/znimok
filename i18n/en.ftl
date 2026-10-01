@@ -5120,11 +5120,6 @@ vexp-mp4 = MP4
 # @max: 90
 vexp-mp4-desc = Plays in any player and chat; sound mixed into one track.
 
-# @where: Video export sheet on macOS: MP4 is not there yet
-# @kind: body
-# @max: 90
-vexp-mac-mp4 = MP4 on this Mac comes with the next update; GIF works.
-
 # @where: Video export sheet: the GIF card title
 # @kind: label
 # @max: 10
