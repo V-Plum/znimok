@@ -4,12 +4,13 @@
 
 [Українська](README.md) · **English**
 
-> **Preview version 0.0.1.** Znimok is in development: features arrive with every update, the code and the plan are changing.
+> **Preview version 0.0.2.** Znimok is in development: features arrive with every update, the code and the plan are changing.
 
 Screenshots for Windows and macOS with an editor that keeps marks editable: an arrow, a caption or
 a hidden area can be adjusted a week later. Shots live in a library on your computer, in their own
 open format; the result goes to the clipboard, to a file, or straight to a person or an AI agent.
-Screen recording is in preview; a DevTools log alongside it comes later.
+Screen recording is in preview: with sound, the cursor, the browser's DevTools log and export to
+MP4, GIF and HTML.
 
 Znimok succeeds the screenshot and video features of [Little Helpers](https://github.com/V-Plum/lilhelpers):
 the same experience, but new code in Rust, two operating systems, an installer and a modern
