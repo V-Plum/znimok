@@ -4513,9 +4513,24 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
             ),
         };
         crate::rec::set_video_mode(true);
-        if crate::overlay::open(frozen, false).is_ok()
-            && let Some(ov) = crate::overlay::handle()
-        {
+        // ZK-212: opened the way the hotkey and the tray open it — start_capture runs inside
+        // `with_ctx`, and the overlay must not borrow the app again (it panicked in 0.0.4).
+        let mut opened = false;
+        crate::with_ctx(|_, _| opened = crate::overlay::open(frozen, false).is_ok());
+        r.check(
+            "recording overlay: opens from inside the app (the hotkey's path) without a second borrow",
+            opened && crate::overlay::handle().is_some(),
+            String::new(),
+        );
+        OVERLAY_BOUNDS.with(|o| o.set(Some(b)));
+    }));
+    // The sound label comes on the next turn of the event loop.
+    #[cfg(windows)]
+    steps.push(Box::new(|_, _, r| {
+        let Some(b) = OVERLAY_BOUNDS.with(|o| o.take()) else {
+            return;
+        };
+        if let Some(ov) = crate::overlay::handle() {
             // ZK-189: A cycles the sound, the strip says it, the choice is kept (then put back).
             let before = crate::rec::sound_mode();
             let shown = ov.get_sound_text().to_string();
@@ -5125,6 +5140,8 @@ thread_local! {
 thread_local! {
     /// The display the recording overlay test froze (ZK-180): its origin.
     static OVERLAY_DISPLAY: std::cell::Cell<Option<(i32, i32)>> = const { std::cell::Cell::new(None) };
+    /// The display the recording overlay was opened on, for the step after (ZK-212).
+    static OVERLAY_BOUNDS: std::cell::Cell<Option<znimok_platform::Rect>> = const { std::cell::Cell::new(None) };
     /// The document made from ZNIMOK_SELFTEST_VIDEO, removed at the end (ZK-181).
     static REAL_VIDEO: std::cell::RefCell<Option<PathBuf>> = const { std::cell::RefCell::new(None) };
     /// The recording bar's time right after the pause (ZK-180).
