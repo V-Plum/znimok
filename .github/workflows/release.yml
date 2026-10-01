@@ -220,9 +220,33 @@ jobs:
         run: |
           cargo audit bin target/release/znimok-app
           cargo audit bin target/release/znimok
+      - name: Signing identity (self-signed, ZK-183) — the permissions survive updates
+        env:
+          P12: ${{ secrets.ZNIMOK_MAC_CERT_P12 }}
+          PASS: ${{ secrets.ZNIMOK_MAC_CERT_PASS }}
+        run: |
+          # TCC (Screen Recording, Microphone) and the Keychain remember the app by its designated
+          # requirement: with an ad-hoc signature it changes with every build, with one stable
+          # certificate it does not. Gatekeeper still asks on first start (notarisation, ZK-80).
+          if [[ -z "$P12" || -z "$PASS" ]]; then
+            echo "::warning::ZNIMOK_MAC_CERT_P12 is not set — ad-hoc signature, macOS permissions reset with each update (ZK-183)"
+            echo "ZNIMOK_SIGN_IDENTITY=-" >> "$GITHUB_ENV"
+            exit 0
+          fi
+          kc="$RUNNER_TEMP/znimok-sign.keychain-db"
+          kp="$(openssl rand -hex 16)"
+          printf '%s' "$P12" | base64 --decode > "$RUNNER_TEMP/id.p12"
+          security create-keychain -p "$kp" "$kc"
+          security set-keychain-settings "$kc"
+          security unlock-keychain -p "$kp" "$kc"
+          security import "$RUNNER_TEMP/id.p12" -k "$kc" -P "$PASS" -T /usr/bin/codesign >/dev/null
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$kp" "$kc" >/dev/null
+          security list-keychains -d user -s "$kc" $(security list-keychains -d user | tr -d '"')
+          rm -f "$RUNNER_TEMP/id.p12"
+          echo "ZNIMOK_SIGN_IDENTITY=Znimok (self-signed)" >> "$GITHUB_ENV"
       - name: Quick Look thumbnails (ZnimokThumbnail.appex, ZK-76)
         run: bash crates/znimok-thumbnail/mac/build-appex.sh target/appex "${{ needs.version.outputs.version }}"
-      - name: Znimok.app (ad-hoc signed; Developer ID and notarisation come with ZK-80)
+      - name: Znimok.app (self-signed, ZK-183; Developer ID and notarisation come with ZK-80)
         env:
           SPARKLE_VERSION: "2.10.0"
           SPARKLE_SHA256: c2bf58aa8387266ac179357b1415d6f2635f044da8be41042af32425dae6da0c
@@ -261,8 +285,9 @@ jobs:
           PY
           plutil -lint "$app/Contents/Info.plist"
           # The extension keeps its own signature (sandbox entitlement): no --deep here.
-          codesign --force --sign - --identifier ua.plum.znimok.app "$app"
+          codesign --force --sign "$ZNIMOK_SIGN_IDENTITY" --identifier ua.plum.znimok.app "$app"
           codesign --verify --strict "$app"
+          codesign -d -r- "$app" 2>&1 | tail -1
           codesign -d --entitlements - "$app/Contents/PlugIns/ZnimokThumbnail.appex" | grep -q app-sandbox
           (cd dist && ditto -c -k --keepParent Znimok.app "Znimok-$v-macos-arm64.zip")
           cp target/release/znimok dist/znimok
