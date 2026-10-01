@@ -22,6 +22,8 @@ pub mod clock;
 #[cfg(windows)]
 pub mod decoder;
 #[cfg(windows)]
+pub mod export;
+#[cfg(windows)]
 pub mod input;
 #[cfg(windows)]
 pub mod interop;

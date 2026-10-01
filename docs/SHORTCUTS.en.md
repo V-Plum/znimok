@@ -115,6 +115,10 @@ Settings → Screenshots; the hint strip at the bottom of the overlay shows the 
 | Cut the piece / keep only it | Delete / Shift+Delete | Delete / ⇧Delete |
 | Mute | M | M |
 | Loop | Ctrl+L | ⌘L |
+| Copy MP4 | Ctrl+C | ⌘C |
+| Copy frame (with its marks) | Ctrl+Shift+C | ⇧⌘C |
+| Frame as screenshot | Ctrl+Shift+N | ⇧⌘N |
+| Export video… | Ctrl+E | ⌘E |
 
 ## Esc
 
