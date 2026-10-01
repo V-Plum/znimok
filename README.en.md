@@ -4,7 +4,7 @@
 
 [Українська](README.md) · **English**
 
-> **Preview version 0.0.6.** Znimok is in development: features arrive with every update, the code and the plan are changing.
+> **Preview version 0.0.7.** Znimok is in development: features arrive with every update, the code and the plan are changing.
 
 Screenshots for Windows and macOS with an editor that keeps marks editable: an arrow, a caption or
 a hidden area can be adjusted a week later. Shots live in a library on your computer, in their own
