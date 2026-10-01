@@ -117,13 +117,15 @@ Neither side needs admin rights, certificates or network ports.
 
 ## What is needed before the first prototype
 
-1. **A machine with Logi Options+ and the devices.** PLUM-MEDIA has none of it: no Options+,
-   no LPS, no `PluginApi.dll`, no .NET SDK, no MX Master 4 / Creative Console seen by Windows.
-   The plugin is built and tried where the mouse is (the owner's MacBook or PLUM-PC): .NET 8 SDK,
-   `dotnet tool install --global LogiPluginTool`, Options+ ≥ 1.95 (haptics), ideally ≥ 2.2.
-2. **Which devices the owner has**: MX Master 4 (haptics + Actions Ring), MX Creative Console
-   (Keypad/Dialpad) — the Console decides whether the dial/scrub and the keypad pictures are in
-   scope now or only the Ring.
+1. **Building needs no Options+.** `PluginApi.dll` ships inside the `LogiPluginTool` .NET global
+   tool (`~/.dotnet/tools/.store/**/PluginApi.dll`) — HapticWebPlugin's CI builds on
+   `windows-latest` from just the .NET 8 SDK and that tool, logi-now-playing's on macOS. So the
+   plugin builds on PLUM-MEDIA and in GitHub Actions; only *running* it needs LPS.
+2. **Where it runs (01.10.2026):** the MX Master 4 and Options+ are on PLUM-PC (the owner's work
+   machine); an MX Creative Keypad is at a friend's, who can install a ready `.lplug4` by
+   double-click for simple tests (no development there). Testing loop: build here → `.lplug4` →
+   the owner installs it on PLUM-PC (Options+ ≥ 1.95 for haptics) with Znimok installed there
+   too → feedback. The Keypad's layout (`DefaultProfile70.lp5`) is tried last, by the friend.
 3. **The command layer in Znimok** (one Znimok ticket, ~1 day): the IPC methods above and the
    event hub — useful for the CLI and MCP as well.
 4. **Icons** in the design system's style, 80×80 PNG / SVG, for ~12 actions.
