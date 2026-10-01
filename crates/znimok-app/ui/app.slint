@@ -2213,6 +2213,9 @@ export component AppWindow inherits Window {
     in property <bool> pref-ret-size;
     in-out property <string> pref-ret-count;
     in-out property <string> pref-trash-days;
+    // ZK-186: the search by text on the screenshots, and how far the reading is.
+    in property <bool> pref-lib-search-text;
+    in property <string> lib-text-status;
     // Recording (ZK-180): 30 / 60; quality 0–2; a clicked window followed; sound 0–3 (ZK-189).
     in property <int> pref-rec-fps: 30;
     in property <int> pref-rec-quality: 1;
@@ -2897,6 +2900,11 @@ export component AppWindow inherits Window {
                                     Text { text: @tr("libset-trash-days" => "Keep deleted documents in the trash, days"); color: Theme.text2; font-size: 12px; vertical-alignment: center; horizontal-stretch: 1; wrap: word-wrap; }
                                     NumField { width: 110px; label: ""; value <=> root.pref-trash-days; committed(v) => { root.setting("trash-days", 0); } }
                                 }
+                                Rectangle { height: 1px; background: Theme.line; }
+                                // ZK-186: the text on the screenshots in the search
+                                SwitchRow { text: @tr("libset-search-text" => "Search the text on screenshots too"); checked: root.pref-lib-search-text; toggled => { root.setting("lib-search-text", self.checked ? 1 : 0); } }
+                                Text { text: @tr("libset-search-text-hint" => "Znimok reads the text on your screenshots on this computer, slowly in the background, and keeps it only in the library's local index — not in the files and nowhere online. Turned off, what was read is forgotten."); color: Theme.text3; font-size: 11px; wrap: word-wrap; }
+                                if root.pref-lib-search-text && root.lib-text-status != "": Text { text: root.lib-text-status; color: Theme.text2; font-size: 11px; wrap: word-wrap; }
                             }
                             // ---- Sharing
                             if root.settings-page == 3: VerticalLayout {

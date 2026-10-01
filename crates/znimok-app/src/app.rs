@@ -423,7 +423,9 @@ pub struct App {
     /// The keyboard's card in the grid (ZK-179).
     cur: Option<PathBuf>,
     /// The library index (ZK-131) and the folder it belongs to.
-    index: Option<(PathBuf, library::Index)>,
+    index: Option<(PathBuf, std::sync::Arc<library::Index>)>,
+    /// Reading the text of the library's screenshots for the search (ZK-186).
+    ocr_job: Option<crate::ocrindex::Job>,
     /// Updates (ZK-142): a check or a download is running; what the last check found.
     update_busy: bool,
     update_found: Option<crate::update::Found>,
@@ -623,6 +625,7 @@ impl App {
             lib_cols: 4,
             cur: None,
             index: None,
+            ocr_job: None,
             update_busy: false,
             update_found: None,
             update_phase: crate::update::Phase::Idle,
@@ -1402,6 +1405,7 @@ impl App {
         ui.set_pref_ret_mb(p.library.retention.size_mb.to_string().into());
         ui.set_pref_video_mb(p.library.video_limit_mb.to_string().into());
         ui.set_pref_trash_days(p.library.trash_days.to_string().into());
+        ui.set_pref_lib_search_text(p.library.search_text);
         ui.set_pref_rec_fps(if p.video.fps >= 45 { 60 } else { 30 });
         ui.set_pref_rec_quality(match p.video.quality {
             znimok_settings::Quality::Small => 0,
@@ -1662,6 +1666,17 @@ impl App {
             }),
             "rec-devlog" => self.save_prefs(ui, |p| p.video.devtools_log = on),
             "rec-ext-control" => self.save_prefs(ui, |p| p.video.extension_control = on),
+            "lib-search-text" => {
+                self.save_prefs(ui, |p| p.library.search_text = on);
+                if !on {
+                    // Off: the reading stops and what was read is forgotten.
+                    self.ocr_job = None;
+                    if let Some((_, i)) = self.index.as_ref() {
+                        i.clear_text();
+                    }
+                }
+                crate::wins::library_later(|a, ui| a.refresh_library(ui));
+            }
             "trash-days" => {
                 let n = ui
                     .get_pref_trash_days()
@@ -1831,13 +1846,79 @@ impl App {
                 .sort_by_key(|e| std::cmp::Reverse(library::trashed_at_ms(&e.path).unwrap_or(0)));
         } else {
             if self.index.as_ref().is_none_or(|(d, _)| *d != self.lib_dir) {
-                self.index = library::Index::open(&self.lib_dir).map(|i| (self.lib_dir.clone(), i));
+                self.index = library::Index::open(&self.lib_dir)
+                    .map(|i| (self.lib_dir.clone(), std::sync::Arc::new(i)));
             }
             self.lib_fp = library::fingerprint(&self.lib_dir);
-            self.entries = library::scan(&self.lib_dir, self.index.as_ref().map(|(_, i)| i));
+            self.entries = library::scan(&self.lib_dir, self.index.as_ref().map(|(_, i)| &**i));
+            self.text_index_kick(ui);
         }
         ui.set_trash_count(library::trash_count(&self.lib_dir) as i32);
         self.show_cards(ui);
+    }
+
+    /// The search by text (ZK-186): screenshots not read yet go to the reader in the background.
+    fn text_index_kick(&mut self, ui: &AppWindow) {
+        if !self.prefs().library.search_text {
+            self.ocr_job = None;
+            ui.set_lib_text_status("".into());
+            return;
+        }
+        if self.ocr_job.as_ref().is_some_and(|j| !j.finished()) {
+            return;
+        }
+        let Some((_, index)) = self.index.as_ref() else {
+            return;
+        };
+        let todo = library::needs_text(index, &self.entries);
+        if todo.is_empty() {
+            self.ocr_job = None;
+            let n = self.entries.iter().filter(|e| e.video_ms.is_none()).count();
+            ui.set_lib_text_status(
+                self.tr
+                    .tr_args("libset-text-ready", &count_args("count", n as i64))
+                    .into(),
+            );
+            return;
+        }
+        let me = self.me();
+        let last = std::sync::Arc::new(std::sync::Mutex::new(Instant::now()));
+        self.ocr_job = Some(crate::ocrindex::start(
+            index.clone(),
+            todo,
+            move |last_one| {
+                // At most twice a second (and the end always): the status, and the cards' text for a
+                // search in progress.
+                let mut l = last.lock().unwrap_or_else(|e| e.into_inner());
+                if !last_one && l.elapsed() < std::time::Duration::from_millis(500) {
+                    return;
+                }
+                *l = Instant::now();
+                let _ =
+                    slint::invoke_from_event_loop(move || me.with(|a, ui| a.text_index_step(ui)));
+            },
+        ));
+        self.text_index_step(ui);
+    }
+
+    /// The reader moved on: the status, and the cards again when it is done or a search is on.
+    pub fn text_index_step(&mut self, ui: &AppWindow) {
+        let Some(job) = self.ocr_job.as_ref() else {
+            return;
+        };
+        if job.finished() {
+            self.ocr_job = None;
+            self.refresh_library(ui);
+            return;
+        }
+        let done = job.done.load(std::sync::atomic::Ordering::Relaxed);
+        let mut a = count_args("count", job.total as i64);
+        a.set("done", done as i64);
+        ui.set_lib_text_status(self.tr.tr_args("libset-text-reading", &a).into());
+        if !self.filter.is_empty() {
+            self.entries = library::scan(&self.lib_dir, self.index.as_ref().map(|(_, i)| &**i));
+            self.show_cards(ui);
+        }
     }
 
     /// The folder the library page shows now: the library, or its trash.
@@ -2211,7 +2292,7 @@ impl App {
         let r = self.prefs().library.retention;
         let video_limit = self.prefs().library.video_limit_mb.max(1) * 1024 * 1024;
         let open = crate::wins::open_paths();
-        let entries = library::scan(&self.lib_dir, self.index.as_ref().map(|(_, i)| i));
+        let entries = library::scan(&self.lib_dir, self.index.as_ref().map(|(_, i)| &**i));
         let mut used: u64 = 0;
         let mut kept: u32 = 0;
         let mut video_used: u64 = 0;

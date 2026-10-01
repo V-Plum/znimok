@@ -24,6 +24,7 @@ mod frame;
 mod hotkeys;
 mod io;
 mod library;
+mod ocrindex;
 mod over;
 mod overlay;
 mod pill;
