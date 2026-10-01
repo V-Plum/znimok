@@ -3159,6 +3159,7 @@ impl App {
         self.drag = None;
         self.editing = None;
         ui.set_editing(false);
+        Self::video_ui_off(ui);
         if self.role == crate::wins::Role::Editor {
             // The window was the document (ZK-107): it goes; the library shows the result.
             crate::wins::destroy(self.me);
@@ -9961,15 +9962,13 @@ impl App {
     /// A video document opened in an editor window: the timeline comes up; the player starts as
     /// soon as the window has its GPU device ([`Self::video_start`]).
     fn video_open(&mut self, ui: &AppWindow) {
-        let role = self.role;
+        Self::video_ui_off(ui);
         let Some(s) = self.s.as_mut() else { return };
+        // A video opens in whichever window shows it — the library window too, since a card
+        // opens in place (ZK-192, ZK-210).
         let Some(part) = s.video.as_ref() else {
-            ui.set_vid_mode(false);
             return;
         };
-        if role != crate::wins::Role::Editor {
-            return;
-        }
         let info = &part.video.info;
         let mut v =
             crate::video::Vid::new(info.fps(), info.frames as i64, s.ed.doc.timeline.as_ref());
@@ -9984,6 +9983,16 @@ impl App {
         ui.set_insp_tab(2);
         self.video_start(ui);
         self.sync_video(ui);
+    }
+
+    /// No video in this window: the «Відео» mode, its GPU layer and the log panel off (a screenshot
+    /// opened after a video in the same window, or back to the library).
+    fn video_ui_off(ui: &AppWindow) {
+        ui.set_vid_mode(false);
+        ui.set_vid_live(false);
+        ui.set_vid_playing(false);
+        ui.set_devp_has(false);
+        ui.set_devp_detail_open(false);
     }
 
     /// The player of the open video, on this window's GPU device (ZK-92): once.
