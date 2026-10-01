@@ -14,6 +14,12 @@
 // request and response headers, the request's payload, the response's body (up to a limit),
 // timings — and the console's arguments in full. Hiding secrets is a choice at export.
 //
+// dataLayer (ZK-195): GTM's and gtag's events, in full. A hook in the page's own world (set before
+// any script of a new document, and into the page already open when the debugger attaches) wraps
+// `dataLayer.push`; each pushed value comes back through a CDP binding with the time it was
+// pushed. GTM replaces `push` with its own that calls the one before — the hook stays in front
+// (an accessor) and a value is sent once however many wrappers it passes.
+//
 // «Record this window» (CAPS-107): the popup or a shortcut asks {"cmd":"rec"}; Znimok does not
 // know the window's handle, so a mark is appended to the page's title for a moment, Znimok finds
 // the window with it, says «found» — the mark goes — and only then starts.
@@ -84,6 +90,94 @@ chrome.runtime.onStartup.addListener(() => connect());
 chrome.runtime.onInstalled.addListener(() => connect());
 connect();
 
+// ---- dataLayer (ZK-195) ----
+
+const DL_BINDING = "__znimokDL";
+const MAX_DL = 1 << 20;          // one pushed value as JSON, characters (a safety net only)
+
+// The hook, as the page runs it. `snapshot`: send what the array already holds (the page was
+// open before the recording) marked as such.
+function dlHook(snapshot) {
+  return `(() => {
+  const bind = window.${DL_BINDING};
+  if (typeof bind !== "function" || window.__znimokDLHooked) return;
+  Object.defineProperty(window, "__znimokDLHooked", { value: true });
+  const LIMIT = ${MAX_DL};
+  const plain = (v) => {
+    const seen = new WeakSet();
+    const walk = (x, d) => {
+      if (typeof x === "function") return "[function " + (x.name || "anonymous") + "]";
+      if (typeof x === "bigint") return x.toString();
+      if (typeof x === "number" && !isFinite(x)) return String(x);
+      if (x === null || typeof x !== "object") return x === undefined ? null : x;
+      if (typeof Node !== "undefined" && x instanceof Node)
+        return "<" + String(x.nodeName || "").toLowerCase() + (x.id ? "#" + x.id : "") + ">";
+      if (typeof Window !== "undefined" && x instanceof Window) return "[window]";
+      if (x instanceof Date) return isNaN(x) ? null : x.toISOString();
+      if (seen.has(x)) return "[circular]";
+      if (d > 40) return "[deep]";
+      seen.add(x);
+      let out;
+      if (Array.isArray(x) || Object.prototype.toString.call(x) === "[object Arguments]") {
+        out = Array.prototype.map.call(x, (e) => walk(e, d + 1));
+      } else {
+        out = {};
+        for (const k of Object.keys(x)) if (x[k] !== undefined) out[k] = walk(x[k], d + 1);
+      }
+      seen.delete(x);
+      return out;
+    };
+    return walk(v, 0);
+  };
+  const sent = new WeakSet();
+  const send = (x, pre) => {
+    if (x !== null && (typeof x === "object" || typeof x === "function")) {
+      if (sent.has(x)) return;
+      sent.add(x);
+    }
+    try {
+      let v = JSON.stringify(plain(x));
+      let cut = 0;
+      if (v === undefined) v = "null";
+      if (v.length > LIMIT) { cut = v.length; v = v.slice(0, LIMIT); }
+      bind(JSON.stringify({ t: Date.now(), v, cut, pre, top: window === window.top }));
+    } catch (e) { /* a value that cannot be read */ }
+  };
+  const hook = (arr, existing) => {
+    if (!Array.isArray(arr) || arr.__znimokDL) return;
+    for (const x of arr) send(x, existing);
+    let inner = arr.push;
+    Object.defineProperty(arr, "__znimokDL", { value: true });
+    Object.defineProperty(arr, "push", {
+      configurable: true,
+      enumerable: false,
+      get() {
+        const f = inner;
+        return function (...a) { for (const x of a) send(x, false); return f.apply(this, a); };
+      },
+      set(f) { inner = f; },
+    });
+  };
+  let dl = window.dataLayer;
+  hook(dl, ${snapshot ? "true" : "false"});
+  try {
+    Object.defineProperty(window, "dataLayer", {
+      configurable: true,
+      enumerable: true,
+      get() { return dl; },
+      set(v) { dl = v; hook(v, false); },
+    });
+  } catch (e) { /* the page made it read-only */ }
+})()`;
+}
+
+// The name a row shows: the pushed object's `event`; gtag's call as «gtag event purchase».
+function dlName(v) {
+  if (Array.isArray(v)) return ["gtag"].concat(v.slice(0, 2).filter((x) => typeof x === "string")).join(" ");
+  if (v && typeof v === "object" && typeof v.event === "string") return v.event;
+  return "";
+}
+
 // ---- recording ----
 
 async function activeTab() {
@@ -112,6 +206,12 @@ async function follow(tabId) {
     await chrome.debugger.sendCommand({ tabId }, "Log.enable", {});
     await chrome.debugger.sendCommand({ tabId }, "Network.enable", { maxPostDataSize: 1 << 20 });
     await chrome.debugger.sendCommand({ tabId }, "Page.enable", {});
+    // dataLayer: the binding, the hook for every new document, and the page already open.
+    await chrome.debugger.sendCommand({ tabId }, "Runtime.addBinding", { name: DL_BINDING });
+    await chrome.debugger.sendCommand({ tabId }, "Page.addScriptToEvaluateOnNewDocument", { source: dlHook(false) });
+    try {
+      await chrome.debugger.sendCommand({ tabId }, "Runtime.evaluate", { expression: dlHook(true) });
+    } catch (e) { /* a page that cannot run scripts */ }
     emit({ t: Date.now(), k: "tab", s: 0, url: tab ? tab.url : "", title: tab ? clip(tab.title) : "" });
   } catch (e) {
     emit({ t: Date.now(), k: "info", s: 1, text: "attach failed: " + clip(e && e.message) });
@@ -291,6 +391,19 @@ chrome.debugger.onEvent.addListener((src, method, p) => {
     const f = p.response || {};
     emit({ t: Date.now(), k: "ws", s: 0, id: p.requestId, dir: method.endsWith("Sent") ? "out" : "in",
            op: f.opcode, data: clip(f.payloadData) });
+    break;
+  }
+  case "Runtime.bindingCalled": {
+    if (p.name !== DL_BINDING) break;
+    let m;
+    try { m = JSON.parse(p.payload); } catch (e) { break; }
+    let data;
+    try { data = JSON.parse(m.v); } catch (e) { data = m.v; }
+    const ev = { t: m.t || Date.now(), k: "dl", s: 0, ev: dlName(data), data };
+    if (m.cut) ev.cut = m.cut;
+    if (m.pre) ev.pre = true;
+    if (m.top === false) ev.frame = true;
+    emit(ev);
     break;
   }
   case "Page.frameNavigated": {

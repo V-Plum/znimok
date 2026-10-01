@@ -5482,3 +5482,21 @@ devp-t-download = Download
 # @kind: label
 # @max: 20
 devp-t-total = Total
+
+## dataLayer in the DevTools log (ZK-195)
+
+
+# @where: DevTools log panel: filter chip, values pushed into dataLayer by GTM / gtag (a count follows)
+# @kind: label
+# @max: 16
+devp-chip-datalayer = dataLayer
+
+# @where: DevTools log panel: a dataLayer value that was already there when the recording started
+# @kind: body
+# @max: 120
+devp-dl-pre = Already in dataLayer when the recording started.
+
+# @where: DevTools log panel: a dataLayer value from a frame inside the page
+# @kind: body
+# @max: 80
+devp-dl-frame = From a frame inside the page.
