@@ -30,10 +30,12 @@ use znimok_format::video::{DevEvent, DevLog};
 /// The Native Messaging host's name (the browser's registry key and the manifest's file).
 pub const HOST_NAME: &str = "com.znimok.devtools";
 
-/// The extension's id while it is loaded unpacked (from the `key` in its manifest); the Chrome
-/// Web Store's id is added once it is published (ZK-182).
-pub const EXTENSION_IDS: &[&str] = &[DEV_EXTENSION_ID];
+/// The extensions allowed to talk to the host: the one loaded unpacked (its id from the `key` in
+/// its manifest) and the Chrome Web Store's (ZK-182 — the store gives its own id).
+pub const EXTENSION_IDS: &[&str] = &[DEV_EXTENSION_ID, STORE_EXTENSION_ID];
 pub const DEV_EXTENSION_ID: &str = "mmkhmcoabdpolbfkghgpaihcpjlliakn";
+/// The extension from the Chrome Web Store.
+pub const STORE_EXTENSION_ID: &str = "jhnaichejniloonjcimjpfeggkmcmpek";
 
 /// At most this many events in a log (the format's limit).
 pub const MAX_EVENTS: usize = 200_000;
