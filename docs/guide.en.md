@@ -217,7 +217,10 @@ Del cuts it, Shift+Del keeps only it; S splits; a cut-out piece is hatched, with
 timeline's keys work while the last click was on it (a thin ring): there J plays backwards, K stops,
 L plays forwards; on the canvas the letters stay with the tools. The recording is never changed: the edits live in the document and undo together
 with the marks. The "Video" tab has the trimming summary, the sound (no sound / system /
-microphone / both), the crop, tone and size (the tone applies to the video as it plays too);
+microphone / both), the playback speed (0.5–2×, in the editor only), the crop (proportions Free / 16:9 / 4:3 / 1:1 /
+9:16; a video's frame has even sides), the tone (applied to the video as it plays and kept with
+the document) and the size on export (100 % / 1280 / 1920 / 50 % or your own W × H with the
+proportions locked); the trimming summary has a bar of what is kept;
 "Frame as screenshot" opens the current frame as a document of its own. The graphics card decodes
 and shows the video — on Windows and macOS, without copying frames through the processor; the marks
 are drawn over it.

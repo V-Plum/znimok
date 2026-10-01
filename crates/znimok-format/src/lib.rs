@@ -299,9 +299,18 @@ fn write_doc(doc: &Document, opts: &WriteOptions, video: Option<&Video>) -> Writ
             }
         });
     }
-    // A video has no tone/turn recipe, and its frame is in GEOM.
-    if doc.recipe != Recipe::default() && video.is_none() {
-        let r = doc.recipe;
+    // A video's recipe is its tone only (ZK-188: no turns or mirror); its frame is in GEOM.
+    let recipe = if video.is_some() {
+        Recipe {
+            rot_quarters: 0,
+            mirror: false,
+            ..doc.recipe
+        }
+    } else {
+        doc.recipe
+    };
+    if recipe != Recipe::default() {
+        let r = recipe;
         w.record(b"RCPE", |w| {
             w.f32(r.exposure);
             w.f32(r.gamma);
@@ -1098,8 +1107,9 @@ fn parse_blocks(
         if payload.iter().all(|r| r.end == r.start) {
             return Err(FormatError::Corrupt("a video without its stream".into()));
         }
-        // A video has no recipe; its frame comes from GEOM.
-        recipe = Recipe::default();
+        // A video's recipe is its tone only (ZK-188); its frame comes from GEOM.
+        recipe.rot_quarters = 0;
+        recipe.mirror = false;
         crop = geom.and_then(|g| g.1);
         Some(info)
     } else {

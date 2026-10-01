@@ -353,6 +353,10 @@ pub struct App {
     /// on Enter / another tool; Esc drops it (ZK-53).
     crop: Option<IRect>,
     crop_lock: bool,
+    /// The proportions the crop is locked to (ZK-188: 16:9, 4:3, 1:1, 9:16), `None` = those of
+    /// the frame when the lock was set; `crop_aspect` is the preset shown (0 free, 1–4, 5 own).
+    crop_ratio: Option<f64>,
+    crop_aspect: i32,
     /// "Compare" held: the picture is drawn with the tone as captured.
     compare: bool,
     /// One undo step per drag of a tone slider.
@@ -569,6 +573,8 @@ impl App {
             alpha_merge: None,
             crop: None,
             crop_lock: false,
+            crop_ratio: None,
+            crop_aspect: 0,
             compare: false,
             tone_merge: None,
             size_shown: (0, 0),
@@ -6525,7 +6531,8 @@ impl App {
         let ratio = if shift {
             Some(1.0)
         } else if self.crop_lock {
-            self.crop.map(|c| c.w.max(1) as f64 / c.h.max(1) as f64)
+            self.crop_ratio
+                .or_else(|| self.crop.map(|c| c.w.max(1) as f64 / c.h.max(1) as f64))
         } else {
             None
         };
@@ -6570,7 +6577,7 @@ impl App {
             y1 += d.1;
         }
         if self.crop_lock && o.w > 0 && o.h > 0 {
-            let r = o.w as f64 / o.h as f64;
+            let r = self.crop_ratio.unwrap_or(o.w as f64 / o.h as f64);
             match handle {
                 // Edges: the other side follows about the centre.
                 1 | 5 => {
@@ -6614,6 +6621,19 @@ impl App {
         let Some(c) = self.crop.take() else { return };
         self.drag = None;
         let Some(s) = self.s.as_ref() else { return };
+        // A video's frame has even sides and corners (the encoder's 4:2:0 chroma, ZK-188).
+        let c = if s.video.is_some() {
+            let x = c.x & !1;
+            let y = c.y & !1;
+            IRect::new(
+                x,
+                y,
+                ((c.right() - x) & !1).max(2),
+                ((c.bottom() - y) & !1).max(2),
+            )
+        } else {
+            c
+        };
         if c == s.ed.doc.frame() || c.w < 1 || c.h < 1 {
             return;
         }
@@ -6634,7 +6654,9 @@ impl App {
             return;
         };
         let img = self.image_rect();
-        let r = c.w.max(1) as f64 / c.h.max(1) as f64;
+        let r = self
+            .crop_ratio
+            .unwrap_or(c.w.max(1) as f64 / c.h.max(1) as f64);
         let (mut w, mut h) = (c.w, c.h);
         if field == "w" {
             w = v.clamp(1, img.w);
@@ -6681,7 +6703,34 @@ impl App {
                     self.fit();
                 }
             }
-            "crop-lock" => self.crop_lock = !self.crop_lock,
+            "crop-lock" => {
+                self.crop_lock = !self.crop_lock;
+                self.crop_ratio = None;
+                self.crop_aspect = if self.crop_lock { 5 } else { 0 };
+            }
+            // ZK-188: proportions — the frame becomes the largest one of them inside itself.
+            a if a.starts_with("crop-aspect-") => {
+                let n: i32 = a["crop-aspect-".len()..].parse().unwrap_or(0);
+                let ratio = match n {
+                    1 => Some(16.0 / 9.0),
+                    2 => Some(4.0 / 3.0),
+                    3 => Some(1.0),
+                    4 => Some(9.0 / 16.0),
+                    _ => None,
+                };
+                self.crop_aspect = n;
+                self.crop_ratio = ratio;
+                self.crop_lock = ratio.is_some();
+                if let (Some(r), Some(c)) = (ratio, self.crop) {
+                    let (w, h) = if c.w as f64 / c.h.max(1) as f64 > r {
+                        ((c.h as f64 * r).round() as i32, c.h)
+                    } else {
+                        (c.w, (c.w as f64 / r).round() as i32)
+                    };
+                    let (w, h) = (w.max(1), h.max(1));
+                    self.crop = Some(IRect::new(c.x + (c.w - w) / 2, c.y + (c.h - h) / 2, w, h));
+                }
+            }
             "tone-reset" => {
                 self.apply(ui, Command::ResetTone);
             }
@@ -6749,6 +6798,8 @@ impl App {
     pub fn set_compare(&mut self, ui: &AppWindow, on: bool) {
         if self.compare != on {
             self.compare = on;
+            // A playing video shows its tone on the GPU: compare there too (ZK-188).
+            self.video_tone();
             self.dirty = true;
             ui.window().request_redraw();
         }
@@ -6833,6 +6884,7 @@ impl App {
         ui.set_tone_default(znimok_render::develop::tone_is_default(&r));
         ui.set_cropped(doc.crop.is_some());
         ui.set_crop_lock(self.crop_lock);
+        ui.set_crop_aspect(self.crop_aspect);
         let shown = self.crop.unwrap_or_else(|| doc.frame());
         ui.set_crop_w(shown.w.to_string().into());
         ui.set_crop_h(shown.h.to_string().into());
@@ -9307,9 +9359,10 @@ impl App {
     /// The picture's tone to the player (the video is converted with it on the GPU), and a new
     /// film strip when it changed.
     fn video_tone(&mut self) {
+        let compare = self.compare;
         let Some(s) = self.s.as_mut() else { return };
         let r = s.ed.doc.recipe;
-        let lut = if znimok_render::develop::tone_is_default(&r) {
+        let lut = if compare || znimok_render::develop::tone_is_default(&r) {
             None
         } else {
             Some(znimok_render::develop::tone_lut(&r))
@@ -9565,6 +9618,22 @@ impl App {
             .into(),
         );
         ui.set_vid_trim_left(crate::video::fmt_time(kept as f64 / v.fps.max(1e-6)).into());
+        ui.set_vid_kept_frac((kept as f32 / v.frames.max(1) as f32).clamp(0.0, 1.0));
+        ui.set_vid_speed_i(v.speed_i as i32);
+        // The size on export (ZK-188): the frame's own, or the one chosen.
+        let fr = s.ed.doc.frame();
+        let out = s.video.as_ref().and_then(|p| p.video.out_size);
+        let (ow, oh) = out.unwrap_or((fr.w.max(0) as u32, fr.h.max(0) as u32));
+        ui.set_vid_out_w(ow.to_string().into());
+        ui.set_vid_out_h(oh.to_string().into());
+        ui.set_vid_out_lock(v.out_lock);
+        ui.set_vid_out_preset(match out {
+            None => 0,
+            Some(o) if o == crate::video::out_for(fr, 1280) => 1,
+            Some(o) if o == crate::video::out_for(fr, 1920) => 2,
+            Some(o) if o == crate::video::out_for(fr, (fr.w / 2).max(2) as u32) => 3,
+            _ => -1,
+        });
         ui.set_vid_note(
             match (&v.player, &v.player_error) {
                 (None, Some(_)) | (None, None) => self.tr.tr("vid-poster-note"),
@@ -9973,6 +10042,26 @@ impl App {
                 self.set_sound_mode(ui, arg);
                 return;
             }
+            // ZK-188: the playback speed from the «Відео» tab.
+            "speed-set" => {
+                v.speed_i = (arg.max(0) as usize).min(crate::video::SPEEDS.len() - 1);
+                if v.playing
+                    && let Some(p) = &v.player
+                {
+                    p.play(v.frame, v.speed(), v.looping, v.backward);
+                }
+                self.sync_video(ui);
+                return;
+            }
+            "out-preset" => {
+                self.set_out_preset(ui, arg);
+                return;
+            }
+            "out-lock" => {
+                v.out_lock = !v.out_lock;
+                self.sync_video(ui);
+                return;
+            }
             "track-mute" => {
                 self.set_track(ui, arg as usize, None, Some(true));
                 return;
@@ -9988,6 +10077,63 @@ impl App {
         } else {
             self.sync_video(ui);
         }
+    }
+
+    /// The size on export: 0 the frame's own, 1 1280 wide, 2 1920 wide, 3 half (ZK-188).
+    fn set_out_preset(&mut self, ui: &AppWindow, n: i32) {
+        let Some(s) = self.s.as_mut() else { return };
+        let fr = s.ed.doc.frame();
+        let Some(part) = s.video.as_mut() else { return };
+        part.video.out_size = match n {
+            1 => Some(crate::video::out_for(fr, 1280)),
+            2 => Some(crate::video::out_for(fr, 1920)),
+            3 => Some(crate::video::out_for(fr, (fr.w / 2).max(2) as u32)),
+            _ => None,
+        };
+        s.changed_at = Instant::now();
+        self.sync_video(ui);
+    }
+
+    /// W or H of the size on export typed in (even; the other follows with the lock).
+    pub fn vid_out_edited(&mut self, ui: &AppWindow, field: &str, text: &str) {
+        let Some(s) = self.s.as_mut() else { return };
+        let fr = s.ed.doc.frame();
+        let lock = s.vid.as_ref().is_none_or(|v| v.out_lock);
+        let Some(part) = s.video.as_mut() else { return };
+        let Ok(n) = text.trim().parse::<u32>() else {
+            self.sync_video(ui);
+            return;
+        };
+        let even = |v: u32| (v.clamp(2, 8192) + 1) & !1;
+        let (cw, ch) = part
+            .video
+            .out_size
+            .unwrap_or((fr.w.max(2) as u32, fr.h.max(2) as u32));
+        let r = fr.w.max(1) as f64 / fr.h.max(1) as f64;
+        let size = if field == "w" {
+            let w = even(n);
+            (
+                w,
+                if lock {
+                    even((w as f64 / r).round() as u32)
+                } else {
+                    ch
+                },
+            )
+        } else {
+            let h = even(n);
+            (
+                if lock {
+                    even((h as f64 * r).round() as u32)
+                } else {
+                    cw
+                },
+                h,
+            )
+        };
+        part.video.out_size = (size != (fr.w as u32, fr.h as u32)).then_some(size);
+        s.changed_at = Instant::now();
+        self.sync_video(ui);
     }
 
     /// No sound / system / microphone / both (ZK-189): the tracks' `muted` flags.
