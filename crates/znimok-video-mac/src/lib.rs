@@ -23,6 +23,8 @@
 #[cfg(target_os = "macos")]
 pub mod audio;
 #[cfg(target_os = "macos")]
+pub mod audio_read;
+#[cfg(target_os = "macos")]
 pub mod clock;
 #[cfg(target_os = "macos")]
 pub mod poster;

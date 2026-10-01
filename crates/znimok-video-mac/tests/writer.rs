@@ -81,6 +81,9 @@ fn frames_and_sound_into_an_mp4() {
         }
     }
     wr.finish().unwrap();
+    let done = dir.join("out.mp4");
+    std::fs::rename(&path, &done).unwrap();
+    let path = done.clone();
     let info = read_mp4_file(&path).unwrap();
     let v = info.video().expect("a video track");
     assert_eq!(v.codec.as_ref().map(|c| &c[..]), Some(&b"avc1"[..]));
@@ -93,9 +96,23 @@ fn frames_and_sound_into_an_mp4() {
     assert_eq!(a.codec.as_ref().map(|c| &c[..]), Some(&b"mp4a"[..]));
     let secs = info.duration_s();
     assert!((secs - 2.0).abs() < 0.1, "{secs} s");
+    // The sound back as PCM: 2 s of it, the tone audible.
+    let mut readers =
+        znimok_video_mac::audio_read::AudioTrackReader::open_all(&dir.join("out.mp4")).unwrap();
+    assert_eq!(readers.len(), 1);
+    let mut got = Vec::new();
+    while let Some((_, pcm)) = readers[0].next_block().unwrap() {
+        got.extend(pcm);
+    }
+    let secs = got.len() as f64 / 2.0 / 48_000.0;
+    assert!((secs - 2.0).abs() < 0.1, "{secs} s of sound");
+    let loud = got.iter().filter(|v| v.unsigned_abs() > 4000).count();
+    assert!(
+        loud > got.len() / 4,
+        "the tone is there: {loud} of {}",
+        got.len()
+    );
     // The poster: the first frame back as RGBA, the bar's yellow in it.
-    let done = dir.join("out.mp4");
-    std::fs::rename(&path, &done).unwrap();
     let (pw, ph, rgba) = znimok_video_mac::poster::first_frame(&done).unwrap();
     assert_eq!((pw, ph), (w, h));
     let yellow = rgba
