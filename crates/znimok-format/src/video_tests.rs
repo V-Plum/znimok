@@ -745,3 +745,21 @@ fn marks_times_live_in_the_documents_timeline() {
     );
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// ZK-188: a video keeps its tone (RCPE) — never turns or a mirror.
+#[test]
+fn a_videos_tone_is_kept_turns_are_not() {
+    let (mut doc, v) = rich();
+    doc.recipe.exposure = 0.5;
+    doc.recipe.contrast = 12;
+    doc.recipe.rot_quarters = 1;
+    doc.recipe.mirror = true;
+    let bytes = write_video(&doc, &v, &fake_mp4(5000), &WriteOptions::default());
+    let back = loaded_video(read_any(&bytes).unwrap());
+    let r = back.doc.recipe;
+    assert_eq!(
+        (r.exposure, r.contrast, r.rot_quarters, r.mirror),
+        (0.5, 12, 0, false)
+    );
+    assert_eq!(back.doc.crop, doc.crop);
+}

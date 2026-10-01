@@ -162,7 +162,9 @@ window's close button just closes it. The window's title is the document's name.
 ## The library
 
 Every shot saves itself to the library (autosave can be turned off — then Ctrl+S and a question on
-closing). Cards show thumbnails; search looks at the name, description and tags. Hovering a card
+closing). Cards show thumbnails; search looks at the name, description and tags; the "All / Shots /
+Videos" switch in the header shows one kind (the choice is kept). Videos have a size limit of their
+own (Settings → Library, 5 GB by default): the oldest go to the trash, screenshots are not affected. Hovering a card
 offers rename, show in folder, to the trash (with "Undo"). Shift+trash deletes for good after one
 question.
 
@@ -220,7 +222,10 @@ Del cuts it, Shift+Del keeps only it; S splits; a cut-out piece is hatched, with
 timeline's keys work while the last click was on it (a thin ring): there J plays backwards, K stops,
 L plays forwards; on the canvas the letters stay with the tools. The recording is never changed: the edits live in the document and undo together
 with the marks. The "Video" tab has the trimming summary, the sound (no sound / system /
-microphone / both), the crop, tone and size (the tone applies to the video as it plays too);
+microphone / both), the playback speed (0.5–2×, in the editor only), the crop (proportions Free / 16:9 / 4:3 / 1:1 /
+9:16; a video's frame has even sides), the tone (applied to the video as it plays and kept with
+the document) and the size on export (100 % / 1280 / 1920 / 50 % or your own W × H with the
+proportions locked); the trimming summary has a bar of what is kept;
 "Frame as screenshot" opens the current frame as a document of its own. The graphics card decodes
 and shows the video — on Windows and macOS, without copying frames through the processor; the marks
 are drawn over it.

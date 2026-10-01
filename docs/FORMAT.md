@@ -55,7 +55,7 @@ Written in this order. Only `SRC ` is mandatory.
 | `THMB` | PNG of the composed frame (marks, crop), at most 320 × 240 | when the writer has one |
 | `SRC ` | PNG of the current **original** — before tone, turns and mirror; for a video, the poster (first frame at the video's size) | always |
 | `BANK` | `u32` n; n × (`u32` bank id, `u32` length, PNG) — pictures used by image marks | when image marks exist |
-| `RCPE` | `f32` exposure EV −2…2; `f32` gamma 0.5…2; `i32` contrast −50…50; `u8` quarter turns clockwise 0…3; `bool` mirror (applied **before** the turns) | image, when not default (0, 1, 0, 0, false) |
+| `RCPE` | `f32` exposure EV −2…2; `f32` gamma 0.5…2; `i32` contrast −50…50; `u8` quarter turns clockwise 0…3; `bool` mirror (applied **before** the turns) | image or video (tone only), when not default (0, 1, 0, 0, false) |
 | `CROP` | `rect` of the frame in the displayed picture's coordinates | image, when cropped |
 | `SCAL` | `u32` DPI scale of the monitor of capture × 1000 (corner radii), 250…8000 | when ≠ 1000 |
 | `OBJS` | `u32` n; n × `OBJ ` records in z-order, bottom first | always |
@@ -131,8 +131,9 @@ come the video blocks:
 | `DEVT` | browser log, see below | when the recording has one |
 | `MP4 ` | raw bytes of the encoded stream, in chunks | always, last |
 
-A video document has no `RCPE` (a writer omits it, a reader ignores it) and no `CROP` (the frame
-is in `GEOM`). It needs `VINF`, a poster of exactly the `VINF` size and a non-empty stream; any
+A video document's `RCPE` carries its tone only (ZK-188: exposure, gamma, contrast, applied to the
+frames in the player and on export; a writer writes 0 turns and no mirror, a reader ignores them),
+and it has no `CROP` (the frame is in `GEOM`). It needs `VINF`, a poster of exactly the `VINF` size and a non-empty stream; any
 of them missing or wrong is "damaged". Blocks are written in this order: `META`, `DESC`, `INFO`,
 `VINF`, `THMB`, `SRC `, `BANK`, `SCAL`, `OBJS`, `GRPN`, `GEOM`, `CUTS`, `AUDI`, `MOUS`, `DEVT`,
 `MP4 `… — so `peek` learns the kind and the duration from the head of the file.

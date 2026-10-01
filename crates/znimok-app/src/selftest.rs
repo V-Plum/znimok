@@ -3666,6 +3666,43 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
             shot_marks == Some(1),
             format!("{shot_marks:?}"),
         );
+        // ZK-188: the «Відео» tab — the crop's 16:9 with even sides, the size on export (a preset
+        // and a typed width with the lock), the speed, all kept in the file with the tone.
+        ui.invoke_image_action("crop".into());
+        ui.invoke_image_action("crop-aspect-1".into());
+        ui.invoke_image_action("crop-done".into());
+        let frame = app.borrow().s.as_ref().map(|s| s.ed.doc.frame());
+        ui.invoke_vid_action("out-preset".into(), 1);
+        let preset = (ui.get_vid_out_preset(), ui.get_vid_out_w().to_string(), ui.get_vid_out_h().to_string());
+        ui.invoke_vid_out_edited("w".into(), "333".into());
+        let typed = app.borrow().s.as_ref().and_then(|s| s.video.as_ref().and_then(|p| p.video.out_size));
+        ui.invoke_vid_action("speed-set".into(), 2);
+        let speed = (ui.get_vid_speed_i(), ui.get_vid_speed().to_string());
+        ui.invoke_set_tone("exposure".into(), 0.75, true);
+        let saved4 = app.borrow_mut().save_now(ui);
+        let in_file2 = std::fs::read(&path)
+            .ok()
+            .and_then(|b| znimok_format::read_any(&b).ok())
+            .and_then(|l| match l {
+                znimok_format::Loaded::Video(v) => {
+                    Some((v.video.out_size, v.doc.crop, v.doc.recipe.exposure))
+                }
+                _ => None,
+            });
+        let even = frame.is_some_and(|f| f.x % 2 == 0 && f.y % 2 == 0 && f.w % 2 == 0 && f.h % 2 == 0);
+        let ratio = frame.map_or(0.0, |f| f.w as f64 / f.h.max(1) as f64);
+        r.check(
+            "video tab: the crop at 16:9 with even sides; the size on export (1280 preset, a typed width with the lock); the speed; saved with the tone",
+            even
+                && (ratio - 16.0 / 9.0).abs() < 0.05
+                && preset.0 == 1
+                && preset.1 == "1280"
+                && typed.is_some_and(|(w, h)| w == 334 && h % 2 == 0 && ((w as f64 / h as f64) - ratio).abs() < 0.05)
+                && speed == (2, "1.5×".to_string())
+                && saved4
+                && in_file2.is_some_and(|(o, c, e)| o == typed && c == frame && e == 1.0),
+            format!("frame {frame:?} · preset {preset:?} · typed {typed:?} · speed {speed:?} · saved {saved4} · in the file {in_file2:?}"),
+        );
         app.borrow_mut().close_document(ui);
         let _ = std::fs::remove_file(&path);
     }));
@@ -4048,6 +4085,22 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
             format!("{clicks:?} · middle {middle:?}"),
         );
         ui.invoke_setting("rec-sound".into(), 0);
+        // ZK-100: the library shows all, only screenshots or only videos; the choice is kept.
+        if let Some((lib, lw)) = crate::wins::library() {
+            use slint::Model;
+            let videos = lib.borrow().entries.iter().filter(|e| e.video_ms.is_some()).count();
+            let shots = lib.borrow().entries.len() - videos;
+            let count = |what: &str| {
+                lw.invoke_lib_action(what.into(), "".into());
+                lw.get_cards().row_count()
+            };
+            let (v, s, a) = (count("kind-videos"), count("kind-shots"), count("kind-all"));
+            r.check(
+                "library: All / Shots / Videos show what they say",
+                videos >= 1 && v == videos && s == shots && a == videos + shots && lw.get_lib_kind() == 0,
+                format!("videos {v}/{videos} · shots {s}/{shots} · all {a}"),
+            );
+        }
         crate::pill::close();
         if let Some(p) = path {
             app.borrow_mut().open_path(ui, &p);

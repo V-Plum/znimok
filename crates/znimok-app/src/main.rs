@@ -1425,6 +1425,9 @@ fn wire(ui: &AppWindow, app: &Shared) {
     on!(ui, app, on_vid_action, |a, w, what, arg| {
         a.vid_action(&w, &what, arg);
     });
+    on!(ui, app, on_vid_out_edited, |a, w, field, text| {
+        a.vid_out_edited(&w, &field, &text);
+    });
     on!(ui, app, on_tl_pointer, |a, w, kind, x, y, shift| {
         a.tl_pointer(&w, kind, x as i32, y as i32, shift);
     });
