@@ -217,8 +217,11 @@ mod tests {
         assert_eq!(m["name"], HOST_NAME);
         assert_eq!(m["type"], "stdio");
         assert_eq!(
-            m["allowed_origins"][0],
-            format!("chrome-extension://{}/", crate::DEV_EXTENSION_ID)
+            m["allowed_origins"],
+            serde_json::json!([
+                format!("chrome-extension://{}/", crate::DEV_EXTENSION_ID),
+                format!("chrome-extension://{}/", crate::STORE_EXTENSION_ID),
+            ])
         );
     }
 }

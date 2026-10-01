@@ -24,6 +24,6 @@ swiftc -O -parse-as-library -module-name ZnimokThumbnail \
     -Xlinker -rpath -Xlinker /usr/lib/swift \
     -target "$(uname -m)-apple-macos15.0"
 sed -e "s/@VERSION@/$VERSION/" -e "s/@BUILD@/$BUILD/" "$HERE/Info.plist" > "$APPEX/Contents/Info.plist"
-codesign --force --sign - --entitlements "$HERE/sandbox.entitlements" "$APPEX"
+codesign --force --sign "${ZNIMOK_SIGN_IDENTITY:--}" --entitlements "$HERE/sandbox.entitlements" "$APPEX"
 codesign --verify --strict "$APPEX"
 echo "built: $APPEX"
