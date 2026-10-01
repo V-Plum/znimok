@@ -4,7 +4,7 @@
 
 [Українська](README.md) · **English**
 
-> **Preview version 0.0.3.** Znimok is in development: features arrive with every update, the code and the plan are changing.
+> **Preview version 0.0.4.** Znimok is in development: features arrive with every update, the code and the plan are changing.
 
 Screenshots for Windows and macOS with an editor that keeps marks editable: an arrow, a caption or
 a hidden area can be adjusted a week later. Shots live in a library on your computer, in their own
@@ -32,7 +32,7 @@ interface. Little Helpers files are not compatible — the features move over, n
 - **Library** with thumbnails, search, date groups, pins, the keyboard, picking several cards and a trash (restore / destroy); the folder may live on a cloud drive. Every
   document opens in a window of its own — shots can be compared side by side and marks dragged
   between them.
-- **Video (preview)**: record a region, a window or the screen on Windows; playback on the
+- **Video (preview)**: record a region, a window or the screen on Windows and macOS; playback on the
   graphics card on Windows and macOS (forwards, backwards, 0.5–2×, thumbnails on the strip);
   trimming and cutting without re-encoding; marks with their time on a track; a frame as a
   screenshot of its own.
@@ -79,7 +79,7 @@ updates them). Fonts are built in: Onest, JetBrains Mono, Unbounded — all unde
   (check, EdDSA-verified download, relaunch). The daily check runs only when switched on.
 - Video (phase 8): recording — `crates/znimok-video-win` (WGC or Desktop Duplication → a wgpu
   shader → NV12 on the GPU → hardware H.264 through Media Foundation; the software encoder as the
-  fallback); playback — `crates/znimok-play` (Media Foundation on D3D11 or VideoToolbox → a
+  fallback) and `crates/znimok-video-mac` (ScreenCaptureKit → AVAssetWriter, VideoToolbox H.264); playback — `crates/znimok-play` (Media Foundation on D3D11 or VideoToolbox → a
   texture without a copy through the processor → wgpu). Try recording without the app:
   `cargo run --release -p znimok-video-win --example record -- --seconds 5 [--window Title]`.
 
