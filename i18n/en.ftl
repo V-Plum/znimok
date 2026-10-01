@@ -5619,3 +5619,21 @@ rec-hide-keys = Keys to hide
 # @kind: body
 # @max: 300
 rec-hide-hint = Comma-separated: headers, JSON keys, form fields and dataLayer keys whose values become •••. Secrets such as tokens, e-mails and card numbers are found by their look as well. The log stays whole in your files.
+
+## dataLayer in the DevTools log (ZK-195)
+
+
+# @where: DevTools log panel: filter chip, values pushed into dataLayer by GTM / gtag (a count follows)
+# @kind: label
+# @max: 16
+devp-chip-datalayer = dataLayer
+
+# @where: DevTools log panel: a dataLayer value that was already there when the recording started
+# @kind: body
+# @max: 120
+devp-dl-pre = Already in dataLayer when the recording started.
+
+# @where: DevTools log panel: a dataLayer value from a frame inside the page
+# @kind: body
+# @max: 80
+devp-dl-frame = From a frame inside the page.

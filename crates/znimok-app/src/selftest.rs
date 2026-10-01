@@ -3521,6 +3521,10 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
                     r#"{"k":"net","s":0,"method":"POST","url":"https://example.org/api/save","status":200,"mime":"application/json","postData":"{\"name\":\"Олена\"}","body":"{\"ok\":true}","dur":42,"timing":{"dnsStart":1,"dnsEnd":3,"sendStart":5,"sendEnd":6,"receiveHeadersEnd":30},"reqHeaders":{"Accept":"*/*"},"resHeaders":{"Content-Type":"application/json"}}"#,
                 ),
                 ev(
+                    2000,
+                    r#"{"k":"dl","s":0,"ev":"purchase","data":{"event":"purchase","value":42}}"#,
+                ),
+                ev(
                     2500,
                     r#"{"k":"error","s":2,"text":"TypeError: form is undefined","src":"https://example.org/app.js:40","stack":"at submit (app.js:40)"}"#,
                 ),
@@ -3544,8 +3548,8 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
             .collect();
         let lane = ui.get_devp_has() && !ui.get_devp_open();
         r.check(
-            "DevTools log: the lane shows a tick per event (navigation blue, request grey, error red)",
-            written && lane && ticks == vec![(150, 1), (450, 0), (750, 3)],
+            "DevTools log: the lane shows a tick per event (navigation blue, request grey, dataLayer violet, error red)",
+            written && lane && ticks == vec![(150, 1), (450, 0), (600, 2), (750, 4)],
             format!("written {written} · lane {lane} · {ticks:?}"),
         );
         ui.invoke_devp_action("toggle".into(), 0);
@@ -3553,7 +3557,7 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
         let chips: Vec<i32> = ui.get_devp_chips().iter().map(|c| c.count).collect();
         r.check(
             "DevTools log: the panel opens with every event and the chips' counts",
-            ui.get_devp_open() && rows == 3 && chips == vec![3, 1, 0, 1, 1, 1],
+            ui.get_devp_open() && rows == 4 && chips == vec![4, 1, 0, 1, 1, 1, 1],
             format!("open {} · rows {rows} · chips {chips:?}", ui.get_devp_open()),
         );
         ui.invoke_vid_transport("home".into());
@@ -3563,8 +3567,8 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
         r.check(
             "DevTools log: «to the next error» moves the video to it and opens its stack",
             frame == Some(75)
-                && ui.get_devp_selected() == 2
-                && ui.get_devp_current() == 2
+                && ui.get_devp_selected() == 3
+                && ui.get_devp_current() == 3
                 && !ui.get_devp_tabbed()
                 && detail.contains("TypeError: form is undefined")
                 && detail.contains("at submit (app.js:40)"),

@@ -240,7 +240,8 @@ time undo like everything else.
 
 **The browser's DevTools log.** The Znimok extension for Chrome and Edge writes, while you record,
 what the page's DevTools panels show: the console (with objects and stacks), errors, the network —
-request and response headers, the request's payload, the response, timings — and navigations, in sync
+request and response headers, the request's payload, the response, timings — navigations and
+dataLayer (every GTM or gtag event as full JSON, with what the array held before the recording), in sync
 with the video (both take their time from the system clock; the recording's pauses are cut out of the
 log). The log lies in the recording's document. It is debugging data, so it is written in full;
 sensitive parts can be hidden on export. While the log is written the browser shows its
@@ -253,9 +254,9 @@ unpacked". Znimok registers itself for the browsers; no administrator rights nee
 
 **The DevTools log in the video editor.** When a recording has the browser's log, a "log" lane with
 ticks appears under the marks lane of the timeline: errors red (with a faint line across the whole
-timeline), warnings amber, navigations blue, network grey. The chevron by the lane's name opens a
+timeline), warnings amber, dataLayer violet, navigations blue, network grey. The chevron by the lane's name opens a
 panel under the timeline: a search (request and response bodies included), the filters "All",
-"Errors", "Warnings", "Network", "Console", "Navigation" with counts, and the list of events (time,
+"Errors", "Warnings", "Network", "Console", "Navigation", "dataLayer" with counts, and the list of events (time,
 kind, message, file:line). The row the video has reached is highlighted; while it plays, the list
 scrolls along. A click on a row or on a tick of the lane moves the video to that moment and opens the
 details: for a request the tabs "Headers", "Payload", "Preview" (JSON laid out), "Response", "Timing"

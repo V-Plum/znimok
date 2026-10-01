@@ -5665,3 +5665,21 @@ rec-hide-keys = Ключі, які приховувати
 # @kind: body
 # @max: 300
 rec-hide-hint = Через кому: заголовки, ключі JSON, поля форм і ключі dataLayer, значення яких стануть •••. Секрети на кшталт токенів, адрес пошти й номерів карток знаходяться і за виглядом. У ваших файлах лог лишається цілим.
+
+## dataLayer in the DevTools log (ZK-195)
+
+
+# @where: DevTools log panel: filter chip, values pushed into dataLayer by GTM / gtag (a count follows)
+# @kind: label
+# @max: 16
+devp-chip-datalayer = dataLayer
+
+# @where: DevTools log panel: a dataLayer value that was already there when the recording started
+# @kind: body
+# @max: 120
+devp-dl-pre = Уже був у dataLayer, коли почався запис.
+
+# @where: DevTools log panel: a dataLayer value from a frame inside the page
+# @kind: body
+# @max: 80
+devp-dl-frame = З фрейму всередині сторінки.

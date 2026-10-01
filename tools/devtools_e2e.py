@@ -38,6 +38,29 @@ SUFFIX = "e2e-" + str(os.getpid())
 
 PAGE = """<!doctype html><html><head><meta charset="utf-8"><title>Znimok devtools test</title></head>
 <body><div id="n">0</div><script>
+// dataLayer as a site with GTM has it (ZK-195): pushed before GTM loads, gtag() pushes its
+// arguments, GTM then wraps push with its own; one reload so a new document is hooked too.
+window.dataLayer = window.dataLayer || [];
+dataLayer.push({event: "gtm.js", "gtm.start": Date.now(), load: sessionStorage.getItem("zn") ? 2 : 1});
+function gtag() { dataLayer.push(arguments); }
+gtag("config", "G-TEST");
+setTimeout(() => {
+  const before = dataLayer.push;
+  dataLayer.push = function () { return before.apply(dataLayer, arguments); };
+}, 200);
+// Reload once the recording has hooked this page (so the snapshot is of the first load).
+const waitHook = setInterval(() => {
+  if (window.__znimokDLHooked && !sessionStorage.getItem("zn")) {
+    clearInterval(waitHook);
+    setTimeout(() => { sessionStorage.setItem("zn", "1"); location.reload(); }, 1500);
+  }
+}, 100);
+let k = 0;
+setInterval(() => {
+  k++;
+  dataLayer.push({event: "tick_dl", k: k, load: sessionStorage.getItem("zn") ? 2 : 1,
+                  user: {email: "a@example.org"}, eventCallback: function done() {}, "gtm.element": document.body});
+}, 400);
 let n = 0;
 setInterval(() => {
   n++;
@@ -188,11 +211,20 @@ def main():
         ticks = [e for e in ev if e.get("k") == "console" and str(e.get("text", "")).startswith("tick ")]
         errors = [e for e in ev if e.get("k") == "error" and "boom" in str(e.get("text"))]
         posts = [e for e in ev if e.get("k") == "net" and e.get("method") == "POST" and "/api/echo" in e.get("url", "")]
+        dl = [e for e in ev if e.get("k") == "dl"]
+        dl_ticks = [e for e in dl if e.get("ev") == "tick_dl"]
+        seen = [(e["data"].get("load"), e["data"].get("k")) for e in dl_ticks]
         checks = {
             "console ticks with their objects": len(ticks) >= 5 and any("ok" in str(e.get("args")) for e in ticks),
             "uncaught errors with a stack": len(errors) >= 1,
             "times in order on the video": all(a["ms"] <= b["ms"] for a, b in zip(log["events"], log["events"][1:])),
             "a POST": len(posts) >= 1,
+            # ZK-195
+            "dataLayer: what the page held before the recording, marked": any(e.get("ev") == "gtm.js" and e.get("pre") for e in dl),
+            "dataLayer: pushes after GTM wrapped push, each once": len(dl_ticks) >= 5 and len(seen) == len(set(seen)),
+            "dataLayer: a new document is hooked from its start": any(e.get("ev") == "gtm.js" and not e.get("pre") and e["data"].get("load") == 2 for e in dl),
+            "dataLayer: gtag() as its arguments": any(e.get("ev") == "gtag config G-TEST" and e.get("data") == ["config", "G-TEST"] for e in dl),
+            "dataLayer: functions and elements as text": any("[function done]" in json.dumps(e["data"]) and "<body>" in json.dumps(e["data"]) for e in dl_ticks),
         }
         if posts:
             p = posts[0]
