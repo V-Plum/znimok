@@ -17,6 +17,7 @@ znimok-format = { path = "../znimok-format" }
 znimok-render = { path = "../znimok-render" }
 znimok-video = { path = "../znimok-video" }
 znimok-play = { path = "../znimok-play" }
+znimok-report = { path = "../znimok-report" }
 png = "0.18"
 
 [target.'cfg(windows)'.dependencies]

@@ -349,7 +349,10 @@ pub struct App {
     /// The export sheet shows the video's formats (ZK-190); the choices, estimates, a running job.
     vexp_open: bool,
     vexp: crate::vexport::VidExport,
-    vexp_sizes: [Option<u64>; 3],
+    /// Estimates: MP4, GIF, HTML, the report (ZK-98).
+    vexp_sizes: [Option<u64>; 4],
+    /// How many of the log's values the report would hide (counted on a worker), if known.
+    vexp_hidden: Option<usize>,
     vexp_serial: u64,
     vexp_run: Option<std::sync::Arc<znimok_export::Progress>>,
     vexp_timer: Option<slint::Timer>,
@@ -580,7 +583,8 @@ impl App {
             exp_last: None,
             vexp_open: false,
             vexp: Default::default(),
-            vexp_sizes: [None; 3],
+            vexp_sizes: [None; 4],
+            vexp_hidden: None,
             vexp_serial: 0,
             vexp_run: None,
             vexp_timer: None,
@@ -1438,6 +1442,12 @@ impl App {
         ui.set_pref_rec_cursor(p.video.cursor);
         ui.set_pref_rec_devlog(p.video.devtools_log);
         ui.set_pref_rec_ext_control(p.video.extension_control);
+        ui.set_pref_rec_hide(match p.video.hide_on_export {
+            znimok_settings::HideOnExport::Ask => 0,
+            znimok_settings::HideOnExport::Always => 1,
+            znimok_settings::HideOnExport::Never => 2,
+        });
+        ui.set_pref_rec_hide_keys(p.video.hide_keys.join(", ").into());
         let hosts = crate::devlog::hub().hosts();
         ui.set_rec_browsers_on(hosts > 0);
         ui.set_rec_browsers(
@@ -1470,6 +1480,18 @@ impl App {
 
     /// One control of the settings page changed. Numbers come as `value`; texts are read from
     /// the page's own fields.
+    /// A text setting (ZK-98: the keys hidden in a report, comma-separated).
+    pub fn setting_text(&mut self, ui: &AppWindow, key: &str, text: &str) {
+        if key == "rec-hide-keys" {
+            let keys: Vec<String> = text
+                .split([',', ';', '\n'])
+                .map(|k| k.trim().to_string())
+                .filter(|k| !k.is_empty())
+                .collect();
+            self.save_prefs(ui, |p| p.video.hide_keys = keys);
+        }
+    }
+
     pub fn setting(&mut self, ui: &AppWindow, key: &str, value: i32) {
         let on = value != 0;
         match key {
@@ -1662,6 +1684,13 @@ impl App {
             }),
             "rec-devlog" => self.save_prefs(ui, |p| p.video.devtools_log = on),
             "rec-ext-control" => self.save_prefs(ui, |p| p.video.extension_control = on),
+            "rec-hide" => self.save_prefs(ui, |p| {
+                p.video.hide_on_export = match value {
+                    1 => znimok_settings::HideOnExport::Always,
+                    2 => znimok_settings::HideOnExport::Never,
+                    _ => znimok_settings::HideOnExport::Ask,
+                }
+            }),
             "trash-days" => {
                 let n = ui
                     .get_pref_trash_days()
@@ -2950,6 +2979,23 @@ impl App {
                 return;
             }
         };
+        // A developer report (ZK-98): its recording into the library, then opened.
+        if path
+            .extension()
+            .is_some_and(|e| e.eq_ignore_ascii_case("zreport"))
+        {
+            match crate::vexport::import_zreport(path, &self.lib_dir) {
+                Ok(doc) => {
+                    crate::wins::library_later(|a, ui| a.refresh_library(ui));
+                    self.open_path(ui, &doc);
+                }
+                Err(e) => {
+                    let msg = self.tr.tr_args("zreport-error", &args(&[("reason", e)]));
+                    self.toast(ui, msg);
+                }
+            }
+            return;
+        }
         if znimok_format::is_znimok(&data) {
             match znimok_format::open_parts(path) {
                 Ok((doc, video)) => {
@@ -7856,7 +7902,9 @@ impl App {
     /// The sheet for a video: MP4 / GIF / HTML / the frame / the report, with estimates.
     pub fn vexport_open(&mut self, ui: &AppWindow) {
         self.vexp_open = true;
-        self.vexp_sizes = [None; 3];
+        self.vexp_sizes = [None; 4];
+        self.vexp_hidden = None;
+        self.vexport_count_hidden();
         // The preview: the frame shown, small.
         let still = self
             .s
@@ -7943,10 +7991,10 @@ impl App {
             ),
             card(
                 "vexp-report",
-                self.tr.tr("vexp-soon"),
+                "HTML · .zreport".into(),
                 "vexp-report-desc",
-                String::new(),
-                false,
+                est(3),
+                !mac_mp4,
             ),
         ];
         ui.set_exp_cards(std::rc::Rc::new(slint::VecModel::from(cards)).into());
@@ -7966,12 +8014,42 @@ impl App {
         ui.set_exp_to(p.to as i32);
         ui.set_vexp_library_ok(p.kind == MP4);
         ui.set_exp_estimate(
-            if p.kind <= HTML {
-                est(p.kind)
-            } else {
-                String::new()
+            match p.kind {
+                k if k <= HTML => est(k),
+                REPORT => est(3),
+                _ => String::new(),
             }
             .into(),
+        );
+        // The report (ZK-98): its form, and what is hidden.
+        let hide_mode = self.prefs().video.hide_on_export;
+        let has_log = self
+            .s
+            .as_ref()
+            .and_then(|s| s.video.as_ref())
+            .is_some_and(|v| v.video.devlog.is_some());
+        ui.set_vexp_zreport(p.zreport);
+        ui.set_vexp_has_log(has_log);
+        ui.set_vexp_hide_mode(match hide_mode {
+            znimok_settings::HideOnExport::Ask => 0,
+            znimok_settings::HideOnExport::Always => 1,
+            znimok_settings::HideOnExport::Never => 2,
+        });
+        ui.set_vexp_hide(p.hide);
+        ui.set_vexp_hide_text(
+            match self.vexp_hidden {
+                None => String::new(),
+                Some(0) => self.tr.tr("vexp-hide-none"),
+                Some(n) => self
+                    .tr
+                    .tr_args("vexp-hide-count", &count_args("count", n as i64)),
+            }
+            .into(),
+        );
+        ui.set_vexp_report_big(
+            p.kind == REPORT
+                && !p.zreport
+                && self.vexp_sizes[3].is_some_and(|b| b > znimok_report::HTML_LIMIT),
         );
         // «0:38 after trimming · 1280 × 720 · marks and frame applied»
         if let Some(s) = self.s.as_ref()
@@ -8015,6 +8093,120 @@ impl App {
         });
     }
 
+    /// The report's options (ZK-98): the hiding as Settings and the sheet say, the header's facts,
+    /// the viewer's words.
+    fn report_kind(&self, p: &crate::vexport::VidExport) -> Option<znimok_export::Kind> {
+        if p.kind != crate::vexport::REPORT {
+            return None;
+        }
+        let s = self.s.as_ref()?;
+        let part = s.video.as_ref()?;
+        let prefs = self.prefs();
+        let hide = match prefs.video.hide_on_export {
+            znimok_settings::HideOnExport::Always => true,
+            znimok_settings::HideOnExport::Never => false,
+            znimok_settings::HideOnExport::Ask => p.hide,
+        };
+        let mut rows = Vec::new();
+        if s.ed.doc.meta.created_ms > 0
+            && let Some(t) = chrono::DateTime::from_timestamp_millis(s.ed.doc.meta.created_ms)
+        {
+            rows.push((
+                self.tr.tr("report-recorded"),
+                t.with_timezone(&chrono::Local)
+                    .format("%d.%m.%Y %H:%M")
+                    .to_string(),
+            ));
+        }
+        if let Some(v) = s.vid.as_ref() {
+            rows.push((
+                self.tr.tr("report-length"),
+                crate::video::fmt_time(v.kept() as f64 / v.fps.max(1e-6)),
+            ));
+        }
+        let (_, out) = znimok_export::out_geometry(&s.ed.doc, &part.video);
+        rows.push((self.tr.tr("report-size"), format!("{} × {}", out.0, out.1)));
+        // Where it was recorded: the browser and the page the log starts on.
+        let events: Vec<serde_json::Value> = part
+            .video
+            .devlog
+            .as_ref()
+            .map(|l| {
+                l.events
+                    .iter()
+                    .take(200)
+                    .filter_map(|e| serde_json::from_str(&e.json).ok())
+                    .collect()
+            })
+            .unwrap_or_default();
+        if let Some(b) = events.iter().find_map(|e| e["b"].as_str()) {
+            rows.push((self.tr.tr("report-browser"), b.to_string()));
+        }
+        if let Some(u) = events
+            .iter()
+            .find(|e| e["k"] == "tab" || e["k"] == "nav")
+            .and_then(|e| e["url"].as_str())
+        {
+            rows.push((self.tr.tr("report-page"), u.to_string()));
+        }
+        let mut strings = std::collections::BTreeMap::new();
+        for k in REPORT_STRINGS {
+            strings.insert(k.to_string(), self.tr.tr(k));
+        }
+        strings.insert(
+            "devp-binary".into(),
+            self.tr
+                .tr_args("devp-binary", &args(&[("size", "{size}".to_string())])),
+        );
+        Some(znimok_export::Kind::Report(Box::new(
+            znimok_export::ReportOptions {
+                zip: p.zreport,
+                mask: hide.then(|| prefs.video.hide_keys.clone()),
+                meta: znimok_report::Meta {
+                    title: s.ed.doc.name.clone(),
+                    rows,
+                    masked: self
+                        .tr
+                        .tr_args("report-masked", &args(&[("n", "{n}".to_string())])),
+                    foot: self.tr.tr_args(
+                        "report-foot",
+                        &args(&[("version", env!("CARGO_PKG_VERSION").to_string())]),
+                    ),
+                    ..Default::default()
+                },
+                strings,
+            },
+        )))
+    }
+
+    /// How many of the log's values a report would hide, counted on a worker (the sheet says).
+    fn vexport_count_hidden(&mut self) {
+        let Some(log) = self
+            .s
+            .as_ref()
+            .and_then(|s| s.video.as_ref())
+            .and_then(|v| v.video.devlog.clone())
+        else {
+            return;
+        };
+        let keys = self.prefs().video.hide_keys.clone();
+        let serial = self.vexp_serial;
+        let me = self.me();
+        std::thread::spawn(move || {
+            let mut events = znimok_report::log_events(&log, |ms| Some(f64::from(ms)));
+            let n =
+                znimok_report::mask::events(&mut events, &znimok_report::mask::Rules::new(&keys));
+            let _ = slint::invoke_from_event_loop(move || {
+                me.with(|a, ui| {
+                    if a.vexp_open && a.vexp_serial >= serial {
+                        a.vexp_hidden = Some(n);
+                        a.vexport_show(ui);
+                    }
+                });
+            });
+        });
+    }
+
     /// Estimates: MP4 and HTML from the bit rate, the GIF from probe frames on a worker.
     fn vexport_estimate(&mut self) {
         let Some(s) = self.s.as_ref() else { return };
@@ -8038,6 +8230,16 @@ impl App {
         let marks = s.ed.doc.objects.iter().filter(|o| !o.hidden).count() as u64;
         self.vexp_sizes[0] = Some(mp4);
         self.vexp_sizes[2] = Some(mp4 * 4 / 3 + 40_000 * marks + 4_000);
+        // The report: the page's video, the log as JSON (twice in a .zreport: the page and
+        // log.json), the viewer.
+        let log: u64 = part.video.devlog.as_ref().map_or(0, |l| {
+            l.events.iter().map(|e| e.json.len() as u64 + 16).sum()
+        });
+        self.vexp_sizes[3] = Some(if self.vexp.zreport {
+            mp4 + 40_000 * marks + 2 * log + 60_000
+        } else {
+            mp4 * 4 / 3 + 40_000 * marks + log + 40_000
+        });
         self.vexp_sizes[1] = None;
         self.vexp_serial += 1;
         let serial = self.vexp_serial;
@@ -8089,6 +8291,11 @@ impl App {
             }
             "vlimit" => self.vexp.limit = (v.max(0) as usize).min(LIMITS.len() - 1),
             "to" => self.vexp.to = (v.max(0) as usize).min(2),
+            "rzip" => {
+                self.vexp.zreport = v != 0;
+                estimate = true;
+            }
+            "rhide" => self.vexp.hide = v != 0,
             _ => return,
         }
         // Only an MP4 goes to the library; the others fall back to a file.
@@ -8112,7 +8319,6 @@ impl App {
                 self.vexport_close(ui);
                 self.frame_as_shot(ui);
             }
-            REPORT => {}
             _ => {
                 let name = file_safe(ui.get_exp_name().trim());
                 let name = if name.is_empty() {
@@ -8139,7 +8345,7 @@ impl App {
         let dest = match p.to {
             TO_FILE => {
                 let mut dlg = rfd::FileDialog::new()
-                    .add_filter(format_name(p.kind), &[ext])
+                    .add_filter(p.name(), &[ext])
                     .set_file_name(format!("{name}.{ext}"));
                 if let Some(d) = self.prefs().editor.export_dir.filter(|d| d.is_dir()) {
                     dlg = dlg.set_directory(d);
@@ -8158,7 +8364,7 @@ impl App {
                 dir.join(format!("{name}.{ext}"))
             }
         };
-        let Some(kind) = p.engine_kind(true) else {
+        let Some(kind) = p.engine_kind(true).or_else(|| self.report_kind(p)) else {
             return;
         };
         let (Some(job), Some(gpu)) = (self.vexport_job(kind, dest.clone()), self.vexport_gpu())
@@ -8229,7 +8435,7 @@ impl App {
         if !sheet || !self.vexp_open {
             let msg = self.tr.tr_args(
                 "vexp-working-toast",
-                &args(&[("format", format_name(p.kind).to_string())]),
+                &args(&[("format", p.name().to_string())]),
             );
             self.toast(ui, msg);
         }
@@ -8247,7 +8453,7 @@ impl App {
         use crate::vexport::*;
         self.vexp_run = None;
         self.vexp_timer = None;
-        let fmt = format_name(p.kind).to_string();
+        let fmt = p.name().to_string();
         let msg = match r {
             Ok((_, path)) => {
                 let shown = path
@@ -8286,6 +8492,7 @@ impl App {
                 m
             }
             Err(e) if e == znimok_export::CANCELLED => self.tr.tr("vexp-cancelled"),
+            Err(e) if e == znimok_export::REPORT_TOO_BIG => self.tr.tr("vexp-report-too-big"),
             Err(e) => self.tr.tr_args("vexp-error", &args(&[("reason", e)])),
         };
         self.toast(ui, msg);
@@ -8361,7 +8568,7 @@ impl App {
 
     /// For the self-test: the video sheet's estimates (MP4, GIF, HTML) and whether one runs.
     #[cfg_attr(not(windows), allow(dead_code))]
-    pub fn vexport_state(&self) -> ([Option<u64>; 3], bool) {
+    pub fn vexport_state(&self) -> ([Option<u64>; 4], bool) {
         (self.vexp_sizes, self.vexp_run.is_some())
     }
 
@@ -11388,6 +11595,49 @@ fn s_bars(a: &App, x: i32, y: i32) -> Option<(ObjectId, crate::video::Grip, (i64
     Some((id, grip, *t.marks.get(&id)?))
 }
 
+/// The words of the report's viewer (ZK-98), by their keys.
+const REPORT_STRINGS: &[&str] = &[
+    "devp-search",
+    "devp-empty",
+    "devp-chip-all",
+    "devp-chip-errors",
+    "devp-chip-warnings",
+    "devp-chip-network",
+    "devp-chip-console",
+    "devp-chip-nav",
+    "devp-chip-datalayer",
+    "devp-tab-headers",
+    "devp-tab-payload",
+    "devp-tab-preview",
+    "devp-tab-response",
+    "devp-tab-timing",
+    "devp-general",
+    "devp-res-headers",
+    "devp-req-headers",
+    "devp-h-url",
+    "devp-h-method",
+    "devp-h-status",
+    "devp-h-remote",
+    "devp-h-protocol",
+    "devp-h-initiator",
+    "devp-h-cache",
+    "devp-h-error",
+    "devp-stack",
+    "devp-nothing",
+    "devp-dl-pre",
+    "devp-dl-frame",
+    "devp-t-queue",
+    "devp-t-dns",
+    "devp-t-connect",
+    "devp-t-tls",
+    "devp-t-send",
+    "devp-t-wait",
+    "devp-t-download",
+    "devp-t-total",
+    "report-no-log",
+    "common-close",
+];
+
 #[cfg(test)]
 mod wave_tests {
     use super::wave_pixels;
@@ -11418,3 +11668,4 @@ mod wave_tests {
         assert!((0..w).all(|x| none[((10 * w + x) * 4 + 3) as usize] != 0));
     }
 }
+

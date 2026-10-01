@@ -265,6 +265,24 @@ stage): the kind is inside the file, and readers recognise documents by magic an
 extensions be chosen, only `extension_for(kind)` and the file associations change — not the
 format.
 
+## The developer report — `.zreport` (ZK-98)
+
+Not a `.znimok`: a ZIP archive (entries *stored*, names in UTF-8, no ZIP64) that a browser and a
+person can read without Znimok. Made by the video export sheet; opened by Znimok as a new video
+document in the library.
+
+| Entry | What |
+|---|---|
+| `report.html` | the viewer — the same page as the one-file HTML report, its video `video.mp4` beside it |
+| `video.mp4` | the exported video: cuts applied, the Hide and marker marks burned in |
+| `log.json` | the DevTools log: the extension's events (as in `DEVT`) with `at`, seconds in the exported video; events in cut-out parts left out; sensitive values `•••` when hidden on export |
+| `datalayer.json` | the dataLayer pushes only: `{at, event, data}` |
+| `meta.json` | `{"format": "zreport", "version": 1, title, width, height, fps, seconds, audio, rows, masked}` |
+| `poster.png` | the first frame without marks, for the library card |
+
+Reading back: `video.mp4` becomes the payload, `log.json` the `DEVT` block (`at` → ms), `meta.json`
+the `VINF`; the marks stay burned into the video (the page's other marks are pictures, not objects).
+
 ## Limits
 
 A reader refuses (with a "damaged" error), before allocating: files over 512 MiB — for a video,

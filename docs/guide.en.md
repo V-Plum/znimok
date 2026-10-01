@@ -275,6 +275,20 @@ marker go into the video itself) and **frame as screenshot**; each with a size e
 without any edit goes out as it is, without re-encoding. The progress shows while it runs; closing
 the sheet cancels it. On macOS the GIF works for now; MP4 and HTML come with the next update.
 
+**The developer report.** The last card of the video export sheet is "Report with the DevTools
+log". It is the video with its marks and, beside it, the browser's log as in the editor: filters,
+search, the list following the video, a click on a row taking the video to that moment, a request
+opening in the tabs "Headers", "Payload", "Preview", "Response", "Timing". The header says when and
+where it was recorded (browser, page). The events' times are after trimming; events in cut-out parts
+are left out. Two forms: **one HTML page** up to 100 MB, for a chat or a ticket; **a .zreport
+archive** — the page, the video beside it, the log and the dataLayer as JSON (`log.json`,
+`datalayer.json`) and a poster; a .zreport opens in Znimok as a recording with its log. The log is
+written in full and the sensitive parts are hidden on export: the sheet's "Hide sensitive values"
+switch says how many values become `•••` — keys from the list (`Authorization` and `Cookie` headers,
+`email`, `token` fields, …) and secrets by their look (tokens, passwords in addresses, e-mails,
+phones, cards). Settings → "Recording": "Hide sensitive values in a report" — ask (the default),
+always or never, and the list of keys, comma-separated. In your files the log stays whole.
+
 ## Sharing the result
 
 - **Copy** (Ctrl+C) — the image to the clipboard. The Copy button can be dragged into a chat or a

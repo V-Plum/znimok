@@ -294,6 +294,121 @@ fn exports_cut_marked_framed_and_as_gif() {
         "15..30 and 60..75 after the cut"
     );
 
+    // ZK-98: the developer report — the same video and layers, the log on the exported time
+    // (an event inside the cut left out), masked when chosen; as one page and as a .zreport.
+    let mut logged = video.clone();
+    let ev = |ms: i32, json: &str| znimok_format::video::DevEvent {
+        ms,
+        json: json.to_string(),
+    };
+    logged.devlog = Some(znimok_format::video::DevLog {
+        wall0_ms: 0,
+        events: vec![
+            ev(500, r#"{"k":"nav","s":0,"url":"https://example.org/"}"#),
+            ev(1500, r#"{"k":"console","s":0,"text":"inside the cut"}"#),
+            ev(
+                2500,
+                r#"{"k":"net","s":0,"method":"POST","url":"https://example.org/api","status":200,"reqHeaders":{"Authorization":"Bearer abc"},"postData":"{\"email\":\"a@example.org\",\"n\":1}","dur":20}"#,
+            ),
+            ev(
+                2600,
+                r#"{"k":"dl","s":0,"ev":"purchase","data":{"event":"purchase","value":42}}"#,
+            ),
+        ],
+    });
+    let opts = |zip: bool| {
+        let mut strings = std::collections::BTreeMap::new();
+        strings.insert("devp-chip-all".to_string(), "All".to_string());
+        Kind::Report(Box::new(znimok_export::ReportOptions {
+            zip,
+            mask: Some(
+                znimok_report::mask::DEFAULT_KEYS
+                    .iter()
+                    .map(|k| k.to_string())
+                    .collect(),
+            ),
+            meta: znimok_report::Meta {
+                title: "Звіт".into(),
+                masked: "{n} hidden".into(),
+                ..Default::default()
+            },
+            strings,
+        }))
+    };
+    run(
+        &job(opts(true), "bug.zreport", &paged, &logged),
+        &gpu,
+        &Progress::default(),
+    )
+    .unwrap();
+    let back =
+        znimok_report::read_zreport(&std::fs::read(dir.join("bug.zreport")).unwrap()).unwrap();
+    assert_eq!((back.width, back.height), (W, H));
+    assert!((back.seconds - 2.0).abs() < 0.01, "{}", back.seconds);
+    assert!(
+        back.poster_png
+            .as_ref()
+            .is_some_and(|p| p.starts_with(b"\x89PNG"))
+    );
+    let log = back.log.unwrap();
+    let at: Vec<i32> = log.events.iter().map(|e| e.ms).collect();
+    assert_eq!(
+        at,
+        [500, 1500, 1600],
+        "after the 1 s cut; the event inside it gone"
+    );
+    assert!(
+        !log.events[1].json.contains("Bearer abc") && !log.events[1].json.contains("a@example.org"),
+        "{}",
+        log.events[1].json
+    );
+    assert!(
+        log.events[1].json.contains("\\\"n\\\":1"),
+        "{}",
+        log.events[1].json
+    );
+    run(
+        &job(opts(false), "bug.html", &paged, &logged),
+        &gpu,
+        &Progress::default(),
+    )
+    .unwrap();
+    let report = std::fs::read_to_string(dir.join("bug.html")).unwrap();
+    assert!(report.contains("data:video/mp4;base64,") && report.contains("2 hidden"));
+    assert_eq!(report.matches("class=\"m\"").count(), 1);
+    // The viewer runs: a real browser builds the list (when Chrome is here).
+    let chrome = r"C:\Program Files\Google\Chrome\Application\chrome.exe";
+    if std::path::Path::new(chrome).is_file() {
+        let url = format!(
+            "file:///{}",
+            dir.join("bug.html")
+                .display()
+                .to_string()
+                .replace('\\', "/")
+        );
+        let out = std::process::Command::new(chrome)
+            .args([
+                "--headless=new",
+                "--disable-gpu",
+                "--no-first-run",
+                &format!("--user-data-dir={}", dir.join("chrome").display()),
+                "--virtual-time-budget=3000",
+                "--dump-dom",
+                &url,
+            ])
+            .output()
+            .unwrap();
+        let dom = String::from_utf8_lossy(&out.stdout);
+        assert!(
+            dom.contains("data-znimok-report=\"ok\"") && dom.contains("data-shown=\"3\""),
+            "the viewer did not run: {}",
+            &dom[..dom.len().min(400)]
+        );
+        assert_eq!(dom.matches("class=\"row").count(), 3);
+    } else {
+        eprintln!("no Chrome: the viewer is not run");
+    }
+
     // Untouched: the MP4 as it is.
     let plain = Document::from_raster("v", Raster::solid(W, H, Rgb::new(40, 40, 40)));
     let mut plain = plain;

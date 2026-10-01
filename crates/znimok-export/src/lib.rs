@@ -40,7 +40,27 @@ pub enum Kind {
     /// One HTML page: the MP4 inside it, the marks a live layer shown in their time (Hide and
     /// the marker, which work on the pixels, go into the video itself).
     Html,
+    /// The developer report (ZK-98): the HTML page's video and marks with the DevTools log
+    /// beside them, as one page or a `.zreport`.
+    Report(Box<ReportOptions>),
 }
+
+/// What a report is made with.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ReportOptions {
+    /// A `.zreport` (the video beside the page), else one HTML page.
+    pub zip: bool,
+    /// Hide the log's sensitive values: the keys to hide (and the secrets found by their look).
+    pub mask: Option<Vec<String>>,
+    /// The header; `masked` is a template with `{n}` for the count of hidden values. Size, rate
+    /// and length are filled in here.
+    pub meta: znimok_report::Meta,
+    /// The viewer's words by their keys.
+    pub strings: std::collections::BTreeMap<String, String>,
+}
+
+/// The report is over [`znimok_report::HTML_LIMIT`] as one page: the `.zreport` takes it.
+pub const REPORT_TOO_BIG: &str = "report-too-big";
 
 /// A video document to export.
 #[derive(Clone)]
@@ -270,6 +290,7 @@ pub fn run(job: &Job, gpu: &Gpu, progress: &Progress) -> Result<Outcome, String>
         Kind::Mp4 { sound } => mp4(job, gpu, progress, &part, *sound),
         Kind::Gif { width, fps, dither } => gif(job, gpu, progress, &part, *width, *fps, *dither),
         Kind::Html => html(job, gpu, progress, &part),
+        Kind::Report(o) => report(job, gpu, progress, &part, o),
     };
     match r {
         Ok(o) => {
@@ -666,7 +687,157 @@ const PAGE_SCRIPT: &str = "const v=document.querySelector('video'),m=[...documen
 
 const PAGE_STYLE: &str = ":root{--bg:#f4f5f7;--fg:#16181d;--muted:#5c6270}\n@media (prefers-color-scheme:dark){:root{--bg:#0f1115;--fg:#e8eaee;--muted:#9aa1ad}}\nbody{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 system-ui,sans-serif}\nmain{margin:0 auto;padding:24px 16px}\nh1{font-size:20px;margin:0 0 12px}\n.v{position:relative;line-height:0;border-radius:10px;overflow:hidden;background:#000}\nvideo{width:100%;height:auto;display:block}\n.m{position:absolute;inset:0;width:100%;height:100%;display:none;pointer-events:none}\np{color:var(--muted);font-size:13px}";
 
+/// What the HTML page and the report share: the MP4 with only the marks that work on its pixels,
+/// and each other mark as a picture layer with its times.
+struct Parts {
+    mp4: Vec<u8>,
+    layers: String,
+    keep: Vec<KeepSeg>,
+    fps: f64,
+    frame: IRect,
+    out: (u32, u32),
+}
+
 fn html(job: &Job, gpu: &Gpu, progress: &Progress, part: &Path) -> Result<Outcome, String> {
+    let Parts {
+        mp4: mp4_bytes,
+        layers,
+        keep,
+        out,
+        ..
+    } = parts(job, gpu, progress, part)?;
+    let title = esc(&job.doc.name);
+    let mut page = String::new();
+    page.push_str("<!doctype html>\n<html><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n<title>");
+    page.push_str(&title);
+    page.push_str("</title>\n<style>\n");
+    page.push_str(PAGE_STYLE);
+    page.push_str(&format!("\nmain{{max-width:{}px}}\n", out.0.max(320)));
+    page.push_str("</style></head><body><main>\n<h1>");
+    page.push_str(&title);
+    page.push_str("</h1>\n<div class=\"v\"><video controls playsinline preload=\"auto\" src=\"data:video/mp4;base64,");
+    page.push_str(&base64(&mp4_bytes));
+    page.push_str("\"></video>\n");
+    page.push_str(&layers);
+    page.push_str("</div>\n<p>Znimok</p>\n</main><script>\n");
+    page.push_str(PAGE_SCRIPT);
+    page.push_str("\n</script></body></html>\n");
+    std::fs::write(part, page.as_bytes()).map_err(|e| e.to_string())?;
+    Ok(Outcome {
+        frames: kept_frames(&keep),
+        bytes: page.len() as u64,
+        copied: false,
+        hardware: false,
+    })
+}
+
+/// The developer report (ZK-98): the page's video and marks, the log on the exported time
+/// (masked when chosen), as one page or a `.zreport` with the poster.
+fn report(
+    job: &Job,
+    gpu: &Gpu,
+    progress: &Progress,
+    part: &Path,
+    o: &ReportOptions,
+) -> Result<Outcome, String> {
+    let Parts {
+        mp4,
+        layers,
+        keep,
+        fps,
+        frame,
+        out,
+    } = parts(job, gpu, progress, part)?;
+    let mut events = job
+        .video
+        .devlog
+        .as_ref()
+        .map(|log| {
+            znimok_report::log_events(log, |ms| {
+                let t = f64::from(ms) / 1000.0;
+                let f = (t * fps).floor() as i64;
+                out_intervals(&keep, f, f + 1, fps)
+                    .first()
+                    .map(|(a, _)| a + (t - f as f64 / fps).max(0.0))
+            })
+        })
+        .unwrap_or_default();
+    let hidden = o.mask.as_ref().map(|keys| {
+        znimok_report::mask::events(&mut events, &znimok_report::mask::Rules::new(keys))
+    });
+    let mut meta = o.meta.clone();
+    meta.width = out.0;
+    meta.height = out.1;
+    meta.fps = fps;
+    meta.seconds = kept_frames(&keep) as f64 / fps.max(1e-6);
+    meta.audio = job.video.audio.iter().any(|t| !t.muted);
+    meta.masked = match hidden {
+        Some(n) => o.meta.masked.replace("{n}", &n.to_string()),
+        None => String::new(),
+    };
+    let bytes = if o.zip {
+        let poster = poster_png(&job.doc, frame, out)?;
+        let f = std::fs::File::create(part).map_err(|e| e.to_string())?;
+        let mut w = std::io::BufWriter::new(f);
+        znimok_report::write_zreport(
+            &mut w,
+            &meta,
+            &o.strings,
+            &events,
+            &mp4,
+            Some(&poster),
+            &layers,
+        )
+        .map_err(|e| e.to_string())?;
+        std::io::Write::flush(&mut w).map_err(|e| e.to_string())?;
+        drop(w);
+        std::fs::metadata(part).map(|m| m.len()).unwrap_or(0)
+    } else {
+        let page = znimok_report::page(
+            &meta,
+            &o.strings,
+            &events,
+            znimok_report::VideoSrc::Inline(&mp4),
+            &layers,
+        );
+        if page.len() as u64 > znimok_report::HTML_LIMIT {
+            return Err(REPORT_TOO_BIG.into());
+        }
+        std::fs::write(part, page.as_bytes()).map_err(|e| e.to_string())?;
+        page.len() as u64
+    };
+    Ok(Outcome {
+        frames: kept_frames(&keep),
+        bytes,
+        copied: false,
+        hardware: false,
+    })
+}
+
+/// The recording's picture in the exported frame, without marks, as PNG (the `.zreport`'s
+/// poster).
+fn poster_png(doc: &Document, frame: IRect, out: (u32, u32)) -> Result<Vec<u8>, String> {
+    let mut d = doc.clone();
+    for o in &mut d.objects {
+        o.hidden = true;
+    }
+    d.shown_frame = None;
+    let view = View {
+        scale: f64::from(out.0) / f64::from(frame.w.max(1)),
+        origin: znimok_render::vello_cpu::kurbo::Point::new(f64::from(frame.x), f64::from(frame.y)),
+        width: out.0.min(65535) as u16,
+        height: out.1.min(65535) as u16,
+    };
+    let mut pix = Pixmap::new(1, 1);
+    Renderer::new().render(&d, view, &mut pix);
+    let mut rgba = pix.data_as_u8_slice().to_vec();
+    for p in rgba.as_chunks_mut::<4>().0 {
+        p[3] = 255;
+    }
+    png_of(&rgba, u32::from(view.width), u32::from(view.height))
+}
+
+fn parts(job: &Job, gpu: &Gpu, progress: &Progress, part: &Path) -> Result<Parts, String> {
     let info = job.video.info;
     let fps = info.fps();
     let frames = i64::from(info.frames);
@@ -756,28 +927,13 @@ fn html(job: &Job, gpu: &Gpu, progress: &Progress, part: &Path) -> Result<Outcom
         layers.push_str(&base64(&png));
         layers.push_str("\">\n");
     }
-    let title = esc(&job.doc.name);
-    let mut page = String::new();
-    page.push_str("<!doctype html>\n<html><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n<title>");
-    page.push_str(&title);
-    page.push_str("</title>\n<style>\n");
-    page.push_str(PAGE_STYLE);
-    page.push_str(&format!("\nmain{{max-width:{}px}}\n", out.0.max(320)));
-    page.push_str("</style></head><body><main>\n<h1>");
-    page.push_str(&title);
-    page.push_str("</h1>\n<div class=\"v\"><video controls playsinline preload=\"auto\" src=\"data:video/mp4;base64,");
-    page.push_str(&base64(&mp4_bytes));
-    page.push_str("\"></video>\n");
-    page.push_str(&layers);
-    page.push_str("</div>\n<p>Znimok</p>\n</main><script>\n");
-    page.push_str(PAGE_SCRIPT);
-    page.push_str("\n</script></body></html>\n");
-    std::fs::write(part, page.as_bytes()).map_err(|e| e.to_string())?;
-    Ok(Outcome {
-        frames: kept_frames(&keep),
-        bytes: page.len() as u64,
-        copied: false,
-        hardware: false,
+    Ok(Parts {
+        mp4: mp4_bytes,
+        layers,
+        keep,
+        fps,
+        frame,
+        out,
     })
 }
 
