@@ -34,7 +34,7 @@ always**. Scopes:
 | Scope | Tools |
 |---|---|
 | `capture` | `list_windows`, `capture_screen`, `capture_window`, `capture_region`, `read_codes` on the screen |
-| `library_read` | `library_search`, `library_get`, `library_tags`, `list_marks`, `ocr`, `export`, `read_codes` on a document, resources |
+| `library_read` | `library_search`, `library_get`, `library_tags`, `list_marks`, `video_info`, `devlog_summary`, `devlog_get`, `find_text`, `ocr`, `export`, `read_codes` on a document, resources |
 | `library_write` | `set_meta`, `library_import`, `library_duplicate`, `library_trash`, `library_restore`, `library_delete` (asks every time), `add_marks`, `update_marks`, `delete_marks`, `crop`, `rotate`, `resize`, `tone`, `annotate`, `redact_pii` |
 
 `list_displays` needs no permission. If Znimok is not running, nobody can be asked and the call is
@@ -82,11 +82,16 @@ PNG, plus a `resource_link` `znimok://library/<id>` to the original.
 | `library_restore` | `document` (id of a trashed one) | the document, back in the library |
 | `library_delete` | `document` (in the library or the trash) | deleted for good — **the person confirms every time** in the Znimok window |
 | `library_get` | `document` | picture + metadata |
+| `video_info` | `document` (a recording) | length, size, frame rate, trims and cuts, sound tracks, marks with their times, clicks, whether it has the DevTools log |
+| `devlog_summary` | `document` | the browser log in short: counts by kind, errors, failed requests, navigations, dataLayer events — with times in the video |
+| `devlog_get` | `document`, `kinds?`, `errors_only?`, `query?`, `from_ms?` / `to_ms?`, `limit?` (≤ 500), `offset?`, or `index` for one event whole | events in time order (`i`, `at_ms`, `kind`, `level`, and the kind's own fields); sensitive values hidden as the settings say |
+| `find_text` | `document`, `text`, `languages?` | the lines that contain the text, with boxes in pixels |
 | `ocr` | `document`, `languages?` (e.g. `["uk","en"]`) | text and line boxes, on the device |
 | `read_codes` | `document`, or `display?`, or `x`, `y`, `width`, `height` (desktop units) | QR codes and barcodes, on the device: `text`, `kind` (`link` + `url`, `wifi` + `ssid`/`password`/`security`/`hidden`, `contact`, `event`, `email` + `address`, `phone` + `number`, `text`), `format`, `bounds`; the screen is read without adding a document (macOS: the app keeps its shot, `saved_as`) |
 | `redact_pii` | `document`, `apply?` (true), `faces?` (true) | what was found; with `apply` covered by Hide marks and saved |
 
-Resources: `resources/list` lists the library, `resources/read` gives a document as PNG.
+Resources: `resources/list` lists the library, `resources/read` gives a document as PNG; a
+recording with the browser's log also has `znimok://library/<id>/log` — the log as JSON.
 
 ### Marks in plain words
 
@@ -127,6 +132,10 @@ labels → `annotate` with numbered counters and short texts next to the control
 **A bug report.** `capture_region` around the problem → `redact_pii` (keys, e-mails, cards,
 faces covered) → `annotate` a frame and an arrow at the error → `export` `png` → attach the file
 to the issue.
+
+**Read a bug recording.** `library_search` with `has_log: true` → `video_info` → `devlog_summary`
+(the errors and failed requests with their times) → `devlog_get` with `index` for the one that
+matters (its stack, headers and body) → say what went wrong and when in the video.
 
 **Before sharing a screenshot.** `library_search` → `redact_pii` with `apply: false` to see what
 would be hidden → `redact_pii` to apply → `export`.

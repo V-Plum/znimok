@@ -23,6 +23,7 @@ mod libtools;
 pub mod mcp;
 pub mod permissions;
 pub mod tools;
+mod vidtools;
 
 use std::path::PathBuf;
 
