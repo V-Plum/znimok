@@ -461,7 +461,7 @@ fn known(doc: &Document, ids: &[ObjectId]) -> Result<(), String> {
 }
 
 /// Applies the commands, saves, answers with the document and its picture.
-fn apply(
+pub(crate) fn apply(
     agent: &Agent,
     args: &Value,
     cmds: impl FnOnce(&Document) -> Result<Vec<Command>, String>,

@@ -180,13 +180,19 @@ const TOOLS: &[Tool] = &[
     Tool {
         name: "library_search",
         title: "Search the library",
-        description: "Library documents, newest first, matching the text in name, description or tags.",
+        description: "Library documents, newest first: by the text in name, description or tags, by a tag, by kind (screenshot or video), pinned, with the browser's DevTools log, by the day they were made. trash=true lists the trash instead.",
         scope: Some(Scope::LibraryRead),
         read_only: true,
         schema: || {
             obj(
                 json!({
                     "query": {"type": "string"}, "tag": {"type": "string"},
+                    "kind": {"type": "string", "enum": ["screenshot", "video"]},
+                    "pinned": {"type": "boolean"},
+                    "has_log": {"type": "boolean", "description": "Recordings with the browser's DevTools log"},
+                    "since": {"type": "string", "description": "Made on or after this day, YYYY-MM-DD (local time)"},
+                    "until": {"type": "string", "description": "Made before this day, YYYY-MM-DD"},
+                    "trash": {"type": "boolean", "description": "List the trash instead of the library"},
                     "limit": {"type": "integer", "minimum": 1, "maximum": 200}
                 }),
                 &[],
@@ -257,7 +263,10 @@ const TOOLS: &[Tool] = &[
 
 /// Every tool: the first ones, then the editing ones (ZK-233).
 fn all() -> impl Iterator<Item = &'static Tool> {
-    TOOLS.iter().chain(crate::edit::TOOLS.iter())
+    TOOLS
+        .iter()
+        .chain(crate::edit::TOOLS.iter())
+        .chain(crate::libtools::TOOLS.iter())
 }
 
 /// `tools/list` entries, in a fixed order.
@@ -272,7 +281,7 @@ pub fn list() -> Vec<Value> {
                 "annotations": {
                     "title": t.title,
                     "readOnlyHint": t.read_only,
-                    "destructiveHint": crate::edit::destructive(t.name),
+                    "destructiveHint": crate::edit::destructive(t.name) || crate::libtools::destructive(t.name),
                     "openWorldHint": false
                 }
             })
@@ -287,7 +296,7 @@ pub(crate) fn image(r: &Raster) -> Option<Value> {
     Some(json!({"type": "image", "data": p.base64, "mimeType": p.media_type}))
 }
 
-fn link(doc: &Document) -> Value {
+pub(crate) fn link(doc: &Document) -> Value {
     json!({
         "type": "resource_link",
         "uri": format!("znimok://library/{}", doc.id),
@@ -307,6 +316,8 @@ pub(crate) fn summary(doc: &Document, path: &std::path::Path) -> Value {
         "marks": doc.objects.len(),
         "source": doc.meta.source,
         "tags": doc.meta.tags,
+        "description": doc.meta.description,
+        "pinned": doc.meta.pinned,
     })
 }
 
@@ -417,7 +428,7 @@ impl Agent {
                 Ok(g) => {
                     entry.grant = g.or(Some(Grant::Once));
                     self.gui.activity(client, name, true);
-                    let r = self.run(name, args);
+                    let r = self.run(client, name, args);
                     self.gui.activity(client, name, false);
                     r.unwrap_or_else(Output::error)
                 }
@@ -475,7 +486,7 @@ impl Agent {
         ))
     }
 
-    fn run(&self, name: &str, args: &Value) -> Result<Output, String> {
+    fn run(&self, client: &str, name: &str, args: &Value) -> Result<Output, String> {
         match name {
             "list_displays" => {
                 let d: Vec<Value> = self
@@ -593,9 +604,27 @@ impl Agent {
             }
             "library_search" => {
                 let limit = args["limit"].as_u64().unwrap_or(20).min(200) as usize;
-                let items = self.lib.search(
-                    arg_str(args, "query").unwrap_or(""),
-                    arg_str(args, "tag"),
+                let day = |k: &str| -> Result<Option<i64>, String> {
+                    let Some(s) = arg_str(args, k) else {
+                        return Ok(None);
+                    };
+                    let d = chrono::NaiveDate::parse_from_str(s.trim(), "%Y-%m-%d")
+                        .map_err(|_| format!("«{k}» must be a day, YYYY-MM-DD"))?;
+                    Ok(d.and_hms_opt(0, 0, 0)
+                        .and_then(|t| t.and_local_timezone(chrono::Local).earliest())
+                        .map(|t| t.timestamp_millis()))
+                };
+                let items = self.lib.find(
+                    &library::Filter {
+                        query: arg_str(args, "query").unwrap_or("").to_string(),
+                        tag: arg_str(args, "tag").map(str::to_string),
+                        kind: arg_str(args, "kind").map(str::to_string),
+                        pinned: args["pinned"].as_bool(),
+                        has_log: args["has_log"].as_bool(),
+                        since_ms: day("since")?,
+                        until_ms: day("until")?,
+                        trash: args["trash"].as_bool().unwrap_or(false),
+                    },
                     limit,
                 );
                 Ok(Output::ok(json!({"documents": items}), vec![]))
@@ -733,6 +762,7 @@ impl Agent {
                 ))
             }
             _ => crate::edit::run(self, name, args)
+                .or_else(|| crate::libtools::run(self, client, name, args))
                 .unwrap_or_else(|| Err(format!("unknown tool «{name}»"))),
         }
     }

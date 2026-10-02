@@ -34,8 +34,8 @@ always**. Scopes:
 | Scope | Tools |
 |---|---|
 | `capture` | `list_windows`, `capture_screen`, `capture_window`, `capture_region`, `read_codes` on the screen |
-| `library_read` | `library_search`, `library_get`, `list_marks`, `ocr`, `export`, `read_codes` on a document, resources |
-| `library_write` | `add_marks`, `update_marks`, `delete_marks`, `crop`, `rotate`, `resize`, `tone`, `annotate`, `redact_pii` |
+| `library_read` | `library_search`, `library_get`, `library_tags`, `list_marks`, `ocr`, `export`, `read_codes` on a document, resources |
+| `library_write` | `set_meta`, `library_import`, `library_duplicate`, `library_trash`, `library_restore`, `library_delete` (asks every time), `add_marks`, `update_marks`, `delete_marks`, `crop`, `rotate`, `resize`, `tone`, `annotate`, `redact_pii` |
 
 `list_displays` needs no permission. If Znimok is not running, nobody can be asked and the call is
 refused with a hint; the person can allow a client ahead of time:
@@ -73,7 +73,14 @@ PNG, plus a `resource_link` `znimok://library/<id>` to the original.
 | `resize` | `document`, `width` and/or `height`, or `percent`; or `canvas` (`x`, `y`, `width`, `height`) with `fill` | saved document + picture |
 | `tone` | `document`, `exposure` (stops), `gamma`, `contrast`, or `reset: true` | saved document + picture |
 | `export` | `document`, `format` (`png`/`jpeg`/`webp`/`html`), `path?` | the written file |
-| `library_search` | `query?`, `tag?`, `limit?` (≤ 200) | documents, newest first |
+| `library_search` | `query?`, `tag?`, `kind?` (`screenshot` / `video`), `pinned?`, `has_log?`, `since?` / `until?` (YYYY-MM-DD), `trash?`, `limit?` (≤ 200) | documents, newest first: `id`, `name`, `kind`, `tags`, `pinned`, `duration_ms`, `has_log`… |
+| `library_tags` | — | the tags with the number of documents each |
+| `set_meta` | `document`, and what changes: `name`, `description`, `tags` / `add_tags` / `remove_tags`, `author`, `copyright`, `pinned` | saved document + picture |
+| `library_import` | `path` (PNG, JPEG, WebP or a `.znimok` file), `name?` | new document + picture |
+| `library_duplicate` | `document`, `name?` | the copy (a recording stays a recording) |
+| `library_trash` | `document` | moved to the trash — no question, `library_restore` brings it back |
+| `library_restore` | `document` (id of a trashed one) | the document, back in the library |
+| `library_delete` | `document` (in the library or the trash) | deleted for good — **the person confirms every time** in the Znimok window |
 | `library_get` | `document` | picture + metadata |
 | `ocr` | `document`, `languages?` (e.g. `["uk","en"]`) | text and line boxes, on the device |
 | `read_codes` | `document`, or `display?`, or `x`, `y`, `width`, `height` (desktop units) | QR codes and barcodes, on the device: `text`, `kind` (`link` + `url`, `wifi` + `ssid`/`password`/`security`/`hidden`, `contact`, `event`, `email` + `address`, `phone` + `number`, `text`), `format`, `bounds`; the screen is read without adding a document (macOS: the app keeps its shot, `saved_as`) |

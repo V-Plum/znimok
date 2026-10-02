@@ -684,3 +684,115 @@ fn editing_tools_over_plain_arguments() {
         .unwrap();
     assert_eq!(del["annotations"]["destructiveHint"], true);
 }
+
+/// ZK-234: name and meta, a picture brought in, a copy, the trash and back, the tags, the
+/// filters — and deleting for good refused without the person's yes.
+#[test]
+fn library_tools_meta_import_trash() {
+    let e = env("libtools", true);
+    for s in [Scope::Capture, Scope::LibraryRead, Scope::LibraryWrite] {
+        e.agent.perms.grant("T", s, Grant::Always).unwrap();
+    }
+    let call = |name: &str, args: Value| {
+        let out = e.agent.call("T", name, &args);
+        assert!(!out.is_error, "{name}: {:?}", out.content);
+        out.structured.unwrap()
+    };
+    let shot = call(
+        "capture_region",
+        json!({"x": 0, "y": 0, "width": 64, "height": 40}),
+    );
+    let id = shot["id"].as_str().unwrap().to_string();
+
+    let m = call(
+        "set_meta",
+        json!({"document": id, "name": "Вікно входу", "description": "Помилка після кліку",
+               "tags": ["bug", "login"], "pinned": true}),
+    );
+    assert_eq!(m["name"], "Вікно входу");
+    assert_eq!(m["tags"], json!(["bug", "login"]));
+    assert_eq!(m["pinned"], true);
+    let m = call(
+        "set_meta",
+        json!({"document": id, "add_tags": ["Bug", "ui"], "remove_tags": ["login"]}),
+    );
+    assert_eq!(
+        m["tags"],
+        json!(["bug", "ui"]),
+        "no duplicate by case, one removed"
+    );
+
+    // A picture file from outside comes in as a new document.
+    let png = e.dir.join("outside.png");
+    let r = Raster::solid(30, 20, Rgb::new(10, 20, 30));
+    std::fs::write(&png, crate::library::encode_png(&r).unwrap()).unwrap();
+    let imp = call("library_import", json!({"path": png.display().to_string()}));
+    assert_eq!(imp["name"], "outside");
+    assert_eq!(
+        (imp["width"].as_i64(), imp["height"].as_i64()),
+        (Some(30), Some(20))
+    );
+    let imported = imp["id"].as_str().unwrap().to_string();
+
+    let copy = call("library_duplicate", json!({"document": id}));
+    assert_ne!(copy["id"], json!(id));
+    assert_eq!(copy["tags"], json!(["bug", "ui"]));
+    assert_eq!(copy["pinned"], false, "a copy is not pinned");
+
+    let tags = call("library_tags", json!({}));
+    assert_eq!(tags["tags"][0], json!({"tag": "bug", "documents": 2}));
+
+    // The filters.
+    let pinned = call("library_search", json!({"pinned": true}));
+    assert_eq!(pinned["documents"].as_array().unwrap().len(), 1);
+    assert_eq!(pinned["documents"][0]["kind"], "screenshot");
+    let none = call("library_search", json!({"kind": "video"}));
+    assert!(none["documents"].as_array().unwrap().is_empty());
+    let old = call("library_search", json!({"until": "2020-01-01"}));
+    assert!(old["documents"].as_array().unwrap().is_empty());
+    let bad = e
+        .agent
+        .call("T", "library_search", &json!({"since": "yesterday"}));
+    assert!(bad.is_error);
+
+    // The trash: no question, and back.
+    let t = call("library_trash", json!({"document": imported}));
+    assert_eq!(t["trashed"], true);
+    assert_eq!(
+        call("library_search", json!({}))["documents"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+    let in_trash = call("library_search", json!({"trash": true}));
+    assert_eq!(in_trash["documents"][0]["id"], json!(imported));
+    let back = call("library_restore", json!({"document": imported}));
+    assert_eq!(back["id"], json!(imported));
+    assert_eq!(
+        call("library_search", json!({}))["documents"]
+            .as_array()
+            .unwrap()
+            .len(),
+        3
+    );
+
+    // For good: nobody to say yes (no app) — refused, the file stays.
+    let del = e
+        .agent
+        .call("T", "library_delete", &json!({"document": imported}));
+    assert!(del.is_error, "{:?}", del.content);
+    assert_eq!(
+        call("library_search", json!({}))["documents"]
+            .as_array()
+            .unwrap()
+            .len(),
+        3
+    );
+    let listed = crate::tools::list();
+    let d = listed
+        .iter()
+        .find(|t| t["name"] == "library_delete")
+        .unwrap();
+    assert_eq!(d["annotations"]["destructiveHint"], true);
+}
