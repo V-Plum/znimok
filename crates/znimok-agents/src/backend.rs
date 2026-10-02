@@ -58,6 +58,16 @@ impl Gui {
         serde_json::from_value(v["grant"].clone()).ok()
     }
 
+    /// Deleting «name» for good: the person says yes to this one thing (never kept).
+    pub fn confirm_delete(&self, client: &str, tool: &str, name: &str) -> bool {
+        self.call(
+            "agents.ask",
+            json!({"client": client, "scope": Scope::LibraryWrite, "tool": tool,
+                   "confirm": {"action": "delete", "name": name}}),
+        )
+        .is_ok_and(|v| !v["grant"].is_null())
+    }
+
     /// The indicator in the tray and the «агент працює» plate; best effort.
     pub fn activity(&self, client: &str, tool: &str, active: bool) {
         let _ = self.call(
@@ -225,7 +235,12 @@ mod tests {
             None,
             "nobody to ask"
         );
+        assert!(!gui.confirm_delete("Claude", "library_delete", "Знімок"));
         let _s = Server::start(c, |m: &str, p: Value| match m {
+            "agents.ask" if p["confirm"]["action"] == "delete" => {
+                assert_eq!(p["confirm"]["name"], "Знімок");
+                Ok(json!({"grant": "once"}))
+            }
             "agents.ask" => {
                 assert_eq!(p["scope"], "capture");
                 Ok(json!({"grant": "session"}))
@@ -239,6 +254,7 @@ mod tests {
             gui.ask("Claude", Scope::Capture, "capture_screen"),
             Some(Grant::Session)
         );
+        assert!(gui.confirm_delete("Claude", "library_delete", "Знімок"));
         gui.activity("Claude", "capture_screen", true);
         let e = gui.call("capture.take", json!({})).unwrap_err();
         assert!(e.contains("does not support"), "{e}");

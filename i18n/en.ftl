@@ -5719,3 +5719,68 @@ libset-text-ready =
         [one] The text of one screenshot is searchable.
        *[other] The text of { $count } screenshots is searchable.
     }
+
+# @where: Title of the question when an AI agent wants access; $client is the name the agent reports
+# @kind: title
+# @max: 60
+agents-ask-title = «{ $client }» asks for access
+
+# @where: Body of the access question; $what is one of agents-ask-capture…, $tool the tool's name
+# @kind: body
+# @max: 260
+agents-ask-body = An AI agent that calls itself «{ $client }» wants to { $what }. It asked through «{ $tool }». The name is what the program says about itself — allow only what you started yourself.
+
+# @where: Inside agents-ask-body after «wants to»: screenshots
+# @kind: body
+# @max: 80
+agents-ask-capture = take screenshots and see the list of open windows
+
+# @where: Inside agents-ask-body after «wants to»: reading the library
+# @kind: body
+# @max: 80
+agents-ask-library-read = read the documents of your library and export copies
+
+# @where: Inside agents-ask-body after «wants to»: changing the library
+# @kind: body
+# @max: 80
+agents-ask-library-write = change documents of your library and add new ones
+
+# @where: Inside agents-ask-body after «wants to»: settings
+# @kind: body
+# @max: 80
+agents-ask-settings = read and change Znimok's settings
+
+# @where: Inside agents-ask-body after «wants to»: an access this version does not know
+# @kind: body
+# @max: 80
+agents-ask-other = use a part of Znimok this version does not know
+
+# @where: Access question: allow this one call
+# @kind: button
+# @max: 20
+agents-ask-once = This time
+
+# @where: Access question: allow until the agent's session ends
+# @kind: button
+# @max: 20
+agents-ask-session = This session
+
+# @where: Access question: allow from now on
+# @kind: button
+# @max: 20
+agents-ask-always = Always
+
+# @where: Access question: refuse
+# @kind: button
+# @max: 20
+agents-ask-deny = Deny
+
+# @where: Title of the question when an AI agent wants to delete a document for good; $name is the document
+# @kind: title
+# @max: 80
+agents-confirm-delete-title = Delete «{ $name }» for good?
+
+# @where: Body of that question; $client is the name the agent reports
+# @kind: body
+# @max: 160
+agents-confirm-delete-body = The AI agent «{ $client }» asks for it. This cannot be undone.

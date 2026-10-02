@@ -17,6 +17,9 @@ use crate::app::App;
 type Shared = Rc<RefCell<App>>;
 type Step = Box<dyn FnOnce(&Shared, &AppWindow, &mut Report)>;
 
+/// What the app answered the self-test's agent (ZK-241).
+static AGENT_ASKED: std::sync::Mutex<Option<serde_json::Value>> = std::sync::Mutex::new(None);
+
 #[derive(Default)]
 pub struct Report {
     dir: PathBuf,
@@ -4810,6 +4813,85 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
             "a closed document's window is gone; the first is current again",
             n == before && app.borrow().s.is_some(),
             format!("{n} windows, {before} before · {names:?}"),
+        );
+    }));
+
+    // ZK-241: an agent's question over IPC is a dialog in the window; its answer goes back.
+    fn agent_asks(params: serde_json::Value) {
+        std::thread::spawn(move || {
+            let v = crate::agentipc::handle("agents.ask", &params);
+            *AGENT_ASKED.lock().unwrap() = v.and_then(Result::ok);
+        });
+    }
+    steps.push(Box::new(|_, ui, _| {
+        ui.invoke_setting("mcp".into(), 1);
+        *AGENT_ASKED.lock().unwrap() = None;
+        agent_asks(serde_json::json!({"client": "Self-test", "scope": "capture", "tool": "capture_screen"}));
+    }));
+    steps.push(Box::new(|_, ui, r| {
+        // The question is the library window's (the app's own), whichever window is in front.
+        let ui = &crate::wins::library().map_or_else(|| ui.clone_strong(), |(_, w)| w);
+        let buttons = slint::Model::row_count(&ui.get_dialog_buttons());
+        r.check(
+            "agents: an agent's first use asks in the window, four answers",
+            ui.get_dialog_open() && buttons == 4 && ui.get_dialog_title().contains("Self-test"),
+            format!(
+                "open {} · {buttons} buttons · {}",
+                ui.get_dialog_open(),
+                ui.get_dialog_title()
+            ),
+        );
+        r.snapshot(ui, "32-agent-asks");
+        crate::dialog::answered(ui, 1);
+    }));
+    steps.push(Box::new(|_, ui, r| {
+        // The question is the library window's (the app's own), whichever window is in front.
+        let ui = &crate::wins::library().map_or_else(|| ui.clone_strong(), |(_, w)| w);
+        let got = AGENT_ASKED.lock().unwrap().take();
+        r.check(
+            "agents: «this session» goes back to the agent",
+            got.as_ref().is_some_and(|v| v["grant"] == "session") && !ui.get_dialog_open(),
+            format!("{got:?}"),
+        );
+        agent_asks(serde_json::json!({"client": "Self-test", "scope": "library_write", "tool": "library_delete",
+            "confirm": {"action": "delete", "name": "Знімок 1"}}));
+    }));
+    steps.push(Box::new(|_, ui, r| {
+        // The question is the library window's (the app's own), whichever window is in front.
+        let ui = &crate::wins::library().map_or_else(|| ui.clone_strong(), |(_, w)| w);
+        let buttons = slint::Model::row_count(&ui.get_dialog_buttons());
+        r.check(
+            "agents: deleting for good is its own question, yes or no",
+            ui.get_dialog_open() && buttons == 2 && ui.get_dialog_title().contains("Знімок 1"),
+            format!(
+                "open {} · {buttons} buttons · {}",
+                ui.get_dialog_open(),
+                ui.get_dialog_title()
+            ),
+        );
+        crate::dialog::answered(ui, 1);
+    }));
+    steps.push(Box::new(|_, ui, r| {
+        // The question is the library window's (the app's own), whichever window is in front.
+        let ui = &crate::wins::library().map_or_else(|| ui.clone_strong(), |(_, w)| w);
+        let got = AGENT_ASKED.lock().unwrap().take();
+        r.check(
+            "agents: «cancel» is a refusal",
+            got.as_ref().is_some_and(|v| v["grant"].is_null()),
+            format!("{got:?}"),
+        );
+        // Switched off: nothing is asked.
+        ui.invoke_setting("mcp".into(), 0);
+        agent_asks(serde_json::json!({"client": "Self-test", "scope": "capture", "tool": "capture_screen"}));
+    }));
+    steps.push(Box::new(|_, ui, r| {
+        // The question is the library window's (the app's own), whichever window is in front.
+        let ui = &crate::wins::library().map_or_else(|| ui.clone_strong(), |(_, w)| w);
+        let got = AGENT_ASKED.lock().unwrap().take();
+        r.check(
+            "agents: with MCP switched off nobody is asked",
+            got.as_ref().is_some_and(|v| v["grant"].is_null()) && !ui.get_dialog_open(),
+            format!("{got:?} · open {}", ui.get_dialog_open()),
         );
     }));
 

@@ -288,8 +288,7 @@ pub(crate) fn run(
                 .unwrap_or_default();
             // For good: the person says yes in the Znimok window, this time and every time —
             // a lasting permission does not cover it (the owner's decision, ZK-232).
-            let asked = format!("library_delete — «{name}» is deleted for good");
-            if agent.gui.ask(client, Scope::LibraryWrite, &asked).is_none() {
+            if !agent.gui.confirm_delete(client, "library_delete", &name) {
                 return Err(format!(
                     "Deleting «{name}» for good was not confirmed in the Znimok window (the app must be running). \
                      library_trash moves it to the trash without a question."
