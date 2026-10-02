@@ -16,6 +16,7 @@
 
 pub mod audit;
 pub mod backend;
+mod edit;
 pub mod handoff;
 pub mod library;
 pub mod mcp;

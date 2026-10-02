@@ -34,8 +34,8 @@ always**. Scopes:
 | Scope | Tools |
 |---|---|
 | `capture` | `list_windows`, `capture_screen`, `capture_window`, `capture_region`, `read_codes` on the screen |
-| `library_read` | `library_search`, `library_get`, `ocr`, `export`, `read_codes` on a document, resources |
-| `library_write` | `annotate`, `redact_pii` |
+| `library_read` | `library_search`, `library_get`, `list_marks`, `ocr`, `export`, `read_codes` on a document, resources |
+| `library_write` | `add_marks`, `update_marks`, `delete_marks`, `crop`, `rotate`, `resize`, `tone`, `annotate`, `redact_pii` |
 
 `list_displays` needs no permission. If Znimok is not running, nobody can be asked and the call is
 refused with a hint; the person can allow a client ahead of time:
@@ -64,6 +64,14 @@ PNG, plus a `resource_link` `znimok://library/<id>` to the original.
 | `capture_window` | `window` (id from `list_windows`) | the window without what covers it |
 | `capture_region` | `x`, `y`, `width`, `height` (desktop units, one display) | new document + picture |
 | `annotate` | `document`, `commands` (editor commands, see `znimok schema command`) | saved document + picture |
+| `list_marks` | `document` | the marks: `id`, `kind`, box, `text`, `color`, `hidden`; the picture's size and crop |
+| `add_marks` | `document`, `marks` (each: `kind` — `rect`, `ellipse`, `arrow`, `line`, `pen`, `text`, `counter`, `hide`, `highlighter`, `stamp` — and its place, see below) | saved document, the new ids (`created`), the picture |
+| `update_marks` | `document`, `ids`, and what changes: `dx` / `dy`, `x` / `y` / `width` / `height`, `color`, `fill`, `line_width`, `opacity`, `text`, `size`, `bold`, `italic`, `hidden`, `name` | saved document + picture |
+| `delete_marks` | `document`, `ids` or `all: true` | saved document + picture |
+| `crop` | `document`, `x`, `y`, `width`, `height` (pixels of the whole picture) or `reset: true` | saved document + picture; nothing is thrown away |
+| `rotate` | `document`, `turn` (`right`, `left`, `half`) and/or `mirror` (`horizontal`, `vertical`) | saved document + picture |
+| `resize` | `document`, `width` and/or `height`, or `percent`; or `canvas` (`x`, `y`, `width`, `height`) with `fill` | saved document + picture |
+| `tone` | `document`, `exposure` (stops), `gamma`, `contrast`, or `reset: true` | saved document + picture |
 | `export` | `document`, `format` (`png`/`jpeg`/`webp`/`html`), `path?` | the written file |
 | `library_search` | `query?`, `tag?`, `limit?` (≤ 200) | documents, newest first |
 | `library_get` | `document` | picture + metadata |
@@ -72,6 +80,24 @@ PNG, plus a `resource_link` `znimok://library/<id>` to the original.
 | `redact_pii` | `document`, `apply?` (true), `faces?` (true) | what was found; with `apply` covered by Hide marks and saved |
 
 Resources: `resources/list` lists the library, `resources/read` gives a document as PNG.
+
+### Marks in plain words
+
+`add_marks` takes each mark as a small object; colours are `#RRGGBB` or a name (`red`, `orange`,
+`yellow`, `green`, `blue`, `violet`, `black`, `white`, `grey`):
+
+```json
+{"kind": "rect", "x": 40, "y": 60, "width": 300, "height": 120, "color": "red", "line_width": 4}
+{"kind": "arrow", "from": [500, 300], "to": [360, 120]}
+{"kind": "text", "x": 380, "y": 90, "text": "Натисніть тут", "size": 28, "bold": true}
+{"kind": "counter", "x": 60, "y": 80, "shape": "circle"}
+{"kind": "hide", "x": 20, "y": 20, "width": 200, "height": 30, "mode": "plate"}
+{"kind": "highlighter", "x": 40, "y": 200, "width": 260, "height": 18}
+```
+
+Boxes (`rect`, `ellipse`, `hide`, `highlighter`) take `x`, `y`, `width`, `height`; `arrow` and
+`line` take `from` and `to`; `pen` takes `points`; `text` takes its top-left corner; `counter`
+and `stamp` take their centre. Counters number themselves in the order they are added.
 
 ### Annotate: commands
 

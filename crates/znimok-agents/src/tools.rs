@@ -35,7 +35,7 @@ pub struct Output {
 }
 
 impl Output {
-    fn error(msg: impl Into<String>) -> Self {
+    pub(crate) fn error(msg: impl Into<String>) -> Self {
         Self {
             content: vec![json!({"type": "text", "text": msg.into()})],
             structured: None,
@@ -43,7 +43,7 @@ impl Output {
         }
     }
 
-    fn ok(structured: Value, mut extra: Vec<Value>) -> Self {
+    pub(crate) fn ok(structured: Value, mut extra: Vec<Value>) -> Self {
         let mut content = vec![json!({
             "type": "text",
             "text": serde_json::to_string_pretty(&structured).unwrap_or_default()
@@ -57,20 +57,20 @@ impl Output {
     }
 }
 
-struct Tool {
-    name: &'static str,
-    title: &'static str,
-    description: &'static str,
-    scope: Option<Scope>,
-    read_only: bool,
-    schema: fn() -> Value,
+pub(crate) struct Tool {
+    pub(crate) name: &'static str,
+    pub(crate) title: &'static str,
+    pub(crate) description: &'static str,
+    pub(crate) scope: Option<Scope>,
+    pub(crate) read_only: bool,
+    pub(crate) schema: fn() -> Value,
 }
 
-fn obj(props: Value, required: &[&str]) -> Value {
+pub(crate) fn obj(props: Value, required: &[&str]) -> Value {
     json!({"type": "object", "properties": props, "required": required, "additionalProperties": false})
 }
 
-fn doc_arg() -> Value {
+pub(crate) fn doc_arg() -> Value {
     json!({"type": "string", "description": "Library document: its id (or the first 8+ characters of it) from library_search, or a path to a .znimok file"})
 }
 
@@ -255,10 +255,14 @@ const TOOLS: &[Tool] = &[
     },
 ];
 
+/// Every tool: the first ones, then the editing ones (ZK-233).
+fn all() -> impl Iterator<Item = &'static Tool> {
+    TOOLS.iter().chain(crate::edit::TOOLS.iter())
+}
+
 /// `tools/list` entries, in a fixed order.
 pub fn list() -> Vec<Value> {
-    TOOLS
-        .iter()
+    all()
         .map(|t| {
             json!({
                 "name": t.name,
@@ -268,7 +272,7 @@ pub fn list() -> Vec<Value> {
                 "annotations": {
                     "title": t.title,
                     "readOnlyHint": t.read_only,
-                    "destructiveHint": false,
+                    "destructiveHint": crate::edit::destructive(t.name),
                     "openWorldHint": false
                 }
             })
@@ -277,7 +281,7 @@ pub fn list() -> Vec<Value> {
 }
 
 /// A picture for the client: scaled to what models take, as PNG.
-fn image(r: &Raster) -> Option<Value> {
+pub(crate) fn image(r: &Raster) -> Option<Value> {
     let img = Rgba::new(r.width, r.height, r.rgba.clone())?;
     let p = znimok_models::image_prep::prepare(&img).ok()?;
     Some(json!({"type": "image", "data": p.base64, "mimeType": p.media_type}))
@@ -293,7 +297,7 @@ fn link(doc: &Document) -> Value {
     })
 }
 
-fn summary(doc: &Document, path: &std::path::Path) -> Value {
+pub(crate) fn summary(doc: &Document, path: &std::path::Path) -> Value {
     let f = doc.frame();
     json!({
         "id": doc.id.to_string(),
@@ -306,7 +310,7 @@ fn summary(doc: &Document, path: &std::path::Path) -> Value {
     })
 }
 
-fn arg_str<'a>(a: &'a Value, k: &str) -> Option<&'a str> {
+pub(crate) fn arg_str<'a>(a: &'a Value, k: &str) -> Option<&'a str> {
     a.get(k).and_then(Value::as_str)
 }
 
@@ -354,7 +358,7 @@ fn code_json(c: &znimok_codes::Code) -> Value {
     v
 }
 
-fn arg_int(a: &Value, k: &str) -> Result<i64, String> {
+pub(crate) fn arg_int(a: &Value, k: &str) -> Result<i64, String> {
     match a.get(k) {
         None | Some(Value::Null) => Err(format!("«{k}» is required")),
         Some(v) => v
@@ -387,7 +391,7 @@ impl Agent {
 
     /// One tool call: switched on? allowed? then run, show activity, write the journal.
     pub fn call(&self, client: &str, name: &str, args: &Value) -> Output {
-        let Some(tool) = TOOLS.iter().find(|t| t.name == name) else {
+        let Some(tool) = all().find(|t| t.name == name) else {
             return Output::error(format!("unknown tool «{name}»"));
         };
         let scope = scope_for(tool, args);
@@ -436,7 +440,7 @@ impl Agent {
         out
     }
 
-    fn doc(&self, args: &Value) -> Result<(Document, PathBuf), String> {
+    pub(crate) fn doc(&self, args: &Value) -> Result<(Document, PathBuf), String> {
         let d = arg_str(args, "document").ok_or("«document» is required")?;
         let path = self
             .lib
@@ -728,7 +732,8 @@ impl Agent {
                     image(&r).into_iter().collect(),
                 ))
             }
-            _ => Err(format!("unknown tool «{name}»")),
+            _ => crate::edit::run(self, name, args)
+                .unwrap_or_else(|| Err(format!("unknown tool «{name}»"))),
         }
     }
 
