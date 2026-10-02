@@ -331,7 +331,7 @@ mod tests {
             &meta,
             &BTreeMap::new(),
             &ev,
-            VideoSrc::File("v.mp4".into()),
+            VideoSrc::File("v.mp4"),
             "",
         );
         let data = &html[html.find("id=\"zn-data\">").unwrap() + "id=\"zn-data\">".len()..];
