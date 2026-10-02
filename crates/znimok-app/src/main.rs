@@ -8,6 +8,7 @@
 
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
+mod agentipc;
 mod app;
 mod capture;
 mod codes;
@@ -811,6 +812,10 @@ pub(crate) fn refresh_state() {
     if rec::is_recording() {
         state["page"] = json!("recording");
         state["recording"] = json!({"paused": rec::is_paused(), "time": rec::bar_time()});
+    }
+    // An agent at work through MCP (ZK-241).
+    if let Some(agent) = agentipc::active() {
+        state["agent"] = agent;
     }
     state["sound"] =
         json!(["none", "system", "mic", "both"][rec::sound_mode().clamp(0, 3) as usize]);

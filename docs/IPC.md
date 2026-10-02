@@ -31,6 +31,13 @@ about itself (show it as such — it is not verified).
 → {"result": {"grant": "once" | "session" | "always" | null}}
 ```
 
+With `"confirm": {"action": "delete", "name": "…"}` the question is «Delete «name» for good?»
+with two buttons; yes comes back as `"once"` (the server never keeps it).
+
+The app shows the question in its window (brought forward) and waits up to two minutes; no
+answer is a refusal. With MCP switched off in the settings nothing is asked. One question at a
+time.
+
 `null` (or an error) = refused. Scopes: `capture` (screenshots and the list of windows),
 `library_read`, `library_write`, `settings`. The MCP server stores «always» itself
 (`<data>/agents.json`) and keeps «session» for its own process; the app only asks.
@@ -42,8 +49,8 @@ about itself (show it as such — it is not verified).
 → {"result": null}
 ```
 
-While `active`, show the tray state and the «Агент знімає екран» plate for capture tools. A
-second message with `active: false` ends it.
+While `active`, `app.state` carries `"agent": {"client", "tool"}`. A second message with
+`active: false` ends it.
 
 ## `capture.displays`, `capture.windows`, `capture.take` — screenshots for agents (ZK-68)
 

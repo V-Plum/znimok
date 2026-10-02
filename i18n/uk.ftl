@@ -5787,3 +5787,68 @@ libset-text-ready =
         [many] Текст { $count } знімків доступний для пошуку.
        *[other] Текст { $count } знімка доступний для пошуку.
     }
+
+# @where: Title of the question when an AI agent wants access; $client is the name the agent reports
+# @kind: title
+# @max: 60
+agents-ask-title = «{ $client }» просить доступ
+
+# @where: Body of the access question; $what is one of agents-ask-capture…, $tool the tool's name
+# @kind: body
+# @max: 260
+agents-ask-body = ШІ-агент, що називає себе «{ $client }», хоче { $what }. Запит прийшов через «{ $tool }». Назву програма повідомляє про себе сама — дозволяйте лише те, що запустили ви.
+
+# @where: Inside agents-ask-body after «wants to»: screenshots
+# @kind: body
+# @max: 80
+agents-ask-capture = робити знімки екрана й бачити список відкритих вікон
+
+# @where: Inside agents-ask-body after «wants to»: reading the library
+# @kind: body
+# @max: 80
+agents-ask-library-read = читати документи вашої бібліотеки й експортувати копії
+
+# @where: Inside agents-ask-body after «wants to»: changing the library
+# @kind: body
+# @max: 80
+agents-ask-library-write = змінювати документи вашої бібліотеки й додавати нові
+
+# @where: Inside agents-ask-body after «wants to»: settings
+# @kind: body
+# @max: 80
+agents-ask-settings = читати й змінювати налаштування Znimok
+
+# @where: Inside agents-ask-body after «wants to»: an access this version does not know
+# @kind: body
+# @max: 80
+agents-ask-other = користуватися частиною Znimok, якої ця версія не знає
+
+# @where: Access question: allow this one call
+# @kind: button
+# @max: 20
+agents-ask-once = Цього разу
+
+# @where: Access question: allow until the agent's session ends
+# @kind: button
+# @max: 20
+agents-ask-session = На цю сесію
+
+# @where: Access question: allow from now on
+# @kind: button
+# @max: 20
+agents-ask-always = Завжди
+
+# @where: Access question: refuse
+# @kind: button
+# @max: 20
+agents-ask-deny = Відмовити
+
+# @where: Title of the question when an AI agent wants to delete a document for good; $name is the document
+# @kind: title
+# @max: 80
+agents-confirm-delete-title = Видалити «{ $name }» назавжди?
+
+# @where: Body of that question; $client is the name the agent reports
+# @kind: body
+# @max: 160
+agents-confirm-delete-body = Про це просить ШІ-агент «{ $client }». Скасувати це буде неможливо.
