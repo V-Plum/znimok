@@ -6,7 +6,8 @@ description: Take and annotate screenshots with Znimok (MCP server `znimok mcp`)
 # Znimok screenshots
 
 Znimok runs on the user's computer. Its MCP tools are `list_displays`, `list_windows`,
-`capture_screen`, `capture_window`, `capture_region`, `annotate`, `export`, `library_search`,
+`capture_screen`, `capture_window`, `capture_region`, `list_marks`, `add_marks`, `update_marks`,
+`delete_marks`, `crop`, `rotate`, `resize`, `tone`, `annotate`, `export`, `library_search`,
 `library_get`, `ocr`, `read_codes`, `redact_pii`. Full reference: `docs/AGENTS.md` in the Znimok repository.
 
 ## Before the first call
@@ -22,8 +23,11 @@ Znimok runs on the user's computer. Its MCP tools are `list_displays`, `list_win
    screen: less unrelated content, fewer secrets.
 2. **Hide before sharing.** Run `redact_pii` on any screenshot that will leave the computer or go
    into a document. Check `found`; mention what was covered.
-3. **Mark up with intent.** `annotate` uses screenshot pixels. Use `ocr` line boxes to place
-   arrows, frames and counters precisely next to the text they point at. Keep labels short.
+3. **Mark up with intent.** `add_marks` draws frames, arrows, text, counters, hidden areas and
+   highlights from plain arguments (screenshot pixels); `list_marks` gives their ids for
+   `update_marks` and `delete_marks`; `crop`, `rotate`, `resize` and `tone` change the picture.
+   Use `ocr` line boxes to place marks precisely next to the text they point at. Keep labels
+   short. `annotate` takes the editor's raw commands when the plain tools do not reach.
 4. **Hand over.** `export` `png` for chats and issues, `html` for a page with the list of marks.
    Give the user the path.
 5. **Codes.** `read_codes` reads QR codes and barcodes on a document or the screen. Report a link;

@@ -536,3 +536,151 @@ fn read_codes_on_a_document_and_on_the_screen() {
         true
     );
 }
+
+/// ZK-233: the editing tools — marks by plain arguments, then change, delete, crop, turn, resize,
+/// tone; every call saves and the next one sees it.
+#[test]
+fn editing_tools_over_plain_arguments() {
+    let e = env("edit", true);
+    for s in [Scope::Capture, Scope::LibraryRead, Scope::LibraryWrite] {
+        e.agent.perms.grant("T", s, Grant::Always).unwrap();
+    }
+    let call = |name: &str, args: Value| {
+        let out = e.agent.call("T", name, &args);
+        assert!(!out.is_error, "{name}: {:?}", out.content);
+        out.structured.unwrap()
+    };
+    let shot = call(
+        "capture_region",
+        json!({"x": 0, "y": 0, "width": 200, "height": 120}),
+    );
+    let id = shot["id"].as_str().unwrap().to_string();
+    let added = call(
+        "add_marks",
+        json!({"document": id, "marks": [
+            {"kind": "rect", "x": 10, "y": 10, "width": 60, "height": 30, "color": "#00AA00", "fill": "yellow"},
+            {"kind": "arrow", "from": [20, 100], "to": [120, 60]},
+            {"kind": "text", "x": 80, "y": 12, "text": "Натисніть тут", "size": 18, "bold": true},
+            {"kind": "counter", "x": 150, "y": 30, "shape": "pin"},
+            {"kind": "hide", "x": 100, "y": 80, "width": 60, "height": 20, "mode": "plate"},
+            {"kind": "highlighter", "x": 10, "y": 60, "width": 80, "height": 14},
+            {"kind": "pen", "points": [[5, 5], [15, 9], [30, 4]]},
+        ]}),
+    );
+    let created: Vec<u64> = added["created"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_u64().unwrap())
+        .collect();
+    assert_eq!(created.len(), 7, "{added}");
+    assert_eq!(added["marks"], 7);
+
+    let listed = call("list_marks", json!({"document": id}));
+    let marks = listed["marks"].as_array().unwrap();
+    let kinds: Vec<&str> = marks.iter().map(|m| m["kind"].as_str().unwrap()).collect();
+    assert_eq!(
+        kinds,
+        [
+            "rect",
+            "line",
+            "text",
+            "counter",
+            "hide",
+            "highlighter",
+            "pen"
+        ]
+    );
+    assert_eq!(marks[0]["color"], "#00AA00");
+    assert_eq!(marks[0]["fill"], "#FFD60A");
+    assert_eq!(marks[2]["text"], "Натисніть тут");
+    assert_eq!(listed["picture"]["width"], 200);
+
+    // Change: move the frame, recolour it, rewrite the text.
+    call(
+        "update_marks",
+        json!({"document": id, "ids": [created[0]], "dx": 5, "dy": 5, "color": "blue", "fill": "none"}),
+    );
+    call(
+        "update_marks",
+        json!({"document": id, "ids": [created[2]], "text": "Сюди", "size": 22}),
+    );
+    let listed = call("list_marks", json!({"document": id}));
+    let m = &listed["marks"];
+    assert_eq!(
+        (m[0]["x"].as_i64(), m[0]["y"].as_i64()),
+        (Some(15), Some(15))
+    );
+    assert_eq!(m[0]["color"], "#3D7BF5");
+    assert!(m[0].get("fill").is_none(), "{}", m[0]);
+    assert_eq!(m[2]["text"], "Сюди");
+
+    // An unknown id is said, nothing changes.
+    let bad = e
+        .agent
+        .call("T", "delete_marks", &json!({"document": id, "ids": [9999]}));
+    assert!(bad.is_error);
+    let after = call("delete_marks", json!({"document": id, "ids": [created[6]]}));
+    assert_eq!(after["marks"], 6);
+
+    // The frame, a quarter turn, half the size, a tone — the size follows.
+    let cropped = call(
+        "crop",
+        json!({"document": id, "x": 0, "y": 0, "width": 100, "height": 60}),
+    );
+    assert_eq!(
+        (cropped["width"].as_i64(), cropped["height"].as_i64()),
+        (Some(100), Some(60))
+    );
+    let whole = call("crop", json!({"document": id, "reset": true}));
+    assert_eq!(whole["width"], 200);
+    let turned = call("rotate", json!({"document": id, "turn": "right"}));
+    assert_eq!(
+        (turned["width"].as_i64(), turned["height"].as_i64()),
+        (Some(120), Some(200))
+    );
+    call(
+        "rotate",
+        json!({"document": id, "turn": "left", "mirror": "horizontal"}),
+    );
+    let half = call("resize", json!({"document": id, "percent": 50}));
+    assert_eq!(
+        (half["width"].as_i64(), half["height"].as_i64()),
+        (Some(100), Some(60))
+    );
+    let wide = call("resize", json!({"document": id, "width": 300}));
+    assert_eq!(
+        (wide["width"].as_i64(), wide["height"].as_i64()),
+        (Some(300), Some(180))
+    );
+    call(
+        "tone",
+        json!({"document": id, "exposure": 0.5, "contrast": 10}),
+    );
+    call("tone", json!({"document": id, "reset": true}));
+    let all = call("delete_marks", json!({"document": id, "all": true}));
+    assert_eq!(all["marks"], 0);
+
+    // The list of tools carries them, with the hints.
+    let names: Vec<String> = crate::tools::list()
+        .iter()
+        .map(|t| t["name"].as_str().unwrap().to_string())
+        .collect();
+    for n in [
+        "list_marks",
+        "add_marks",
+        "update_marks",
+        "delete_marks",
+        "crop",
+        "rotate",
+        "resize",
+        "tone",
+    ] {
+        assert!(names.iter().any(|x| x == n), "{n} is listed");
+    }
+    let del = crate::tools::list()
+        .into_iter()
+        .find(|t| t["name"] == "delete_marks")
+        .unwrap();
+    assert_eq!(del["annotations"]["destructiveHint"], true);
+}
