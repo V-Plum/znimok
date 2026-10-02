@@ -122,10 +122,11 @@ pub(crate) fn run(
         "record_resume" => app(agent, json!({"op": "resume"})).map(|v| Output::ok(v, vec![])),
         "record_status" => app(agent, json!({"op": "status"})).map(|mut v| {
             // The finished one as a document id, not a path.
-            for k in ["finished"] {
-                if let Some(item) = v[k].as_str().and_then(|p| library::peek_item(p.as_ref())) {
-                    v[k] = json!({"id": item.id, "name": item.name});
-                }
+            if let Some(item) = v["finished"]
+                .as_str()
+                .and_then(|p| library::peek_item(p.as_ref()))
+            {
+                v["finished"] = json!({"id": item.id, "name": item.name});
             }
             Output::ok(v, vec![])
         }),
