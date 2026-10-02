@@ -23,6 +23,10 @@
     "message": "Znimok — пауза {t} · клік — зупинити",
     "description": "Toolbar tooltip while paused; {t} is the time"
   },
+  "menuStart": {
+    "message": "Записати це вікно",
+    "description": "Right-click menu of the icon: start a recording of this window"
+  },
   "menuPause": {
     "message": "Пауза",
     "description": "Right-click menu of the icon"
