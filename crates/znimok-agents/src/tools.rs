@@ -267,6 +267,7 @@ fn all() -> impl Iterator<Item = &'static Tool> {
         .iter()
         .chain(crate::edit::TOOLS.iter())
         .chain(crate::libtools::TOOLS.iter())
+        .chain(crate::vidtools::TOOLS.iter())
 }
 
 /// `tools/list` entries, in a fixed order.
@@ -763,6 +764,7 @@ impl Agent {
             }
             _ => crate::edit::run(self, name, args)
                 .or_else(|| crate::libtools::run(self, client, name, args))
+                .or_else(|| crate::vidtools::run(self, name, args))
                 .unwrap_or_else(|| Err(format!("unknown tool «{name}»"))),
         }
     }
@@ -774,9 +776,15 @@ impl Agent {
             .lib
             .items()
             .into_iter()
-            .map(|i| {
-                json!({"uri": format!("znimok://library/{}", i.id), "name": i.name,
-                       "mimeType": "image/png", "description": i.description})
+            .flat_map(|i| {
+                let mut v = vec![json!({"uri": format!("znimok://library/{}", i.id), "name": i.name,
+                       "mimeType": "image/png", "description": i.description})];
+                if i.has_log {
+                    v.push(json!({"uri": format!("znimok://library/{}/log", i.id),
+                        "name": format!("{} — DevTools log", i.name), "mimeType": "application/json",
+                        "description": "The browser's DevTools log of the recording"}));
+                }
+                v
             })
             .collect())
     }
@@ -787,6 +795,15 @@ impl Agent {
         let id = uri
             .strip_prefix("znimok://library/")
             .ok_or("unknown resource")?;
+        // A recording's browser log (ZK-235), as JSON.
+        if let Some(id) = id.strip_suffix("/log") {
+            let path = self.lib.resolve(id).ok_or("unknown resource")?;
+            let (_, part) = znimok_format::open_parts(&path).map_err(|e| e.to_string())?;
+            let part = part.ok_or("unknown resource")?;
+            let (events, _) = crate::vidtools::events(&part);
+            return Ok(json!({"uri": uri, "mimeType": "application/json",
+                             "text": serde_json::to_string(&events).unwrap_or_default()}));
+        }
         let path = self.lib.resolve(id).ok_or("unknown resource")?;
         let doc = library::load(&path)?;
         let png = library::encode_png(&library::render(&doc, 1.0))?;

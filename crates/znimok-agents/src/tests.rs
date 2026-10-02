@@ -796,3 +796,150 @@ fn library_tools_meta_import_trash() {
         .unwrap();
     assert_eq!(d["annotations"]["destructiveHint"], true);
 }
+
+/// ZK-235: a recording read from its file — what it is, its browser log in short and in
+/// detail, one event whole; a screenshot is told apart; the log is a resource.
+#[test]
+fn recording_info_and_devtools_log() {
+    use znimok_format::video::{DevEvent, DevLog, MouseButton, MouseEvent};
+    let e = env("vidtools", true);
+    e.agent
+        .perms
+        .grant("T", Scope::LibraryRead, Grant::Always)
+        .unwrap();
+    e.agent
+        .perms
+        .grant("T", Scope::Capture, Grant::Always)
+        .unwrap();
+    std::fs::create_dir_all(&e.agent.lib.dir).unwrap();
+    let doc =
+        znimok_core::Document::from_raster("Запис із логом", Raster::solid(160, 100, Rgb::WHITE));
+    let mut video = znimok_format::Video::new(znimok_format::VideoInfo {
+        width: 160,
+        height: 100,
+        fps_milli: 30_000,
+        frames: 90,
+        duration_hns: 30_000_000,
+        codec: znimok_format::video::CODEC_H264,
+    });
+    let ev = |ms, json: &str| DevEvent {
+        ms,
+        json: json.into(),
+    };
+    video.devlog = Some(DevLog {
+        wall0_ms: 0,
+        events: vec![
+            ev(100, r#"{"k":"nav","s":0,"url":"https://example.org/form"}"#),
+            ev(
+                900,
+                r#"{"k":"net","s":0,"method":"POST","url":"https://example.org/api/save","status":500,"dur":42,"reqHeaders":{"Authorization":"Bearer abc.def.ghi"},"body":"{\"error\":\"boom\"}"}"#,
+            ),
+            ev(
+                1500,
+                r#"{"k":"dl","s":0,"ev":"purchase","data":{"event":"purchase","value":42}}"#,
+            ),
+            ev(
+                2000,
+                r#"{"k":"error","s":2,"text":"TypeError: form is undefined","src":"https://example.org/app.js:40"}"#,
+            ),
+            ev(
+                2100,
+                r#"{"k":"console","s":1,"lvl":"warning","text":"deprecated"}"#,
+            ),
+        ],
+    });
+    video.mouse = vec![
+        MouseEvent {
+            ms: 500,
+            x: 40,
+            y: 30,
+            button: MouseButton::Left,
+            down: true,
+        },
+        MouseEvent {
+            ms: 560,
+            x: 40,
+            y: 30,
+            button: MouseButton::Left,
+            down: false,
+        },
+    ];
+    let mp4: Vec<u8> = (0..2048u32).map(|i| (i * 7) as u8).collect();
+    let bytes = znimok_format::write_video(&doc, &video, &mp4, &Default::default());
+    let path = e.agent.lib.dir.join("Znimok-test-video.znimok");
+    std::fs::write(&path, bytes).unwrap();
+    let id = doc.id.to_string();
+    let call = |name: &str, args: Value| {
+        let out = e.agent.call("T", name, &args);
+        assert!(!out.is_error, "{name}: {:?}", out.content);
+        out.structured.unwrap()
+    };
+
+    let found = call("library_search", json!({"has_log": true}));
+    assert_eq!(found["documents"][0]["kind"], "video");
+    assert_eq!(found["documents"][0]["duration_ms"], 3000);
+
+    let info = call("video_info", json!({"document": id}));
+    assert_eq!(info["duration_ms"], 3000);
+    assert_eq!(info["fps"], 30.0);
+    assert_eq!(
+        info["clicks"],
+        json!([{"at_ms": 500, "x": 40, "y": 30, "button": "left"}])
+    );
+    assert_eq!(info["devtools_log"]["events"], 5);
+
+    let sum = call("devlog_summary", json!({"document": id}));
+    assert_eq!(sum["events"], 5);
+    assert_eq!(sum["by_kind"]["network"], 1);
+    assert_eq!(sum["errors"][0]["text"], "TypeError: form is undefined");
+    assert_eq!(sum["errors"][0]["at_ms"], 2000);
+    assert_eq!(sum["failed_requests"][0]["status"], 500);
+    assert_eq!(sum["datalayer_events"]["purchase"], 1);
+    assert_eq!(sum["clicks"], 1);
+
+    let errs = call("devlog_get", json!({"document": id, "errors_only": true}));
+    assert_eq!(
+        errs["matching"], 2,
+        "the failed request and the error: {errs}"
+    );
+    let net = call("devlog_get", json!({"document": id, "kinds": ["network"]}));
+    let i = net["events"][0]["i"].as_u64().unwrap();
+    assert!(net["events"][0].get("body").is_none(), "rows are short");
+    let one = call("devlog_get", json!({"document": id, "index": i}));
+    assert_eq!(one["event"]["body"], "{\"error\":\"boom\"}");
+    // The token of the request is hidden (the settings' default: hide).
+    let auth = one["event"]["reqHeaders"]["Authorization"]
+        .as_str()
+        .unwrap();
+    assert!(!auth.contains("abc.def.ghi"), "{auth}");
+    let window = call(
+        "devlog_get",
+        json!({"document": id, "from_ms": 1000, "to_ms": 2050}),
+    );
+    assert_eq!(window["matching"], 2);
+    let q = call("devlog_get", json!({"document": id, "query": "PURCHASE"}));
+    assert_eq!(q["events"][0]["kind"], "datalayer");
+
+    // A screenshot is not a recording.
+    let shot = call(
+        "capture_region",
+        json!({"x": 0, "y": 0, "width": 40, "height": 30}),
+    );
+    let not = e
+        .agent
+        .call("T", "video_info", &json!({"document": shot["id"]}));
+    assert!(not.is_error);
+
+    // The log as a resource.
+    let res = e.agent.resources("T").unwrap();
+    assert!(
+        res.iter()
+            .any(|r| r["uri"] == format!("znimok://library/{id}/log"))
+    );
+    let log = e
+        .agent
+        .read_resource("T", &format!("znimok://library/{id}/log"))
+        .unwrap();
+    assert_eq!(log["mimeType"], "application/json");
+    assert!(log["text"].as_str().unwrap().contains("example.org/form"));
+}

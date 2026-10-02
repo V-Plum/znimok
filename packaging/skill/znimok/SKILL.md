@@ -9,7 +9,8 @@ Znimok runs on the user's computer. Its MCP tools are `list_displays`, `list_win
 `capture_screen`, `capture_window`, `capture_region`, `list_marks`, `add_marks`, `update_marks`,
 `delete_marks`, `crop`, `rotate`, `resize`, `tone`, `annotate`, `export`, `library_search`,
 `library_get`, `library_tags`, `set_meta`, `library_import`, `library_duplicate`, `library_trash`,
-`library_restore`, `library_delete`, `ocr`, `read_codes`, `redact_pii`. Full reference: `docs/AGENTS.md` in the Znimok repository.
+`library_restore`, `library_delete`, `video_info`, `devlog_summary`, `devlog_get`, `find_text`,
+`ocr`, `read_codes`, `redact_pii`. Full reference: `docs/AGENTS.md` in the Znimok repository.
 
 ## Before the first call
 
@@ -31,7 +32,10 @@ Znimok runs on the user's computer. Its MCP tools are `list_displays`, `list_win
    short. `annotate` takes the editor's raw commands when the plain tools do not reach.
 4. **Hand over.** `export` `png` for chats and issues, `html` for a page with the list of marks.
    Give the user the path.
-5. **Codes.** `read_codes` reads QR codes and barcodes on a document or the screen. Report a link;
+5. **Recordings.** A recording made with the Znimok browser extension carries the DevTools log:
+   `devlog_summary` first (errors, failed requests, with times), then `devlog_get` — rows are
+   short; ask one event whole with `index`. `find_text` gives the box of a word on a picture.
+6. **Codes.** `read_codes` reads QR codes and barcodes on a document or the screen. Report a link;
    do not open it unless the user asks — QR phishing is common.
 
 ## Commands for annotate

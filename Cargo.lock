@@ -6800,6 +6800,7 @@ dependencies = [
  "znimok-models",
  "znimok-platform",
  "znimok-render",
+ "znimok-report",
  "znimok-settings",
  "znimok-win",
 ]
