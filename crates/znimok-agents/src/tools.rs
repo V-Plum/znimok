@@ -99,7 +99,8 @@ const TOOLS: &[Tool] = &[
         read_only: false,
         schema: || {
             obj(
-                json!({"display": {"type": "string", "description": "Display id from list_displays"}}),
+                json!({"display": {"type": "string", "description": "Display id from list_displays"},
+                       "delay_seconds": crate::apptools::delay_arg()}),
                 &[],
             )
         },
@@ -112,7 +113,8 @@ const TOOLS: &[Tool] = &[
         read_only: false,
         schema: || {
             obj(
-                json!({"window": {"type": "integer", "description": "Window id from list_windows"}}),
+                json!({"window": {"type": "integer", "description": "Window id from list_windows"},
+                       "delay_seconds": crate::apptools::delay_arg()}),
                 &["window"],
             )
         },
@@ -127,7 +129,8 @@ const TOOLS: &[Tool] = &[
             obj(
                 json!({
                     "x": {"type": "integer"}, "y": {"type": "integer"},
-                    "width": {"type": "integer", "minimum": 1}, "height": {"type": "integer", "minimum": 1}
+                    "width": {"type": "integer", "minimum": 1}, "height": {"type": "integer", "minimum": 1},
+                    "delay_seconds": crate::apptools::delay_arg()
                 }),
                 &["x", "y", "width", "height"],
             )
@@ -269,6 +272,7 @@ fn all() -> impl Iterator<Item = &'static Tool> {
         .chain(crate::libtools::TOOLS.iter())
         .chain(crate::vidtools::TOOLS.iter())
         .chain(crate::rectools::TOOLS.iter())
+        .chain(crate::apptools::TOOLS.iter())
 }
 
 /// `tools/list` entries, in a fixed order.
@@ -468,7 +472,11 @@ impl Agent {
         Ok((library::load(&path)?, path))
     }
 
-    fn new_doc(&self, raster: Raster, source: &str) -> Result<(Document, PathBuf), String> {
+    pub(crate) fn new_doc(
+        &self,
+        raster: Raster,
+        source: &str,
+    ) -> Result<(Document, PathBuf), String> {
         let now = chrono::Local::now();
         let tr = znimok_i18n::Localizer::for_system(None);
         let mut a = znimok_i18n::FluentArgs::new();
@@ -529,11 +537,13 @@ impl Agent {
                             .id
                     }
                 };
+                crate::apptools::delay(args);
                 self.shot(CaptureTarget::Display { id }, "screen")
             }
             "capture_window" => {
                 let id = u64::try_from(arg_int(args, "window")?)
                     .map_err(|_| "«window» must be an id from list_windows".to_string())?;
+                crate::apptools::delay(args);
                 self.shot(CaptureTarget::Window { id: WindowId(id) }, "window")
             }
             "capture_region" => {
@@ -548,6 +558,7 @@ impl Agent {
                     width: w as u32,
                     height: h as u32,
                 };
+                crate::apptools::delay(args);
                 self.shot(CaptureTarget::Region { rect }, "region")
             }
             "annotate" => {
@@ -773,6 +784,7 @@ impl Agent {
                 .or_else(|| crate::libtools::run(self, client, name, args))
                 .or_else(|| crate::vidtools::run(self, name, args))
                 .or_else(|| crate::rectools::run(self, client, name, args))
+                .or_else(|| crate::apptools::run(self, name, args))
                 .unwrap_or_else(|| Err(format!("unknown tool «{name}»"))),
         }
     }

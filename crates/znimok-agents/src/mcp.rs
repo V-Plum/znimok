@@ -28,7 +28,7 @@ and find_text, codes with read_codes. Find documents with library_search (kind, 
 browser log); bring files in with library_import, copy with library_duplicate, remove with \
 library_trash (library_restore undoes it). Record the screen with record_start … record_stop (Znimok must be running; sound only when \
 the person asked for it). Read a recording with video_info, devlog_summary and \
-devlog_get. Hand results over with export. The prompts are ready scenarios. The person approves \
+devlog_get. Hand results over with export, copy_to_clipboard or open_in_editor. The prompts are ready scenarios. The person approves \
 access the first time (per client and scope); deleting for good is confirmed every time.";
 
 fn server_info() -> Value {

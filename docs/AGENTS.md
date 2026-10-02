@@ -33,13 +33,13 @@ always**. Scopes:
 
 | Scope | Tools |
 |---|---|
-| `capture` | `list_windows`, `capture_screen`, `capture_window`, `capture_region`, `read_codes` on the screen |
-| `library_read` | `library_search`, `library_get`, `library_tags`, `list_marks`, `video_info`, `devlog_summary`, `devlog_get`, `find_text`, `ocr`, `export`, `read_codes` on a document, resources |
+| `capture` | `list_windows`, `capture_screen`, `capture_window`, `capture_active_window`, `capture_region`, `read_codes` on the screen |
+| `library_read` | `library_search`, `library_get`, `library_tags`, `list_marks`, `video_info`, `devlog_summary`, `devlog_get`, `find_text`, `ocr`, `export`, `open_in_editor`, `copy_to_clipboard`, `read_codes` on a document, resources |
 | `library_write` | `set_meta`, `library_import`, `library_duplicate`, `library_trash`, `library_restore`, `library_delete` (asks every time), `add_marks`, `update_marks`, `delete_marks`, `crop`, `rotate`, `resize`, `tone`, `annotate`, `redact_pii` |
 | `record` | `record_start` (`record_pause`, `record_resume`, `record_stop`, `record_status` only touch the agent's own recording and ask nothing) |
 | `record_audio` | `record_start` with `sound` other than `none` (asked on top of `record`) |
 
-`list_displays` needs no permission. If Znimok is not running, nobody can be asked and the call is
+`list_displays` and `app_state` need no permission. If Znimok is not running, nobody can be asked and the call is
 refused with a hint; the person can allow a client ahead of time:
 
 ```sh
@@ -84,6 +84,10 @@ PNG, plus a `resource_link` `znimok://library/<id>` to the original.
 | `library_restore` | `document` (id of a trashed one) | the document, back in the library |
 | `library_delete` | `document` (in the library or the trash) | deleted for good — **the person confirms every time** in the Znimok window |
 | `library_get` | `document` | picture + metadata |
+| `capture_active_window` | `delay_seconds?` | the window in front (not Znimok's own) as a new document; the answer names the window |
+| `open_in_editor` | `document` | opens it in the Znimok editor and brings the window forward (the app must be running) |
+| `copy_to_clipboard` | `document` | the picture with its marks on the clipboard (the app must be running) |
+| `app_state` | — | `running`, and when it is: the page, the open document, the tool, the zoom, a recording, an agent at work |
 | `record_start` | `display?` (the primary one by default) or `window?` (id) or `region?` {x, y, width, height}; `sound?` none / system / microphone / both; `devtools_log?` (true); `limit_seconds?` (300, at most 3600) | starts a screen recording; the app must be running; the person sees the recording frame and the bar with Stop |
 | `record_pause`, `record_resume` | — | pause and resume the agent's recording |
 | `record_stop` | — | stops it and returns the recording as a library document (also one that ended by its limit) |
@@ -128,6 +132,9 @@ The same commands the app uses (`crates/znimok-core/schema/`). Frequent ones:
 {"cmd": "add_object", "object": {"rect": {"x": 20, "y": 20, "w": 200, "h": 30}, "data": {"kind": "hide", "mode": "plate", "strength": 60}}}
 {"cmd": "set_crop", "rect": {"x": 0, "y": 0, "w": 800, "h": 600}}
 ```
+
+The capture tools take `delay_seconds` (up to 30): time for the person to bring the right window
+forward or open a menu.
 
 ## Prompts
 
