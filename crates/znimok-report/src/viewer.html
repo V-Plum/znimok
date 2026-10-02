@@ -3,12 +3,13 @@
 <title>{{TITLE}}</title>
 <style>
 :root{--bg:#f4f5f7;--panel:#fff;--line:#dfe2e8;--fg:#16181d;--fg2:#3b404b;--muted:#5c6270;--accent:#3d7bf5;--sel:#e3ebfd;--cur:#3d7bf51f;
---err:#d93a3f;--warn:#b86e00;--dl:#7b4ee0;--nav:#3d7bf5;--net:#5c6270;--mono:ui-monospace,"JetBrains Mono",Consolas,monospace}
+--err:#d93a3f;--warn:#b86e00;--dl:#7b4ee0;--nav:#3d7bf5;--net:#5c6270;--click:#d19a00;--mono:ui-monospace,"JetBrains Mono",Consolas,monospace}
 @media (prefers-color-scheme:dark){:root{--bg:#0f1115;--panel:#171a20;--line:#2a2f38;--fg:#e8eaee;--fg2:#c4c8d0;--muted:#9aa1ad;--accent:#6b9bff;--sel:#24324d;--cur:#6b9bff24;
---err:#ff6b6f;--warn:#f5a524;--dl:#a970ff;--nav:#6b9bff;--net:#9aa1ad}}
+--err:#ff6b6f;--warn:#f5a524;--dl:#a970ff;--nav:#6b9bff;--net:#9aa1ad;--click:#f5c518}}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif}
-main{max-width:1280px;margin:0 auto;padding:20px 16px 32px;display:grid;gap:14px}
+main{max-width:1280px;margin:0 auto;padding:20px 16px 32px;display:grid;gap:14px;grid-template-columns:minmax(0,1fr)}
+}
 h1{font-size:20px;margin:0;text-wrap:balance}
 .meta{display:flex;flex-wrap:wrap;gap:6px 14px;color:var(--muted);font-size:13px}
 .meta b{color:var(--fg2);font-weight:600}
@@ -35,7 +36,12 @@ video{width:100%;height:auto;display:block}
 .tm{font:12px var(--mono);color:var(--muted);font-variant-numeric:tabular-nums}
 .kd{font-size:12px;font-weight:600}
 .src{font-size:12px;color:var(--muted);text-align:right}
-.c4{color:var(--err)}.c3{color:var(--warn)}.c2{color:var(--dl)}.c1{color:var(--nav)}.c0{color:var(--net)}
+.c4{color:var(--err)}.c3{color:var(--warn)}.c2{color:var(--dl)}.c1{color:var(--nav)}.c0{color:var(--net)}.c5{color:var(--click)}
+.tl{position:relative;height:26px;background:var(--panel);border:1px solid var(--line);border-radius:8px;cursor:pointer;overflow:hidden}
+.tl .tk{position:absolute;top:4px;width:2px;height:18px;margin-left:-1px;background:currentColor;opacity:.9}
+.tl .tk.c5{top:9px;width:8px;height:8px;margin-left:-4px;border-radius:4px}
+.tl .ph{position:absolute;top:0;bottom:0;width:2px;margin-left:-1px;background:var(--fg);pointer-events:none}
+.keys{color:var(--muted);font-size:12px}
 .row .msg.c4{color:var(--err)}.row .msg{color:var(--fg)}
 .empty{padding:14px;color:var(--muted)}
 .det{border-left:1px solid var(--line);display:none;flex-direction:column;min-height:0;max-height:calc(46vh + 45px)}
@@ -54,12 +60,22 @@ pre{margin:0;padding:10px;overflow:auto;font:12px/1.5 var(--mono);white-space:pr
 .tr i{display:block;height:8px;border-radius:2px;background:var(--accent)}
 .tr .ms{font:12px var(--mono);color:var(--muted);text-align:right}
 footer{color:var(--muted);font-size:12px}
+@media (min-width:1100px){
+main{max-width:1800px;grid-template-columns:minmax(0,3fr) minmax(380px,2fr);align-items:start;column-gap:18px}
+h1,.meta,.v,.tl,.keys,footer{grid-column:1}
+.log{grid-column:2;grid-row:1/span 6;position:sticky;top:16px;height:calc(100vh - 32px);grid-template-rows:minmax(0,1fr) auto}
+.log.open{grid-template-columns:minmax(0,1fr)}
+.side{display:flex;flex-direction:column;min-height:0}
+.list{max-height:none;flex:1;min-height:120px}
+.det{border-left:0;border-top:1px solid var(--line);max-height:42vh}
 @media (prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}}
 </style></head><body><main>
 <h1>{{TITLE}}</h1>
 <div class="meta" id="meta"></div>
 <div class="v"><video controls playsinline preload="auto" src="{{VIDEO}}"></video>
 {{LAYERS}}</div>
+<div class="tl" id="tl"><div class="ph"></div></div>
+<div class="keys" id="keys"></div>
 <section class="log" id="log"></section>
 <footer id="foot"></footer>
 </main>
@@ -86,11 +102,11 @@ const log = document.getElementById("log");
 document.body.dataset.rows = String(ev.length);
 if (!ev.length) { log.append($("div", "empty", L("report-no-log"))); document.body.dataset.znimokReport = "ok"; return; }
 
-const kindOf = (e) => e.k === "console" || e.k === "log" ? "console" : e.k === "error" ? "error" : e.k === "net" ? "net" : e.k === "ws" ? "ws" : e.k === "nav" ? "nav" : e.k === "dl" ? "dl" : "info";
-const cls = (e) => e.s === 2 ? 4 : e.s === 1 ? 3 : e.k === "dl" ? 2 : e.k === "nav" ? 1 : 0;
+const kindOf = (e) => e.k === "console" || e.k === "log" ? "console" : e.k === "error" ? "error" : e.k === "net" ? "net" : e.k === "ws" ? "ws" : e.k === "nav" ? "nav" : e.k === "dl" ? "dl" : e.k === "click" ? "click" : "info";
+const cls = (e) => e.k === "click" ? 5 : e.s === 2 ? 4 : e.s === 1 ? 3 : e.k === "dl" ? 2 : e.k === "nav" ? 1 : 0;
 const CHIPS = [["devp-chip-all", () => true], ["devp-chip-errors", (e) => e.s === 2], ["devp-chip-warnings", (e) => e.s === 1],
   ["devp-chip-network", (e) => e.k === "net" || e.k === "ws"], ["devp-chip-console", (e) => ["console", "log", "error"].includes(e.k)],
-  ["devp-chip-nav", (e) => e.k === "nav"], ["devp-chip-datalayer", (e) => e.k === "dl"]];
+  ["devp-chip-nav", (e) => e.k === "nav"], ["devp-chip-datalayer", (e) => e.k === "dl"], ["report-chip-clicks", (e) => e.k === "click"]];
 const fmt = (s) => { s = Math.max(0, s); const m = Math.floor(s / 60); const r = s - m * 60; return m + ":" + (r < 10 ? "0" : "") + r.toFixed(2); };
 const oneLine = (s, n = 300) => { s = String(s == null ? "" : s).replace(/[\u0000-\u001f]/g, " "); return s.length > n ? s.slice(0, n) + "…" : s; };
 const tail = (s) => { s = String(s || ""); const i = s.lastIndexOf("/"); return i >= 0 && i < s.length - 1 ? s.slice(i + 1) : s; };
@@ -100,6 +116,7 @@ function label(e) {
     case "ws": return e.dir === "out" ? "WS ↑" : "WS ↓";
     case "console": return e.lvl === "warning" ? "warn" : (e.lvl || "log");
     case "dl": return "dataLayer";
+    case "click": return L("report-click");
     case "info": return e.k || "info";
     default: return kindOf(e);
   }
@@ -109,6 +126,7 @@ function message(e) {
     case "net": return oneLine((e.url || "") + (e.err ? " — " + e.err : ""));
     case "ws": return oneLine(e.data);
     case "nav": return oneLine(e.url);
+    case "click": return e.x + ", " + e.y;
     case "dl": {
       let rest = e.data;
       if (rest && typeof rest === "object" && !Array.isArray(rest)) { rest = Object.assign({}, rest); delete rest.event; if (!Object.keys(rest).length) rest = null; }
@@ -137,7 +155,7 @@ dls.append(save("log.json", ev));
 const dlOnly = ev.filter((e) => e.k === "dl");
 if (dlOnly.length) dls.append(save("dataLayer.json", dlOnly.map((e) => ({ at: e.at, event: e.ev, data: e.data }))));
 bar.append(dls);
-const left = $("div"); left.append(bar);
+const left = $("div", "side"); left.append(bar);
 const list = $("div", "list"); list.tabIndex = -1; left.append(list);
 const det = $("div", "det");
 log.append(left, det);
@@ -178,6 +196,35 @@ function follow(scroll) {
 }
 v.addEventListener("timeupdate", () => follow(!v.paused));
 v.addEventListener("seeked", () => follow(true));
+
+// The strip under the video: a tick per event (a dot per click), the playhead; a click seeks.
+const tl = document.getElementById("tl"), ph = tl.querySelector(".ph");
+const dur = () => (isFinite(v.duration) && v.duration > 0) ? v.duration : Math.max(0.001, ...ev.map((e) => e.at), 1);
+function buildTl() {
+  for (const t of [...tl.querySelectorAll(".tk")]) t.remove();
+  const d = dur();
+  for (const e of ev) { const t = $("i", "tk c" + cls(e)); t.style.left = (Math.min(1, e.at / d) * 100) + "%"; t.title = fmt(e.at) + "  " + label(e); tl.insertBefore(t, ph); }
+}
+buildTl();
+v.addEventListener("loadedmetadata", buildTl);
+(function phf() { ph.style.left = (Math.min(1, v.currentTime / dur()) * 100) + "%"; requestAnimationFrame(phf); })();
+tl.addEventListener("click", (k) => { const r = tl.getBoundingClientRect(); v.currentTime = Math.max(0, (k.clientX - r.left) / Math.max(1, r.width)) * dur(); });
+
+// The keys: Space — play / pause, N / P — the next / previous event, E — the next error.
+document.getElementById("keys").textContent = L("report-keys");
+const step = (dir, only) => {
+  const t = v.currentTime + 0.001, idx = shown.filter((i) => !only || only(ev[i]));
+  const next = dir > 0 ? idx.find((i) => ev[i].at > t) : [...idx].reverse().find((i) => ev[i].at < t - 0.3);
+  if (next != null) pick(next, true);
+};
+document.addEventListener("keydown", (k) => {
+  const tag = (k.target && k.target.tagName || "").toLowerCase();
+  if (tag === "input" || tag === "textarea" || k.ctrlKey || k.metaKey || k.altKey) return;
+  if (k.key === " ") { k.preventDefault(); if (v.paused) v.play(); else v.pause(); }
+  else if (k.key === "n" || k.key === "N" || k.key === "т" || k.key === "Т") step(1);
+  else if (k.key === "p" || k.key === "P" || k.key === "з" || k.key === "З") step(-1);
+  else if (k.key === "e" || k.key === "E" || k.key === "у" || k.key === "У") step(1, (e) => e.s === 2);
+});
 
 // The details.
 const size = (n) => n >= 1048576 ? (n / 1048576).toFixed(1) + " MB" : n >= 1024 ? Math.round(n / 1024) + " KB" : n + " B";
