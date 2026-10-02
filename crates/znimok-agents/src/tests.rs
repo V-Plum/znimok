@@ -1033,8 +1033,9 @@ fn recording_through_the_app() {
     use std::sync::{Arc, Mutex};
     let mut e = env("rec", true);
     let cfg = znimok_ipc::Config {
-        suffix: Some(format!("rec{}", std::process::id())),
-        dir: Some(e.dir.join("ipc-rec")),
+        suffix: Some(format!("r{}", std::process::id())),
+        // Short: the path of a Unix socket has a small limit, and macOS temp folders are long.
+        dir: Some(std::env::temp_dir().join(format!("zkr{}", std::process::id()))),
         ..Default::default()
     };
     e.agent.gui = Gui::with_config(cfg.clone());
@@ -1137,8 +1138,9 @@ fn recording_through_the_app() {
 fn active_window_and_the_app() {
     let mut e = env("apptools", true);
     let cfg = znimok_ipc::Config {
-        suffix: Some(format!("app{}", std::process::id())),
-        dir: Some(e.dir.join("ipc-app")),
+        suffix: Some(format!("a{}", std::process::id())),
+        // Short: the path of a Unix socket has a small limit, and macOS temp folders are long.
+        dir: Some(std::env::temp_dir().join(format!("zka{}", std::process::id()))),
         ..Default::default()
     };
     e.agent.gui = Gui::with_config(cfg.clone());
