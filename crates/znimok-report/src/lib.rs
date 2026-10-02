@@ -327,13 +327,7 @@ mod tests {
             width: 640,
             ..Default::default()
         };
-        let html = page(
-            &meta,
-            &BTreeMap::new(),
-            &ev,
-            VideoSrc::File("v.mp4"),
-            "",
-        );
+        let html = page(&meta, &BTreeMap::new(), &ev, VideoSrc::File("v.mp4"), "");
         let data = &html[html.find("id=\"zn-data\">").unwrap() + "id=\"zn-data\">".len()..];
         let data = &data[..data.find("</script>").unwrap()];
         assert!(!data.contains("<!--") && !data.contains("</s"));
