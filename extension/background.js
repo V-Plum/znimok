@@ -419,6 +419,7 @@ chrome.debugger.onEvent.addListener((src, method, p) => {
 const L = {
   tipRec: chrome.i18n.getMessage("tipRec"),
   tipPaused: chrome.i18n.getMessage("tipPaused"),
+  menuStart: chrome.i18n.getMessage("menuStart"),
   menuPause: chrome.i18n.getMessage("menuPause"),
   menuResume: chrome.i18n.getMessage("menuResume"),
   menuStop: chrome.i18n.getMessage("menuStop"),
@@ -451,6 +452,9 @@ function paintAction() {
     if (lastError) chrome.action.setBadgeBackgroundColor({ color: "#B3261E" });
     chrome.action.setTitle({ title: "Znimok" });
   }
+  // The right-click menu of the icon (ZK-230, as Little Helpers' extension had it): «Record this
+  // window» while idle, pause / stop while recording.
+  chrome.contextMenus.update("zn-start", { visible: !on, enabled: app.app !== false }, () => void chrome.runtime.lastError);
   chrome.contextMenus.update("zn-pause", { visible: on, title: app.state === "paused" ? L.menuResume : L.menuPause }, () => void chrome.runtime.lastError);
   chrome.contextMenus.update("zn-stop", { visible: on }, () => void chrome.runtime.lastError);
 }
@@ -539,6 +543,7 @@ chrome.action.onClicked.addListener(() => send({ cmd: "stop" }));   // only whil
 
 function setupMenus() {
   chrome.contextMenus.removeAll(() => {
+    chrome.contextMenus.create({ id: "zn-start", title: L.menuStart, contexts: ["action"] });
     chrome.contextMenus.create({ id: "zn-pause", title: L.menuPause, contexts: ["action"], visible: false });
     chrome.contextMenus.create({ id: "zn-stop", title: L.menuStop, contexts: ["action"], visible: false });
     paintAction();
@@ -546,9 +551,14 @@ function setupMenus() {
 }
 chrome.runtime.onInstalled.addListener(setupMenus);
 chrome.runtime.onStartup.addListener(setupMenus);
-chrome.contextMenus.onClicked.addListener((info) => {
+chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   if (info.menuItemId === "zn-stop") send({ cmd: "stop" });
   else if (info.menuItemId === "zn-pause") send({ cmd: app.state === "paused" ? "resume" : "pause" });
+  else if (info.menuItemId === "zn-start") {
+    if (app.state !== "idle") return;
+    const w = tab ? tab.windowId : (await chrome.windows.getLastFocused()).id;
+    await startFromWindow(w);
+  }
 });
 
 chrome.commands.onCommand.addListener(async (command, tab) => {

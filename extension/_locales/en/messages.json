@@ -23,6 +23,10 @@
     "message": "Znimok — paused {t} · click to stop",
     "description": "Toolbar tooltip while paused; {t} is the time"
   },
+  "menuStart": {
+    "message": "Record this window",
+    "description": "Right-click menu of the icon: start a recording of this window"
+  },
   "menuPause": {
     "message": "Pause",
     "description": "Right-click menu of the icon"
