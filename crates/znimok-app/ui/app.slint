@@ -3122,7 +3122,8 @@ export component AppWindow inherits Window {
                                     edited(t) => { root.setting-text("rec-hide-keys", t); }
                                 }
                                 Text { text: @tr("rec-hide-hint" => "Comma-separated: headers, JSON keys, form fields and dataLayer keys whose values become •••. Secrets such as tokens, e-mails and card numbers are found by their look as well. The log stays whole in your files."); color: Theme.text3; font-size: 11px; wrap: word-wrap; }
-                                Text { text: @tr("rec-devlog-hint" => "The Znimok extension for Chrome and Edge writes the page's console, errors, network (headers, request and response bodies) and navigations in sync with the video — everything the DevTools panels show, for debugging; sensitive parts can be hidden on export. Until it is in the Chrome Web Store: the znimok-extension archive of a release → chrome://extensions → Developer mode → Load unpacked."); color: Theme.text3; font-size: 11px; wrap: word-wrap; }
+                                Text { text: @tr("rec-devlog-hint" => "The Znimok extension for Chrome and Edge writes the page's console, errors, network (headers, request and response bodies) and navigations in sync with the video — everything the DevTools panels show, for debugging; sensitive parts can be hidden on export. Install it from the Chrome Web Store (the button below)."); color: Theme.text3; font-size: 11px; wrap: word-wrap; }
+                                HorizontalLayout { alignment: start; TextButton { text: @tr("rec-devlog-store" => "Chrome Web Store"); clicked => { root.setting("open-store", 0); } } }
                             }
                             if root.settings-page == 9: VerticalLayout {
                                 spacing: 14px;

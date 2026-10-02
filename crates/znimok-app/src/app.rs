@@ -1765,6 +1765,11 @@ impl App {
                 self.refresh_library(ui);
             }
             "show-folder" => crate::library::show_in_folder(&self.lib_dir),
+            // The extension's page in the Chrome Web Store (ZK-182).
+            "open-store" => crate::codes::open_url(&format!(
+                "https://chromewebstore.google.com/detail/{}",
+                znimok_devtools::STORE_EXTENSION_ID
+            )),
             "close" => {
                 self.settings_close(ui);
                 return;

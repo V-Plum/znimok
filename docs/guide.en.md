@@ -257,9 +257,9 @@ sensitive parts can be hidden on export. While the log is written the browser sh
 "extension is debugging this browser" bar. The extension's "Record this window" starts recording the
 browser's window; while it records, a click on its icon stops it, pause is in the
 right-click menu. Settings → "Recording" → "Browser": write the log, let the extension start a
-recording, and whether a browser is connected. Installing until the extension is in the Chrome Web
-Store: the release's `znimok-extension-….zip` → chrome://extensions → "Developer mode" → "Load
-unpacked". Znimok registers itself for the browsers; no administrator rights needed.
+recording, and whether a browser is connected. Install the extension from the
+[Chrome Web Store](https://chromewebstore.google.com/detail/jhnaichejniloonjcimjpfeggkmcmpek) (Settings → "Recording" has
+the button). Znimok registers itself for the browsers; no administrator rights needed.
 
 **The DevTools log in the video editor.** When a recording has the browser's log, a "log" lane with
 ticks appears under the marks lane of the timeline: errors red (with a faint line across the whole

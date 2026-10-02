@@ -5125,7 +5125,12 @@ rec-browsers-off = No browser with the Znimok extension is connected.
 # @where: Settings → Recording: what the browser log writes and how to install the extension
 # @kind: body
 # @max: 500
-rec-devlog-hint = The Znimok extension for Chrome and Edge writes the page's console, errors, network (headers, request and response bodies) and navigations in sync with the video — everything the DevTools panels show, for debugging; sensitive parts can be hidden on export. Until it is in the Chrome Web Store: the znimok-extension archive of a release → chrome://extensions → Developer mode → Load unpacked.
+rec-devlog-hint = The Znimok extension for Chrome and Edge writes the page's console, errors, network (headers, request and response bodies) and navigations in sync with the video — everything the DevTools panels show, for debugging; sensitive parts can be hidden on export. Install it from the Chrome Web Store (the button below).
+
+# @where: Settings → Recording: the button under the extension's hint; opens its Chrome Web Store page
+# @kind: button
+# @max: 24
+rec-devlog-store = Chrome Web Store
 
 ## Video export (ZK-190)
 
