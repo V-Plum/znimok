@@ -8438,7 +8438,7 @@ impl App {
     /// The sheet's main button.
     fn vexport_go(&mut self, ui: &AppWindow) {
         use crate::vexport::*;
-        if self.vexp_run.is_some() {
+        if self.vexp_run.is_some() || crate::filedlg::busy() {
             return;
         }
         match self.vexp.kind {
@@ -8459,7 +8459,8 @@ impl App {
         }
     }
 
-    /// Runs an export with these choices; the sheet (if open) shows its progress.
+    /// Runs an export with these choices; the sheet (if open) shows its progress. To a file:
+    /// the save dialog first — off the UI thread, the app untouched while it is up (ZK-215).
     fn vexport_start(
         &mut self,
         ui: &AppWindow,
@@ -8469,28 +8470,42 @@ impl App {
     ) {
         use crate::vexport::*;
         let ext = p.ext();
-        let dest = match p.to {
-            TO_FILE => {
-                let mut dlg = rfd::FileDialog::new()
-                    .add_filter(p.name(), &[ext])
-                    .set_file_name(format!("{name}.{ext}"));
-                if let Some(d) = self.prefs().editor.export_dir.filter(|d| d.is_dir()) {
-                    dlg = dlg.set_directory(d);
-                }
-                let Some(mut path) = dlg.save_file() else {
-                    return;
-                };
+        if p.to == TO_FILE {
+            let mut dlg = rfd::FileDialog::new()
+                .add_filter(p.name(), &[ext])
+                .set_file_name(format!("{name}.{ext}"));
+            if let Some(d) = self.prefs().editor.export_dir.filter(|d| d.is_dir()) {
+                dlg = dlg.set_directory(d);
+            }
+            let me = self.me();
+            let (p, name) = (p.clone(), name.to_string());
+            crate::filedlg::save_file(dlg, move |path| {
+                let Some(mut path) = path else { return };
                 if path.extension().is_none() {
                     path.set_extension(ext);
                 }
-                path
-            }
-            _ => {
-                let dir = crate::library::cache_dir().join("exports");
-                let _ = std::fs::create_dir_all(&dir);
-                dir.join(format!("{name}.{ext}"))
-            }
-        };
+                me.with(|a, ui| a.vexport_run_to(ui, &p, &name, sheet, path));
+            });
+            return;
+        }
+        let dir = crate::library::cache_dir().join("exports");
+        let _ = std::fs::create_dir_all(&dir);
+        self.vexport_run_to(ui, p, name, sheet, dir.join(format!("{name}.{ext}")));
+    }
+
+    /// The export itself, to `dest`, on a worker; the sheet (if open) shows its progress.
+    fn vexport_run_to(
+        &mut self,
+        ui: &AppWindow,
+        p: &crate::vexport::VidExport,
+        name: &str,
+        sheet: bool,
+        dest: PathBuf,
+    ) {
+        use crate::vexport::*;
+        if self.vexp_run.is_some() {
+            return;
+        }
         let Some(kind) = p.engine_kind(true).or_else(|| self.report_kind(p)) else {
             return;
         };

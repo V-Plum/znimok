@@ -20,6 +20,7 @@ mod dialog;
 mod dnd_mac;
 #[cfg(windows)]
 mod dnd_win;
+mod filedlg;
 mod filemeta;
 mod frame;
 mod hotkeys;
@@ -930,6 +931,9 @@ fn open_with_dialog(app: &Shared, ui: &AppWindow) {
 
 /// «Export» in the sheet (ZK-187): a file asks where, with the chosen format's extension.
 fn export_go(app: &Shared, ui: &AppWindow) {
+    if filedlg::busy() {
+        return;
+    }
     let Some((dir, name, format)) = app.borrow_mut().export_go(ui) else {
         return;
     };
@@ -944,9 +948,12 @@ fn export_go(app: &Shared, ui: &AppWindow) {
     if let Some(d) = dir {
         dlg = dlg.set_directory(d);
     }
-    if let Some(p) = dlg.save_file() {
-        app.borrow_mut().export_write(ui, &p);
-    }
+    let (app, weak) = (app.clone(), ui.as_weak());
+    filedlg::save_file(dlg, move |p| {
+        if let (Some(p), Some(ui)) = (p, weak.upgrade()) {
+            app.borrow_mut().export_write(&ui, &p);
+        }
+    });
 }
 
 #[allow(dead_code)]
