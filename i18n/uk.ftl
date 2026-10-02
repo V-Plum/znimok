@@ -5169,7 +5169,12 @@ rec-browsers-off = Жоден браузер із розширенням Znimok 
 # @where: Settings → Recording: what the browser log writes and how to install the extension
 # @kind: body
 # @max: 500
-rec-devlog-hint = Розширення Znimok для Chrome і Edge пише консоль сторінки, помилки, мережу (заголовки, тіла запитів і відповідей) і переходи синхронно з відео — усе, що показують панелі DevTools, для налагодження; чутливе можна приховати при експорті. Доки його немає в Chrome Web Store: архів znimok-extension з релізу → chrome://extensions → Режим розробника → Завантажити розпаковане.
+rec-devlog-hint = Розширення Znimok для Chrome і Edge пише консоль сторінки, помилки, мережу (заголовки, тіла запитів і відповідей) і переходи синхронно з відео — усе, що показують панелі DevTools, для налагодження; чутливе можна приховати при експорті. Встановіть його з Chrome Web Store (кнопка нижче).
+
+# @where: Settings → Recording: the button under the extension's hint; opens its Chrome Web Store page
+# @kind: button
+# @max: 24
+rec-devlog-store = Chrome Web Store
 
 ## Video export (ZK-190)
 
