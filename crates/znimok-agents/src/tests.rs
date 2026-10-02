@@ -239,7 +239,7 @@ fn modern_stateless_requests() {
     assert_eq!(ds["result"]["structuredContent"]["displays"][0]["id"], "d1");
 
     let unknown = s
-        .handle_line(&req(6, "prompts/list", modern(json!({}))))
+        .handle_line(&req(6, "sampling/createMessage", modern(json!({}))))
         .unwrap();
     assert_eq!(unknown["error"]["code"], -32601);
 }
@@ -942,4 +942,71 @@ fn recording_info_and_devtools_log() {
         .unwrap();
     assert_eq!(log["mimeType"], "application/json");
     assert!(log["text"].as_str().unwrap().contains("example.org/form"));
+}
+
+/// ZK-236: the ready scenarios are listed and filled in; every tool they name exists; the hints
+/// tell a read from a change.
+#[test]
+fn prompts_and_hints() {
+    let e = env("prompts", true);
+    let mut s = Server::new(&e.agent);
+    let disc = s
+        .handle_line(&req(1, "server/discover", modern(json!({}))))
+        .unwrap();
+    assert!(
+        disc["result"]["capabilities"]["prompts"].is_object(),
+        "{disc}"
+    );
+    let list = s
+        .handle_line(&req(2, "prompts/list", modern(json!({}))))
+        .unwrap();
+    let names: Vec<&str> = list["result"]["prompts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|p| p["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        names,
+        [
+            "bug_report",
+            "document_screen",
+            "redact_before_sharing",
+            "read_recording"
+        ]
+    );
+    let got = s
+        .handle_line(&req(
+            3,
+            "prompts/get",
+            modern(json!({"name": "bug_report", "arguments": {"problem": "кнопка не натискається", "window": "Chrome"}})),
+        ))
+        .unwrap();
+    let text = got["result"]["messages"][0]["content"]["text"]
+        .as_str()
+        .unwrap();
+    assert!(
+        text.contains("кнопка не натискається") && text.contains("«Chrome»"),
+        "{text}"
+    );
+    assert!(!text.contains('{'), "every placeholder is filled: {text}");
+    let none = s
+        .handle_line(&req(4, "prompts/get", modern(json!({"name": "nope"}))))
+        .unwrap();
+    assert_eq!(none["error"]["code"], -32602);
+
+    let tools = crate::tools::list();
+    for t in crate::prompts::named_tools() {
+        assert!(
+            tools.iter().any(|x| x["name"] == t.as_str()),
+            "a prompt names «{t}», which is not a tool"
+        );
+    }
+    let hint =
+        |n: &str, k: &str| tools.iter().find(|t| t["name"] == n).unwrap()["annotations"][k].clone();
+    assert_eq!(hint("list_marks", "readOnlyHint"), true);
+    assert_eq!(hint("list_marks", "idempotentHint"), true);
+    assert_eq!(hint("add_marks", "readOnlyHint"), false);
+    assert_eq!(hint("library_delete", "destructiveHint"), true);
+    assert_eq!(hint("library_trash", "destructiveHint"), false);
 }

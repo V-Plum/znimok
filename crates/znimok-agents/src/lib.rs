@@ -22,6 +22,7 @@ pub mod library;
 mod libtools;
 pub mod mcp;
 pub mod permissions;
+pub mod prompts;
 pub mod tools;
 mod vidtools;
 
