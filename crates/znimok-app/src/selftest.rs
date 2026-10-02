@@ -4529,14 +4529,17 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
             );
             return;
         }
+        // ZK-231: the recording opens in the editor (a window of its own), not the card.
+        let in_editor = path.as_deref().is_some_and(|p| crate::wins::editor_of(p).is_some());
         r.check(
-            "recording: stop leaves a video document in the library (▶ on the card)",
+            "recording: stop leaves a video document in the library (▶ on the card), open in the editor",
             doc.as_ref()
                 .is_some_and(|(w, h, n, s, _, _)| *w > 0 && *h > 0 && *n >= 20 && s == "window")
                 && card.as_deref().is_some_and(|m| m.starts_with('▶'))
-                && crate::pill::is_open(),
+                && in_editor
+                && !crate::pill::is_open(),
             format!(
-                "{doc:?} · {card:?} · card after capture {} · {frames} frames",
+                "{doc:?} · {card:?} · in the editor {in_editor} · card {} · {frames} frames",
                 crate::pill::is_open()
             ),
         );
