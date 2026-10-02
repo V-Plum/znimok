@@ -46,6 +46,54 @@ thread_local! {
     static VIDEO_MODE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
+/// What an agent's recording (ZK-237) sets itself, whatever the settings say: sound only with
+/// its own permission, the browser's log or not.
+#[derive(Clone, Copy, Debug)]
+pub struct AgentOpts {
+    pub system: bool,
+    pub microphone: bool,
+    pub log: bool,
+}
+
+thread_local! {
+    /// Set while an agent's recording is being started.
+    static AGENT: std::cell::Cell<Option<AgentOpts>> = const { std::cell::Cell::new(None) };
+}
+
+fn agent_opts() -> Option<AgentOpts> {
+    AGENT.with(|a| a.get())
+}
+
+/// The video settings of the recording being started: an agent's own sound choice, and the
+/// window it named is the target (not the region it covers now).
+fn agent_video(mut p: znimok_settings::Video) -> znimok_settings::Video {
+    if let Some(o) = agent_opts() {
+        p.audio.system = o.system;
+        p.audio.microphone = o.microphone;
+        p.follow_window = true;
+    }
+    p
+}
+
+/// Starts a recording for an agent: no overlay, no questions; the reason comes back.
+pub fn start_for_agent(choice: Choice, opts: AgentOpts) -> Result<(), String> {
+    if is_recording() {
+        return Err("a recording is already running".into());
+    }
+    AGENT.with(|a| a.set(Some(opts)));
+    let r = start_inner(&choice);
+    AGENT.with(|a| a.set(None));
+    if r.is_ok() {
+        crate::commands::emit("recordStart");
+    }
+    r
+}
+
+/// How long the running recording is, without its pauses.
+pub fn elapsed_ms() -> Option<u64> {
+    REC.with(|r| r.borrow().as_ref().map(|a| a.elapsed().as_millis() as u64))
+}
+
 struct Active {
     #[cfg(windows)]
     rec: Option<znimok_video_win::Recording>,
@@ -194,7 +242,7 @@ fn start_inner(_choice: &Choice) -> Result<(), String> {
 fn start_inner(choice: &Choice) -> Result<(), String> {
     use znimok_platform::Capture;
     use znimok_video_mac::{RecordRequest, Recording, Target};
-    let p = crate::with_prefs(|p| p.video.clone()).unwrap_or_default();
+    let p = agent_video(crate::with_prefs(|p| p.video.clone()).unwrap_or_default());
     let target = match (choice.window, p.follow_window) {
         (Some(id), true) => Target::Window { id: id as u32 },
         _ => {
@@ -270,8 +318,10 @@ fn start_inner(choice: &Choice) -> Result<(), String> {
         })
     });
     show_indicators();
-    // The browser's log (ZK-97): the extension starts writing now.
-    crate::devlog::hub().start(znimok_devtools::now_ms());
+    // The browser's log (ZK-97): the extension starts writing now (an agent may leave it out).
+    if agent_opts().is_none_or(|o| o.log) {
+        crate::devlog::hub().start(znimok_devtools::now_ms());
+    }
     tick();
     Ok(())
 }
@@ -280,7 +330,7 @@ fn start_inner(choice: &Choice) -> Result<(), String> {
 fn start_inner(choice: &Choice) -> Result<(), String> {
     use znimok_platform::WindowId;
     use znimok_video_win::{RecordRequest, Recording, Target};
-    let p = crate::with_prefs(|p| p.video.clone()).unwrap_or_default();
+    let p = agent_video(crate::with_prefs(|p| p.video.clone()).unwrap_or_default());
     // A clicked window is followed as it moves — or recorded as the region it covers now.
     let target = match (choice.window, p.follow_window) {
         (Some(id), true) => Target::Window { id: WindowId(id) },
@@ -376,8 +426,10 @@ fn start_inner(choice: &Choice) -> Result<(), String> {
         })
     });
     show_indicators();
-    // The browser's log (ZK-97): the extension starts writing now.
-    crate::devlog::hub().start(znimok_devtools::now_ms());
+    // The browser's log (ZK-97): the extension starts writing now (an agent may leave it out).
+    if agent_opts().is_none_or(|o| o.log) {
+        crate::devlog::hub().start(znimok_devtools::now_ms());
+    }
     // Clicks on the bar (Pause, Stop) are not the recording's.
     REC.with(|r| {
         if let Some(a) = r.borrow().as_ref()
@@ -662,6 +714,11 @@ fn thumbnail(r: &znimok_core::Raster) -> znimok_core::Raster {
 
 /// Back on the UI thread: the library shows it and the card after a capture says so.
 fn saved(r: Result<(PathBuf, znimok_core::Raster), String>, name: String, display: Rect) {
+    // An agent's recording goes back to the agent (ZK-237): no editor, no card.
+    let agents = crate::agentipc::recording_done(match &r {
+        Ok((path, _)) => Ok(path.as_path()),
+        Err(e) => Err(e.as_str()),
+    });
     crate::with_ctx(|a, ui| match r {
         Ok((path, poster)) => {
             a.refresh_library(ui);
@@ -679,7 +736,9 @@ fn saved(r: Result<(PathBuf, znimok_core::Raster), String>, name: String, displa
             LAST_SAVED.with(|l| *l.borrow_mut() = Some(path.clone()));
             // The editor with the recording (ZK-231, the owner: not the card alone), unless
             // the settings keep the card.
-            if a.prefs().video.open_editor {
+            if agents {
+                let _ = (poster, name, heading, sub, display);
+            } else if a.prefs().video.open_editor {
                 a.open_path(ui, &path);
             } else {
                 crate::pill::show(poster, path, name, heading, sub, display);

@@ -4898,6 +4898,96 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
         );
     }));
 
+    // ZK-237: an agent's recording over IPC — started without the overlay, without sound,
+    // stopped into a library document that the app does not open.
+    #[cfg(windows)]
+    {
+        fn agent_records(params: serde_json::Value) {
+            *AGENT_ASKED.lock().unwrap() = None;
+            std::thread::spawn(move || {
+                let v = crate::agentipc::handle("agents.record", &params);
+                *AGENT_ASKED.lock().unwrap() = v.map(|r| match r {
+                    Ok(v) => v,
+                    Err(e) => serde_json::json!({"error": e.message}),
+                });
+            });
+        }
+        steps.push(Box::new(|_, _, _| {
+            // Switched off: refused.
+            agent_records(serde_json::json!({"op": "start"}));
+        }));
+        steps.push(Box::new(|_, ui, r| {
+            let got = AGENT_ASKED.lock().unwrap().take();
+            r.check(
+                "agent recording: refused while MCP is switched off",
+                got.as_ref().is_some_and(|v| v["error"].is_string()) && !crate::rec::is_recording(),
+                format!("{got:?}"),
+            );
+            ui.invoke_setting("mcp".into(), 1);
+            // This app's own window (a display cannot be captured in every test session).
+            let me = crate::devlog::windows_and_displays()
+                .0
+                .into_iter()
+                .find(|w| w.pid == std::process::id() && !w.minimized && w.bounds.width > 200)
+                .map(|w| w.id.0);
+            agent_records(serde_json::json!({"op": "start", "limit_s": 60, "window": me}));
+        }));
+        for i in 0..4 {
+            steps.push(Box::new(move |_, ui, _| {
+                ui.set_toast(format!("запис агента {i}").into())
+            }));
+        }
+        steps.push(Box::new(|_, _, r| {
+            let got = AGENT_ASKED.lock().unwrap().take();
+            let ind = crate::rec::indicators();
+            r.check(
+                "agent recording: starts at once on the named window, without sound, with the frame around it",
+                got.as_ref().is_some_and(|v| {
+                    v["recording"] == true && v["width"].as_u64() > Some(200) && v["system_audio"] == false
+                }) && crate::rec::is_recording()
+                    && ind.as_ref().is_some_and(|(_, edges, _)| *edges == 4),
+                format!("{got:?} · {ind:?}"),
+            );
+            agent_records(serde_json::json!({"op": "status"}));
+        }));
+        steps.push(Box::new(|_, _, r| {
+            let got = AGENT_ASKED.lock().unwrap().take();
+            r.check(
+                "agent recording: the status says it is the agent's and how long it runs",
+                got.as_ref().is_some_and(|v| {
+                    v["recording"] == true
+                        && v["agent"] == true
+                        && v["elapsed_ms"].as_u64() > Some(300)
+                }),
+                format!("{got:?}"),
+            );
+            agent_records(serde_json::json!({"op": "stop"}));
+        }));
+        for _ in 0..8 {
+            steps.push(Box::new(|_, _, _| {}));
+        }
+        steps.push(Box::new(|_, ui, r| {
+            let got = AGENT_ASKED.lock().unwrap().take();
+            let path = got.as_ref().and_then(|v| v["path"].as_str()).map(std::path::PathBuf::from);
+            let doc = path.as_ref().and_then(|p| znimok_format::open(p).ok()).and_then(|l| match l {
+                znimok_format::Loaded::Video(v) => {
+                    Some((v.video.info.width, v.video.info.frames, v.video.audio.len(), v.doc.meta.source.clone()))
+                }
+                _ => None,
+            });
+            let opened = path.as_deref().is_some_and(|p| crate::wins::editor_of(p).is_some());
+            r.check(
+                "agent recording: stop gives the document — a video without sound, not opened, no card",
+                doc.as_ref().is_some_and(|(w, n, audio, src)| *w > 0 && *n > 0 && *audio == 0 && src == "window")
+                    && !opened
+                    && !crate::pill::is_open()
+                    && !crate::rec::is_recording(),
+                format!("{got:?} · {doc:?} · opened {opened}"),
+            );
+            ui.invoke_setting("mcp".into(), 0);
+        }));
+    }
+
     // ZK-132: the Agents and Updates pages; the MCP switch is the one the server checks.
     steps.push(Box::new(|_, ui, _| {
         ui.invoke_settings_open();

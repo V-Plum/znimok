@@ -5804,3 +5804,23 @@ agents-confirm-delete-title = Delete «{ $name }» for good?
 # @kind: body
 # @max: 160
 agents-confirm-delete-body = The AI agent «{ $client }» asks for it. This cannot be undone.
+
+# @where: Inside agents-ask-body after «wants to»: screen recording
+# @kind: body
+# @max: 80
+agents-ask-record = record the screen as video, also while you are away
+
+# @where: Inside agents-ask-body after «wants to»: sound of a recording
+# @kind: body
+# @max: 80
+agents-ask-record-audio = record the computer's sound and the microphone
+
+# @where: Settings → Agents: a permission in a client's list
+# @kind: label
+# @max: 24
+agents-scope-record = screen recording
+
+# @where: Settings → Agents: a permission in a client's list
+# @kind: label
+# @max: 24
+agents-scope-sound = sound and microphone

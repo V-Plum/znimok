@@ -150,7 +150,7 @@ fn record_window(r: &Value) {
 
 /// The windows on screen (with their titles) and the displays.
 #[cfg(windows)]
-fn windows_and_displays() -> (
+pub(crate) fn windows_and_displays() -> (
     Vec<znimok_platform::WindowInfo>,
     Vec<znimok_platform::DisplayInfo>,
 ) {
@@ -166,7 +166,7 @@ fn windows_and_displays() -> (
 /// The windows on screen (titles need «Screen Recording», which recording has anyway) and the
 /// displays, in points (ZK-207).
 #[cfg(target_os = "macos")]
-fn windows_and_displays() -> (
+pub(crate) fn windows_and_displays() -> (
     Vec<znimok_platform::WindowInfo>,
     Vec<znimok_platform::DisplayInfo>,
 ) {

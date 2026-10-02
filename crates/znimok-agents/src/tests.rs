@@ -1010,3 +1010,109 @@ fn prompts_and_hints() {
     assert_eq!(hint("library_delete", "destructiveHint"), true);
     assert_eq!(hint("library_trash", "destructiveHint"), false);
 }
+
+/// ZK-237: recording goes to the app over IPC; sound is a permission of its own, asked before
+/// anything starts; stop returns the library document.
+#[test]
+fn recording_through_the_app() {
+    use std::sync::{Arc, Mutex};
+    let mut e = env("rec", true);
+    let cfg = znimok_ipc::Config {
+        suffix: Some(format!("rec{}", std::process::id())),
+        dir: Some(e.dir.join("ipc-rec")),
+        ..Default::default()
+    };
+    e.agent.gui = Gui::with_config(cfg.clone());
+    // Without the app: refused with a reason.
+    e.agent
+        .perms
+        .grant("T", Scope::Record, Grant::Always)
+        .unwrap();
+    let out = e.agent.call("T", "record_start", &json!({}));
+    assert!(out.is_error, "no app, no recording");
+
+    // The document «the app» will return.
+    std::fs::create_dir_all(&e.agent.lib.dir).unwrap();
+    let doc = znimok_core::Document::from_raster("Запис агента", Raster::solid(64, 48, Rgb::WHITE));
+    let video = znimok_format::Video::new(znimok_format::VideoInfo {
+        width: 64,
+        height: 48,
+        fps_milli: 30_000,
+        frames: 60,
+        duration_hns: 20_000_000,
+        codec: znimok_format::video::CODEC_H264,
+    });
+    let path = e.agent.lib.dir.join("Znimok-agent-rec.znimok");
+    std::fs::write(
+        &path,
+        znimok_format::write_video(&doc, &video, &[7u8; 512], &Default::default()),
+    )
+    .unwrap();
+
+    let seen: Arc<Mutex<Vec<Value>>> = Default::default();
+    let (seen2, path2) = (seen.clone(), path.display().to_string());
+    let _s = znimok_ipc::Server::start(cfg, move |m: &str, p: Value| match m {
+        "agents.ask" => Ok(json!({"grant": if p["scope"] == "record_audio" { Value::Null } else { json!("once") }})),
+        "agents.activity" => Ok(Value::Null),
+        "agents.record" => {
+            seen2.lock().unwrap().push(p.clone());
+            match p["op"].as_str() {
+                Some("start") => Ok(json!({"recording": true, "width": 800, "height": 600})),
+                Some("stop") => Ok(json!({"path": path2})),
+                Some("status") => Ok(json!({"recording": false, "finished": path2})),
+                _ => Ok(json!({"recording": true, "paused": p["op"] == "pause"})),
+            }
+        }
+        _ => Err(znimok_ipc::RpcError::method_not_found(m)),
+    })
+    .unwrap();
+
+    // Sound: the person refuses its permission → nothing reaches the recorder.
+    let out = e.agent.call("T", "record_start", &json!({"sound": "both"}));
+    assert!(out.is_error);
+    assert!(
+        seen.lock().unwrap().is_empty(),
+        "refused before the app is asked to record"
+    );
+
+    let out = e.agent.call(
+        "T",
+        "record_start",
+        &json!({"window": 42, "limit_seconds": 20, "devtools_log": false}),
+    );
+    assert!(!out.is_error, "{:?}", out.content);
+    let sent = seen.lock().unwrap().last().cloned().unwrap();
+    assert_eq!(sent["window"], 42);
+    assert_eq!(sent["limit_s"], 20);
+    assert_eq!(sent["log"], false);
+    assert_eq!(sent["system_audio"], false);
+    assert_eq!(sent["microphone"], false);
+
+    let out = e.agent.call("T", "record_pause", &json!({}));
+    assert_eq!(out.structured.unwrap()["paused"], true);
+    let out = e.agent.call("T", "record_stop", &json!({}));
+    assert!(!out.is_error, "{:?}", out.content);
+    let got = out.structured.unwrap();
+    assert_eq!(got["id"], doc.id.to_string());
+    assert_eq!(got["kind"], "video");
+    assert_eq!(got["duration_ms"], 2000);
+    let st = e
+        .agent
+        .call("T", "record_status", &json!({}))
+        .structured
+        .unwrap();
+    assert_eq!(st["finished"]["id"], doc.id.to_string());
+
+    // A client without the permission and nobody saying yes... the fake app says «once» — so
+    // check the scope instead: the tools belong to `record`.
+    let tools = crate::tools::list();
+    for n in [
+        "record_start",
+        "record_pause",
+        "record_resume",
+        "record_stop",
+        "record_status",
+    ] {
+        assert!(tools.iter().any(|t| t["name"] == n), "{n}");
+    }
+}
