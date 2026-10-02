@@ -14,6 +14,7 @@
 //!
 //! MCP is off until the person switches it on (settings `agents.mcp_enabled`).
 
+mod apptools;
 pub mod audit;
 pub mod backend;
 mod edit;

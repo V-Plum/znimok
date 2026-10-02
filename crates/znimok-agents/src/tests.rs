@@ -35,7 +35,22 @@ impl Capturer for FakeScreen {
         }])
     }
     fn windows(&self) -> Result<Vec<WindowInfo>, String> {
-        Ok(vec![])
+        Ok(vec![WindowInfo {
+            id: znimok_platform::WindowId(7),
+            title: "Front window".into(),
+            app: "test.exe".into(),
+            pid: 1,
+            bounds: Rect {
+                x: 10,
+                y: 10,
+                width: 100,
+                height: 60,
+            },
+            display: None,
+            scale_factor: 1.0,
+            minimized: false,
+            own: false,
+        }])
     }
     fn take(&self, t: &CaptureTarget) -> Result<Shot, String> {
         let (w, h) = match t {
@@ -1018,8 +1033,9 @@ fn recording_through_the_app() {
     use std::sync::{Arc, Mutex};
     let mut e = env("rec", true);
     let cfg = znimok_ipc::Config {
-        suffix: Some(format!("rec{}", std::process::id())),
-        dir: Some(e.dir.join("ipc-rec")),
+        suffix: Some(format!("r{}", std::process::id())),
+        // Short: the path of a Unix socket has a small limit, and macOS temp folders are long.
+        dir: Some(std::env::temp_dir().join(format!("zkr{}", std::process::id()))),
         ..Default::default()
     };
     e.agent.gui = Gui::with_config(cfg.clone());
@@ -1114,5 +1130,74 @@ fn recording_through_the_app() {
         "record_status",
     ] {
         assert!(tools.iter().any(|t| t["name"] == n), "{n}");
+    }
+}
+
+/// ZK-238: the window in front, a document opened / copied through the app, the app's state.
+#[test]
+fn active_window_and_the_app() {
+    let mut e = env("apptools", true);
+    let cfg = znimok_ipc::Config {
+        suffix: Some(format!("a{}", std::process::id())),
+        // Short: the path of a Unix socket has a small limit, and macOS temp folders are long.
+        dir: Some(std::env::temp_dir().join(format!("zka{}", std::process::id()))),
+        ..Default::default()
+    };
+    e.agent.gui = Gui::with_config(cfg.clone());
+    e.agent
+        .perms
+        .grant("T", Scope::Capture, Grant::Always)
+        .unwrap();
+    e.agent
+        .perms
+        .grant("T", Scope::LibraryRead, Grant::Always)
+        .unwrap();
+
+    let out = e.agent.call("T", "capture_active_window", &json!({}));
+    assert!(!out.is_error, "{:?}", out.content);
+    let shot = out.structured.unwrap();
+    assert!(shot["window"]["title"].is_string(), "{shot}");
+    let id = shot["id"].as_str().unwrap().to_string();
+
+    // No app: the state says so, the others are refused.
+    let st = e
+        .agent
+        .call("T", "app_state", &json!({}))
+        .structured
+        .unwrap();
+    assert_eq!(st["running"], false);
+    assert!(
+        e.agent
+            .call("T", "open_in_editor", &json!({"document": id}))
+            .is_error
+    );
+
+    let seen: std::sync::Arc<std::sync::Mutex<Vec<Value>>> = Default::default();
+    let seen2 = seen.clone();
+    let _s = znimok_ipc::Server::start(cfg, move |m: &str, p: Value| match m {
+        "agents.activity" => Ok(Value::Null),
+        "app.state" => Ok(json!({"page": "editor"})),
+        "agents.app" => {
+            seen2.lock().unwrap().push(p.clone());
+            Ok(json!({"ok": p["op"]}))
+        }
+        _ => Err(znimok_ipc::RpcError::method_not_found(m)),
+    })
+    .unwrap();
+    let st = e
+        .agent
+        .call("T", "app_state", &json!({}))
+        .structured
+        .unwrap();
+    assert_eq!(
+        (st["running"].clone(), st["page"].clone()),
+        (json!(true), json!("editor"))
+    );
+    for (tool, op) in [("open_in_editor", "open"), ("copy_to_clipboard", "copy")] {
+        let out = e.agent.call("T", tool, &json!({"document": id}));
+        assert!(!out.is_error, "{tool}: {:?}", out.content);
+        let sent = seen.lock().unwrap().last().cloned().unwrap();
+        assert_eq!(sent["op"], op);
+        assert!(sent["path"].as_str().unwrap().ends_with(".znimok"));
     }
 }
