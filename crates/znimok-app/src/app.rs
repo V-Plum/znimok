@@ -11866,6 +11866,9 @@ fn s_bars(a: &App, x: i32, y: i32) -> Option<(ObjectId, crate::video::Grip, (i64
 
 /// The words of the report's viewer (ZK-98), by their keys.
 const REPORT_STRINGS: &[&str] = &[
+    "report-chip-clicks",
+    "report-click",
+    "report-keys",
     "devp-search",
     "devp-empty",
     "devp-chip-all",

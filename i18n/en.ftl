@@ -5645,6 +5645,21 @@ report-foot = Made with Znimok { $version }
 # @max: 80
 report-no-log = This recording has no browser log.
 
+# @where: Report page (the browser's viewer): the chip that filters the clicks of the recording
+# @kind: label
+# @max: 12
+report-chip-clicks = Clicks
+
+# @where: Report page: the kind column of a click row
+# @kind: label
+# @max: 12
+report-click = Click
+
+# @where: Report page: the line under the strip with the keyboard keys
+# @kind: body
+# @max: 100
+report-keys = Space — play / pause · N / P — the next / previous event · E — the next error
+
 # @where: Toast: a .zreport could not be opened; $reason why
 # @kind: body
 # @max: 120
