@@ -3758,6 +3758,13 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
         // ZK-98: the developer report in the export sheet — the card on, the two forms, hiding as
         // Settings say (ask: the sheet's switch).
         ui.invoke_export();
+        // ZK-226: with the log, the HTML card says the page carries it.
+        let html_sub = ui.get_exp_cards().row_data(2).map(|c| c.sub.to_string());
+        r.check(
+            "HTML card: a recording with the log exports the page with it (ZK-226)",
+            html_sub.as_deref() == Some("одна сторінка з логом"),
+            format!("{html_sub:?}"),
+        );
         ui.invoke_exp_set("format".into(), 4);
         let card = ui.get_exp_cards().row_data(4).map(|c| c.enabled);
         let before_zip = ui.get_vexp_zreport();

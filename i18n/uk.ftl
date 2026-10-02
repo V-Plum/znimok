@@ -5234,6 +5234,21 @@ vexp-html-sub = одна сторінка
 # @max: 90
 vexp-html-desc = Відео з позначками живим шаром; відкривається в будь-якому браузері.
 
+# @where: Export sheet, the HTML card's subtitle when the recording has the browser's log (ZK-226)
+# @kind: label
+# @max: 28
+vexp-html-sub-log = одна сторінка з логом
+
+# @where: Export sheet, the HTML card's description when the recording has the browser's log
+# @kind: body
+# @max: 90
+vexp-html-desc-log = Відео, позначки й лог DevTools на одній сторінці; відкривається в будь-якому браузері.
+
+# @where: Export sheet, under the HTML card when the recording has the browser's log
+# @kind: body
+# @max: 160
+vexp-html-log-note = Сторінка несе лог DevTools браузера поруч із відео, як і звіт; чутливе приховується, як вибрано нижче.
+
 # @where: Video export sheet: the frame-as-screenshot card
 # @kind: body
 # @max: 90

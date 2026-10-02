@@ -8111,8 +8111,16 @@ impl App {
             ),
             card(
                 "vexp-html",
-                self.tr.tr("vexp-html-sub"),
-                "vexp-html-desc",
+                self.tr.tr(if self.has_devlog() {
+                    "vexp-html-sub-log"
+                } else {
+                    "vexp-html-sub"
+                }),
+                if self.has_devlog() {
+                    "vexp-html-desc-log"
+                } else {
+                    "vexp-html-desc"
+                },
                 est(2),
                 !mac_mp4,
             ),
@@ -8341,6 +8349,14 @@ impl App {
         });
     }
 
+    /// Whether the open recording has the browser's DevTools log.
+    fn has_devlog(&self) -> bool {
+        self.s
+            .as_ref()
+            .and_then(|s| s.video.as_ref())
+            .is_some_and(|v| v.video.devlog.is_some())
+    }
+
     /// The report's estimate, from the MP4's: the page's video, the log as JSON (twice in a
     /// .zreport: the page and log.json), the viewer. On its own so the .zreport switch leaves
     /// the GIF's estimate alone (ZK-216).
@@ -8382,8 +8398,16 @@ impl App {
             (f64::from(bits) / 8.0 * secs + 20_000.0 * secs) as u64
         };
         let marks = s.ed.doc.objects.iter().filter(|o| !o.hidden).count() as u64;
+        // The HTML page carries the log when there is one (ZK-226).
+        let log: u64 = part.video.devlog.as_ref().map_or(0, |l| {
+            l.events.iter().map(|e| e.json.len() as u64 + 16).sum()
+        });
         self.vexp_sizes[0] = Some(mp4);
-        self.vexp_sizes[2] = Some(mp4 * 4 / 3 + 40_000 * marks + 4_000);
+        self.vexp_sizes[2] = Some(if part.video.devlog.is_some() {
+            mp4 * 4 / 3 + 40_000 * marks + log + 40_000
+        } else {
+            mp4 * 4 / 3 + 40_000 * marks + 4_000
+        });
         self.vexport_report_size();
         self.vexp_sizes[1] = None;
         self.vexp_serial += 1;
@@ -8524,7 +8548,18 @@ impl App {
         if self.vexp_run.is_some() {
             return;
         }
-        let Some(kind) = p.engine_kind(true).or_else(|| self.report_kind(p)) else {
+        // ZK-226: a recording with the browser's log exports its HTML page with the log in it —
+        // the report's one page (the owner looked for the log in the plain page).
+        let kind = if p.kind == HTML && self.has_devlog() {
+            self.report_kind(&VidExport {
+                kind: REPORT,
+                zreport: false,
+                ..p.clone()
+            })
+        } else {
+            p.engine_kind(true).or_else(|| self.report_kind(p))
+        };
+        let Some(kind) = kind else {
             return;
         };
         let (Some(job), Some(gpu)) = (self.vexport_job(kind, dest.clone()), self.vexport_gpu())
