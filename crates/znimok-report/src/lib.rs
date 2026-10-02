@@ -35,6 +35,8 @@ pub struct Meta {
     pub masked: String,
     /// The footer: «Made with Znimok 0.0.3».
     pub foot: String,
+    /// Whose it is, before the footer: «© 2026 Acme. Confidential.» (ZK-245), or empty.
+    pub rights: String,
     /// The exported video's size.
     pub width: u32,
     pub height: u32,
@@ -120,6 +122,7 @@ pub fn page(
             "rows": meta.rows.iter().map(|(k, v)| json!([k, v])).collect::<Vec<_>>(),
             "masked": meta.masked,
             "foot": meta.foot,
+            "rights": meta.rights,
         },
         "strings": strings,
         "events": events,
@@ -139,6 +142,7 @@ pub fn page(
             "VIDEO" => out.push_str(&video_src),
             "LAYERS" => out.push_str(layers),
             "VW" => out.push_str(&meta.width.max(320).to_string()),
+            "VH" => out.push_str(&meta.height.max(180).to_string()),
             "DATA" => out.push_str(&script_json(&data)),
             other => {
                 out.push_str("{{");
@@ -182,6 +186,7 @@ pub fn write_zreport(
         "audio": meta.audio,
         "rows": meta.rows.iter().map(|(k, v)| json!([k, v])).collect::<Vec<_>>(),
         "masked": meta.masked,
+        "rights": meta.rights,
     }))
     .unwrap_or_default();
     let mut files: Vec<(&str, &[u8])> = vec![

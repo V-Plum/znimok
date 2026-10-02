@@ -11866,6 +11866,13 @@ fn s_bars(a: &App, x: i32, y: i32) -> Option<(ObjectId, crate::video::Grip, (i64
 
 /// The words of the report's viewer (ZK-98), by their keys.
 const REPORT_STRINGS: &[&str] = &[
+    "report-tab-details",
+    "report-pick",
+    "report-copy",
+    "report-h-type",
+    "report-h-size",
+    "report-h-source",
+    "report-h-title",
     "report-chip-clicks",
     "report-click",
     "report-keys",
