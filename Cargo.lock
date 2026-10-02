@@ -6788,6 +6788,7 @@ dependencies = [
  "schemars",
  "serde",
  "serde_json",
+ "uuid",
  "znimok-codes",
  "znimok-core",
  "znimok-format",

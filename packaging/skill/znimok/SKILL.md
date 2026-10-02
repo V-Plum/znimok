@@ -8,7 +8,8 @@ description: Take and annotate screenshots with Znimok (MCP server `znimok mcp`)
 Znimok runs on the user's computer. Its MCP tools are `list_displays`, `list_windows`,
 `capture_screen`, `capture_window`, `capture_region`, `list_marks`, `add_marks`, `update_marks`,
 `delete_marks`, `crop`, `rotate`, `resize`, `tone`, `annotate`, `export`, `library_search`,
-`library_get`, `ocr`, `read_codes`, `redact_pii`. Full reference: `docs/AGENTS.md` in the Znimok repository.
+`library_get`, `library_tags`, `set_meta`, `library_import`, `library_duplicate`, `library_trash`,
+`library_restore`, `library_delete`, `ocr`, `read_codes`, `redact_pii`. Full reference: `docs/AGENTS.md` in the Znimok repository.
 
 ## Before the first call
 
@@ -42,6 +43,9 @@ read back — `blur` for faces). Crop: `{"cmd":"set_crop","rect":{…}}`. The fu
 `znimok schema command`.
 
 ## Don'ts
+
+- Do not delete for good: `library_trash` is undone with `library_restore`; `library_delete` asks
+  the user every time and is refused when Znimok is not running.
 
 - Do not capture repeatedly "to check" — each capture is logged and the user sees an indicator.
 - Do not export into folders the user did not name; without `path` Znimok uses its export folder.
