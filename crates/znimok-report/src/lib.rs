@@ -67,11 +67,13 @@ pub fn log_events(log: &DevLog, at_of: impl Fn(i32) -> Option<f64>) -> Vec<Value
         .collect()
 }
 
-/// The JSON for a `<script type="application/json">`: no `</` that could close it.
+/// The JSON for a `<script type="application/json">`: no `</` or `<!--` that could close it
+/// — spelled with JSON's own escapes (`<\!--` was not one, ZK-228: `JSON.parse` threw and the
+/// page showed the video alone whenever the log held an HTML comment).
 fn script_json(v: &Value) -> String {
     v.to_string()
         .replace("</", "<\\/")
-        .replace("<!--", "<\\!--")
+        .replace("<!--", "<\\u0021--")
 }
 
 fn esc(s: &str) -> String {
@@ -310,6 +312,36 @@ mod tests {
         assert!(data.contains(r"<\/script><b>x<\/b>"));
         let parsed: Value = serde_json::from_str(&data["id=\"zn-data\">".len()..]).unwrap();
         assert_eq!(parsed["events"].as_array().unwrap().len(), 4);
+    }
+
+    /// ZK-228: a log with an HTML comment in it (Google Tag Manager's page source in a console
+    /// line) must still parse — `<\!--` was not a JSON escape and killed the viewer.
+    #[test]
+    fn html_comments_in_the_log_do_not_break_the_page() {
+        let ev = vec![serde_json::json!({
+            "at": 0.5, "k": "console", "lvl": "log",
+            "text": "<script>x</script>\n<!-- Google Tag Manager -->\n<!-- End -->"
+        })];
+        let meta = Meta {
+            title: "Звіт".into(),
+            width: 640,
+            ..Default::default()
+        };
+        let html = page(
+            &meta,
+            &BTreeMap::new(),
+            &ev,
+            VideoSrc::File("v.mp4".into()),
+            "",
+        );
+        let data = &html[html.find("id=\"zn-data\">").unwrap() + "id=\"zn-data\">".len()..];
+        let data = &data[..data.find("</script>").unwrap()];
+        assert!(!data.contains("<!--") && !data.contains("</s"));
+        let parsed: Value = serde_json::from_str(data).expect("the embedded JSON parses");
+        assert_eq!(
+            parsed["events"][0]["text"].as_str().unwrap(),
+            "<script>x</script>\n<!-- Google Tag Manager -->\n<!-- End -->"
+        );
     }
 
     #[test]
