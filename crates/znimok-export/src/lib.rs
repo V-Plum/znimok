@@ -916,20 +916,33 @@ fn report(
         frame,
         out,
     } = parts(job, gpu, progress, part)?;
+    // A moment of the recording on the exported time line (the cuts taken out).
+    let at_of = |ms: i32| {
+        let t = f64::from(ms) / 1000.0;
+        let f = (t * fps).floor() as i64;
+        out_intervals(&keep, f, f + 1, fps)
+            .first()
+            .map(|(a, _)| a + (t - f as f64 / fps).max(0.0))
+    };
     let mut events = job
         .video
         .devlog
         .as_ref()
-        .map(|log| {
-            znimok_report::log_events(log, |ms| {
-                let t = f64::from(ms) / 1000.0;
-                let f = (t * fps).floor() as i64;
-                out_intervals(&keep, f, f + 1, fps)
-                    .first()
-                    .map(|(a, _)| a + (t - f as f64 / fps).max(0.0))
-            })
-        })
+        .map(|log| znimok_report::log_events(log, at_of))
         .unwrap_or_default();
+    // The clicks (ZK-228, as Little Helpers' report had them): a row and a dot on the strip each.
+    for m in &job.video.mouse {
+        if !m.down || m.button == znimok_format::video::MouseButton::Move {
+            continue;
+        }
+        if let Some(at) = at_of(m.ms) {
+            events.push(serde_json::json!({"at": at, "k": "click", "x": m.x, "y": m.y, "s": 0}));
+        }
+    }
+    events.sort_by(|a, b| {
+        let t = |e: &serde_json::Value| e["at"].as_f64().unwrap_or(0.0);
+        t(a).partial_cmp(&t(b)).unwrap_or(std::cmp::Ordering::Equal)
+    });
     let hidden = o.mask.as_ref().map(|keys| {
         znimok_report::mask::events(&mut events, &znimok_report::mask::Rules::new(keys))
     });

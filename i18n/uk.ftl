@@ -3187,6 +3187,11 @@ rec-microphone = Мікрофон
 # @max: 40
 rec-cursor-clicks = Курсор і підсвітка кліків
 
+# @where: Settings → Recording: the switch — a finished recording opens in the editor (off: only the card after it)
+# @kind: label
+# @max: 44
+rec-open-editor = Після запису відкривати редактор
+
 # @where: Row
 # @kind: label
 # @max: 40
@@ -5685,6 +5690,21 @@ report-foot = Зроблено в Znimok { $version }
 # @kind: body
 # @max: 80
 report-no-log = У цього запису немає логу браузера.
+
+# @where: Report page (the browser's viewer): the chip that filters the clicks of the recording
+# @kind: label
+# @max: 12
+report-chip-clicks = Кліки
+
+# @where: Report page: the kind column of a click row
+# @kind: label
+# @max: 12
+report-click = Клік
+
+# @where: Report page: the line under the strip with the keyboard keys
+# @kind: body
+# @max: 100
+report-keys = Пробіл — пуск/пауза · N / P — наступна/попередня подія · E — наступна помилка
 
 # @where: Toast: a .zreport could not be opened; $reason why
 # @kind: body
