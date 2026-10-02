@@ -282,6 +282,7 @@ pub fn list() -> Vec<Value> {
                 "annotations": {
                     "title": t.title,
                     "readOnlyHint": t.read_only,
+                    "idempotentHint": t.read_only,
                     "destructiveHint": crate::edit::destructive(t.name) || crate::libtools::destructive(t.name),
                     "openWorldHint": false
                 }

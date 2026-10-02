@@ -123,6 +123,18 @@ The same commands the app uses (`crates/znimok-core/schema/`). Frequent ones:
 {"cmd": "set_crop", "rect": {"x": 0, "y": 0, "w": 800, "h": 600}}
 ```
 
+## Prompts
+
+`prompts/list` offers ready scenarios (the client shows them as commands); each is a short plan
+over the tools above:
+
+| Prompt | Arguments | What it does |
+|---|---|---|
+| `bug_report` | `problem`, `window?` | capture, hide what is private, mark the problem, name and tag it, export a PNG |
+| `document_screen` | `app` | capture a window, number its controls with counters, write the legend, export HTML |
+| `redact_before_sharing` | `document?` | show what would be hidden, hide it, export |
+| `read_recording` | `document?` | read a recording's DevTools log and say what failed and when |
+
 ## Scenarios
 
 **Document a settings screen.** `list_windows` → `capture_window` the app → `ocr` to find the
