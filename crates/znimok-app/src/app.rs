@@ -1453,6 +1453,9 @@ impl App {
             znimok_settings::HideOnExport::Never => 2,
         });
         ui.set_pref_rec_hide_keys(p.video.hide_keys.join(", ").into());
+        ui.set_pref_rec_sign_name(p.video.sign_name.clone().into());
+        ui.set_pref_rec_sign_contact(p.video.sign_contact.clone().into());
+        ui.set_pref_rec_sign_rights(p.video.sign_rights.clone().into());
         ui.set_pref_shot_prefix(p.library.shot_prefix.clone().into());
         ui.set_pref_video_prefix(p.library.video_prefix.clone().into());
         let hosts = crate::devlog::hub().hosts();
@@ -1498,6 +1501,16 @@ impl App {
         if key == "video-prefix" {
             let t = text.trim().to_string();
             self.save_prefs(ui, |p| p.library.video_prefix = t);
+            return;
+        }
+        // The report's signature (ZK-245).
+        if let Some(field) = key.strip_prefix("rec-sign-") {
+            let t = text.trim().to_string();
+            self.save_prefs(ui, |p| match field {
+                "name" => p.video.sign_name = t,
+                "contact" => p.video.sign_contact = t,
+                _ => p.video.sign_rights = t,
+            });
             return;
         }
         if key == "rec-hide-keys" {
@@ -8179,6 +8192,15 @@ impl App {
             .is_some_and(|v| v.video.devlog.is_some());
         ui.set_vexp_zreport(p.zreport);
         ui.set_vexp_has_log(has_log);
+        // ZK-245: the page's language and the signature.
+        let video = self.prefs().video;
+        ui.set_vexp_lang(i32::from(self.report_lang(&video) != "uk"));
+        ui.set_vexp_has_sign(
+            !(video.sign_name.is_empty()
+                && video.sign_contact.is_empty()
+                && video.sign_rights.is_empty()),
+        );
+        ui.set_vexp_sign(video.report_sign);
         ui.set_vexp_hide_mode(match hide_mode {
             znimok_settings::HideOnExport::Ask => 0,
             znimok_settings::HideOnExport::Always => 1,
@@ -8244,7 +8266,16 @@ impl App {
 
     /// The report's options (ZK-98): the hiding as Settings and the sheet say, the header's facts,
     /// the viewer's words.
-    fn report_kind(&self, p: &crate::vexport::VidExport) -> Option<znimok_export::Kind> {
+    /// The language of a report page: the one chosen on the export sheet, else the interface's.
+    fn report_lang(&self, video: &znimok_settings::Video) -> &'static str {
+        match video.report_lang.as_str() {
+            "uk" => "uk",
+            "en" => "en",
+            _ => self.tr.lang(),
+        }
+    }
+
+    pub(crate) fn report_kind(&self, p: &crate::vexport::VidExport) -> Option<znimok_export::Kind> {
         if p.kind != crate::vexport::REPORT {
             return None;
         }
@@ -8256,12 +8287,35 @@ impl App {
             znimok_settings::HideOnExport::Never => false,
             znimok_settings::HideOnExport::Ask => p.hide,
         };
+        // The page speaks the language chosen for it, not the interface's (ZK-245).
+        let own;
+        let tr: &Localizer = if self.report_lang(&prefs.video) == self.tr.lang() {
+            &self.tr
+        } else {
+            own = Localizer::new(self.report_lang(&prefs.video));
+            &own
+        };
         let mut rows = Vec::new();
+        // Who recorded it and whose it is — when the person signs their reports.
+        let v = &prefs.video;
+        let by = [v.sign_name.as_str(), v.sign_contact.as_str()]
+            .into_iter()
+            .filter(|s| !s.is_empty())
+            .collect::<Vec<_>>()
+            .join(", ");
+        if v.report_sign && !by.is_empty() {
+            rows.push((tr.tr("report-author"), by));
+        }
+        let rights = if v.report_sign {
+            v.sign_rights.clone()
+        } else {
+            String::new()
+        };
         if s.ed.doc.meta.created_ms > 0
             && let Some(t) = chrono::DateTime::from_timestamp_millis(s.ed.doc.meta.created_ms)
         {
             rows.push((
-                self.tr.tr("report-recorded"),
+                tr.tr("report-recorded"),
                 t.with_timezone(&chrono::Local)
                     .format("%d.%m.%Y %H:%M")
                     .to_string(),
@@ -8269,12 +8323,12 @@ impl App {
         }
         if let Some(v) = s.vid.as_ref() {
             rows.push((
-                self.tr.tr("report-length"),
+                tr.tr("report-length"),
                 crate::video::fmt_time(v.kept() as f64 / v.fps.max(1e-6)),
             ));
         }
         let (_, out) = znimok_export::out_geometry(&s.ed.doc, &part.video);
-        rows.push((self.tr.tr("report-size"), format!("{} × {}", out.0, out.1)));
+        rows.push((tr.tr("report-size"), format!("{} × {}", out.0, out.1)));
         // Where it was recorded: the browser and the page the log starts on.
         let events: Vec<serde_json::Value> = part
             .video
@@ -8289,23 +8343,22 @@ impl App {
             })
             .unwrap_or_default();
         if let Some(b) = events.iter().find_map(|e| e["b"].as_str()) {
-            rows.push((self.tr.tr("report-browser"), b.to_string()));
+            rows.push((tr.tr("report-browser"), b.to_string()));
         }
         if let Some(u) = events
             .iter()
             .find(|e| e["k"] == "tab" || e["k"] == "nav")
             .and_then(|e| e["url"].as_str())
         {
-            rows.push((self.tr.tr("report-page"), u.to_string()));
+            rows.push((tr.tr("report-page"), u.to_string()));
         }
         let mut strings = std::collections::BTreeMap::new();
         for k in REPORT_STRINGS {
-            strings.insert(k.to_string(), self.tr.tr(k));
+            strings.insert(k.to_string(), tr.tr(k));
         }
         strings.insert(
             "devp-binary".into(),
-            self.tr
-                .tr_args("devp-binary", &args(&[("size", "{size}".to_string())])),
+            tr.tr_args("devp-binary", &args(&[("size", "{size}".to_string())])),
         );
         Some(znimok_export::Kind::Report(Box::new(
             znimok_export::ReportOptions {
@@ -8314,13 +8367,12 @@ impl App {
                 meta: znimok_report::Meta {
                     title: s.ed.doc.name.clone(),
                     rows,
-                    masked: self
-                        .tr
-                        .tr_args("report-masked", &args(&[("n", "{n}".to_string())])),
-                    foot: self.tr.tr_args(
+                    masked: tr.tr_args("report-masked", &args(&[("n", "{n}".to_string())])),
+                    foot: tr.tr_args(
                         "report-foot",
                         &args(&[("version", env!("CARGO_PKG_VERSION").to_string())]),
                     ),
+                    rights,
                     ..Default::default()
                 },
                 strings,
@@ -8472,6 +8524,11 @@ impl App {
                 self.vexport_report_size();
             }
             "rhide" => self.vexp.hide = v != 0,
+            "rsign" => self.save_prefs(ui, |p| p.video.report_sign = v != 0),
+            "rlang" => {
+                let lang = if v == 0 { "uk" } else { "en" };
+                self.save_prefs(ui, |p| p.video.report_lang = lang.into());
+            }
             _ => return,
         }
         // Only an MP4 goes to the library; the others fall back to a file.

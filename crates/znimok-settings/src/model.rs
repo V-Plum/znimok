@@ -487,6 +487,16 @@ pub struct Video {
     pub hide_on_export: HideOnExport,
     /// The keys whose values are hidden: headers, JSON keys, form fields, dataLayer keys.
     pub hide_keys: Vec<String>,
+    /// The report's signature (ZK-245): who made the recording — a name and a contact, shown in
+    /// the page's header («Recorded by: …»).
+    pub sign_name: String,
+    pub sign_contact: String,
+    /// Whose what the recording shows is — a line in the page's footer.
+    pub sign_rights: String,
+    /// The export sheet's switch: the report carries the signature.
+    pub report_sign: bool,
+    /// The language of the report page; empty = the interface's.
+    pub report_lang: String,
 }
 
 /// What the export sheet does about sensitive values of the log.
@@ -537,6 +547,11 @@ impl Default for Video {
             extension_control: true,
             hide_on_export: HideOnExport::Ask,
             hide_keys: HIDE_KEYS.iter().map(|k| k.to_string()).collect(),
+            sign_name: String::new(),
+            sign_contact: String::new(),
+            sign_rights: String::new(),
+            report_sign: true,
+            report_lang: String::new(),
         }
     }
 }
