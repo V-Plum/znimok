@@ -10899,9 +10899,21 @@ impl App {
     /// The DevTools log (ZK-191): the lane's ticks, the panel's chips and rows, the row at the
     /// playhead. The rows and ticks go to the window only when they change.
     fn sync_devpanel(&mut self, ui: &AppWindow) {
-        let Some(v) = self.s.as_mut().and_then(|s| s.vid.as_mut()) else {
-            return;
-        };
+        let Some(s) = self.s.as_mut() else { return };
+        // The clicks of the recording (MOUS), as dots on the lane (ZK-229).
+        let clicks: Vec<i32> = s
+            .video
+            .as_ref()
+            .map(|p| {
+                p.video
+                    .mouse
+                    .iter()
+                    .filter(|m| m.down && m.button != znimok_format::video::MouseButton::Move)
+                    .map(|m| m.ms)
+                    .collect()
+            })
+            .unwrap_or_default();
+        let Some(v) = s.vid.as_mut() else { return };
         let ms_now = ((v.frame as f64 + 0.5) / v.fps.max(1e-6) * 1000.0) as i32;
         let key = (v.view.off.to_bits(), v.view.zoom.to_bits(), v.view.width);
         let view = &v.view;
@@ -10914,11 +10926,24 @@ impl App {
         ui.set_devp_follow(v.playing);
         if p.tick_key != Some(key) {
             p.tick_key = Some(key);
-            let ticks: Vec<crate::DevTick> = p
+            let mut ticks: Vec<crate::DevTick> = p
                 .ticks(|ms| view.time_to_x(ms as f64 / 1000.0), view.width)
                 .into_iter()
                 .map(|(x, cls)| crate::DevTick { x: x as f32, cls })
                 .collect();
+            // The clicks, class 5: a dot each, where it fits on the track.
+            let mut last = i32::MIN;
+            for ms in &clicks {
+                let x = view.time_to_x(*ms as f64 / 1000.0);
+                if x < -3 || x > view.width + 3 || x - last < 3 {
+                    continue;
+                }
+                last = x;
+                ticks.push(crate::DevTick {
+                    x: x as f32,
+                    cls: 5,
+                });
+            }
             ui.set_devp_ticks(std::rc::Rc::new(VecModel::from(ticks)).into());
         }
         if p.rows_dirty {
