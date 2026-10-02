@@ -1014,6 +1014,8 @@ impl App {
                                 Scope::LibraryRead => "agents-scope-library",
                                 Scope::LibraryWrite => "agents-scope-marks",
                                 Scope::Settings => "agents-scope-settings",
+                                Scope::Record => "agents-scope-record",
+                                Scope::RecordAudio => "agents-scope-sound",
                             })
                         })
                         .collect::<Vec<_>>()

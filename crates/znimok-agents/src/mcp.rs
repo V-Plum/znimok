@@ -20,17 +20,27 @@ const META_VERSION: &str = "io.modelcontextprotocol/protocolVersion";
 const META_CLIENT: &str = "io.modelcontextprotocol/clientInfo";
 const META_SERVER: &str = "io.modelcontextprotocol/serverInfo";
 
-const INSTRUCTIONS: &str = "Znimok takes screenshots, annotates them and keeps them in a local library. \
+const INSTRUCTIONS: &str = "Znimok takes screenshots and screen recordings, edits them and keeps them in a local library. \
 Capture with capture_screen / capture_window / capture_region (each saves a library document and \
-returns its id), mark things up with annotate, hide secrets with redact_pii, read text with ocr, \
-and hand results over with export. The person approves access the first time (per client and scope).";
+returns its id). Edit with add_marks / update_marks / delete_marks (list_marks gives the ids), crop, \
+rotate, resize, tone; name and tag with set_meta; hide secrets with redact_pii; read text with ocr \
+and find_text, codes with read_codes. Find documents with library_search (kind, tags, pinned, with a \
+browser log); bring files in with library_import, copy with library_duplicate, remove with \
+library_trash (library_restore undoes it). Record the screen with record_start … record_stop (Znimok must be running; sound only when \
+the person asked for it). Read a recording with video_info, devlog_summary and \
+devlog_get. Hand results over with export. The prompts are ready scenarios. The person approves \
+access the first time (per client and scope); deleting for good is confirmed every time.";
 
 fn server_info() -> Value {
     json!({"name": "znimok", "title": "Znimok", "version": env!("CARGO_PKG_VERSION")})
 }
 
 fn capabilities() -> Value {
-    json!({"tools": {"listChanged": false}, "resources": {"listChanged": false}})
+    json!({
+        "tools": {"listChanged": false},
+        "resources": {"listChanged": false},
+        "prompts": {"listChanged": false}
+    })
 }
 
 /// Protocol state of one stdio process.
@@ -185,6 +195,19 @@ impl<'a> Server<'a> {
                     r["structuredContent"] = s;
                 }
                 self.ok(id, modern, r)
+            }
+            // Ready scenarios (ZK-236): no permission — they are text, the tools ask.
+            "prompts/list" => self.ok(
+                id,
+                modern,
+                cacheable(json!({"prompts": crate::prompts::list()}), modern),
+            ),
+            "prompts/get" => {
+                let name = params["name"].as_str().unwrap_or("");
+                match crate::prompts::get(name, params.get("arguments")) {
+                    Some(p) => self.ok(id, modern, p),
+                    None => err(id, -32602, "Prompt not found", Some(json!({"name": name}))),
+                }
             }
             "resources/list" => match self.agent.resources(&client) {
                 Ok(list) => self.ok(id, modern, cacheable(json!({"resources": list}), modern)),

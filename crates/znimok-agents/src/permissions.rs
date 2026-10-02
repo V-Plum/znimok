@@ -26,14 +26,20 @@ pub enum Scope {
     LibraryWrite,
     /// Reading or changing Znimok's settings.
     Settings,
+    /// Recording the screen as video (ZK-237) — also unattended, for as long as it is allowed.
+    Record,
+    /// The computer's sound and the microphone in a recording: asked for on its own.
+    RecordAudio,
 }
 
 impl Scope {
-    pub const ALL: [Scope; 4] = [
+    pub const ALL: [Scope; 6] = [
         Scope::Capture,
         Scope::LibraryRead,
         Scope::LibraryWrite,
         Scope::Settings,
+        Scope::Record,
+        Scope::RecordAudio,
     ];
 
     pub fn name(self) -> &'static str {
@@ -42,6 +48,8 @@ impl Scope {
             Self::LibraryRead => "library_read",
             Self::LibraryWrite => "library_write",
             Self::Settings => "settings",
+            Self::Record => "record",
+            Self::RecordAudio => "record_audio",
         }
     }
 

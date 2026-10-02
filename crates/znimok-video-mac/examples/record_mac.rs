@@ -1,5 +1,5 @@
 //! A recording of the main display for a few seconds (needs «Screen Recording» for the process
-//! that runs it): `cargo run -p znimok-video-mac --example record -- out.mp4 [seconds] [--sound]`.
+//! that runs it): `cargo run -p znimok-video-mac --example record_mac -- out.mp4 [seconds] [--sound]`.
 
 #[cfg(target_os = "macos")]
 fn main() {
