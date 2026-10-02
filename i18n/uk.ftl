@@ -3187,6 +3187,11 @@ rec-microphone = Мікрофон
 # @max: 40
 rec-cursor-clicks = Курсор і підсвітка кліків
 
+# @where: Settings → Recording: the switch — a finished recording opens in the editor (off: only the card after it)
+# @kind: label
+# @max: 44
+rec-open-editor = Після запису відкривати редактор
+
 # @where: Row
 # @kind: label
 # @max: 40

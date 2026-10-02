@@ -472,6 +472,8 @@ pub struct Video {
     pub quality: Quality,
     /// A window chosen by click is followed as it moves (else the region stays put).
     pub follow_window: bool,
+    /// A finished recording opens in the editor (ZK-231); off = the card alone, as before.
+    pub open_editor: bool,
     pub cursor: bool,
     pub clicks: bool,
     pub click_color: ClickColor,
@@ -526,6 +528,7 @@ impl Default for Video {
             fps: 30,
             quality: Quality::Normal,
             follow_window: true,
+            open_editor: true,
             cursor: true,
             clicks: true,
             click_color: ClickColor::Yellow,

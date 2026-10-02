@@ -2228,6 +2228,7 @@ export component AppWindow inherits Window {
     in property <int> pref-rec-fps: 30;
     in property <int> pref-rec-quality: 1;
     in property <bool> pref-rec-follow: true;
+    in property <bool> pref-rec-open-editor: true;
     in property <int> pref-rec-sound;
     // Devices of the sound choice (ZK-189): the default first, then the active ones.
     in property <[string]> rec-sys-devices: ["—"];
@@ -3101,6 +3102,7 @@ export component AppWindow inherits Window {
                                 if root.pref-rec-sound == 2 || root.pref-rec-sound == 3: DeviceRow { label: @tr("rec-microphone" => "Microphone"); names: root.rec-mic-devices; current: root.rec-mic-device; picked(i) => { root.setting("rec-mic-device", i); } }
                                 Text { text: @tr("rec-sound-tracks" => "Each source is a track of its own: in the editor it can be muted or made quieter. The system sound is what this computer plays; the microphone needs Windows' permission (Privacy → Microphone)."); color: Theme.text3; font-size: 11px; wrap: word-wrap; }
                                 SwitchRow { text: @tr("rec-cursor-clicks" => "Cursor and click highlight"); checked: root.pref-rec-cursor; toggled => { root.setting("rec-cursor", self.checked ? 1 : 0); } }
+                                SwitchRow { text: @tr("rec-open-editor" => "Open the editor when a recording ends"); checked: root.pref-rec-open-editor; toggled => { root.setting("rec-open-editor", self.checked ? 1 : 0); } }
                                 Text { text: @tr("rec-cursor-hint" => "The pointer is drawn into the video, a click is a spreading ring and a held button a steady one; clicks on the recording bar are not recorded. The clicks are also kept as a log in the document."); color: Theme.text3; font-size: 11px; wrap: word-wrap; }
                                 // ZK-97: the browser's DevTools log of a recording.
                                 Rectangle { height: 1px; background: Theme.line; }
