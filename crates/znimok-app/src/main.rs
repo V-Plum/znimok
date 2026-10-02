@@ -94,6 +94,11 @@ fn with_lib_dir() -> Option<PathBuf> {
     out
 }
 
+thread_local! {
+    /// The timer that keeps looking for the updater's note after an update (ZK-225).
+    static UPDATE_POLL: RefCell<Option<slint::Timer>> = const { RefCell::new(None) };
+}
+
 /// Runs `f` on the library window.
 fn with_ctx(f: impl FnOnce(&mut App, &AppWindow)) {
     CTX.with(|c| {
@@ -442,27 +447,27 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             // macOS: Sparkle from the bundle, when it is there (ZK-143).
             #[cfg(target_os = "macos")]
             update::mac::init();
-            if let Some(outcome) = update::take_outcome() {
-                with_ctx(|a, ui| {
-                    use znimok_update::apply::Outcome;
-                    let f = |k: &str, pairs: &[(&'static str, String)]| {
-                        a.tr.tr_args(k, &crate::app::fargs(pairs))
-                    };
-                    let text = match outcome {
-                        Outcome::Installed { version } => {
-                            f("upd-outcome-installed", &[("version", version)])
+            // ZK-225: the updater writes its note only after this version has come up (it
+            // waits for that before it decides between «installed» and a rollback), so the
+            // first start after an update keeps looking for the note for a while.
+            if !update::show_outcome() {
+                let mut left = 90;
+                let timer = slint::Timer::default();
+                timer.start(
+                    slint::TimerMode::Repeated,
+                    Duration::from_secs(2),
+                    move || {
+                        left -= 1;
+                        if update::show_outcome() || left == 0 {
+                            UPDATE_POLL.with(|t| {
+                                if let Some(t) = t.borrow().as_ref() {
+                                    t.stop();
+                                }
+                            });
                         }
-                        Outcome::RolledBack { version, reason } => f(
-                            "upd-outcome-rolled-back",
-                            &[("version", version), ("reason", reason)],
-                        ),
-                        Outcome::Failed { reason } => {
-                            f("upd-outcome-failed", &[("reason", reason)])
-                        }
-                    };
-                    let (title, close) = (a.tr.tr("upd-outcome-title"), a.tr.tr("common-close"));
-                    dialog::ask(ui, title, text, vec![close], 0, Some(0), |_, _| {});
-                });
+                    },
+                );
+                UPDATE_POLL.with(|t| *t.borrow_mut() = Some(timer));
             }
         });
     }
