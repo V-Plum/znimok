@@ -2242,6 +2242,10 @@ export component AppWindow inherits Window {
     // ZK-98: hiding in a report — 0 ask, 1 always, 2 never — and the keys.
     in property <int> pref-rec-hide;
     in property <string> pref-rec-hide-keys;
+    // ZK-245: the report's signature
+    in property <string> pref-rec-sign-name;
+    in property <string> pref-rec-sign-contact;
+    in property <string> pref-rec-sign-rights;
     callback setting-text(string, string);
     in property <string> rec-browsers;
     in property <bool> rec-browsers-on;
@@ -3124,6 +3128,15 @@ export component AppWindow inherits Window {
                                     edited(t) => { root.setting-text("rec-hide-keys", t); }
                                 }
                                 Text { text: @tr("rec-hide-hint" => "Comma-separated: headers, JSON keys, form fields and dataLayer keys whose values become •••. Secrets such as tokens, e-mails and card numbers are found by their look as well. The log stays whole in your files."); color: Theme.text3; font-size: 11px; wrap: word-wrap; }
+                                // ZK-245: who signs a report
+                                Text { text: @tr("rec-sign-title" => "Report signature"); color: Theme.text2; font-size: 12px; }
+                                HorizontalLayout {
+                                    spacing: 8px;
+                                    LineEdit { text: root.pref-rec-sign-name; placeholder-text: @tr("rec-sign-name" => "Your name"); edited(t) => { root.setting-text("rec-sign-name", t); } }
+                                    LineEdit { text: root.pref-rec-sign-contact; placeholder-text: @tr("rec-sign-contact" => "E-mail or another contact"); edited(t) => { root.setting-text("rec-sign-contact", t); } }
+                                }
+                                LineEdit { text: root.pref-rec-sign-rights; placeholder-text: @tr("rec-sign-rights" => "Rights notice, e.g. © 2026 Company. Confidential."); edited(t) => { root.setting-text("rec-sign-rights", t); } }
+                                Text { text: @tr("rec-sign-hint" => "A report page says who recorded it at the top and whose its content is at the bottom. Leave the fields empty for an unsigned report."); color: Theme.text3; font-size: 11px; wrap: word-wrap; }
                                 Text { text: @tr("rec-devlog-hint" => "The Znimok extension for Chrome and Edge writes the page's console, errors, network (headers, request and response bodies) and navigations in sync with the video — everything the DevTools panels show, for debugging; sensitive parts can be hidden on export. Install it from the Chrome Web Store (the button below)."); color: Theme.text3; font-size: 11px; wrap: word-wrap; }
                                 HorizontalLayout { alignment: start; TextButton { text: @tr("rec-devlog-store" => "Chrome Web Store"); clicked => { root.setting("open-store", 0); } } }
                             }
@@ -4968,6 +4981,10 @@ export component AppWindow inherits Window {
     // The report (ZK-98): one page or a .zreport; hiding — the sheet's switch (Settings: 0 ask,
     // 1 always, 2 never) and what it would hide; over 100 MB as a page.
     in property <bool> vexp-zreport;
+    // ZK-245: the page's language (0 Ukrainian, 1 English) and the signature
+    in property <int> vexp-lang;
+    in property <bool> vexp-has-sign;
+    in property <bool> vexp-sign: true;
     in property <bool> vexp-has-log;
     in property <int> vexp-hide-mode;
     in property <bool> vexp-hide: true;
@@ -5124,6 +5141,18 @@ export component AppWindow inherits Window {
                             if root.vexp-has-log && root.vexp-hide-mode == 1: Text { text: @tr("vexp-hide-always" => "Sensitive values are always hidden (Settings → Recording)."); color: Theme.text2; font-size: 11px; wrap: word-wrap; }
                             if root.vexp-has-log && root.vexp-hide-mode == 2: Text { text: @tr("vexp-hide-never" => "Sensitive values are not hidden (Settings → Recording)."); color: Theme.attention; font-size: 11px; wrap: word-wrap; }
                             if root.vexp-has-log && root.vexp-hide-mode != 2 && (root.vexp-hide-mode == 1 || root.vexp-hide): Text { text: root.vexp-hide-text; color: Theme.text3; font-size: 11px; wrap: word-wrap; }
+                        }
+                        // ZK-245: a page with the log has a language of its own and may be signed
+                        if root.exp-format == 4 || (root.exp-format == 2 && root.vexp-has-log): VerticalLayout {
+                            spacing: 8px;
+                            HorizontalLayout {
+                                spacing: 4px;
+                                Text { text: @tr("vexp-lang" => "Page language"); color: Theme.text2; font-size: 12px; vertical-alignment: center; horizontal-stretch: 1; }
+                                SegOption { text: "Українська"; on: root.vexp-lang == 0; clicked => { root.exp-set("rlang", 0); } }
+                                SegOption { text: "English"; on: root.vexp-lang == 1; clicked => { root.exp-set("rlang", 1); } }
+                            }
+                            if root.vexp-has-sign: SwitchRow { text: @tr("vexp-sign" => "Sign: who recorded it, the rights notice"); checked: root.vexp-sign; toggled => { root.exp-set("rsign", self.checked ? 1 : 0); } }
+                            if !root.vexp-has-sign: Text { text: @tr("vexp-sign-none" => "Your name and a rights notice can be added in Settings → Recording."); color: Theme.text3; font-size: 11px; wrap: word-wrap; }
                         }
                         if root.exp-format <= 2 || root.exp-format == 4: Rectangle {
                             border-radius: 10px;

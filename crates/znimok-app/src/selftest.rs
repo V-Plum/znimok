@@ -3795,6 +3795,51 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
                 ui.get_vexp_hide_mode()
             ),
         );
+        // ZK-245: the page's own language and the signature from the settings.
+        let unsigned = !ui.get_vexp_has_sign() && ui.get_vexp_lang() == 0;
+        ui.invoke_setting_text("rec-sign-name".into(), "Сергій Степаненко".into());
+        ui.invoke_setting_text("rec-sign-contact".into(), "s@example.org".into());
+        ui.invoke_setting_text("rec-sign-rights".into(), "© 2026 Приклад".into());
+        ui.invoke_exp_set("rlang".into(), 1);
+        let asked = crate::vexport::VidExport {
+            kind: crate::vexport::REPORT,
+            ..Default::default()
+        };
+        let page = |app: &Shared| match app.borrow().report_kind(&asked) {
+            Some(znimok_export::Kind::Report(o)) => Some((
+                o.meta.rows.first().cloned(),
+                o.meta.rights.clone(),
+                o.strings.get("devp-chip-all").cloned(),
+            )),
+            _ => None,
+        };
+        let signed = page(app);
+        ui.invoke_exp_set("rsign".into(), 0);
+        let plain = page(app);
+        r.check(
+            "report: the page is in the language chosen for it and signed from the settings",
+            unsigned
+                && ui.get_vexp_has_sign()
+                && ui.get_vexp_lang() == 1
+                && signed
+                    == Some((
+                        Some((
+                            "Recorded by".into(),
+                            "Сергій Степаненко, s@example.org".into(),
+                        )),
+                        "© 2026 Приклад".into(),
+                        Some("All".into()),
+                    ))
+                && plain.as_ref().is_some_and(|(row, rights, _)| {
+                    rights.is_empty() && row.as_ref().is_some_and(|(k, _)| k != "Recorded by")
+                }),
+            format!("{signed:?} · unsigned {plain:?}"),
+        );
+        ui.invoke_exp_set("rsign".into(), 1);
+        ui.invoke_exp_set("rlang".into(), 0);
+        for f in ["name", "contact", "rights"] {
+            ui.invoke_setting_text(format!("rec-sign-{f}").into(), "".into());
+        }
         ui.invoke_exp_close();
         // A .zreport opened: its recording comes into the library, with the log on its time.
         let zr = dir.join("Znimok-selftest-report.zreport");
@@ -3838,6 +3883,20 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
             format!("written {wrote} · {title:?} · {events} events · video {is_video}"),
         );
         let _ = std::fs::remove_file(&zr);
+    }));
+    // ZK-245: the report's part of the sheet — the page's language, the signature.
+    steps.push(Box::new(|_, ui, _| {
+        ui.invoke_setting_text("rec-sign-name".into(), "Сергій Степаненко".into());
+        ui.invoke_export();
+        ui.invoke_exp_set("format".into(), 4);
+    }));
+    for _ in 0..6 {
+        steps.push(Box::new(|_, _, _| {}));
+    }
+    steps.push(Box::new(|_, ui, r| {
+        r.snapshot(ui, "41-report-sheet");
+        ui.invoke_exp_close();
+        ui.invoke_setting_text("rec-sign-name".into(), "".into());
     }));
 
     // ZK-145: a video document opened in the app and saved again stays a video (its stream

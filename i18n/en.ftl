@@ -5775,6 +5775,51 @@ report-h-source = Source
 # @max: 16
 report-h-title = Title
 
+# @where: Developer report page: header fact, who made the recording (name, contact)
+# @kind: label
+# @max: 20
+report-author = Recorded by
+
+# @where: Settings → Recording: heading of the fields that sign a developer report
+# @kind: label
+# @max: 40
+rec-sign-title = Report signature
+
+# @where: Settings → Recording, report signature: placeholder of the name field
+# @kind: placeholder
+# @max: 30
+rec-sign-name = Your name
+
+# @where: Settings → Recording, report signature: placeholder of the contact field
+# @kind: placeholder
+# @max: 40
+rec-sign-contact = E-mail or another contact
+
+# @where: Settings → Recording, report signature: placeholder of the rights notice field
+# @kind: placeholder
+# @max: 70
+rec-sign-rights = Rights notice, e.g. © 2026 Company. Confidential.
+
+# @where: Settings → Recording, report signature: what the fields are for
+# @kind: body
+# @max: 200
+rec-sign-hint = A report page says who recorded it at the top and whose its content is at the bottom. Leave the fields empty for an unsigned report.
+
+# @where: Video export sheet, a page with the browser log: label of the page's language choice
+# @kind: label
+# @max: 24
+vexp-lang = Page language
+
+# @where: Video export sheet, a page with the browser log: switch, add the signature from the settings
+# @kind: label
+# @max: 50
+vexp-sign = Sign: who recorded it, the rights notice
+
+# @where: Video export sheet, a page with the browser log: no signature is set
+# @kind: body
+# @max: 100
+vexp-sign-none = Your name and a rights notice can be added in Settings → Recording.
+
 # @where: Title of the question when an AI agent wants access; $client is the name the agent reports
 # @kind: title
 # @max: 60

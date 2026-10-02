@@ -5823,6 +5823,51 @@ report-h-source = Джерело
 # @max: 16
 report-h-title = Назва
 
+# @where: Developer report page: header fact, who made the recording (name, contact)
+# @kind: label
+# @max: 20
+report-author = Запис створено
+
+# @where: Settings → Recording: heading of the fields that sign a developer report
+# @kind: label
+# @max: 40
+rec-sign-title = Підпис звіту
+
+# @where: Settings → Recording, report signature: placeholder of the name field
+# @kind: placeholder
+# @max: 30
+rec-sign-name = Ваше ім'я
+
+# @where: Settings → Recording, report signature: placeholder of the contact field
+# @kind: placeholder
+# @max: 40
+rec-sign-contact = E-mail чи інший контакт
+
+# @where: Settings → Recording, report signature: placeholder of the rights notice field
+# @kind: placeholder
+# @max: 70
+rec-sign-rights = Застереження про права, напр. © 2026 Компанія. Конфіденційно.
+
+# @where: Settings → Recording, report signature: what the fields are for
+# @kind: body
+# @max: 200
+rec-sign-hint = Сторінка звіту вгорі каже, хто зробив запис, а внизу — кому належить зображене. Лишіть поля порожніми, щоб звіт був без підпису.
+
+# @where: Video export sheet, a page with the browser log: label of the page's language choice
+# @kind: label
+# @max: 24
+vexp-lang = Мова сторінки
+
+# @where: Video export sheet, a page with the browser log: switch, add the signature from the settings
+# @kind: label
+# @max: 50
+vexp-sign = Підписати: хто записав, застереження про права
+
+# @where: Video export sheet, a page with the browser log: no signature is set
+# @kind: body
+# @max: 100
+vexp-sign-none = Своє ім'я й застереження про права можна додати в Налаштуваннях → Запис.
+
 # @where: Title of the question when an AI agent wants access; $client is the name the agent reports
 # @kind: title
 # @max: 60
