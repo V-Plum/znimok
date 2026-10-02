@@ -5852,3 +5852,23 @@ agents-confirm-delete-title = Видалити «{ $name }» назавжди?
 # @kind: body
 # @max: 160
 agents-confirm-delete-body = Про це просить ШІ-агент «{ $client }». Скасувати це буде неможливо.
+
+# @where: Inside agents-ask-body after «wants to»: screen recording
+# @kind: body
+# @max: 80
+agents-ask-record = записувати екран як відео, також коли вас немає поруч
+
+# @where: Inside agents-ask-body after «wants to»: sound of a recording
+# @kind: body
+# @max: 80
+agents-ask-record-audio = записувати звук комп'ютера й мікрофон
+
+# @where: Settings → Agents: a permission in a client's list
+# @kind: label
+# @max: 24
+agents-scope-record = запис екрана
+
+# @where: Settings → Agents: a permission in a client's list
+# @kind: label
+# @max: 24
+agents-scope-sound = звук і мікрофон

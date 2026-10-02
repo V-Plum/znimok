@@ -268,6 +268,7 @@ fn all() -> impl Iterator<Item = &'static Tool> {
         .chain(crate::edit::TOOLS.iter())
         .chain(crate::libtools::TOOLS.iter())
         .chain(crate::vidtools::TOOLS.iter())
+        .chain(crate::rectools::TOOLS.iter())
 }
 
 /// `tools/list` entries, in a fixed order.
@@ -383,7 +384,12 @@ pub(crate) fn arg_int(a: &Value, k: &str) -> Result<i64, String> {
 }
 
 impl Agent {
-    fn authorize(&self, client: &str, scope: Scope, tool: &str) -> Result<Grant, String> {
+    pub(crate) fn authorize(
+        &self,
+        client: &str,
+        scope: Scope,
+        tool: &str,
+    ) -> Result<Grant, String> {
         match self.perms.check(client, scope) {
             Decision::Allowed(g) => Ok(g),
             Decision::Ask => match self.gui.ask(client, scope, tool) {
@@ -766,6 +772,7 @@ impl Agent {
             _ => crate::edit::run(self, name, args)
                 .or_else(|| crate::libtools::run(self, client, name, args))
                 .or_else(|| crate::vidtools::run(self, name, args))
+                .or_else(|| crate::rectools::run(self, client, name, args))
                 .unwrap_or_else(|| Err(format!("unknown tool «{name}»"))),
         }
     }

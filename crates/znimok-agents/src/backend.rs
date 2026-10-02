@@ -37,7 +37,7 @@ impl Gui {
         self.client().is_some()
     }
 
-    fn call(&self, method: &str, params: Value) -> Result<Value, String> {
+    pub(crate) fn call(&self, method: &str, params: Value) -> Result<Value, String> {
         let mut c = self.client().ok_or("Znimok is not running")?;
         c.call(method, params).map_err(|e| match e {
             CallError::Rpc(e) if e.code == znimok_ipc::RpcError::NO_METHOD => {
