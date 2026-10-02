@@ -34,6 +34,29 @@ pub fn take_outcome() -> Option<znimok_update::apply::Outcome> {
     znimok_update::apply::take_outcome(&updates_dir(), VERSION, now, 24 * 3600 * 1000)
 }
 
+/// Shows the updater's note in the window when there is one; whether there was.
+pub fn show_outcome() -> bool {
+    let Some(outcome) = take_outcome() else {
+        return false;
+    };
+    crate::with_ctx(|a, ui| {
+        use znimok_update::apply::Outcome;
+        let f =
+            |k: &str, pairs: &[(&'static str, String)]| a.tr.tr_args(k, &crate::app::fargs(pairs));
+        let text = match outcome {
+            Outcome::Installed { version } => f("upd-outcome-installed", &[("version", version)]),
+            Outcome::RolledBack { version, reason } => f(
+                "upd-outcome-rolled-back",
+                &[("version", version), ("reason", reason)],
+            ),
+            Outcome::Failed { reason } => f("upd-outcome-failed", &[("reason", reason)]),
+        };
+        let (title, close) = (a.tr.tr("upd-outcome-title"), a.tr.tr("common-close"));
+        crate::dialog::ask(ui, title, text, vec![close], 0, Some(0), |_, _| {});
+    });
+    true
+}
+
 /// The result of a check.
 #[derive(Clone, Debug)]
 pub enum Found {
