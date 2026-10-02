@@ -4,8 +4,8 @@
   "display_name": "Znimok",
   "icon": "icon.png",
   "version": "@VERSION@",
-  "description": "Screenshots for AI agents: capture screens, windows and regions, annotate, hide secrets, read text and export — on your computer, with your approval.",
-  "long_description": "Znimok takes screenshots, lets an agent mark them up (arrows, frames, text, counters, hidden areas), finds and hides keys, passwords, e-mails, cards and faces, recognises text on the device and exports PNG, JPEG, WebP or a self-contained HTML page. Everything stays in your local Znimok library. The first time an agent wants to take a screenshot or read your library, Znimok asks you (this time / this session / always); every call is written to a local journal without its contents. The MCP server is off until you switch it on in Znimok → Settings → Agents.",
+  "description": "Screenshots and recordings for AI agents: capture, mark up, crop, hide secrets, read text, manage the library and export — on your computer, with your approval.",
+  "long_description": "Znimok takes screenshots, lets an agent mark them up (arrows, frames, text, counters, hidden areas), finds and hides keys, passwords, e-mails, cards and faces, recognises text and codes on the device and exports PNG, JPEG, WebP or a self-contained HTML page. An agent can also crop, rotate and resize, name and tag documents, search the library, bring files in, move documents to the trash, and read the browser DevTools log of a screen recording to say what went wrong and when. Deleting for good is confirmed by you every time. Everything stays in your local Znimok library. The first time an agent wants to take a screenshot or read your library, Znimok asks you (this time / this session / always); every call is written to a local journal without its contents. The MCP server is off until you switch it on in Znimok → Settings → Agents.",
   "author": {
     "name": "Vadym Slyva",
     "email": "v.v.plum@gmail.com",
@@ -19,7 +19,7 @@
   "documentation": "https://github.com/V-Plum/znimok/blob/main/docs/AGENTS.md",
   "support": "https://github.com/V-Plum/znimok/issues",
   "license": "LicenseRef-Znimok",
-  "keywords": ["screenshot", "annotation", "ocr", "redaction", "screen capture"],
+  "keywords": ["screenshot", "annotation", "ocr", "redaction", "screen capture", "screen recording", "devtools"],
   "privacy_policies": ["https://github.com/V-Plum/znimok/blob/main/docs/privacy.en.md"],
   "server": {
     "type": "binary",
