@@ -3926,6 +3926,32 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
         ui.invoke_vid_action("split".into(), 0);
         ui.invoke_vid_action("reset".into(), 0);
         let reset = app.borrow().s.as_ref().and_then(|s| s.ed.doc.timeline.clone());
+        // ZK-219: the in handle sits left of the strip's edge — reachable now (the touch area
+        // used to stop at the padding); dragging it trims; a handle under the pointer is told.
+        let (in_dragged, hot, cleared) = {
+            let mut a = app.borrow_mut();
+            let x15 = a.s.as_ref().and_then(|s| s.vid.as_ref()).map_or(0, |v| v.view.edge_to_x(15));
+            a.tl_pointer(ui, 0, -4, 40, false);
+            a.tl_pointer(ui, 1, x15, 40, false);
+            a.tl_pointer(ui, 2, x15, 40, false);
+            let in_dragged = a.s.as_ref().and_then(|s| s.ed.doc.timeline.as_ref()).map(|t| t.in_point);
+            a.tl_pointer(ui, 3, x15 - 3, 40, false);
+            let hot = ui.get_tl_hot();
+            a.tl_pointer(ui, 4, 0, 0, false);
+            (in_dragged, hot, ui.get_tl_hot())
+        };
+        r.check(
+            "trim handles: the in handle drags from the strip's edge; hovering it is told (ZK-219)",
+            in_dragged == Some(15) && hot == 1 && cleared == 0,
+            format!("in {in_dragged:?} · hot {hot} · cleared {cleared}"),
+        );
+        ui.invoke_vid_action("reset".into(), 0);
+        {
+            // back to frame 45: the drag's seek moved the playhead
+            let mut a = app.borrow_mut();
+            a.tl_pointer(ui, 0, 450, 10, false);
+            a.tl_pointer(ui, 2, 450, 10, false);
+        }
         // the trim again, saved into the file's CUTS
         ui.invoke_vid_action("in".into(), 0);
         let saved2 = app.borrow_mut().save_now(ui);

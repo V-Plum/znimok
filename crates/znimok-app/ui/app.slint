@@ -62,7 +62,7 @@ export struct CardData {
 export struct TlTick { x: length, label: string }
 export struct TlPiece { x: length, w: length, kind: int }
 // A mark's bar on the marks track (ZK-94): its time in track pixels, lane, colour.
-export struct TlMark { x: length, w: length, lane: int, colour: color, selected: bool }
+export struct TlMark { id: int, x: length, w: length, lane: int, colour: color, selected: bool }
 export struct VidTrack { label: string, colour: color, muted: bool, volume: int }
 // The DevTools log (ZK-191): a tick of the log lane (cls 0 network and the rest, 1 navigation,
 // 2 dataLayer, 3 warning, 4 error), a filter chip, a row of the list, a phase of a request's timing.
@@ -2174,6 +2174,9 @@ export component AppWindow inherits Window {
     // ZK-188: W or H of the size on export typed in.
     callback vid-out-edited(string, string);
     callback tl-pointer(int, length, length, bool);
+    in property <int> tl-hot;
+    in property <int> tl-hot-mark: -1;
+    in property <int> tl-hot-grip;
     callback tl-wheel(length, float, bool);
     callback tl-layout(length);
     callback lib-key(string, bool);
@@ -3810,9 +3813,9 @@ export component AppWindow inherits Window {
                                     }
                                 }
                             }
-                            // trim handles
-                            Rectangle { x: 8px + root.tl-in - 10px; y: 26px; width: 10px; height: 52px; border-top-left-radius: 4px; border-bottom-left-radius: 4px; background: Theme.text; Rectangle { width: 2px; height: 16px; border-radius: 1px; background: Theme.canvas; } }
-                            Rectangle { x: 8px + root.tl-out; y: 26px; width: 10px; height: 52px; border-top-right-radius: 4px; border-bottom-right-radius: 4px; background: Theme.text; Rectangle { width: 2px; height: 16px; border-radius: 1px; background: Theme.canvas; } }
+                            // trim handles: lit and a touch wider under the pointer (ZK-219)
+                            Rectangle { property <bool> hot: root.tl-hot == 1; x: 8px + root.tl-in - self.width; y: 26px; width: self.hot ? 13px : 10px; height: 52px; border-top-left-radius: 4px; border-bottom-left-radius: 4px; background: self.hot ? Theme.accent : Theme.text; animate width { duration: 160ms; easing: ease-out-back; } animate background { duration: 140ms; easing: ease-out; } Rectangle { width: 2px; height: 16px; border-radius: 1px; background: Theme.canvas; } }
+                            Rectangle { property <bool> hot: root.tl-hot == 2; x: 8px + root.tl-out; y: 26px; width: self.hot ? 13px : 10px; height: 52px; border-top-right-radius: 4px; border-bottom-right-radius: 4px; background: self.hot ? Theme.accent : Theme.text; animate width { duration: 160ms; easing: ease-out-back; } animate background { duration: 140ms; easing: ease-out; } Rectangle { width: 2px; height: 16px; border-radius: 1px; background: Theme.canvas; } }
                             // the actions over a selected range
                             if root.tl-has-range: Rectangle {
                                 x: 8px;
@@ -3843,16 +3846,20 @@ export component AppWindow inherits Window {
                             Rectangle { y: 104px; height: 1px; background: Theme.line; }
                             Rectangle { y: 156px; height: 1px; background: Theme.line; }
                             for m in root.tl-marks: Rectangle {
+                                property <bool> hot: root.tl-hot-mark == m.id;
+                                property <bool> lit: m.selected || self.hot;
                                 x: 8px + m.x;
-                                y: 106px + m.lane * 12px;
+                                y: 106px + m.lane * 12px - (self.hot ? 1px : 0px);
                                 width: m.w;
-                                height: 10px;
+                                height: self.hot ? 12px : 10px;
                                 border-radius: 3px;
-                                background: m.colour.with-alpha(m.selected ? 0.95 : 0.7);
-                                border-width: m.selected ? 1.5px : 0;
+                                background: m.colour.with-alpha(self.lit ? 0.95 : 0.7);
+                                border-width: m.selected ? 1.5px : (self.hot ? 1px : 0);
                                 border-color: Theme.text;
-                                if m.selected && m.w > 18px: Rectangle { x: 1px; width: 3px; height: 6px; border-radius: 1px; background: Theme.canvas; }
-                                if m.selected && m.w > 18px: Rectangle { x: parent.width - 4px; width: 3px; height: 6px; border-radius: 1px; background: Theme.canvas; }
+                                animate y, height { duration: 160ms; easing: ease-out-back; }
+                                animate background { duration: 140ms; easing: ease-out; }
+                                if self.lit && m.w > 18px: Rectangle { x: 1px; width: 3px; height: 6px; border-radius: 1px; background: root.tl-hot-grip == 1 && parent.hot ? Theme.accent : Theme.canvas; }
+                                if self.lit && m.w > 18px: Rectangle { x: parent.width - 4px; width: 3px; height: 6px; border-radius: 1px; background: root.tl-hot-grip == 2 && parent.hot ? Theme.accent : Theme.canvas; }
                             }
                             // the log lane (ZK-191): a tick per event; an error also runs a faint line across
                             // the whole timeline
@@ -3875,16 +3882,18 @@ export component AppWindow inherits Window {
                             Rectangle { x: 8px + root.tl-playhead; y: 0; width: 1px; height: parent.height; background: Theme.text; }
                             Rectangle { x: 8px + root.tl-playhead - 6px; y: 0; width: 13px; height: 8px; background: Theme.text; border-radius: 2px; }
                             TouchArea {
-                                x: 8px;
-                                width: parent.width - 16px;
-                                mouse-cursor: MouseCursor.default;
+                                x: 0;
+                                width: parent.width;
+                                mouse-cursor: (root.tl-hot != 0 || root.tl-hot-grip != 0) ? MouseCursor.ew-resize : (root.tl-hot-mark >= 0 ? MouseCursor.grab : MouseCursor.default);
                                 pointer-event(e) => {
-                                    if (e.kind == PointerEventKind.down) { root.tl-pointer(0, self.mouse-x, self.mouse-y, e.modifiers.shift); }
-                                    if (e.kind == PointerEventKind.up || e.kind == PointerEventKind.cancel) { root.tl-pointer(2, self.mouse-x, self.mouse-y, e.modifiers.shift); }
+                                    if (e.kind == PointerEventKind.down) { root.tl-pointer(0, self.mouse-x - 8px, self.mouse-y, e.modifiers.shift); }
+                                    if (e.kind == PointerEventKind.up || e.kind == PointerEventKind.cancel) { root.tl-pointer(2, self.mouse-x - 8px, self.mouse-y, e.modifiers.shift); }
+                                    if (e.kind == PointerEventKind.move && !self.pressed) { root.tl-pointer(3, self.mouse-x - 8px, self.mouse-y, false); }
                                 }
-                                moved => { if (self.pressed) { root.tl-pointer(1, self.mouse-x, self.mouse-y, false); } }
+                                changed has-hover => { if (!self.has-hover && !self.pressed) { root.tl-pointer(4, 0, 0, false); } }
+                                moved => { if (self.pressed) { root.tl-pointer(1, self.mouse-x - 8px, self.mouse-y, false); } }
                                 scroll-event(e) => {
-                                    root.tl-wheel(self.mouse-x, e.delta-y / 1px, e.modifiers.control);
+                                    root.tl-wheel(self.mouse-x - 8px, e.delta-y / 1px, e.modifiers.control);
                                     return accept;
                                 }
                             }
