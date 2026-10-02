@@ -67,6 +67,16 @@ recording already running, no such window).
 The permission (`record`, and `record_audio` for sound) is the MCP server's business — it asks
 with `agents.ask` before it calls this.
 
+## `agents.app` — a document in the editor or on the clipboard (ZK-238)
+
+```json
+{"method": "agents.app", "params": {"op": "open", "path": "…/Znimok-….znimok"}} → {"result": {"opened": true}}
+{"method": "agents.app", "params": {"op": "copy", "path": "…/Znimok-….znimok"}} → {"result": {"copied": true, "width": 1360, "height": 860}}
+```
+
+`open` shows the document in the editor and brings the window forward; `copy` puts its picture
+with the marks on the clipboard. Refused while MCP is switched off.
+
 ## `agents.activity` — the indicator (ZK-69)
 
 ```json

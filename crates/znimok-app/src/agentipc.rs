@@ -1,6 +1,7 @@
 //! What the MCP server asks the app over IPC (ZK-241, `docs/IPC.md`): the permission question
 //! (`agents.ask`), the «an agent is working» mark (`agents.activity`) and an agent's screen
-//! recording (`agents.record`, ZK-237).
+//! recording (`agents.record`, ZK-237), a document opened or copied for it (`agents.app`,
+//! ZK-238).
 //!
 //! The question comes in on an IPC thread and waits there; the dialog is shown on the UI thread
 //! in the app's window and its answer goes back through a channel. Nobody answering for
@@ -59,6 +60,7 @@ pub fn handle(method: &str, params: &Value) -> Option<Result<Value, znimok_ipc::
             Ok(json!({"grant": ask(client, scope, tool, confirm, WAIT)}))
         }
         "agents.record" => record(params),
+        "agents.app" => app(params),
         "agents.activity" => {
             let on = params
                 .get("active")
@@ -465,4 +467,49 @@ fn start(what: What, opts: crate::rec::AgentOpts, limit_s: u64) -> Result<Value,
         "microphone": opts.microphone,
         "log": opts.log,
     }))
+}
+
+// ------------------------------------------------------------------ the editor, the clipboard (ZK-238)
+
+/// `agents.app {op: open | copy, path}`: a library document in the editor, or its picture on the
+/// clipboard. An IPC thread.
+fn app(params: &Value) -> Result<Value, znimok_ipc::RpcError> {
+    let fail = |m: String| znimok_ipc::RpcError::new(-32000, m);
+    let path = std::path::PathBuf::from(params.get("path").and_then(Value::as_str).unwrap_or(""));
+    if !path.is_file() {
+        return Err(znimok_ipc::RpcError::invalid_params("«path» is not a file"));
+    }
+    let enabled = || crate::with_prefs(|p| p.agents.mcp_enabled).unwrap_or(false);
+    let off = "MCP is switched off in Znimok's settings";
+    match params.get("op").and_then(Value::as_str).unwrap_or("") {
+        "open" => on_ui(move || {
+            if !enabled() {
+                return Err(off.to_string());
+            }
+            crate::with_ctx(|a, ui| {
+                a.open_path(ui, &path);
+                crate::show_window(ui);
+            });
+            Ok(json!({"opened": true}))
+        })?
+        .map_err(fail),
+        "copy" => {
+            // Rendered here, off the UI thread; only the clipboard is the UI thread's.
+            let doc = znimok_agents::library::load(&path).map_err(fail)?;
+            let r = znimok_agents::library::render(&doc, 1.0);
+            let (w, h) = (r.width, r.height);
+            on_ui(move || {
+                if !enabled() {
+                    return Err(off.to_string());
+                }
+                crate::io::copy_image(w, h, r.rgba)?;
+                crate::commands::emit("copied");
+                Ok(json!({"copied": true, "width": w, "height": h}))
+            })?
+            .map_err(fail)
+        }
+        op => Err(znimok_ipc::RpcError::invalid_params(format!(
+            "unknown op «{op}»"
+        ))),
+    }
 }
