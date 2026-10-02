@@ -1452,6 +1452,8 @@ impl App {
             znimok_settings::HideOnExport::Never => 2,
         });
         ui.set_pref_rec_hide_keys(p.video.hide_keys.join(", ").into());
+        ui.set_pref_shot_prefix(p.library.shot_prefix.clone().into());
+        ui.set_pref_video_prefix(p.library.video_prefix.clone().into());
         let hosts = crate::devlog::hub().hosts();
         ui.set_rec_browsers_on(hosts > 0);
         ui.set_rec_browsers(
@@ -1486,6 +1488,17 @@ impl App {
     /// the page's own fields.
     /// A text setting (ZK-98: the keys hidden in a report, comma-separated).
     pub fn setting_text(&mut self, ui: &AppWindow, key: &str, text: &str) {
+        // The words before the date in new names (ZK-221).
+        if key == "shot-prefix" {
+            let t = text.trim().to_string();
+            self.save_prefs(ui, |p| p.library.shot_prefix = t);
+            return;
+        }
+        if key == "video-prefix" {
+            let t = text.trim().to_string();
+            self.save_prefs(ui, |p| p.library.video_prefix = t);
+            return;
+        }
         if key == "rec-hide-keys" {
             let keys: Vec<String> = text
                 .split([',', ';', '\n'])
@@ -2735,13 +2748,18 @@ impl App {
     ) -> (Document, PathBuf) {
         let now = chrono::Local::now();
         let name = name.unwrap_or_else(|| {
-            self.tr.tr_args(
-                "doc-untitled",
-                &args(&[
-                    ("date", now.format("%Y-%m-%d").to_string()),
-                    ("time", now.format("%H.%M.%S").to_string()),
-                ]),
-            )
+            let (date, time) = (
+                now.format("%Y-%m-%d").to_string(),
+                now.format("%H.%M.%S").to_string(),
+            );
+            // The person's own word before the date, when set (ZK-221).
+            let prefix = self.prefs().library.shot_prefix.trim().to_string();
+            if prefix.is_empty() {
+                self.tr
+                    .tr_args("doc-untitled", &args(&[("date", date), ("time", time)]))
+            } else {
+                format!("{prefix} {date} {time}")
+            }
         });
         let mut doc = Document::from_raster(name, raster);
         doc.meta.created_ms = now.timestamp_millis();

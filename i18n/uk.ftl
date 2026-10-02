@@ -3211,6 +3211,31 @@ libset-intro = Тека — джерело правди. Її можна пок�
 # @max: 24
 libset-folder = Тека бібліотеки
 
+# @where: Settings, Library: the row with the two fields for the words before the date in new names (ZK-221)
+# @kind: label
+# @max: 32
+libset-names = Назви нових документів
+
+# @where: Settings, Library: the label of the field with the word for new screenshots
+# @kind: label
+# @max: 16
+libset-shot-prefix = Знімки
+
+# @where: Settings, Library: the label of the field with the word for new recordings
+# @kind: label
+# @max: 16
+libset-video-prefix = Записи
+
+# @where: Settings, Library: the placeholder of the recordings' field — the usual word, as in rec-doc-name
+# @kind: label
+# @max: 16
+libset-video-word = Запис
+
+# @where: Settings, Library: the hint under the two fields
+# @kind: body
+# @max: 120
+libset-names-hint = Слово перед датою й часом, як у «Знімок 2026-10-02 12.00.00». Порожнє — звичайне слово.
+
 # @where: Under the folder; $size is formatted
 # @kind: hint
 # @max: 60
