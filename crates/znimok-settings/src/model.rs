@@ -403,6 +403,10 @@ pub struct Library {
     /// Search the text on the screenshots too (ZK-186): read on the device in the background,
     /// kept in the local index only. Off until the person turns it on (privacy policy).
     pub search_text: bool,
+    /// The word before the date in a new screenshot's / recording's name (ZK-221); empty = the
+    /// translated «Screenshot» / «Recording».
+    pub shot_prefix: String,
+    pub video_prefix: String,
 }
 
 impl Default for Library {
@@ -414,6 +418,8 @@ impl Default for Library {
             video_limit_mb: 5120,
             trash_days: 7,
             search_text: false,
+            shot_prefix: String::new(),
+            video_prefix: String::new(),
         }
     }
 }

@@ -3197,6 +3197,31 @@ libset-intro = The folder is the source of truth. You can keep it on a cloud dri
 # @max: 24
 libset-folder = Library folder
 
+# @where: Settings, Library: the row with the two fields for the words before the date in new names (ZK-221)
+# @kind: label
+# @max: 32
+libset-names = Names of new documents
+
+# @where: Settings, Library: the label of the field with the word for new screenshots
+# @kind: label
+# @max: 16
+libset-shot-prefix = Screenshots
+
+# @where: Settings, Library: the label of the field with the word for new recordings
+# @kind: label
+# @max: 16
+libset-video-prefix = Recordings
+
+# @where: Settings, Library: the placeholder of the recordings' field — the usual word, as in rec-doc-name
+# @kind: label
+# @max: 16
+libset-video-word = Recording
+
+# @where: Settings, Library: the hint under the two fields
+# @kind: body
+# @max: 120
+libset-names-hint = The word before the date and the time, as in «Screenshot 2026-10-02 12.00.00». Empty: the usual word.
+
 # @where: Under the folder; $size is formatted
 # @kind: hint
 # @max: 60

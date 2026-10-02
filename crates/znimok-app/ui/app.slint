@@ -2247,6 +2247,9 @@ export component AppWindow inherits Window {
     // What the library shows (ZK-100): 0 all, 1 screenshots, 2 videos.
     in property <int> lib-kind;
     in property <string> pref-lib-dir;
+    // The words before the date in new names (ZK-221).
+    in property <string> pref-shot-prefix;
+    in property <string> pref-video-prefix;
     in property <string> pref-file;
     in property <string> pref-version;
     // The commit and the platform on the About page (ZK-198).
@@ -2874,6 +2877,23 @@ export component AppWindow inherits Window {
                                     TextButton { text: @tr("common-change-ellipsis" => "Change…"); clicked => { root.setting("lib-folder", 0); } }
                                     TextButton { text: @tr("libset-show-folder" => "Show folder"); clicked => { root.setting("show-folder", 0); } }
                                 }
+                                Rectangle { height: 1px; background: Theme.line; }
+                                // ZK-221: the person's own words before the date in new names.
+                                Text { text: @tr("libset-names" => "Names of new documents"); color: Theme.text2; font-size: 12px; }
+                                HorizontalLayout {
+                                    spacing: 8px;
+                                    VerticalLayout {
+                                        spacing: 4px;
+                                        Text { text: @tr("libset-shot-prefix" => "Screenshots"); color: Theme.text3; font-size: 11px; }
+                                        LineEdit { text: root.pref-shot-prefix; placeholder-text: @tr("doc-kind-screenshot" => "Screenshot"); edited(t) => { root.setting-text("shot-prefix", t); } }
+                                    }
+                                    VerticalLayout {
+                                        spacing: 4px;
+                                        Text { text: @tr("libset-video-prefix" => "Recordings"); color: Theme.text3; font-size: 11px; }
+                                        LineEdit { text: root.pref-video-prefix; placeholder-text: @tr("libset-video-word" => "Recording"); edited(t) => { root.setting-text("video-prefix", t); } }
+                                    }
+                                }
+                                Text { text: @tr("libset-names-hint" => "The word before the date and the time, as in «Screenshot 2026-10-02 12.00.00». Empty: the usual word."); color: Theme.text3; font-size: 11px; wrap: word-wrap; }
                                 Rectangle { height: 1px; background: Theme.line; }
                                 Text { text: @tr("libset-keep-shots" => "Keep screenshots no more than"); color: Theme.text2; font-size: 12px; }
                                 HorizontalLayout {

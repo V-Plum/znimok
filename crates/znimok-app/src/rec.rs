@@ -496,13 +496,20 @@ fn doc_name() -> String {
     let now = chrono::Local::now();
     let mut name = String::new();
     crate::with_ctx(|a, _| {
-        name = a.tr.tr_args(
-            "rec-doc-name",
-            &crate::app::fargs(&[
-                ("date", now.format("%Y-%m-%d").to_string()),
-                ("time", now.format("%H.%M.%S").to_string()),
-            ]),
+        let (date, time) = (
+            now.format("%Y-%m-%d").to_string(),
+            now.format("%H.%M.%S").to_string(),
         );
+        // The person's own word before the date, when set (ZK-221).
+        let prefix = a.prefs().library.video_prefix.trim().to_string();
+        name = if prefix.is_empty() {
+            a.tr.tr_args(
+                "rec-doc-name",
+                &crate::app::fargs(&[("date", date), ("time", time)]),
+            )
+        } else {
+            format!("{prefix} {date} {time}")
+        };
     });
     name
 }

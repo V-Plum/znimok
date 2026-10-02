@@ -5131,6 +5131,27 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
         // Back to "as the system" for whatever runs after.
         ui.invoke_setting("theme".into(), 0);
     }));
+    // ZK-221: the person's own word before the date in a new document's name; empty = the
+    // usual one. (A new document opens in a window of its own: read it there.)
+    steps.push(Box::new(|app, ui, r| {
+        let pic = || znimok_core::Raster::solid(16, 9, znimok_core::Rgb::new(0, 0, 0));
+        app.borrow_mut().setting_text(ui, "shot-prefix", " Скрін ");
+        app.borrow_mut().new_document(ui, pic(), "screen", None);
+        let (na, nu) = current(app, ui);
+        let own = na.borrow().doc_name();
+        na.borrow_mut().close_document(&nu);
+        app.borrow_mut().setting_text(ui, "shot-prefix", "");
+        app.borrow_mut().new_document(ui, pic(), "screen", None);
+        let (na, nu) = current(app, ui);
+        let usual = na.borrow().doc_name();
+        na.borrow_mut().close_document(&nu);
+        let saved = app.borrow().prefs().library.shot_prefix.clone();
+        r.check(
+            "new names: the chosen word before the date, the usual one when it is empty (ZK-221)",
+            own.starts_with("Скрін 20") && usual.starts_with("Знімок 20") && saved.is_empty(),
+            format!("{own:?} · {usual:?} · saved {saved:?}"),
+        );
+    }));
 
     // Needs a live desktop: opt in with ZNIMOK_SELFTEST_CAPTURE=1.
     if std::env::var_os("ZNIMOK_SELFTEST_CAPTURE").is_some() {
