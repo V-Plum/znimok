@@ -677,7 +677,13 @@ fn saved(r: Result<(PathBuf, znimok_core::Raster), String>, name: String, displa
             );
             crate::commands::emit("recordStop");
             LAST_SAVED.with(|l| *l.borrow_mut() = Some(path.clone()));
-            crate::pill::show(poster, path, name, heading, sub, display);
+            // The editor with the recording (ZK-231, the owner: not the card alone), unless
+            // the settings keep the card.
+            if a.prefs().video.open_editor {
+                a.open_path(ui, &path);
+            } else {
+                crate::pill::show(poster, path, name, heading, sub, display);
+            }
         }
         Err(reason) => {
             let msg = if reason == NOTHING {

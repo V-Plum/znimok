@@ -6780,7 +6780,7 @@ checksum = "29666d0abbfad1e3dc4dcf6144730dd3a3ab225bbbdac83319345b1b44ccfc1b"
 
 [[package]]
 name = "znimok-agents"
-version = "0.0.9"
+version = "0.0.10"
 dependencies = [
  "base64",
  "chrono",
@@ -6806,7 +6806,7 @@ dependencies = [
 
 [[package]]
 name = "znimok-app"
-version = "0.0.9"
+version = "0.0.10"
 dependencies = [
  "arboard",
  "chrono",
@@ -6855,7 +6855,7 @@ dependencies = [
 
 [[package]]
 name = "znimok-assistant"
-version = "0.0.9"
+version = "0.0.10"
 dependencies = [
  "schemars",
  "serde",
@@ -6866,7 +6866,7 @@ dependencies = [
 
 [[package]]
 name = "znimok-cli"
-version = "0.0.9"
+version = "0.0.10"
 dependencies = [
  "clap",
  "embed-resource",
@@ -6888,14 +6888,14 @@ dependencies = [
 
 [[package]]
 name = "znimok-codes"
-version = "0.0.9"
+version = "0.0.10"
 dependencies = [
  "rxing",
 ]
 
 [[package]]
 name = "znimok-core"
-version = "0.0.9"
+version = "0.0.10"
 dependencies = [
  "schemars",
  "serde",
@@ -6905,7 +6905,7 @@ dependencies = [
 
 [[package]]
 name = "znimok-devtools"
-version = "0.0.9"
+version = "0.0.10"
 dependencies = [
  "serde_json",
  "windows",
@@ -6916,10 +6916,11 @@ dependencies = [
 
 [[package]]
 name = "znimok-export"
-version = "0.0.9"
+version = "0.0.10"
 dependencies = [
  "gif",
  "png",
+ "serde_json",
  "znimok-core",
  "znimok-format",
  "znimok-play",
@@ -6932,7 +6933,7 @@ dependencies = [
 
 [[package]]
 name = "znimok-format"
-version = "0.0.9"
+version = "0.0.10"
 dependencies = [
  "png",
  "uuid",
@@ -6942,7 +6943,7 @@ dependencies = [
 
 [[package]]
 name = "znimok-gpu"
-version = "0.0.9"
+version = "0.0.10"
 dependencies = [
  "pollster",
  "wgpu",
@@ -6951,7 +6952,7 @@ dependencies = [
 
 [[package]]
 name = "znimok-html"
-version = "0.0.9"
+version = "0.0.10"
 dependencies = [
  "chrono",
  "znimok-core",
@@ -6960,7 +6961,7 @@ dependencies = [
 
 [[package]]
 name = "znimok-i18n"
-version = "0.0.9"
+version = "0.0.10"
 dependencies = [
  "fluent-bundle",
  "fluent-syntax",
@@ -6971,7 +6972,7 @@ dependencies = [
 
 [[package]]
 name = "znimok-ipc"
-version = "0.0.9"
+version = "0.0.10"
 dependencies = [
  "getrandom 0.3.4",
  "serde_json",
@@ -6981,7 +6982,7 @@ dependencies = [
 
 [[package]]
 name = "znimok-log"
-version = "0.0.9"
+version = "0.0.10"
 dependencies = [
  "chrono",
  "tracing",
@@ -6992,7 +6993,7 @@ dependencies = [
 
 [[package]]
 name = "znimok-mac"
-version = "0.0.9"
+version = "0.0.10"
 dependencies = [
  "block2 0.6.2",
  "image",
@@ -7006,7 +7007,7 @@ dependencies = [
 
 [[package]]
 name = "znimok-mask"
-version = "0.0.9"
+version = "0.0.10"
 dependencies = [
  "image",
  "regex",
@@ -7020,7 +7021,7 @@ dependencies = [
 
 [[package]]
 name = "znimok-models"
-version = "0.0.9"
+version = "0.0.10"
 dependencies = [
  "base64",
  "block2 0.6.2",
@@ -7038,7 +7039,7 @@ dependencies = [
 
 [[package]]
 name = "znimok-p2"
-version = "0.0.9"
+version = "0.0.10"
 dependencies = [
  "half",
  "image",
@@ -7053,7 +7054,7 @@ dependencies = [
 
 [[package]]
 name = "znimok-p3"
-version = "0.0.9"
+version = "0.0.10"
 dependencies = [
  "global-hotkey",
  "image",
@@ -7070,7 +7071,7 @@ dependencies = [
 
 [[package]]
 name = "znimok-p4"
-version = "0.0.9"
+version = "0.0.10"
 dependencies = [
  "libc",
  "objc2 0.6.4",
@@ -7089,7 +7090,7 @@ dependencies = [
 
 [[package]]
 name = "znimok-platform"
-version = "0.0.9"
+version = "0.0.10"
 dependencies = [
  "schemars",
  "serde",
@@ -7098,7 +7099,7 @@ dependencies = [
 
 [[package]]
 name = "znimok-play"
-version = "0.0.9"
+version = "0.0.10"
 dependencies = [
  "dispatch2",
  "objc2 0.6.4",
@@ -7120,7 +7121,7 @@ dependencies = [
 
 [[package]]
 name = "znimok-proto"
-version = "0.0.9"
+version = "0.0.10"
 dependencies = [
  "image",
  "slint",
@@ -7133,7 +7134,7 @@ dependencies = [
 
 [[package]]
 name = "znimok-render"
-version = "0.0.9"
+version = "0.0.10"
 dependencies = [
  "parley",
  "vello_common",
@@ -7143,7 +7144,7 @@ dependencies = [
 
 [[package]]
 name = "znimok-report"
-version = "0.0.9"
+version = "0.0.10"
 dependencies = [
  "crc32fast",
  "serde_json",
@@ -7153,7 +7154,7 @@ dependencies = [
 
 [[package]]
 name = "znimok-settings"
-version = "0.0.9"
+version = "0.0.10"
 dependencies = [
  "objc2-core-foundation",
  "objc2-security",
@@ -7166,11 +7167,11 @@ dependencies = [
 
 [[package]]
 name = "znimok-stitch"
-version = "0.0.9"
+version = "0.0.10"
 
 [[package]]
 name = "znimok-thumbnail"
-version = "0.0.9"
+version = "0.0.10"
 dependencies = [
  "image",
  "windows",
@@ -7181,7 +7182,7 @@ dependencies = [
 
 [[package]]
 name = "znimok-update"
-version = "0.0.9"
+version = "0.0.10"
 dependencies = [
  "base64",
  "serde",
@@ -7192,7 +7193,7 @@ dependencies = [
 
 [[package]]
 name = "znimok-video"
-version = "0.0.9"
+version = "0.0.10"
 dependencies = [
  "gif",
  "znimok-core",
@@ -7200,7 +7201,7 @@ dependencies = [
 
 [[package]]
 name = "znimok-video-mac"
-version = "0.0.9"
+version = "0.0.10"
 dependencies = [
  "block2 0.6.2",
  "objc2 0.6.4",
@@ -7217,7 +7218,7 @@ dependencies = [
 
 [[package]]
 name = "znimok-video-win"
-version = "0.0.9"
+version = "0.0.10"
 dependencies = [
  "pollster",
  "wgpu",
@@ -7230,7 +7231,7 @@ dependencies = [
 
 [[package]]
 name = "znimok-win"
-version = "0.0.9"
+version = "0.0.10"
 dependencies = [
  "image",
  "png",
