@@ -5655,10 +5655,10 @@ report-chip-clicks = Clicks
 # @max: 12
 report-click = Click
 
-# @where: Report page: the line under the strip with the keyboard keys
+# @where: Report page: the keyboard keys, at the bottom right
 # @kind: body
-# @max: 100
-report-keys = Space — play / pause · N / P — the next / previous event · E — the next error
+# @max: 120
+report-keys = ↑ ↓ — events · E — next error · Space — play / pause · ← → — ±2 s · / — search · Esc — close
 
 # @where: Toast: a .zreport could not be opened; $reason why
 # @kind: body
@@ -5739,6 +5739,41 @@ libset-text-ready =
         [one] The text of one screenshot is searchable.
        *[other] The text of { $count } screenshots is searchable.
     }
+
+# @where: Report page: the first tab of an event's details (not a network request)
+# @kind: label
+# @max: 16
+report-tab-details = Details
+
+# @where: Report page: the details pane while no event is chosen
+# @kind: body
+# @max: 60
+report-pick = Choose an event to see its details
+
+# @where: Report page: the button that copies what the details show
+# @kind: button
+# @max: 14
+report-copy = Copy
+
+# @where: Report page, a request's details: the resource type and its MIME type
+# @kind: label
+# @max: 16
+report-h-type = Type
+
+# @where: Report page, a request's details: bytes transferred
+# @kind: label
+# @max: 16
+report-h-size = Size
+
+# @where: Report page, a console message's details: the script and line it came from
+# @kind: label
+# @max: 16
+report-h-source = Source
+
+# @where: Report page, a tab's details: the page title
+# @kind: label
+# @max: 16
+report-h-title = Title
 
 # @where: Title of the question when an AI agent wants access; $client is the name the agent reports
 # @kind: title

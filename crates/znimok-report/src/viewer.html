@@ -2,329 +2,406 @@
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{{TITLE}}</title>
 <style>
-:root{--bg:#f4f5f7;--panel:#fff;--line:#dfe2e8;--fg:#16181d;--fg2:#3b404b;--muted:#5c6270;--accent:#3d7bf5;--sel:#e3ebfd;--cur:#3d7bf51f;
---err:#d93a3f;--warn:#b86e00;--dl:#7b4ee0;--nav:#3d7bf5;--net:#5c6270;--click:#d19a00;--mono:ui-monospace,"JetBrains Mono",Consolas,monospace}
-@media (prefers-color-scheme:dark){:root{--bg:#0f1115;--panel:#171a20;--line:#2a2f38;--fg:#e8eaee;--fg2:#c4c8d0;--muted:#9aa1ad;--accent:#6b9bff;--sel:#24324d;--cur:#6b9bff24;
---err:#ff6b6f;--warn:#f5a524;--dl:#a970ff;--nav:#6b9bff;--net:#9aa1ad;--click:#f5c518}}
+:root{color-scheme:light dark;--bg:#f3f4f7;--panel:#fff;--soft:#f0f2f6;--line:#dde0e7;--fg:#15171c;--fg2:#3d424d;--muted:#6a707d;--accent:#2f6fed;--sel:#dfe9ff;
+--err:#d0343a;--warn:#a86400;--dl:#7446d8;--nav:#2f6fed;--net:#5a606d;--click:#b98700;--ok:#1f8a4c;--mono:ui-monospace,"JetBrains Mono","Cascadia Mono",Consolas,monospace;--ar:calc({{VW}} / {{VH}})}
+@media (prefers-color-scheme:dark){:root{--bg:#0e1014;--panel:#16191f;--soft:#1d2129;--line:#2a2f39;--fg:#e9ebef;--fg2:#c3c7cf;--muted:#8f96a3;--accent:#74a2ff;--sel:#223355;
+--err:#ff6b70;--warn:#f0a431;--dl:#ae7bff;--nav:#74a2ff;--net:#9aa1ad;--click:#f2c230;--ok:#4cc27d}}
 *{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif}
-main{max-width:1280px;margin:0 auto;padding:20px 16px 32px;display:grid;gap:14px;grid-template-columns:minmax(0,1fr)}
-}
-h1{font-size:20px;margin:0;text-wrap:balance}
-.meta{display:flex;flex-wrap:wrap;gap:6px 14px;color:var(--muted);font-size:13px}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--fg);font:13px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif;display:grid;grid-template-rows:auto minmax(0,1fr) auto;height:100dvh;overflow:hidden}
+button{font:inherit;color:inherit;border:0;background:none;cursor:pointer;padding:0}
+:focus-visible{outline:2px solid var(--accent);outline-offset:-2px;border-radius:4px}
+.top{display:flex;align-items:baseline;gap:6px 16px;flex-wrap:wrap;padding:10px 14px 8px}
+h1{font-size:16px;margin:0;font-weight:650;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.meta{display:flex;flex-wrap:wrap;gap:2px 14px;color:var(--muted);font-size:12px;flex:1;min-width:0}
 .meta b{color:var(--fg2);font-weight:600}
 .masked{color:var(--warn)}
-.v{position:relative;line-height:0;border-radius:10px;overflow:hidden;background:#000;max-width:{{VW}}px;width:100%;justify-self:center}
-video{width:100%;height:auto;display:block}
+.dl{display:flex;gap:12px;font-size:12px;margin-left:auto}
+.dl a{color:var(--accent);cursor:pointer}
+main{display:grid;gap:10px;padding:0 14px;min-height:0;grid-template-columns:minmax(0,1fr) minmax(360px,26vw) minmax(380px,30vw)}
+.stage{container-type:size;display:grid;place-items:start center;min-height:0;min-width:0}
+.fit{display:grid;gap:8px;width:min(100cqw,calc((100cqh - 38px) * var(--ar)))}
+.v{position:relative;line-height:0;border-radius:8px;overflow:hidden;background:#000;aspect-ratio:var(--ar)}
+video{width:100%;height:100%;display:block}
 .m{position:absolute;inset:0;width:100%;height:100%;display:none;pointer-events:none}
-.log{background:var(--panel);border:1px solid var(--line);border-radius:10px;display:grid;grid-template-columns:minmax(0,1fr);overflow:hidden}
-.log.open{grid-template-columns:minmax(0,1.1fr) minmax(0,1fr)}
-@media (max-width:820px){.log.open{grid-template-columns:minmax(0,1fr)}}
-.bar{display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:8px;border-bottom:1px solid var(--line)}
-.bar input{flex:0 1 220px;min-width:120px;padding:5px 9px;border:1px solid var(--line);border-radius:7px;background:var(--bg);color:var(--fg);font:inherit}
-.chip{border:0;border-radius:11px;padding:3px 10px;background:var(--bg);color:var(--fg2);font:600 12px system-ui,sans-serif;cursor:pointer}
+.tl{position:relative;height:30px;background:var(--panel);border:1px solid var(--line);border-radius:8px;cursor:pointer;overflow:hidden;touch-action:none}
+.tk{position:absolute;top:6px;width:2px;height:16px;margin-left:-1px;background:currentColor;opacity:.8;border-radius:1px}
+.tk.c5{top:10px;width:8px;height:8px;margin-left:-4px;border-radius:4px;opacity:1}
+.ph,.sm{position:absolute;top:0;bottom:0;width:2px;margin-left:-1px;background:var(--fg);pointer-events:none}
+.sm{width:10px;margin-left:-5px;background:var(--accent);opacity:.28;display:none}
+.pane{background:var(--panel);border:1px solid var(--line);border-radius:10px;display:flex;flex-direction:column;min-height:0;min-width:0;overflow:hidden}
+.bar{display:flex;gap:8px;align-items:center;padding:8px;border-bottom:1px solid var(--line)}
+.bar input{flex:0 0 150px;min-width:0;padding:4px 8px;border:1px solid var(--line);border-radius:7px;background:var(--bg);color:var(--fg);font:inherit}
+.chips{display:flex;gap:4px;overflow-x:auto;scrollbar-width:none;flex:1;min-width:0}
+.chip{flex:none;border-radius:11px;padding:2px 9px;background:var(--soft);color:var(--fg2);font-weight:600;font-size:12px;white-space:nowrap}
+.chip b{font-weight:500;color:var(--muted);margin-left:5px}
 .chip.on{background:var(--sel);color:var(--fg)}
-.chip:focus-visible,.row:focus-visible,.tab:focus-visible,.dl a:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
-.dl{margin-left:auto;display:flex;gap:10px;font-size:12px}
-.dl a{color:var(--accent);text-decoration:none;cursor:pointer}
-.list{max-height:46vh;overflow:auto}
-.row{display:grid;grid-template-columns:70px 78px minmax(0,1fr) minmax(0,150px);gap:8px;padding:3px 8px;cursor:pointer;align-items:baseline}
-.row:hover{background:var(--bg)}
-.row.cur{background:var(--cur)}
-.row.sel{background:var(--sel)}
-.row span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.tm{font:12px var(--mono);color:var(--muted);font-variant-numeric:tabular-nums}
-.kd{font-size:12px;font-weight:600}
-.src{font-size:12px;color:var(--muted);text-align:right}
+.list{flex:1;overflow-y:auto;overflow-x:hidden;min-height:0;overscroll-behavior:contain;padding:2px 0}
+.row{display:grid;grid-template-columns:50px 74px minmax(0,1fr) auto;gap:8px;padding:0 10px 0 7px;height:26px;align-items:center;cursor:pointer;border-left:3px solid transparent;outline-offset:-2px}
+.row>*{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row:hover{background:var(--soft)}
+.row.fut{color:var(--muted)}
+.row.fut .kd,.row.fut .msg{opacity:.62}
+.row.cur{border-left-color:var(--accent)}
+.row.sel,.row.sel:hover{background:var(--sel)}
+.tm{font:11.5px var(--mono);color:var(--muted);font-variant-numeric:tabular-nums}
+.row.cur .tm{color:var(--accent)}
+.kd{font-size:11.5px;font-weight:650}
+.msg i,.ttl i{font-style:normal;color:var(--muted);margin-left:8px}
+.src{font-size:11.5px;color:var(--muted);max-width:120px}
 .c4{color:var(--err)}.c3{color:var(--warn)}.c2{color:var(--dl)}.c1{color:var(--nav)}.c0{color:var(--net)}.c5{color:var(--click)}
-.tl{position:relative;height:26px;background:var(--panel);border:1px solid var(--line);border-radius:8px;cursor:pointer;overflow:hidden}
-.tl .tk{position:absolute;top:4px;width:2px;height:18px;margin-left:-1px;background:currentColor;opacity:.9}
-.tl .tk.c5{top:9px;width:8px;height:8px;margin-left:-4px;border-radius:4px}
-.tl .ph{position:absolute;top:0;bottom:0;width:2px;margin-left:-1px;background:var(--fg);pointer-events:none}
-.keys{color:var(--muted);font-size:12px}
-.row .msg.c4{color:var(--err)}.row .msg{color:var(--fg)}
-.empty{padding:14px;color:var(--muted)}
-.det{border-left:1px solid var(--line);display:none;flex-direction:column;min-height:0;max-height:calc(46vh + 45px)}
-.log.open .det{display:flex}
-@media (max-width:820px){.det{border-left:0;border-top:1px solid var(--line)}}
-.dhead{display:flex;gap:8px;align-items:center;padding:8px;border-bottom:1px solid var(--line)}
-.dhead span{flex:1;min-width:0;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.dhead button{border:0;background:var(--bg);color:var(--fg2);border-radius:6px;padding:2px 8px;cursor:pointer;font:inherit}
-.tabs{display:flex;gap:2px;padding:6px 8px 0}
-.tab{border:0;background:none;color:var(--fg2);padding:5px 9px;border-radius:7px 7px 0 0;cursor:pointer;font:600 12px system-ui,sans-serif}
-.tab.on{background:var(--bg);color:var(--fg)}
-.tab:disabled{color:var(--line);cursor:default}
-pre{margin:0;padding:10px;overflow:auto;font:12px/1.5 var(--mono);white-space:pre-wrap;word-break:break-word;flex:1;background:var(--bg)}
-.tim{padding:10px;display:grid;gap:5px;background:var(--bg);flex:1}
-.tr{display:grid;grid-template-columns:130px minmax(0,1fr) 80px;gap:8px;align-items:center;font-size:12px}
+.empty{padding:18px 14px;color:var(--muted);text-align:center;margin:auto}
+.dhead{display:flex;gap:8px;align-items:center;padding:0 6px 0 10px;height:41px;border-bottom:1px solid var(--line);flex:none}
+.ttl{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:600}
+.ib{flex:none;min-width:28px;height:28px;padding:0 7px;border-radius:7px;color:var(--fg2);font-size:12px}
+.ib:hover{background:var(--soft)}
+.back{display:none}
+.tabs{display:flex;gap:2px;padding:6px 8px 0;border-bottom:1px solid var(--line);overflow-x:auto;scrollbar-width:none;flex:none}
+.tab{flex:none;color:var(--muted);padding:4px 9px 6px;font-weight:600;font-size:12px;border-bottom:2px solid transparent;margin-bottom:-1px}
+.tab.on{color:var(--fg);border-bottom-color:var(--accent)}
+.tab:disabled{opacity:.4;cursor:default}
+.body{flex:1;overflow:auto;min-height:0;padding:10px 12px;overscroll-behavior:contain}
+.body h3{margin:12px 0 4px;font-size:11px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);font-weight:650}
+.body h3:first-child{margin-top:0}
+.kv{display:grid;grid-template-columns:min(38%,190px) minmax(0,1fr);gap:2px 12px;margin:0;font:12px/1.5 var(--mono)}
+.kv dt{color:var(--muted);overflow-wrap:anywhere}
+.kv dd{margin:0;overflow-wrap:anywhere}
+pre{margin:0;font:12px/1.5 var(--mono);white-space:pre-wrap;overflow-wrap:anywhere}
+pre+pre,.kv+pre,pre+.kv{margin-top:10px;padding-top:10px;border-top:1px dashed var(--line)}
+.jk{color:var(--dl)}.js{color:var(--ok)}.jn{color:var(--warn)}
+.tr{display:grid;grid-template-columns:110px minmax(0,1fr) 70px;gap:8px;align-items:center;font-size:12px;height:22px}
 .tr i{display:block;height:8px;border-radius:2px;background:var(--accent)}
 .tr .ms{font:12px var(--mono);color:var(--muted);text-align:right}
-footer{color:var(--muted);font-size:12px}
-@media (min-width:1100px){
-main{max-width:1800px;grid-template-columns:minmax(0,3fr) minmax(380px,2fr);align-items:start;column-gap:18px}
-h1,.meta,.v,.tl,.keys,footer{grid-column:1}
-.log{grid-column:2;grid-row:1/span 6;position:sticky;top:16px;height:calc(100vh - 32px);grid-template-rows:minmax(0,1fr) auto}
-.log.open{grid-template-columns:minmax(0,1fr)}
-.side{display:flex;flex-direction:column;min-height:0}
-.list{max-height:none;flex:1;min-height:120px}
-.det{border-left:0;border-top:1px solid var(--line);max-height:42vh}
+footer{display:flex;gap:16px;justify-content:space-between;color:var(--muted);font-size:11.5px;padding:7px 14px 9px}
+footer span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+@media (max-width:1499px){
+main{grid-template-columns:minmax(0,1fr) minmax(360px,42%);grid-template-rows:minmax(0,1fr) minmax(0,1fr)}
+.stage{grid-row:1/3}
+}
+@media (max-width:899px){
+main{grid-template-columns:minmax(0,1fr);grid-template-rows:auto minmax(0,1fr)}
+.stage{grid-row:auto;height:calc(min(38dvh,(100vw - 28px) / var(--ar)) + 38px)}
+.meta{flex:1 0 100%;order:1}
+.x{display:none}
+.log,.det{grid-area:2/1}
+.det{display:none}
+.open .det{display:flex}
+.open .log{display:none}
+.back{display:block}
+.bar{flex-wrap:wrap}
+.bar input{flex:1 0 100%}
+#keys{display:none}
+}
+.nolog main{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,1fr)}
+.nolog .stage{grid-row:auto;height:auto}
+.nolog .log,.nolog .det,.nolog .tl{display:none}
+.nolog #keys{display:inline}
 @media (prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}}
-</style></head><body><main>
-<h1>{{TITLE}}</h1>
-<div class="meta" id="meta"></div>
-<div class="v"><video controls playsinline preload="auto" src="{{VIDEO}}"></video>
+</style></head><body>
+<header class="top"><h1>{{TITLE}}</h1><div class="meta" id="meta"></div><div class="dl" id="dl"></div></header>
+<main>
+<section class="stage"><div class="fit"><div class="v"><video controls playsinline preload="auto" src="{{VIDEO}}"></video>
 {{LAYERS}}</div>
-<div class="tl" id="tl"><div class="ph"></div></div>
-<div class="keys" id="keys"></div>
-<section class="log" id="log"></section>
-<footer id="foot"></footer>
+<div class="tl" id="tl"><div class="sm"></div><div class="ph"></div></div></div></section>
+<section class="pane log" id="log"></section>
+<section class="pane det" id="det"></section>
 </main>
+<footer><span id="foot"></span><span id="keys"></span></footer>
 <script type="application/json" id="zn-data">{{DATA}}</script>
 <script>
 (() => {
 const D = JSON.parse(document.getElementById("zn-data").textContent);
 const L = (k) => D.strings[k] || k;
-const v = document.querySelector("video");
+const B = document.body, v = document.querySelector("video");
 const $ = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+const btn = (cls, text, title, fn) => { const b = $("button", cls, text); b.type = "button"; if (title) b.title = title; b.onclick = fn; return b; };
 
-// The marks: a layer each, shown in its time.
+// The video keeps its shape in whatever room there is; the marks: a layer each, shown in its time.
+v.addEventListener("loadedmetadata", () => { if (v.videoWidth && v.videoHeight) document.documentElement.style.setProperty("--ar", v.videoWidth / v.videoHeight); });
 const marks = [...document.querySelectorAll(".m")].map((e) => [e, e.dataset.t.split(";").map((s) => s.split(",").map(Number))]);
 if (marks.length) (function f() { const t = v.currentTime; for (const [e, r] of marks) e.style.display = r.some(([a, b]) => t >= a && t < b) ? "block" : "none"; requestAnimationFrame(f); })();
 
-// The header.
+// The header and the footer.
 const meta = document.getElementById("meta");
-for (const [k, val] of D.meta.rows) { const s = $("span"); s.append($("b", null, k + ": "), document.createTextNode(val)); meta.append(s); }
+for (const [k, val] of D.meta.rows) { const s = $("span"); s.append($("b", null, k + ": "), val); meta.append(s); }
 if (D.meta.masked) meta.append($("span", "masked", D.meta.masked));
-document.getElementById("foot").textContent = D.meta.foot;
+document.getElementById("foot").textContent = [D.meta.rights, D.meta.foot].filter(Boolean).join("  ·  ");
 
 const ev = D.events;
-const log = document.getElementById("log");
-document.body.dataset.rows = String(ev.length);
-if (!ev.length) { log.append($("div", "empty", L("report-no-log"))); document.body.dataset.znimokReport = "ok"; return; }
+const log = document.getElementById("log"), det = document.getElementById("det");
+B.dataset.rows = String(ev.length);
+const keys = document.getElementById("keys");
+if (!ev.length) { B.classList.add("nolog"); keys.textContent = L("report-no-log"); B.dataset.znimokReport = "ok"; return; }
+keys.textContent = L("report-keys");
 
-const kindOf = (e) => e.k === "console" || e.k === "log" ? "console" : e.k === "error" ? "error" : e.k === "net" ? "net" : e.k === "ws" ? "ws" : e.k === "nav" ? "nav" : e.k === "dl" ? "dl" : e.k === "click" ? "click" : "info";
-const cls = (e) => e.k === "click" ? 5 : e.s === 2 ? 4 : e.s === 1 ? 3 : e.k === "dl" ? 2 : e.k === "nav" ? 1 : 0;
+const kindOf = (e) => e.k === "console" || e.k === "log" ? "console" : ["error", "net", "ws", "dl", "click"].includes(e.k) ? e.k : e.k === "nav" || e.k === "tab" ? "nav" : "info";
+const cls = (e) => e.k === "click" ? 5 : e.s === 2 ? 4 : e.s === 1 ? 3 : e.k === "dl" ? 2 : kindOf(e) === "nav" ? 1 : 0;
 const CHIPS = [["devp-chip-all", () => true], ["devp-chip-errors", (e) => e.s === 2], ["devp-chip-warnings", (e) => e.s === 1],
-  ["devp-chip-network", (e) => e.k === "net" || e.k === "ws"], ["devp-chip-console", (e) => ["console", "log", "error"].includes(e.k)],
-  ["devp-chip-nav", (e) => e.k === "nav"], ["devp-chip-datalayer", (e) => e.k === "dl"], ["report-chip-clicks", (e) => e.k === "click"]];
-const fmt = (s) => { s = Math.max(0, s); const m = Math.floor(s / 60); const r = s - m * 60; return m + ":" + (r < 10 ? "0" : "") + r.toFixed(2); };
-const oneLine = (s, n = 300) => { s = String(s == null ? "" : s).replace(/[\u0000-\u001f]/g, " "); return s.length > n ? s.slice(0, n) + "…" : s; };
+  ["devp-chip-network", (e) => e.k === "net" || e.k === "ws"], ["devp-chip-console", (e) => ["console", "error"].includes(kindOf(e))],
+  ["devp-chip-nav", (e) => kindOf(e) === "nav"], ["devp-chip-datalayer", (e) => e.k === "dl"], ["report-chip-clicks", (e) => e.k === "click"]];
+const fmt = (s) => { s = Math.max(0, s); const m = Math.floor(s / 60), r = s - m * 60; return m + ":" + (r < 10 ? "0" : "") + r.toFixed(2); };
+const oneLine = (s, n = 240) => { s = String(s == null ? "" : s).replace(/\s+/g, " "); return s.length > n ? s.slice(0, n) + "…" : s; };
 const tail = (s) => { s = String(s || ""); const i = s.lastIndexOf("/"); return i >= 0 && i < s.length - 1 ? s.slice(i + 1) : s; };
+const size = (n) => n >= 1048576 ? (n / 1048576).toFixed(1) + " MB" : n >= 1024 ? Math.round(n / 1024) + " KB" : n + " B";
+const url = (u) => { try { return new URL(u); } catch (x) { return null; } };
+// console.log("%cText", "css"): the text without its styles, the other arguments in their places.
+function said(e) {
+  const a = Array.isArray(e.args) ? e.args : null;
+  if (!a || typeof a[0] !== "string" || !/%[csdifoO]/.test(a[0])) return String(e.text != null ? e.text : "");
+  let i = 1;
+  const s = a[0].replace(/%([csdifoO%])/g, (m, c) => c === "%" ? "%" : c === "c" ? (i++, "") : i < a.length ? String(a[i++]) : m);
+  return [s, ...a.slice(i)].join(" ");
+}
 function label(e) {
   switch (kindOf(e)) {
-    case "net": return (e.method || "") + " " + (e.err ? "✕" : (e.status || 0));
+    case "net": return (e.method || "") + " " + (e.err ? "✕" : (e.status || "…"));
     case "ws": return e.dir === "out" ? "WS ↑" : "WS ↓";
     case "console": return e.lvl === "warning" ? "warn" : (e.lvl || "log");
     case "dl": return "dataLayer";
     case "click": return L("report-click");
-    case "info": return e.k || "info";
-    default: return kindOf(e);
+    default: return e.k || "info";
   }
 }
+// What a row says: the main words and the quieter ones after them.
 function message(e) {
   switch (kindOf(e)) {
-    case "net": return oneLine((e.url || "") + (e.err ? " — " + e.err : ""));
-    case "ws": return oneLine(e.data);
-    case "nav": return oneLine(e.url);
-    case "click": return e.x + ", " + e.y;
+    case "net": {
+      const u = url(e.url), err = e.err ? " — " + e.err : "";
+      if (!u || !u.host) return [oneLine(e.url) + err, ""];
+      const p = u.pathname.replace(/\/+$/, ""), name = tail(p) + oneLine(u.search, 60);
+      return [(name || u.host) + err, name ? u.host : ""];
+    }
+    case "ws": return [oneLine(e.data), ""];
+    case "nav": return [oneLine(e.title || e.url), e.title ? oneLine(e.url) : ""];
+    case "click": return [e.x + ", " + e.y, ""];
     case "dl": {
       let rest = e.data;
       if (rest && typeof rest === "object" && !Array.isArray(rest)) { rest = Object.assign({}, rest); delete rest.event; if (!Object.keys(rest).length) rest = null; }
-      const r = rest == null ? "" : JSON.stringify(rest);
-      return oneLine(e.ev ? (r ? e.ev + "  " + r : e.ev) : r);
+      const r = rest == null ? "" : oneLine(JSON.stringify(rest));
+      return e.ev ? [e.ev, r] : [r, ""];
     }
-    default: return oneLine(e.text != null ? e.text : e.url);
+    default: return [oneLine(said(e) || e.url), ""];
   }
 }
-const source = (e) => tail(e.k === "net" ? (e.dur != null ? e.dur + " ms" : "") : e.src);
+const source = (e) => e.k === "net" ? (e.dur != null ? Math.round(e.dur) + " ms" : "") : tail(e.src);
 function matches(e, q) {
   if (!q) return true;
   const has = (x) => x != null && String(typeof x === "object" ? JSON.stringify(x) : x).toLowerCase().includes(q);
   if (e.k === "dl") return has(e.ev) || has(e.data);
-  return has(e.text) || has(e.url) || has(e.src) || has(e.postData) || has(e.data) || has(e.method) || (!e.b64 && has(e.body)) || has(e.status);
+  return has(e.text) || has(e.url) || has(e.title) || has(e.src) || has(e.postData) || has(e.data) || has(e.method) || (!e.b64 && has(e.body)) || has(e.status);
 }
 
-// The bar: search, chips, downloads.
-const bar = $("div", "bar");
-const search = $("input"); search.type = "search"; search.placeholder = L("devp-search");
-bar.append(search);
-const chipEls = CHIPS.map(([k], i) => { const b = $("button", "chip"); b.type = "button"; b.onclick = () => { chip = i; refilter(); }; bar.append(b); return b; });
-const dls = $("div", "dl");
-const save = (name, data) => { const a = $("a", null, name); a.tabIndex = 0; a.onclick = () => { const u = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: "application/json" })); const l = document.createElement("a"); l.href = u; l.download = name; l.click(); setTimeout(() => URL.revokeObjectURL(u), 1000); }; return a; };
+// The log: search, chips, the list.
+const save = (name, data) => { const a = $("a", null, name); a.tabIndex = 0; a.onclick = () => { const u = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: "application/json" })); const l = $("a"); l.href = u; l.download = name; l.click(); setTimeout(() => URL.revokeObjectURL(u), 1000); }; return a; };
+const dls = document.getElementById("dl");
 dls.append(save("log.json", ev));
 const dlOnly = ev.filter((e) => e.k === "dl");
 if (dlOnly.length) dls.append(save("dataLayer.json", dlOnly.map((e) => ({ at: e.at, event: e.ev, data: e.data }))));
-bar.append(dls);
-const left = $("div", "side"); left.append(bar);
-const list = $("div", "list"); list.tabIndex = -1; left.append(list);
-const det = $("div", "det");
-log.append(left, det);
+const bar = $("div", "bar"), search = $("input"), chips = $("div", "chips"), list = $("div", "list");
+search.type = "search"; search.placeholder = L("devp-search");
+const chipEls = CHIPS.map(([k], i) => { const b = btn("chip", null, null, () => { chip = i; refilter(); }); chips.append(b); return b; });
+bar.append(search, chips);
+log.append(bar, list);
 
-let chip = 0, q = "", shown = [], sel = -1, tab = 0, cur = -1;
+let chip = 0, shown = [], rows = [], sel = -1, cur = -1, pin = -1;
+const tabOf = {};
 function refilter() {
-  q = search.value.trim().toLowerCase();
+  const q = search.value.trim().toLowerCase();
   const inQ = ev.filter((e) => matches(e, q));
-  chipEls.forEach((b, i) => { b.textContent = L(CHIPS[i][0]) + "  " + inQ.filter(CHIPS[i][1]).length; b.classList.toggle("on", i === chip); });
-  shown = [];
+  chipEls.forEach((b, i) => {
+    const n = inQ.filter(CHIPS[i][1]).length;
+    b.textContent = L(CHIPS[i][0]); b.append($("b", null, n));
+    b.classList.toggle("on", i === chip); b.hidden = !n && i > 0 && i !== chip;
+  });
+  shown = []; rows = [];
   ev.forEach((e, i) => { if (CHIPS[chip][1](e) && matches(e, q)) shown.push(i); });
   list.textContent = "";
   if (!shown.length) list.append($("div", "empty", L("devp-empty")));
   for (const i of shown) {
-    const e = ev[i], c = cls(e);
-    const r = $("div", "row"); r.tabIndex = 0; r.dataset.i = i;
-    r.append($("span", "tm", fmt(e.at)), $("span", "kd c" + c, label(e)), $("span", "msg" + (c === 4 ? " c4" : ""), message(e)), $("span", "src", source(e)));
-    r.onclick = () => pick(i, true);
-    r.onkeydown = (k) => { if (k.key === "Enter") pick(i, true); };
+    const e = ev[i], c = cls(e), [main, dim] = message(e);
+    const r = $("div", "row fut"), m = $("span", "msg" + (c === 4 ? " c4" : ""), main);
+    r.dataset.i = i;
+    if (dim) m.append($("i", null, dim));
+    r.append($("span", "tm", fmt(e.at)), $("span", "kd c" + c, label(e)), m, $("span", "src", source(e)));
     if (i === sel) r.classList.add("sel");
-    list.append(r);
+    rows.push(r); list.append(r);
   }
   cur = -1; follow(false);
-  document.body.dataset.shown = String(shown.length);
+  B.dataset.shown = String(shown.length);
 }
 search.oninput = refilter;
+list.onclick = (k) => { const r = k.target.closest(".row"); if (r) pick(Number(r.dataset.i)); };
 
+// Where the video is in the list: one thin mark on the last event that has happened, the ones
+// still to come are quieter. A picked event holds the mark while the video stands on its time
+// (many events share a moment — the mark must not sit on a neighbour).
 function follow(scroll) {
   const t = v.currentTime + 0.001;
   let lo = 0, hi = shown.length;
   while (lo < hi) { const m = (lo + hi) >> 1; if (ev[shown[m]].at <= t) lo = m + 1; else hi = m; }
-  const n = lo - 1;
+  let n = lo - 1;
+  if (pin >= 0) { const p = shown.indexOf(pin); if (Math.abs(ev[pin].at - v.currentTime) > 0.06) pin = -1; else if (p >= 0) n = p; }
   if (n === cur) return;
-  const rows = list.children;
-  if (cur >= 0 && rows[cur]) rows[cur].classList.remove("cur");
+  if (rows[cur]) rows[cur].classList.remove("cur");
+  for (let i = Math.min(cur, n) + 1; i <= Math.max(cur, n); i++) if (rows[i]) rows[i].classList.toggle("fut", i > n);
   cur = n;
-  if (cur >= 0 && rows[cur] && rows[cur].classList) { rows[cur].classList.add("cur"); if (scroll) rows[cur].scrollIntoView({ block: "nearest" }); }
+  if (rows[cur]) { rows[cur].classList.add("cur"); if (scroll) rows[cur].scrollIntoView({ block: "nearest" }); }
 }
 v.addEventListener("timeupdate", () => follow(!v.paused));
-v.addEventListener("seeked", () => follow(true));
+v.addEventListener("seeked", () => follow(false));
 
-// The strip under the video: a tick per event (a dot per click), the playhead; a click seeks.
-const tl = document.getElementById("tl"), ph = tl.querySelector(".ph");
-const dur = () => (isFinite(v.duration) && v.duration > 0) ? v.duration : Math.max(0.001, ...ev.map((e) => e.at), 1);
+// The strip under the video: a tick per event (a dot per click), the playhead, the picked event.
+const tl = document.getElementById("tl"), ph = tl.querySelector(".ph"), sm = tl.querySelector(".sm");
+const dur = () => (isFinite(v.duration) && v.duration > 0) ? v.duration : Math.max(1, ...ev.map((e) => e.at));
+const pos = (t) => (Math.min(1, Math.max(0, t / dur())) * 100) + "%";
 function buildTl() {
   for (const t of [...tl.querySelectorAll(".tk")]) t.remove();
-  const d = dur();
-  for (const e of ev) { const t = $("i", "tk c" + cls(e)); t.style.left = (Math.min(1, e.at / d) * 100) + "%"; t.title = fmt(e.at) + "  " + label(e); tl.insertBefore(t, ph); }
+  for (const e of ev) { const t = $("i", "tk c" + cls(e)); t.style.left = pos(e.at); tl.insertBefore(t, sm); }
+  if (sel >= 0) sm.style.left = pos(ev[sel].at);
 }
 buildTl();
 v.addEventListener("loadedmetadata", buildTl);
-(function phf() { ph.style.left = (Math.min(1, v.currentTime / dur()) * 100) + "%"; requestAnimationFrame(phf); })();
-tl.addEventListener("click", (k) => { const r = tl.getBoundingClientRect(); v.currentTime = Math.max(0, (k.clientX - r.left) / Math.max(1, r.width)) * dur(); });
+(function phf() { ph.style.left = pos(v.currentTime); requestAnimationFrame(phf); })();
+const scrub = (k) => { const r = tl.getBoundingClientRect(); v.currentTime = Math.min(1, Math.max(0, (k.clientX - r.left) / Math.max(1, r.width))) * dur(); };
+tl.onpointerdown = (k) => { tl.setPointerCapture(k.pointerId); scrub(k); };
+tl.onpointermove = (k) => { if (tl.hasPointerCapture(k.pointerId)) scrub(k); };
 
-// The keys: Space — play / pause, N / P — the next / previous event, E — the next error.
-document.getElementById("keys").textContent = L("report-keys");
-const step = (dir, only) => {
-  const t = v.currentTime + 0.001, idx = shown.filter((i) => !only || only(ev[i]));
-  const next = dir > 0 ? idx.find((i) => ev[i].at > t) : [...idx].reverse().find((i) => ev[i].at < t - 0.3);
-  if (next != null) pick(next, true);
-};
-document.addEventListener("keydown", (k) => {
-  const tag = (k.target && k.target.tagName || "").toLowerCase();
-  if (tag === "input" || tag === "textarea" || k.ctrlKey || k.metaKey || k.altKey) return;
-  if (k.key === " ") { k.preventDefault(); if (v.paused) v.play(); else v.pause(); }
-  else if (k.key === "n" || k.key === "N" || k.key === "т" || k.key === "Т") step(1);
-  else if (k.key === "p" || k.key === "P" || k.key === "з" || k.key === "З") step(-1);
-  else if (k.key === "e" || k.key === "E" || k.key === "у" || k.key === "У") step(1, (e) => e.s === 2);
-});
-
-// The details.
-const size = (n) => n >= 1048576 ? (n / 1048576).toFixed(1) + " MB" : n >= 1024 ? Math.round(n / 1024) + " KB" : n + " B";
-function pretty(s) {
-  if (s == null) return "";
-  if (typeof s !== "string") return JSON.stringify(s, null, 2);
-  const t = s.trimStart();
-  if (t[0] === "{" || t[0] === "[") { try { return JSON.stringify(JSON.parse(s), null, 2); } catch (x) { /* not JSON */ } }
-  if (s.includes("=") && !/\s/.test(s) && s.split("&").every((p) => p.includes("="))) {
-    const dec = (x) => { try { return decodeURIComponent(x.replace(/\+/g, " ")); } catch (y) { return x; } };
-    return s.split("&").map((p) => { const i = p.indexOf("="); return dec(p.slice(0, i)) + ": " + dec(p.slice(i + 1)); }).join("\n");
-  }
-  return s;
+// The details: always the same frame — a title, tabs, the content — whatever the event is.
+const esc = (s) => String(s).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+const BIG = 300000;
+const clip = (s) => s.length > BIG ? s.slice(0, BIG) + "\n\n… " + size(s.length - BIG) : s;
+const isBin = (s) => /[\u0000-\u0008\u000e-\u001f]/.test(s.slice(0, 2000));
+function pre(s, json) {
+  const p = $("pre");
+  s = clip(String(s == null ? "" : s));
+  if (json && s.length < BIG) p.innerHTML = esc(s).replace(/("(?:\\.|[^"\\])*")(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?/g, (m, str, colon, word) => str ? '<span class="' + (colon ? "jk" : "js") + '">' + str + "</span>" + (colon || "") : '<span class="jn">' + m + "</span>");
+  else p.textContent = s;
+  return p;
 }
-const binary = (e) => L("devp-binary").replace("{size}", size(Math.floor((e.bodyCut || (e.body || "").length) / 4) * 3));
+function kv(title, pairs) {
+  const out = [], d = $("dl", "kv");
+  for (const [k, val] of pairs) if (val != null && val !== "") d.append($("dt", null, k), $("dd", null, val));
+  if (!d.children.length) return out;
+  if (title) out.push($("h3", null, title));
+  out.push(d);
+  return out;
+}
+const dec = (x) => { try { return decodeURIComponent(x.replace(/\+/g, " ")); } catch (y) { return x; } };
+const form = (s) => s.split("&").filter(Boolean).map((p) => { const i = p.indexOf("="); return i < 0 ? [dec(p), " "] : [dec(p.slice(0, i)), dec(p.slice(i + 1)) || " "]; });
+const isForm = (s) => s.includes("=") && !/[\s{<]/.test(s);
+// A value as it reads best: JSON indented and coloured, a form as a table, the rest as it is.
+function nice(s) {
+  if (s == null) return [];
+  if (typeof s !== "string") return [pre(JSON.stringify(s, null, 2), true)];
+  if (isBin(s)) return [pre(L("devp-binary").replace("{size}", size(s.length)))];
+  const t = s.trim();
+  if (t[0] === "{" || t[0] === "[") { try { return [pre(JSON.stringify(JSON.parse(t), null, 2), true)]; } catch (x) { /* not JSON */ } }
+  const lines = t.split(/\r?\n/);
+  if (lines.length < 50 && lines.every(isForm)) return lines.flatMap((l, i) => kv(lines.length > 1 ? "#" + (i + 1) : "", form(l)));
+  return [pre(s)];
+}
+const binary = (e) => pre(L("devp-binary").replace("{size}", size(Math.floor((e.bodyCut || (e.body || "").length) / 4) * 3)));
+const sorted = (h) => Object.keys(h || {}).sort((a, b) => a.toLowerCase() < b.toLowerCase() ? -1 : 1).map((k) => [k, h[k]]);
 function headers(e) {
-  let s = L("devp-general") + "\n";
-  const row = (k, val) => { if (val != null && val !== "") s += "  " + k + ": " + val + "\n"; };
-  row(L("devp-h-url"), e.url); row(L("devp-h-method"), e.method);
-  if (e.status) row(L("devp-h-status"), (e.status + " " + (e.statusText || "")).trim());
-  row(L("devp-h-remote"), e.remote); row(L("devp-h-protocol"), e.proto);
-  if (e.initiator) row(L("devp-h-initiator"), (e.initiator.type || "") + (e.initiator.url ? " " + e.initiator.url + (e.initiator.line != null ? ":" + (e.initiator.line + 1) : "") : ""));
-  if (e.cache) row(L("devp-h-cache"), "✓");
-  if (e.redirect) row("→", e.redirect);
-  row(L("devp-h-error"), e.err);
-  for (const [title, h] of [[L("devp-res-headers"), e.resHeaders], [L("devp-req-headers"), e.reqHeaders]]) {
-    if (!h || !Object.keys(h).length) continue;
-    s += "\n" + title + "\n";
-    for (const k of Object.keys(h).sort((a, b) => a.toLowerCase() < b.toLowerCase() ? -1 : 1)) s += "  " + k + ": " + h[k] + "\n";
-  }
-  return s;
+  const i = e.initiator;
+  return [...kv(L("devp-general"), [[L("devp-h-url"), e.url], [L("devp-h-method"), e.method], [L("devp-h-status"), e.status ? (e.status + " " + (e.statusText || "")).trim() : ""],
+    [L("devp-h-error"), e.err], [L("devp-h-remote"), e.remote], [L("devp-h-protocol"), e.proto], [L("report-h-type"), [e.type, e.mime].filter(Boolean).join(" · ")], [L("report-h-size"), e.size ? size(e.size) : ""],
+    [L("devp-h-initiator"), i ? (i.type || "") + (i.url ? " " + i.url + (i.line != null ? ":" + (i.line + 1) : "") : "") : ""], [L("devp-h-cache"), e.cache ? "✓" : ""], ["→", e.redirect]]),
+    ...kv(L("devp-res-headers"), sorted(e.resHeaders)), ...kv(L("devp-req-headers"), sorted(e.reqHeaders))];
 }
 function timing(e) {
   const total = Math.max(1, e.dur || 0), t = e.timing || {}, out = [];
   const at = (k) => typeof t[k] === "number" && t[k] >= 0 ? t[k] : null;
-  const push = (k, a, b) => { if (a != null && b != null && b > a) out.push([L("devp-t-" + k), a / total, Math.max(0.002, (b - a) / total), (b - a).toFixed(1) + " ms"]); };
+  const push = (k, a, b) => { if (a != null && b != null && b > a) out.push([L("devp-t-" + k), a / total, Math.max(0.004, (b - a) / total), (b - a).toFixed(1) + " ms"]); };
   const firsts = [at("dnsStart"), at("connectStart"), at("sendStart")].filter((x) => x != null);
   if (firsts.length) push("queue", 0, Math.min(...firsts));
   push("dns", at("dnsStart"), at("dnsEnd")); push("connect", at("connectStart"), at("connectEnd")); push("tls", at("sslStart"), at("sslEnd"));
   push("send", at("sendStart"), at("sendEnd")); push("wait", at("sendEnd"), at("receiveHeadersEnd")); push("download", at("receiveHeadersEnd"), total);
   push("total", 0, total);
-  return out;
+  return out.map(([name, a, w, ms]) => { const r = $("div", "tr"), b = $("div"), i = $("i"); i.style.marginLeft = (a * 100) + "%"; i.style.width = (Math.min(1 - a, w) * 100) + "%"; b.append(i); r.append($("span", null, name), b, $("span", "ms", ms)); return r; });
 }
 const frameLine = (f) => typeof f === "string" ? f : "at " + (f.fn || "(anonymous)") + " (" + (f.url || "") + (f.line != null ? ":" + f.line + (f.col != null ? ":" + f.col : "") : "") + ")";
-function text(e) {
+// The tabs of an event: [key of the name, available, what it shows].
+function tabsOf(e) {
   const k = kindOf(e);
-  if (k === "ws") return pretty(e.data);
-  if (k === "nav") return e.url || "";
-  if (k === "dl") {
-    let s = (e.pre ? L("devp-dl-pre") + "\n\n" : "") + (e.frame ? L("devp-dl-frame") + "\n\n" : "");
-    return s + (typeof e.data === "string" && e.cut ? e.data + "\n\n… " + size(e.cut) : JSON.stringify(e.data, null, 2));
+  if (k === "net") {
+    const u = url(e.url), q = u && u.search.length > 1 ? form(u.search.slice(1)) : [], body = typeof e.body === "string";
+    return [["devp-tab-headers", true, () => headers(e)],
+      ["devp-tab-payload", q.length || typeof e.postData === "string", () => [...kv(q.length && e.postData != null ? "query" : "", q), ...(e.postData != null && q.length ? [$("h3", null, "body")] : []), ...nice(e.postData)]],
+      ["devp-tab-preview", body, () => e.b64 ? [binary(e)] : nice(e.body)],
+      ["devp-tab-response", body, () => e.b64 ? [binary(e)] : [pre(e.body + (e.bodyCut ? "\n\n… " + size(e.bodyCut) : ""))]],
+      ["devp-tab-timing", !!e.timing || e.dur != null, () => timing(e)]];
   }
-  let s = String(e.text || "");
-  if (Array.isArray(e.args) && e.args.length > 1) for (const a of e.args) s += "\n\n" + pretty(a);
-  if (e.src) s += "\n\n" + e.src;
-  if (typeof e.stack === "string" && e.stack) s += "\n\n" + L("devp-stack") + "\n" + e.stack;
-  else if (Array.isArray(e.stack) && e.stack.length) s += "\n\n" + L("devp-stack") + "\n" + e.stack.map(frameLine).join("\n");
-  return s || L("devp-nothing");
+  const stack = typeof e.stack === "string" ? e.stack : Array.isArray(e.stack) ? e.stack.map(frameLine).join("\n") : "";
+  let main;
+  if (k === "dl") main = () => [...[e.pre && "devp-dl-pre", e.frame && "devp-dl-frame"].filter(Boolean).map((n) => pre(L(n))), ...(typeof e.data === "string" && e.cut ? [pre(e.data + "\n\n… " + size(e.cut))] : nice(e.data))];
+  else if (k === "ws") main = () => nice(e.data);
+  else if (k === "nav" || k === "click") main = () => kv("", [[L("report-h-title"), e.title], [L("devp-h-url"), e.url], ["x, y", e.x != null ? e.x + ", " + e.y : ""], ["", e.note]]);
+  else main = () => { const a = Array.isArray(e.args) ? e.args.slice(1).filter((x) => typeof x !== "string" || !/^[\w-]+\s*:[^{}]*;/.test(x)) : []; return [pre(said(e) || L("devp-nothing")), ...a.flatMap(nice), ...kv("", [[L("report-h-source"), e.src]])]; };
+  return [["report-tab-details", true, main], ["devp-stack", !!stack, () => [pre(stack)]]];
 }
-function pick(i, seek) {
-  sel = i; tab = 0;
-  for (const r of list.children) if (r.classList) r.classList.toggle("sel", Number(r.dataset.i) === i);
-  if (seek) { v.currentTime = Math.max(0, ev[i].at); }
+const sameTime = () => sel >= 0 && Math.abs(ev[sel].at - v.currentTime) < 0.06;
+function pick(i) {
+  sel = i; pin = i;
+  for (const r of rows) r.classList.toggle("sel", Number(r.dataset.i) === i);
+  if (!sameTime()) v.currentTime = Math.max(0, ev[i].at);
+  cur = -2; follow(false);
+  const r = rows[shown.indexOf(i)];
+  if (r) r.scrollIntoView({ block: "nearest" });
   details();
 }
+function close() { sel = -1; pin = -1; for (const r of rows) r.classList.remove("sel"); details(); }
 function details() {
   det.textContent = "";
-  if (sel < 0) { log.classList.remove("open"); return; }
-  log.classList.add("open");
-  const e = ev[sel];
-  const head = $("div", "dhead");
-  head.append($("span", null, label(e) + "  " + message(e)));
-  const x = $("button", null, "✕"); x.type = "button"; x.title = L("common-close"); x.onclick = () => { sel = -1; for (const r of list.children) if (r.classList) r.classList.remove("sel"); details(); };
-  head.append(x);
-  det.append(head);
-  if (kindOf(e) !== "net") { det.append($("pre", null, text(e))); return; }
-  const has = [true, typeof e.postData === "string", typeof e.body === "string", typeof e.body === "string", !!e.timing || e.dur != null];
-  const tabs = $("div", "tabs");
-  ["devp-tab-headers", "devp-tab-payload", "devp-tab-preview", "devp-tab-response", "devp-tab-timing"].forEach((k, i) => {
-    const b = $("button", "tab" + (i === tab ? " on" : ""), L(k)); b.type = "button"; b.disabled = !has[i]; b.onclick = () => { tab = i; details(); }; tabs.append(b);
+  B.classList.toggle("open", sel >= 0);
+  sm.style.display = sel >= 0 ? "block" : "none";
+  if (sel < 0) { det.append($("div", "empty", L("report-pick"))); return; }
+  const e = ev[sel], tabs = tabsOf(e), k = kindOf(e), [main, dim] = message(e);
+  sm.style.left = pos(e.at);
+  let on = tabs.findIndex((t) => t[0] === tabOf[k] && t[1]);
+  if (on < 0) on = 0;
+  const body = $("div", "body"), head = $("div", "dhead"), ttl = $("span", "ttl", main);
+  if (dim) ttl.append($("i", null, dim));
+  body.append(...tabs[on][2]());
+  if (!body.childNodes.length) body.append($("div", "empty", L("devp-nothing")));
+  const copy = btn("ib", L("report-copy"), null, () => {
+    const s = body.innerText, done = () => { copy.textContent = "✓"; setTimeout(() => { copy.textContent = L("report-copy"); }, 1200); };
+    (navigator.clipboard ? navigator.clipboard.writeText(s) : Promise.reject()).then(done, () => { const a = $("textarea"); a.value = s; B.append(a); a.select(); document.execCommand("copy"); a.remove(); done(); });
   });
-  det.append(tabs);
-  if (tab === 4) {
-    const box = $("div", "tim");
-    for (const [name, a, w, ms] of timing(e)) {
-      const r = $("div", "tr"), bar = $("div"), i = $("i");
-      i.style.marginLeft = (a * 100) + "%"; i.style.width = (w * 100) + "%";
-      bar.append(i); r.append($("span", null, name), bar, $("span", "ms", ms)); box.append(r);
-    }
-    det.append(box);
-    return;
-  }
-  let s;
-  if (tab === 1) s = pretty(e.postData);
-  else if (tab === 2) s = e.b64 ? binary(e) : pretty(e.body);
-  else if (tab === 3) s = e.b64 ? binary(e) : String(e.body || "") + (e.bodyCut ? "\n\n… " + size(e.bodyCut) : "");
-  else s = headers(e);
-  det.append($("pre", null, s || L("devp-nothing")));
+  head.append(btn("ib back", "←", L("common-close"), close), $("span", "kd c" + cls(e), label(e)), $("span", "tm", fmt(e.at)), ttl, copy, btn("ib x", "✕", L("common-close"), close));
+  const bar = $("div", "tabs");
+  tabs.forEach(([name, ok], i) => { const b = btn("tab" + (i === on ? " on" : ""), L(name), null, () => { tabOf[k] = name; details(); }); b.disabled = !ok; bar.append(b); });
+  det.append(head, bar, body);
 }
+
+// The keys: ↑ ↓ — the previous / next event, E — the next error, Space — play / pause,
+// ← → — two seconds back / on, / — search, Esc — close the details.
+const step = (dir, only) => {
+  const idx = only ? shown.filter((i) => only(ev[i])) : shown;
+  let p = idx.indexOf(sel);
+  if (p >= 0) p += dir;
+  else { const from = sel >= 0 ? shown.indexOf(sel) : cur; p = dir > 0 ? idx.findIndex((i) => shown.indexOf(i) > from) : idx.findLastIndex((i) => shown.indexOf(i) < from || (sel < 0 && shown.indexOf(i) === from)); }
+  if (idx[p] != null) pick(idx[p]);
+};
+document.addEventListener("keydown", (k) => {
+  const tag = (k.target && k.target.tagName || "").toLowerCase();
+  if (k.key === "Escape") { if (tag === "input") { search.value = ""; refilter(); search.blur(); } else close(); return; }
+  if (tag === "input" || tag === "textarea" || k.ctrlKey || k.metaKey || k.altKey) return;
+  // The player answers its own keys when it has the focus.
+  if (tag === "video" && [" ", "ArrowLeft", "ArrowRight"].includes(k.key)) return;
+  const key = k.key.toLowerCase();
+  if (k.key === " ") { if (v.paused) v.play(); else v.pause(); }
+  else if (k.key === "ArrowDown") step(1);
+  else if (k.key === "ArrowUp") step(-1);
+  else if (k.key === "ArrowRight") v.currentTime = Math.min(dur(), v.currentTime + 2);
+  else if (k.key === "ArrowLeft") v.currentTime = Math.max(0, v.currentTime - 2);
+  else if (key === "e" || key === "у") step(1, (e) => e.s === 2);
+  else if (k.key === "/" || k.key === ".") search.focus();
+  else return;
+  k.preventDefault();
+});
 refilter();
-document.body.dataset.znimokReport = "ok";
+details();
+B.dataset.znimokReport = "ok";
 })();
 </script></body></html>

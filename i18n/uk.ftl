@@ -5701,10 +5701,10 @@ report-chip-clicks = Кліки
 # @max: 12
 report-click = Клік
 
-# @where: Report page: the line under the strip with the keyboard keys
+# @where: Report page: the keyboard keys, at the bottom right
 # @kind: body
-# @max: 100
-report-keys = Пробіл — пуск/пауза · N / P — наступна/попередня подія · E — наступна помилка
+# @max: 120
+report-keys = ↑ ↓ — події · E — наступна помилка · Пробіл — пуск/пауза · ← → — ±2 с · / — пошук · Esc — закрити
 
 # @where: Toast: a .zreport could not be opened; $reason why
 # @kind: body
@@ -5787,6 +5787,41 @@ libset-text-ready =
         [many] Текст { $count } знімків доступний для пошуку.
        *[other] Текст { $count } знімка доступний для пошуку.
     }
+
+# @where: Report page: the first tab of an event's details (not a network request)
+# @kind: label
+# @max: 16
+report-tab-details = Подробиці
+
+# @where: Report page: the details pane while no event is chosen
+# @kind: body
+# @max: 60
+report-pick = Виберіть подію, щоб побачити подробиці
+
+# @where: Report page: the button that copies what the details show
+# @kind: button
+# @max: 14
+report-copy = Копіювати
+
+# @where: Report page, a request's details: the resource type and its MIME type
+# @kind: label
+# @max: 16
+report-h-type = Тип
+
+# @where: Report page, a request's details: bytes transferred
+# @kind: label
+# @max: 16
+report-h-size = Розмір
+
+# @where: Report page, a console message's details: the script and line it came from
+# @kind: label
+# @max: 16
+report-h-source = Джерело
+
+# @where: Report page, a tab's details: the page title
+# @kind: label
+# @max: 16
+report-h-title = Назва
 
 # @where: Title of the question when an AI agent wants access; $client is the name the agent reports
 # @kind: title
