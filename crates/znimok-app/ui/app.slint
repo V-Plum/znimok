@@ -3885,11 +3885,24 @@ export component AppWindow inherits Window {
                             // the log lane (ZK-191): a tick per event; an error also runs a faint line across
                             // the whole timeline
                             for t in root.devp-ticks: Rectangle {
+                                visible: t.cls != 5;
                                 x: 8px + t.x;
                                 y: t.cls == 4 ? 22px : 162px;
                                 width: t.cls == 4 ? 1px : 2px;
                                 height: t.cls == 4 ? parent.height - 22px : 28px;
                                 background: t.cls == 4 ? #FF5A5F40 : (t.cls == 3 ? #F5A524 : (t.cls == 2 ? #A970FF : (t.cls == 1 ? Theme.accent : Theme.text3)));
+                            }
+                            // the clicks of the recording (ZK-229): a dot each at the lane's foot
+                            for t in root.devp-ticks: Rectangle {
+                                visible: t.cls == 5;
+                                x: 8px + t.x - 3px;
+                                y: 182px;
+                                width: 6px;
+                                height: 6px;
+                                border-radius: 3px;
+                                background: Theme.text;
+                                border-width: 1px;
+                                border-color: Theme.panel;
                             }
                             for t in root.devp-ticks: Rectangle {
                                 visible: t.cls == 4;
