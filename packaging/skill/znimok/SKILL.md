@@ -10,7 +10,8 @@ Znimok runs on the user's computer. Its MCP tools are `list_displays`, `list_win
 `delete_marks`, `crop`, `rotate`, `resize`, `tone`, `annotate`, `export`, `library_search`,
 `library_get`, `library_tags`, `set_meta`, `library_import`, `library_duplicate`, `library_trash`,
 `library_restore`, `library_delete`, `record_start`, `record_pause`, `record_resume`, `record_stop`,
-`record_status`, `video_info`, `devlog_summary`, `devlog_get`, `find_text`,
+`record_status`, `capture_active_window`, `open_in_editor`, `copy_to_clipboard`, `app_state`,
+`video_info`, `devlog_summary`, `devlog_get`, `find_text`,
 `ocr`, `read_codes`, `redact_pii`. Full reference: `docs/AGENTS.md` in the Znimok repository.
 
 ## Before the first call

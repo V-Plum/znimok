@@ -80,11 +80,16 @@ mod tests {
 
     #[test]
     fn counts_real_time() {
+        // Against the system's own clock, not against how long a sleep should take: a busy
+        // CI runner oversleeps by hundreds of milliseconds (ZK-227).
         let c = MachClock::new();
-        let a = c.ticks();
+        let (a, t) = (c.ticks(), std::time::Instant::now());
         std::thread::sleep(Duration::from_millis(50));
-        let ms = (c.ticks() - a) / 1_000_000;
-        assert!((45..200).contains(&ms), "{ms} ms");
+        let (ms, real) = ((c.ticks() - a) / 1_000_000, t.elapsed().as_millis() as i64);
+        assert!(
+            ms >= 45 && (ms - real).abs() <= 20,
+            "{ms} ms, really {real} ms"
+        );
         assert_eq!(host_to_hns(3, 2), 15_000_000);
     }
 }

@@ -5047,6 +5047,72 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
         }));
     }
 
+    // ZK-238: an agent puts a document on the clipboard and opens it in the editor.
+    {
+        fn agent_app(op: &str, path: &std::path::Path) {
+            let params = serde_json::json!({"op": op, "path": path.display().to_string()});
+            *AGENT_ASKED.lock().unwrap() = None;
+            std::thread::spawn(move || {
+                let v = crate::agentipc::handle("agents.app", &params);
+                *AGENT_ASKED.lock().unwrap() = v.map(|r| match r {
+                    Ok(v) => v,
+                    Err(e) => serde_json::json!({"error": e.message}),
+                });
+            });
+        }
+        fn a_screenshot(app: &Shared) -> Option<std::path::PathBuf> {
+            let dir = app.borrow().lib_dir.clone();
+            std::fs::read_dir(dir)
+                .ok()?
+                .flatten()
+                .map(|e| e.path())
+                .find(|p| matches!(znimok_format::open(p), Ok(znimok_format::Loaded::Image(_))))
+        }
+        steps.push(Box::new(|app, ui, _| {
+            ui.invoke_setting("mcp".into(), 1);
+            if let Some(p) = a_screenshot(app) {
+                agent_app("copy", &p);
+            }
+        }));
+        steps.push(Box::new(|app, _, r| {
+            let got = AGENT_ASKED.lock().unwrap().take();
+            let clip = arboard::Clipboard::new()
+                .ok()
+                .and_then(|mut c| c.get_image().ok());
+            r.check(
+                "agent: a document's picture goes to the clipboard",
+                got.as_ref().is_some_and(|v| {
+                    v["copied"] == true
+                        && clip.as_ref().is_some_and(|c| {
+                            v["width"] == c.width as u64 && v["height"] == c.height as u64
+                        })
+                }),
+                format!(
+                    "{got:?} · clipboard {:?}",
+                    clip.as_ref().map(|c| (c.width, c.height))
+                ),
+            );
+            if let Some(p) = a_screenshot(app) {
+                agent_app("open", &p);
+            }
+        }));
+        steps.push(Box::new(|_, _, _| {}));
+        steps.push(Box::new(|app, ui, r| {
+            let got = AGENT_ASKED.lock().unwrap().take();
+            let win = a_screenshot(app).and_then(|p| crate::wins::editor_of(&p));
+            r.check(
+                "agent: a document opens in the editor",
+                got.as_ref().is_some_and(|v| v["opened"] == true) && win.is_some(),
+                format!("{got:?} · window {}", win.is_some()),
+            );
+            if let Some((a, w)) = win {
+                a.borrow_mut().close_document(&w);
+            }
+            ui.invoke_setting("mcp".into(), 0);
+        }));
+        steps.push(Box::new(|_, _, _| {}));
+    }
+
     // ZK-132: the Agents and Updates pages; the MCP switch is the one the server checks.
     steps.push(Box::new(|_, ui, _| {
         ui.invoke_settings_open();
