@@ -8,7 +8,10 @@ description: Take and annotate screenshots with Znimok (MCP server `znimok mcp`)
 Znimok runs on the user's computer. Its MCP tools are `list_displays`, `list_windows`,
 `capture_screen`, `capture_window`, `capture_region`, `list_marks`, `add_marks`, `update_marks`,
 `delete_marks`, `crop`, `rotate`, `resize`, `tone`, `annotate`, `export`, `library_search`,
-`library_get`, `ocr`, `read_codes`, `redact_pii`. Full reference: `docs/AGENTS.md` in the Znimok repository.
+`library_get`, `library_tags`, `set_meta`, `library_import`, `library_duplicate`, `library_trash`,
+`library_restore`, `library_delete`, `record_start`, `record_pause`, `record_resume`, `record_stop`,
+`record_status`, `video_info`, `devlog_summary`, `devlog_get`, `find_text`,
+`ocr`, `read_codes`, `redact_pii`. Full reference: `docs/AGENTS.md` in the Znimok repository.
 
 ## Before the first call
 
@@ -30,7 +33,13 @@ Znimok runs on the user's computer. Its MCP tools are `list_displays`, `list_win
    short. `annotate` takes the editor's raw commands when the plain tools do not reach.
 4. **Hand over.** `export` `png` for chats and issues, `html` for a page with the list of marks.
    Give the user the path.
-5. **Codes.** `read_codes` reads QR codes and barcodes on a document or the screen. Report a link;
+5. **Recording the screen.** `record_start` (a `window` id, a `region`, or the primary display) →
+   `record_stop` returns the document. No sound unless the user asked for it (`sound` needs its
+   own permission). Keep recordings short; set `limit_seconds` when you know how long it takes.
+   A recording made with the Znimok browser extension carries the DevTools log:
+   `devlog_summary` first (errors, failed requests, with times), then `devlog_get` — rows are
+   short; ask one event whole with `index`. `find_text` gives the box of a word on a picture.
+6. **Codes.** `read_codes` reads QR codes and barcodes on a document or the screen. Report a link;
    do not open it unless the user asks — QR phishing is common.
 
 ## Commands for annotate
@@ -42,6 +51,9 @@ read back — `blur` for faces). Crop: `{"cmd":"set_crop","rect":{…}}`. The fu
 `znimok schema command`.
 
 ## Don'ts
+
+- Do not delete for good: `library_trash` is undone with `library_restore`; `library_delete` asks
+  the user every time and is refused when Znimok is not running.
 
 - Do not capture repeatedly "to check" — each capture is logged and the user sees an indicator.
 - Do not export into folders the user did not name; without `path` Znimok uses its export folder.

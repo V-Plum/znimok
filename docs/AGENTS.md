@@ -34,8 +34,10 @@ always**. Scopes:
 | Scope | Tools |
 |---|---|
 | `capture` | `list_windows`, `capture_screen`, `capture_window`, `capture_region`, `read_codes` on the screen |
-| `library_read` | `library_search`, `library_get`, `list_marks`, `ocr`, `export`, `read_codes` on a document, resources |
-| `library_write` | `add_marks`, `update_marks`, `delete_marks`, `crop`, `rotate`, `resize`, `tone`, `annotate`, `redact_pii` |
+| `library_read` | `library_search`, `library_get`, `library_tags`, `list_marks`, `video_info`, `devlog_summary`, `devlog_get`, `find_text`, `ocr`, `export`, `read_codes` on a document, resources |
+| `library_write` | `set_meta`, `library_import`, `library_duplicate`, `library_trash`, `library_restore`, `library_delete` (asks every time), `add_marks`, `update_marks`, `delete_marks`, `crop`, `rotate`, `resize`, `tone`, `annotate`, `redact_pii` |
+| `record` | `record_start` (`record_pause`, `record_resume`, `record_stop`, `record_status` only touch the agent's own recording and ask nothing) |
+| `record_audio` | `record_start` with `sound` other than `none` (asked on top of `record`) |
 
 `list_displays` needs no permission. If Znimok is not running, nobody can be asked and the call is
 refused with a hint; the person can allow a client ahead of time:
@@ -73,13 +75,29 @@ PNG, plus a `resource_link` `znimok://library/<id>` to the original.
 | `resize` | `document`, `width` and/or `height`, or `percent`; or `canvas` (`x`, `y`, `width`, `height`) with `fill` | saved document + picture |
 | `tone` | `document`, `exposure` (stops), `gamma`, `contrast`, or `reset: true` | saved document + picture |
 | `export` | `document`, `format` (`png`/`jpeg`/`webp`/`html`), `path?` | the written file |
-| `library_search` | `query?`, `tag?`, `limit?` (≤ 200) | documents, newest first |
+| `library_search` | `query?`, `tag?`, `kind?` (`screenshot` / `video`), `pinned?`, `has_log?`, `since?` / `until?` (YYYY-MM-DD), `trash?`, `limit?` (≤ 200) | documents, newest first: `id`, `name`, `kind`, `tags`, `pinned`, `duration_ms`, `has_log`… |
+| `library_tags` | — | the tags with the number of documents each |
+| `set_meta` | `document`, and what changes: `name`, `description`, `tags` / `add_tags` / `remove_tags`, `author`, `copyright`, `pinned` | saved document + picture |
+| `library_import` | `path` (PNG, JPEG, WebP or a `.znimok` file), `name?` | new document + picture |
+| `library_duplicate` | `document`, `name?` | the copy (a recording stays a recording) |
+| `library_trash` | `document` | moved to the trash — no question, `library_restore` brings it back |
+| `library_restore` | `document` (id of a trashed one) | the document, back in the library |
+| `library_delete` | `document` (in the library or the trash) | deleted for good — **the person confirms every time** in the Znimok window |
 | `library_get` | `document` | picture + metadata |
+| `record_start` | `display?` (the primary one by default) or `window?` (id) or `region?` {x, y, width, height}; `sound?` none / system / microphone / both; `devtools_log?` (true); `limit_seconds?` (300, at most 3600) | starts a screen recording; the app must be running; the person sees the recording frame and the bar with Stop |
+| `record_pause`, `record_resume` | — | pause and resume the agent's recording |
+| `record_stop` | — | stops it and returns the recording as a library document (also one that ended by its limit) |
+| `record_status` | — | recording or not, the agent's or the person's, paused, length so far, the last finished document |
+| `video_info` | `document` (a recording) | length, size, frame rate, trims and cuts, sound tracks, marks with their times, clicks, whether it has the DevTools log |
+| `devlog_summary` | `document` | the browser log in short: counts by kind, errors, failed requests, navigations, dataLayer events — with times in the video |
+| `devlog_get` | `document`, `kinds?`, `errors_only?`, `query?`, `from_ms?` / `to_ms?`, `limit?` (≤ 500), `offset?`, or `index` for one event whole | events in time order (`i`, `at_ms`, `kind`, `level`, and the kind's own fields); sensitive values hidden as the settings say |
+| `find_text` | `document`, `text`, `languages?` | the lines that contain the text, with boxes in pixels |
 | `ocr` | `document`, `languages?` (e.g. `["uk","en"]`) | text and line boxes, on the device |
 | `read_codes` | `document`, or `display?`, or `x`, `y`, `width`, `height` (desktop units) | QR codes and barcodes, on the device: `text`, `kind` (`link` + `url`, `wifi` + `ssid`/`password`/`security`/`hidden`, `contact`, `event`, `email` + `address`, `phone` + `number`, `text`), `format`, `bounds`; the screen is read without adding a document (macOS: the app keeps its shot, `saved_as`) |
 | `redact_pii` | `document`, `apply?` (true), `faces?` (true) | what was found; with `apply` covered by Hide marks and saved |
 
-Resources: `resources/list` lists the library, `resources/read` gives a document as PNG.
+Resources: `resources/list` lists the library, `resources/read` gives a document as PNG; a
+recording with the browser's log also has `znimok://library/<id>/log` — the log as JSON.
 
 ### Marks in plain words
 
@@ -111,6 +129,18 @@ The same commands the app uses (`crates/znimok-core/schema/`). Frequent ones:
 {"cmd": "set_crop", "rect": {"x": 0, "y": 0, "w": 800, "h": 600}}
 ```
 
+## Prompts
+
+`prompts/list` offers ready scenarios (the client shows them as commands); each is a short plan
+over the tools above:
+
+| Prompt | Arguments | What it does |
+|---|---|---|
+| `bug_report` | `problem`, `window?` | capture, hide what is private, mark the problem, name and tag it, export a PNG |
+| `document_screen` | `app` | capture a window, number its controls with counters, write the legend, export HTML |
+| `redact_before_sharing` | `document?` | show what would be hidden, hide it, export |
+| `read_recording` | `document?` | read a recording's DevTools log and say what failed and when |
+
 ## Scenarios
 
 **Document a settings screen.** `list_windows` → `capture_window` the app → `ocr` to find the
@@ -120,6 +150,14 @@ labels → `annotate` with numbered counters and short texts next to the control
 **A bug report.** `capture_region` around the problem → `redact_pii` (keys, e-mails, cards,
 faces covered) → `annotate` a frame and an arrow at the error → `export` `png` → attach the file
 to the issue.
+
+**Record a bug.** `list_windows` → `record_start` with the browser's `window` → do or ask the
+person to do the steps → `record_stop` → `devlog_summary` on the returned document. Sound is off
+unless the person allows `record_audio`; a recording stops by itself at its time limit.
+
+**Read a bug recording.** `library_search` with `has_log: true` → `video_info` → `devlog_summary`
+(the errors and failed requests with their times) → `devlog_get` with `index` for the one that
+matters (its stack, headers and body) → say what went wrong and when in the video.
 
 **Before sharing a screenshot.** `library_search` → `redact_pii` with `apply: false` to see what
 would be hidden → `redact_pii` to apply → `export`.

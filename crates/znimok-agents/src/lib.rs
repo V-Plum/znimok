@@ -19,9 +19,13 @@ pub mod backend;
 mod edit;
 pub mod handoff;
 pub mod library;
+mod libtools;
 pub mod mcp;
 pub mod permissions;
+pub mod prompts;
+mod rectools;
 pub mod tools;
+mod vidtools;
 
 use std::path::PathBuf;
 

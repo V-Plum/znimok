@@ -20,6 +20,30 @@ pub struct Item {
     pub source: String,
     pub tags: Vec<String>,
     pub description: String,
+    /// "screenshot" or "video".
+    pub kind: String,
+    pub pinned: bool,
+    /// A video's length, ms.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub duration_ms: Option<i64>,
+    /// A video with the browser's DevTools log.
+    pub has_log: bool,
+}
+
+/// What `library_search` looks for (ZK-234); everything empty = every document.
+#[derive(Clone, Debug, Default)]
+pub struct Filter {
+    pub query: String,
+    pub tag: Option<String>,
+    /// "screenshot" or "video".
+    pub kind: Option<String>,
+    pub pinned: Option<bool>,
+    pub has_log: Option<bool>,
+    /// Created at or after / before this moment, Unix ms.
+    pub since_ms: Option<i64>,
+    pub until_ms: Option<i64>,
+    /// The trash instead of the library.
+    pub trash: bool,
 }
 
 pub struct Library {
@@ -38,7 +62,92 @@ impl Library {
     }
 
     pub fn items(&self) -> Vec<Item> {
-        let Ok(rd) = std::fs::read_dir(&self.dir) else {
+        Self::items_in(&self.dir)
+    }
+
+    /// The documents in the trash, newest first.
+    pub fn trashed(&self) -> Vec<Item> {
+        Self::items_in(&self.trash_dir())
+    }
+
+    pub fn trash_dir(&self) -> PathBuf {
+        self.dir.join(".trash")
+    }
+
+    /// The documents that match, newest first.
+    pub fn find(&self, f: &Filter, limit: usize) -> Vec<Item> {
+        let q = f.query.to_lowercase();
+        let all = if f.trash {
+            self.trashed()
+        } else {
+            self.items()
+        };
+        all.into_iter()
+            .filter(|i| {
+                q.is_empty()
+                    || i.name.to_lowercase().contains(&q)
+                    || i.description.to_lowercase().contains(&q)
+                    || i.tags.iter().any(|t| t.to_lowercase().contains(&q))
+            })
+            .filter(|i| {
+                f.tag
+                    .as_deref()
+                    .is_none_or(|t| i.tags.iter().any(|x| x.eq_ignore_ascii_case(t)))
+            })
+            .filter(|i| f.kind.as_deref().is_none_or(|k| i.kind == k))
+            .filter(|i| f.pinned.is_none_or(|p| i.pinned == p))
+            .filter(|i| f.has_log.is_none_or(|l| i.has_log == l))
+            .filter(|i| f.since_ms.is_none_or(|t| i.created_ms >= t))
+            .filter(|i| f.until_ms.is_none_or(|t| i.created_ms < t))
+            .take(limit.max(1))
+            .collect()
+    }
+
+    /// A trashed document by its id (or the first characters of it).
+    pub fn resolve_trashed(&self, doc: &str) -> Option<PathBuf> {
+        let d = doc.to_lowercase();
+        self.trashed()
+            .into_iter()
+            .find(|i| !d.is_empty() && (i.id.eq_ignore_ascii_case(doc) || i.id.starts_with(&d)))
+            .map(|i| PathBuf::from(i.path))
+    }
+
+    /// Moves a document into the trash, as the app does (its days there count from now).
+    pub fn move_to_trash(&self, file: &Path) -> std::io::Result<PathBuf> {
+        let dir = self.trash_dir();
+        std::fs::create_dir_all(&dir)?;
+        let mut to = dir.join(file.file_name().unwrap_or_default());
+        let mut n = 1;
+        while to.exists() {
+            let stem = file.file_stem().unwrap_or_default().to_string_lossy();
+            to = dir.join(format!("{stem} ({n}).znimok"));
+            n += 1;
+        }
+        std::fs::rename(file, &to)?;
+        let _ = std::fs::File::options()
+            .write(true)
+            .open(&to)
+            .and_then(|f| f.set_modified(std::time::SystemTime::now()));
+        Ok(to)
+    }
+
+    /// Brings a trashed document back into the library folder (next to a file of that name
+    /// when it is taken).
+    pub fn restore(&self, trashed: &Path) -> std::io::Result<PathBuf> {
+        let original = self.dir.join(trashed.file_name().unwrap_or_default());
+        let mut to = original.clone();
+        let mut n = 1;
+        while to.exists() {
+            let stem = original.file_stem().unwrap_or_default().to_string_lossy();
+            to = original.with_file_name(format!("{stem} ({n}).znimok"));
+            n += 1;
+        }
+        std::fs::rename(trashed, &to)?;
+        Ok(to)
+    }
+
+    fn items_in(dir: &Path) -> Vec<Item> {
+        let Ok(rd) = std::fs::read_dir(dir) else {
             return Vec::new();
         };
         let mut v: Vec<Item> = rd
@@ -92,7 +201,7 @@ impl Library {
     }
 }
 
-fn peek_item(p: &Path) -> Option<Item> {
+pub(crate) fn peek_item(p: &Path) -> Option<Item> {
     let bytes = std::fs::read(p).ok()?;
     let k = znimok_format::peek(&bytes).ok()?;
     Some(Item {
@@ -106,6 +215,14 @@ fn peek_item(p: &Path) -> Option<Item> {
         source: k.meta.source,
         tags: k.meta.tags,
         description: k.meta.description,
+        kind: if k.kind == znimok_format::DocKind::Video {
+            "video".into()
+        } else {
+            "screenshot".into()
+        },
+        pinned: k.meta.pinned,
+        duration_ms: k.video.as_ref().map(|v| v.duration_hns / 10_000),
+        has_log: k.devtools,
     })
 }
 
@@ -135,6 +252,22 @@ pub fn render(doc: &Document, scale: f64) -> Raster {
 }
 
 pub fn save(path: &Path, doc: &Document) -> Result<(), String> {
+    // A video in the library stays a video when an agent changes its marks (ZK-145): its video
+    // blocks and stream are taken from the file being replaced.
+    let video = if path.exists() {
+        znimok_format::open_parts(path).ok().and_then(|(_, v)| v)
+    } else {
+        None
+    };
+    save_parts(path, doc, video.as_ref())
+}
+
+/// Saves the document with this video part (a copy or an imported recording keeps its stream).
+pub fn save_parts(
+    path: &Path,
+    doc: &Document,
+    video: Option<&znimok_format::VideoPart>,
+) -> Result<(), String> {
     let f = doc.frame();
     let s = (320.0 / f.w as f64).min(240.0 / f.h as f64).min(1.0);
     let opts = WriteOptions {
@@ -145,14 +278,7 @@ pub fn save(path: &Path, doc: &Document) -> Result<(), String> {
     if let Some(d) = path.parent() {
         std::fs::create_dir_all(d).map_err(|e| e.to_string())?;
     }
-    // A video in the library stays a video when an agent changes its marks (ZK-145): its video
-    // blocks and stream are taken from the file being replaced.
-    let video = if path.exists() {
-        znimok_format::open_parts(path).ok().and_then(|(_, v)| v)
-    } else {
-        None
-    };
-    znimok_format::save_same_kind(path, doc, video.as_ref(), &opts)
+    znimok_format::save_same_kind(path, doc, video, &opts)
         .map(|_| ())
         .map_err(|e| e.to_string())
 }

@@ -21,12 +21,14 @@ znimok-platform = { path = "../znimok-platform" }
 znimok-settings = { path = "../znimok-settings" }
 znimok-ipc = { path = "../znimok-ipc" }
 znimok-html = { path = "../znimok-html" }
+znimok-report = { path = "../znimok-report" }
 znimok-i18n = { path = "../znimok-i18n" }
 znimok-codes = { path = "../znimok-codes" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 schemars = "1"
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+uuid = { version = "1", features = ["v4"] }
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp"] }
 base64 = "0.23"
 

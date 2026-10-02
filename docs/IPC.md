@@ -31,9 +31,41 @@ about itself (show it as such — it is not verified).
 → {"result": {"grant": "once" | "session" | "always" | null}}
 ```
 
+With `"confirm": {"action": "delete", "name": "…"}` the question is «Delete «name» for good?»
+with two buttons; yes comes back as `"once"` (the server never keeps it).
+
+The app shows the question in its window (brought forward) and waits up to two minutes; no
+answer is a refusal. With MCP switched off in the settings nothing is asked. One question at a
+time.
+
 `null` (or an error) = refused. Scopes: `capture` (screenshots and the list of windows),
-`library_read`, `library_write`, `settings`. The MCP server stores «always» itself
+`library_read`, `library_write`, `settings`, `record` (screen recording), `record_audio` (its sound). The MCP server stores «always» itself
 (`<data>/agents.json`) and keeps «session» for its own process; the app only asks.
+
+## `agents.record` — an agent's screen recording (ZK-237)
+
+```json
+{"method": "agents.record", "params": {"op": "start", "window": 131230, "limit_s": 300,
+                                       "system_audio": false, "microphone": false, "log": true}}
+→ {"result": {"recording": true, "width": 1360, "height": 860, "limit_s": 300, …}}
+{"method": "agents.record", "params": {"op": "stop"}}    → {"result": {"path": "…/Znimok-….znimok"}}
+{"method": "agents.record", "params": {"op": "status"}}
+→ {"result": {"recording": true, "agent": true, "saving": false, "paused": false,
+              "elapsed_ms": 1743, "finished": null, "failed": null}}
+```
+
+`op`: `start` | `pause` | `resume` | `stop` | `status`. The target of `start` is `window` (id),
+`region` (`Rect`, desktop units, cut to the display it is on), `display` (id) or nothing — the
+primary display. The recording starts at once, without the overlay; sound is what the request
+says (never the settings'), `log: false` leaves the browser's log out. It stops at `stop`, at
+`limit_s` (300 by default, 3600 at most) or when the person presses Stop on the bar; `stop`
+waits until the document is saved and returns its path (also for a recording that already
+ended). The app does not open the editor or the card for it. Only the agent's own recording
+can be paused or stopped; an error says why something cannot be done (MCP switched off, a
+recording already running, no such window).
+
+The permission (`record`, and `record_audio` for sound) is the MCP server's business — it asks
+with `agents.ask` before it calls this.
 
 ## `agents.activity` — the indicator (ZK-69)
 
@@ -42,8 +74,8 @@ about itself (show it as such — it is not verified).
 → {"result": null}
 ```
 
-While `active`, show the tray state and the «Агент знімає екран» plate for capture tools. A
-second message with `active: false` ends it.
+While `active`, `app.state` carries `"agent": {"client", "tool"}`. A second message with
+`active: false` ends it.
 
 ## `capture.displays`, `capture.windows`, `capture.take` — screenshots for agents (ZK-68)
 

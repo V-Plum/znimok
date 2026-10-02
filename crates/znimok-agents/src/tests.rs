@@ -239,7 +239,7 @@ fn modern_stateless_requests() {
     assert_eq!(ds["result"]["structuredContent"]["displays"][0]["id"], "d1");
 
     let unknown = s
-        .handle_line(&req(6, "prompts/list", modern(json!({}))))
+        .handle_line(&req(6, "sampling/createMessage", modern(json!({}))))
         .unwrap();
     assert_eq!(unknown["error"]["code"], -32601);
 }
@@ -683,4 +683,436 @@ fn editing_tools_over_plain_arguments() {
         .find(|t| t["name"] == "delete_marks")
         .unwrap();
     assert_eq!(del["annotations"]["destructiveHint"], true);
+}
+
+/// ZK-234: name and meta, a picture brought in, a copy, the trash and back, the tags, the
+/// filters — and deleting for good refused without the person's yes.
+#[test]
+fn library_tools_meta_import_trash() {
+    let e = env("libtools", true);
+    for s in [Scope::Capture, Scope::LibraryRead, Scope::LibraryWrite] {
+        e.agent.perms.grant("T", s, Grant::Always).unwrap();
+    }
+    let call = |name: &str, args: Value| {
+        let out = e.agent.call("T", name, &args);
+        assert!(!out.is_error, "{name}: {:?}", out.content);
+        out.structured.unwrap()
+    };
+    let shot = call(
+        "capture_region",
+        json!({"x": 0, "y": 0, "width": 64, "height": 40}),
+    );
+    let id = shot["id"].as_str().unwrap().to_string();
+
+    let m = call(
+        "set_meta",
+        json!({"document": id, "name": "Вікно входу", "description": "Помилка після кліку",
+               "tags": ["bug", "login"], "pinned": true}),
+    );
+    assert_eq!(m["name"], "Вікно входу");
+    assert_eq!(m["tags"], json!(["bug", "login"]));
+    assert_eq!(m["pinned"], true);
+    let m = call(
+        "set_meta",
+        json!({"document": id, "add_tags": ["Bug", "ui"], "remove_tags": ["login"]}),
+    );
+    assert_eq!(
+        m["tags"],
+        json!(["bug", "ui"]),
+        "no duplicate by case, one removed"
+    );
+
+    // A picture file from outside comes in as a new document.
+    let png = e.dir.join("outside.png");
+    let r = Raster::solid(30, 20, Rgb::new(10, 20, 30));
+    std::fs::write(&png, crate::library::encode_png(&r).unwrap()).unwrap();
+    let imp = call("library_import", json!({"path": png.display().to_string()}));
+    assert_eq!(imp["name"], "outside");
+    assert_eq!(
+        (imp["width"].as_i64(), imp["height"].as_i64()),
+        (Some(30), Some(20))
+    );
+    let imported = imp["id"].as_str().unwrap().to_string();
+
+    let copy = call("library_duplicate", json!({"document": id}));
+    assert_ne!(copy["id"], json!(id));
+    assert_eq!(copy["tags"], json!(["bug", "ui"]));
+    assert_eq!(copy["pinned"], false, "a copy is not pinned");
+
+    let tags = call("library_tags", json!({}));
+    assert_eq!(tags["tags"][0], json!({"tag": "bug", "documents": 2}));
+
+    // The filters.
+    let pinned = call("library_search", json!({"pinned": true}));
+    assert_eq!(pinned["documents"].as_array().unwrap().len(), 1);
+    assert_eq!(pinned["documents"][0]["kind"], "screenshot");
+    let none = call("library_search", json!({"kind": "video"}));
+    assert!(none["documents"].as_array().unwrap().is_empty());
+    let old = call("library_search", json!({"until": "2020-01-01"}));
+    assert!(old["documents"].as_array().unwrap().is_empty());
+    let bad = e
+        .agent
+        .call("T", "library_search", &json!({"since": "yesterday"}));
+    assert!(bad.is_error);
+
+    // The trash: no question, and back.
+    let t = call("library_trash", json!({"document": imported}));
+    assert_eq!(t["trashed"], true);
+    assert_eq!(
+        call("library_search", json!({}))["documents"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+    let in_trash = call("library_search", json!({"trash": true}));
+    assert_eq!(in_trash["documents"][0]["id"], json!(imported));
+    let back = call("library_restore", json!({"document": imported}));
+    assert_eq!(back["id"], json!(imported));
+    assert_eq!(
+        call("library_search", json!({}))["documents"]
+            .as_array()
+            .unwrap()
+            .len(),
+        3
+    );
+
+    // For good: nobody to say yes (no app) — refused, the file stays.
+    let del = e
+        .agent
+        .call("T", "library_delete", &json!({"document": imported}));
+    assert!(del.is_error, "{:?}", del.content);
+    assert_eq!(
+        call("library_search", json!({}))["documents"]
+            .as_array()
+            .unwrap()
+            .len(),
+        3
+    );
+    let listed = crate::tools::list();
+    let d = listed
+        .iter()
+        .find(|t| t["name"] == "library_delete")
+        .unwrap();
+    assert_eq!(d["annotations"]["destructiveHint"], true);
+}
+
+/// ZK-235: a recording read from its file — what it is, its browser log in short and in
+/// detail, one event whole; a screenshot is told apart; the log is a resource.
+#[test]
+fn recording_info_and_devtools_log() {
+    use znimok_format::video::{DevEvent, DevLog, MouseButton, MouseEvent};
+    let e = env("vidtools", true);
+    e.agent
+        .perms
+        .grant("T", Scope::LibraryRead, Grant::Always)
+        .unwrap();
+    e.agent
+        .perms
+        .grant("T", Scope::Capture, Grant::Always)
+        .unwrap();
+    std::fs::create_dir_all(&e.agent.lib.dir).unwrap();
+    let doc =
+        znimok_core::Document::from_raster("Запис із логом", Raster::solid(160, 100, Rgb::WHITE));
+    let mut video = znimok_format::Video::new(znimok_format::VideoInfo {
+        width: 160,
+        height: 100,
+        fps_milli: 30_000,
+        frames: 90,
+        duration_hns: 30_000_000,
+        codec: znimok_format::video::CODEC_H264,
+    });
+    let ev = |ms, json: &str| DevEvent {
+        ms,
+        json: json.into(),
+    };
+    video.devlog = Some(DevLog {
+        wall0_ms: 0,
+        events: vec![
+            ev(100, r#"{"k":"nav","s":0,"url":"https://example.org/form"}"#),
+            ev(
+                900,
+                r#"{"k":"net","s":0,"method":"POST","url":"https://example.org/api/save","status":500,"dur":42,"reqHeaders":{"Authorization":"Bearer abc.def.ghi"},"body":"{\"error\":\"boom\"}"}"#,
+            ),
+            ev(
+                1500,
+                r#"{"k":"dl","s":0,"ev":"purchase","data":{"event":"purchase","value":42}}"#,
+            ),
+            ev(
+                2000,
+                r#"{"k":"error","s":2,"text":"TypeError: form is undefined","src":"https://example.org/app.js:40"}"#,
+            ),
+            ev(
+                2100,
+                r#"{"k":"console","s":1,"lvl":"warning","text":"deprecated"}"#,
+            ),
+        ],
+    });
+    video.mouse = vec![
+        MouseEvent {
+            ms: 500,
+            x: 40,
+            y: 30,
+            button: MouseButton::Left,
+            down: true,
+        },
+        MouseEvent {
+            ms: 560,
+            x: 40,
+            y: 30,
+            button: MouseButton::Left,
+            down: false,
+        },
+    ];
+    let mp4: Vec<u8> = (0..2048u32).map(|i| (i * 7) as u8).collect();
+    let bytes = znimok_format::write_video(&doc, &video, &mp4, &Default::default());
+    let path = e.agent.lib.dir.join("Znimok-test-video.znimok");
+    std::fs::write(&path, bytes).unwrap();
+    let id = doc.id.to_string();
+    let call = |name: &str, args: Value| {
+        let out = e.agent.call("T", name, &args);
+        assert!(!out.is_error, "{name}: {:?}", out.content);
+        out.structured.unwrap()
+    };
+
+    let found = call("library_search", json!({"has_log": true}));
+    assert_eq!(found["documents"][0]["kind"], "video");
+    assert_eq!(found["documents"][0]["duration_ms"], 3000);
+
+    let info = call("video_info", json!({"document": id}));
+    assert_eq!(info["duration_ms"], 3000);
+    assert_eq!(info["fps"], 30.0);
+    assert_eq!(
+        info["clicks"],
+        json!([{"at_ms": 500, "x": 40, "y": 30, "button": "left"}])
+    );
+    assert_eq!(info["devtools_log"]["events"], 5);
+
+    let sum = call("devlog_summary", json!({"document": id}));
+    assert_eq!(sum["events"], 5);
+    assert_eq!(sum["by_kind"]["network"], 1);
+    assert_eq!(sum["errors"][0]["text"], "TypeError: form is undefined");
+    assert_eq!(sum["errors"][0]["at_ms"], 2000);
+    assert_eq!(sum["failed_requests"][0]["status"], 500);
+    assert_eq!(sum["datalayer_events"]["purchase"], 1);
+    assert_eq!(sum["clicks"], 1);
+
+    let errs = call("devlog_get", json!({"document": id, "errors_only": true}));
+    assert_eq!(
+        errs["matching"], 2,
+        "the failed request and the error: {errs}"
+    );
+    let net = call("devlog_get", json!({"document": id, "kinds": ["network"]}));
+    let i = net["events"][0]["i"].as_u64().unwrap();
+    assert!(net["events"][0].get("body").is_none(), "rows are short");
+    let one = call("devlog_get", json!({"document": id, "index": i}));
+    assert_eq!(one["event"]["body"], "{\"error\":\"boom\"}");
+    // The token of the request is hidden (the settings' default: hide).
+    let auth = one["event"]["reqHeaders"]["Authorization"]
+        .as_str()
+        .unwrap();
+    assert!(!auth.contains("abc.def.ghi"), "{auth}");
+    let window = call(
+        "devlog_get",
+        json!({"document": id, "from_ms": 1000, "to_ms": 2050}),
+    );
+    assert_eq!(window["matching"], 2);
+    let q = call("devlog_get", json!({"document": id, "query": "PURCHASE"}));
+    assert_eq!(q["events"][0]["kind"], "datalayer");
+
+    // A screenshot is not a recording.
+    let shot = call(
+        "capture_region",
+        json!({"x": 0, "y": 0, "width": 40, "height": 30}),
+    );
+    let not = e
+        .agent
+        .call("T", "video_info", &json!({"document": shot["id"]}));
+    assert!(not.is_error);
+
+    // The log as a resource.
+    let res = e.agent.resources("T").unwrap();
+    assert!(
+        res.iter()
+            .any(|r| r["uri"] == format!("znimok://library/{id}/log"))
+    );
+    let log = e
+        .agent
+        .read_resource("T", &format!("znimok://library/{id}/log"))
+        .unwrap();
+    assert_eq!(log["mimeType"], "application/json");
+    assert!(log["text"].as_str().unwrap().contains("example.org/form"));
+}
+
+/// ZK-236: the ready scenarios are listed and filled in; every tool they name exists; the hints
+/// tell a read from a change.
+#[test]
+fn prompts_and_hints() {
+    let e = env("prompts", true);
+    let mut s = Server::new(&e.agent);
+    let disc = s
+        .handle_line(&req(1, "server/discover", modern(json!({}))))
+        .unwrap();
+    assert!(
+        disc["result"]["capabilities"]["prompts"].is_object(),
+        "{disc}"
+    );
+    let list = s
+        .handle_line(&req(2, "prompts/list", modern(json!({}))))
+        .unwrap();
+    let names: Vec<&str> = list["result"]["prompts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|p| p["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        names,
+        [
+            "bug_report",
+            "document_screen",
+            "redact_before_sharing",
+            "read_recording"
+        ]
+    );
+    let got = s
+        .handle_line(&req(
+            3,
+            "prompts/get",
+            modern(json!({"name": "bug_report", "arguments": {"problem": "кнопка не натискається", "window": "Chrome"}})),
+        ))
+        .unwrap();
+    let text = got["result"]["messages"][0]["content"]["text"]
+        .as_str()
+        .unwrap();
+    assert!(
+        text.contains("кнопка не натискається") && text.contains("«Chrome»"),
+        "{text}"
+    );
+    assert!(!text.contains('{'), "every placeholder is filled: {text}");
+    let none = s
+        .handle_line(&req(4, "prompts/get", modern(json!({"name": "nope"}))))
+        .unwrap();
+    assert_eq!(none["error"]["code"], -32602);
+
+    let tools = crate::tools::list();
+    for t in crate::prompts::named_tools() {
+        assert!(
+            tools.iter().any(|x| x["name"] == t.as_str()),
+            "a prompt names «{t}», which is not a tool"
+        );
+    }
+    let hint =
+        |n: &str, k: &str| tools.iter().find(|t| t["name"] == n).unwrap()["annotations"][k].clone();
+    assert_eq!(hint("list_marks", "readOnlyHint"), true);
+    assert_eq!(hint("list_marks", "idempotentHint"), true);
+    assert_eq!(hint("add_marks", "readOnlyHint"), false);
+    assert_eq!(hint("library_delete", "destructiveHint"), true);
+    assert_eq!(hint("library_trash", "destructiveHint"), false);
+}
+
+/// ZK-237: recording goes to the app over IPC; sound is a permission of its own, asked before
+/// anything starts; stop returns the library document.
+#[test]
+fn recording_through_the_app() {
+    use std::sync::{Arc, Mutex};
+    let mut e = env("rec", true);
+    let cfg = znimok_ipc::Config {
+        suffix: Some(format!("rec{}", std::process::id())),
+        dir: Some(e.dir.join("ipc-rec")),
+        ..Default::default()
+    };
+    e.agent.gui = Gui::with_config(cfg.clone());
+    // Without the app: refused with a reason.
+    e.agent
+        .perms
+        .grant("T", Scope::Record, Grant::Always)
+        .unwrap();
+    let out = e.agent.call("T", "record_start", &json!({}));
+    assert!(out.is_error, "no app, no recording");
+
+    // The document «the app» will return.
+    std::fs::create_dir_all(&e.agent.lib.dir).unwrap();
+    let doc = znimok_core::Document::from_raster("Запис агента", Raster::solid(64, 48, Rgb::WHITE));
+    let video = znimok_format::Video::new(znimok_format::VideoInfo {
+        width: 64,
+        height: 48,
+        fps_milli: 30_000,
+        frames: 60,
+        duration_hns: 20_000_000,
+        codec: znimok_format::video::CODEC_H264,
+    });
+    let path = e.agent.lib.dir.join("Znimok-agent-rec.znimok");
+    std::fs::write(
+        &path,
+        znimok_format::write_video(&doc, &video, &[7u8; 512], &Default::default()),
+    )
+    .unwrap();
+
+    let seen: Arc<Mutex<Vec<Value>>> = Default::default();
+    let (seen2, path2) = (seen.clone(), path.display().to_string());
+    let _s = znimok_ipc::Server::start(cfg, move |m: &str, p: Value| match m {
+        "agents.ask" => Ok(json!({"grant": if p["scope"] == "record_audio" { Value::Null } else { json!("once") }})),
+        "agents.activity" => Ok(Value::Null),
+        "agents.record" => {
+            seen2.lock().unwrap().push(p.clone());
+            match p["op"].as_str() {
+                Some("start") => Ok(json!({"recording": true, "width": 800, "height": 600})),
+                Some("stop") => Ok(json!({"path": path2})),
+                Some("status") => Ok(json!({"recording": false, "finished": path2})),
+                _ => Ok(json!({"recording": true, "paused": p["op"] == "pause"})),
+            }
+        }
+        _ => Err(znimok_ipc::RpcError::method_not_found(m)),
+    })
+    .unwrap();
+
+    // Sound: the person refuses its permission → nothing reaches the recorder.
+    let out = e.agent.call("T", "record_start", &json!({"sound": "both"}));
+    assert!(out.is_error);
+    assert!(
+        seen.lock().unwrap().is_empty(),
+        "refused before the app is asked to record"
+    );
+
+    let out = e.agent.call(
+        "T",
+        "record_start",
+        &json!({"window": 42, "limit_seconds": 20, "devtools_log": false}),
+    );
+    assert!(!out.is_error, "{:?}", out.content);
+    let sent = seen.lock().unwrap().last().cloned().unwrap();
+    assert_eq!(sent["window"], 42);
+    assert_eq!(sent["limit_s"], 20);
+    assert_eq!(sent["log"], false);
+    assert_eq!(sent["system_audio"], false);
+    assert_eq!(sent["microphone"], false);
+
+    let out = e.agent.call("T", "record_pause", &json!({}));
+    assert_eq!(out.structured.unwrap()["paused"], true);
+    let out = e.agent.call("T", "record_stop", &json!({}));
+    assert!(!out.is_error, "{:?}", out.content);
+    let got = out.structured.unwrap();
+    assert_eq!(got["id"], doc.id.to_string());
+    assert_eq!(got["kind"], "video");
+    assert_eq!(got["duration_ms"], 2000);
+    let st = e
+        .agent
+        .call("T", "record_status", &json!({}))
+        .structured
+        .unwrap();
+    assert_eq!(st["finished"]["id"], doc.id.to_string());
+
+    // A client without the permission and nobody saying yes... the fake app says «once» — so
+    // check the scope instead: the tools belong to `record`.
+    let tools = crate::tools::list();
+    for n in [
+        "record_start",
+        "record_pause",
+        "record_resume",
+        "record_stop",
+        "record_status",
+    ] {
+        assert!(tools.iter().any(|t| t["name"] == n), "{n}");
+    }
 }
