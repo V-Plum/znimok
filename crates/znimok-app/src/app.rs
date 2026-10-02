@@ -1417,6 +1417,7 @@ impl App {
             znimok_settings::Quality::High => 2,
         });
         ui.set_pref_rec_follow(p.video.follow_window);
+        ui.set_pref_rec_open_editor(p.video.open_editor);
         ui.set_pref_rec_sound(
             i32::from(p.video.audio.system) | (i32::from(p.video.audio.microphone) << 1),
         );
@@ -1702,6 +1703,7 @@ impl App {
                 p.video.cursor = on;
                 p.video.clicks = on;
             }),
+            "rec-open-editor" => self.save_prefs(ui, |p| p.video.open_editor = on),
             "rec-devlog" => self.save_prefs(ui, |p| p.video.devtools_log = on),
             "rec-ext-control" => self.save_prefs(ui, |p| p.video.extension_control = on),
             "lib-search-text" => {
