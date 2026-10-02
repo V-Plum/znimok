@@ -5195,6 +5195,21 @@ vexp-html-sub = one page
 # @max: 90
 vexp-html-desc = The video with its marks as a live layer; opens in any browser.
 
+# @where: Export sheet, the HTML card's subtitle when the recording has the browser's log (ZK-226)
+# @kind: label
+# @max: 28
+vexp-html-sub-log = one page with the log
+
+# @where: Export sheet, the HTML card's description when the recording has the browser's log
+# @kind: body
+# @max: 90
+vexp-html-desc-log = The video, its marks and the browser's DevTools log in one page; opens in any browser.
+
+# @where: Export sheet, under the HTML card when the recording has the browser's log
+# @kind: body
+# @max: 160
+vexp-html-log-note = The page carries the browser's DevTools log beside the video, as the report does; sensitive values are hidden as set below.
+
 # @where: Video export sheet: the frame-as-screenshot card
 # @kind: body
 # @max: 90

@@ -5090,7 +5090,9 @@ export component AppWindow inherits Window {
                             if root.vexp-over: Text { text: @tr("vexp-gif-warning" => "GIFs over 25 MB load poorly in chats. MP4 or WebP suits such clips better."); color: Theme.attention; font-size: 11px; wrap: word-wrap; }
                         }
                         if root.exp-format == 0: Text { text: @tr("vexp-mp4-note" => "H.264 with the hardware encoder; the sound tracks that are on are mixed into one; what is cut is left out with short fades at the joints."); color: Theme.text2; font-size: 12px; wrap: word-wrap; }
-                        if root.exp-format == 2: Text { text: @tr("vexp-html-note" => "The video and its marks in one file: the marks stay a layer over the video, shown in their time; a hide and a marker go into the video itself."); color: Theme.text2; font-size: 12px; wrap: word-wrap; }
+                        if root.exp-format == 2 && root.vexp-has-log: Text { text: @tr("vexp-html-log-note" => "The page carries the browser's DevTools log beside the video, as the report does; sensitive values are hidden as set below."); color: Theme.text2; font-size: 11px; wrap: word-wrap; }
+                        if root.exp-format == 2 && root.vexp-has-log && root.vexp-hide-mode == 0: SwitchRow { text: @tr("vexp-hide" => "Hide sensitive values"); checked: root.vexp-hide; toggled => { root.exp-set("rhide", self.checked ? 1 : 0); } }
+                        if root.exp-format == 2 && !root.vexp-has-log: Text { text: @tr("vexp-html-note" => "The video and its marks in one file: the marks stay a layer over the video, shown in their time; a hide and a marker go into the video itself."); color: Theme.text2; font-size: 12px; wrap: word-wrap; }
                         if root.exp-format == 3: Text { text: @tr("vexp-frame-note" => "The frame on the canvas, full size, with the marks shown on it — a new screenshot in a window of its own."); color: Theme.text2; font-size: 12px; wrap: word-wrap; }
                         // ZK-98: the developer report
                         if root.exp-format == 4: VerticalLayout {
