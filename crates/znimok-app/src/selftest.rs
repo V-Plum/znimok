@@ -4912,7 +4912,9 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
         let got = AGENT_ASKED.lock().unwrap().take();
         r.check(
             "agents: «this session» goes back to the agent",
-            got.as_ref().is_some_and(|v| v["grant"] == "session") && !ui.get_dialog_open(),
+            got.as_ref()
+                .is_some_and(|v| v["grant"] == "session" && v["all"] == true)
+                && !ui.get_dialog_open(),
             format!("{got:?}"),
         );
         agent_asks(serde_json::json!({"client": "Self-test", "scope": "library_write", "tool": "library_delete",

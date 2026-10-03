@@ -433,9 +433,21 @@ impl Agent {
     ) -> Result<Grant, String> {
         match self.perms.check(client, scope) {
             Decision::Allowed(g) => Ok(g),
-            Decision::Ask => match self.gui.ask(client, scope, tool) {
-                Some(g) => {
-                    let _ = self.perms.grant(client, scope, g);
+            Decision::Ask => match self.gui.ask_all(client, scope, tool) {
+                Some((g, all)) => {
+                    // «This session» / «always» for everything (ZK-251), but never the sound of a
+                    // recording — that stays its own question.
+                    let scopes: Vec<Scope> = if all {
+                        Scope::ALL
+                            .into_iter()
+                            .filter(|s| *s != Scope::RecordAudio)
+                            .collect()
+                    } else {
+                        vec![scope]
+                    };
+                    for s in scopes {
+                        let _ = self.perms.grant(client, s, g);
+                    }
                     Ok(g)
                 }
                 None => Err(format!(

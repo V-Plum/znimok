@@ -1277,3 +1277,67 @@ fn active_window_and_the_app() {
         assert!(sent["path"].as_str().unwrap().ends_with(".znimok"));
     }
 }
+
+/// ZK-251: one question per client — «this session» for one scope covers the others, but not
+/// the sound of a recording; «this time» covers nothing more.
+#[test]
+fn one_question_covers_every_scope_but_sound() {
+    use std::sync::{Arc, Mutex};
+    for (grant, all, asks_expected) in [("session", true, 1usize), ("once", false, 2)] {
+        let mut e = env(&format!("oneq{grant}"), true);
+        let cfg = znimok_ipc::Config {
+            suffix: Some(format!("q{grant}{}", std::process::id())),
+            dir: Some(std::env::temp_dir().join(format!(
+                "zkq{}{}",
+                &grant[..1],
+                std::process::id()
+            ))),
+            ..Default::default()
+        };
+        e.agent.gui = Gui::with_config(cfg.clone());
+        let asked: Arc<Mutex<Vec<String>>> = Default::default();
+        let asked2 = asked.clone();
+        let _s = znimok_ipc::Server::start(cfg, move |m: &str, p: Value| match m {
+            "agents.ask" => {
+                asked2
+                    .lock()
+                    .unwrap()
+                    .push(p["scope"].as_str().unwrap_or("").to_string());
+                if p["scope"] == "record_audio" {
+                    Ok(json!({"grant": Value::Null, "all": false}))
+                } else {
+                    Ok(json!({"grant": grant, "all": all}))
+                }
+            }
+            "agents.activity" => Ok(Value::Null),
+            _ => Err(znimok_ipc::RpcError::method_not_found(m)),
+        })
+        .unwrap();
+        // A capture asks; a library read after it asks again only when the answer was «once».
+        let shot = e.agent.call("T", "capture", &json!({"target": "screen"}));
+        assert!(!shot.is_error, "{:?}", shot.content);
+        let found = e.agent.call("T", "library_search", &json!({}));
+        assert!(!found.is_error, "{:?}", found.content);
+        assert_eq!(
+            asked.lock().unwrap().len(),
+            asks_expected,
+            "{grant}: {:?}",
+            asked.lock().unwrap()
+        );
+        // Sound is never part of «everything».
+        assert_eq!(
+            e.agent.perms.check("T", Scope::RecordAudio),
+            crate::permissions::Decision::Ask
+        );
+        let rec = e.agent.call(
+            "T",
+            "record",
+            &json!({"action": "start", "sound": "system"}),
+        );
+        assert!(rec.is_error);
+        assert_eq!(
+            asked.lock().unwrap().last().map(String::as_str),
+            Some("record_audio")
+        );
+    }
+}

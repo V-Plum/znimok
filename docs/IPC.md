@@ -31,6 +31,10 @@ about itself (show it as such — it is not verified).
 → {"result": {"grant": "once" | "session" | "always" | null}}
 ```
 
+The answer also carries `"all": true` when «session» or «always» was chosen for a scope other
+than `record_audio`: the person allowed this client everything but the sound of a recording, and
+the MCP server keeps the grant for every scope (ZK-251: one question per client).
+
 With `"confirm": {"action": "delete", "name": "…"}` the question is «Delete «name» for good?»
 with two buttons; yes comes back as `"once"` (the server never keeps it).
 

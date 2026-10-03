@@ -49,13 +49,20 @@ impl Gui {
 
     /// Shows the permission dialog; `None` = refused or nobody to ask.
     pub fn ask(&self, client: &str, scope: Scope, tool: &str) -> Option<Grant> {
+        self.ask_all(client, scope, tool).map(|(g, _)| g)
+    }
+
+    /// As [`ask`](Self::ask); the flag says the answer covers every scope but the sound of a
+    /// recording (ZK-251: one question per client, not one per scope).
+    pub fn ask_all(&self, client: &str, scope: Scope, tool: &str) -> Option<(Grant, bool)> {
         let v = self
             .call(
                 "agents.ask",
                 json!({"client": client, "scope": scope, "tool": tool}),
             )
             .ok()?;
-        serde_json::from_value(v["grant"].clone()).ok()
+        let g: Grant = serde_json::from_value(v["grant"].clone()).ok()?;
+        Some((g, v["all"].as_bool().unwrap_or(false)))
     }
 
     /// Deleting «name» for good: the person says yes to this one thing (never kept).
@@ -243,7 +250,7 @@ mod tests {
             }
             "agents.ask" => {
                 assert_eq!(p["scope"], "capture");
-                Ok(json!({"grant": "session"}))
+                Ok(json!({"grant": "session", "all": true}))
             }
             "agents.activity" => Ok(Value::Null),
             _ => Err(RpcError::method_not_found(m)),
@@ -253,6 +260,10 @@ mod tests {
         assert_eq!(
             gui.ask("Claude", Scope::Capture, "capture_screen"),
             Some(Grant::Session)
+        );
+        assert_eq!(
+            gui.ask_all("Claude", Scope::Capture, "capture_screen"),
+            Some((Grant::Session, true))
         );
         assert!(gui.confirm_delete("Claude", "library_delete", "Знімок"));
         gui.activity("Claude", "capture_screen", true);
