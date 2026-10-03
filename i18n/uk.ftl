@@ -3590,7 +3590,7 @@ about-description = Znimok знімає екран — ділянку, вікн�
 
 # @where: About page: privacy in short, second paragraph (must match docs/privacy.md)
 # @kind: body
-# @max: 220
+# @max: 260
 about-local = Усе лишається на вашому комп'ютері: без облікового запису, телеметрії й реклами. Без вашої дії нічого нікуди не йде; сама програма лише перевіряє оновлення, і це можна вимкнути.
 
 # @where: About page: link button to the website
@@ -5071,12 +5071,12 @@ rec-error-save = Не вдалося зберегти запис: { $reason }
 
 # @where: Settings → Recording, under «Cursor and click highlight»
 # @kind: hint
-# @max: 220
+# @max: 260
 rec-cursor-hint = Вказівник малюється у відео, клік — кільцем, що розходиться, утримана кнопка — сталим; кліки по плашці запису не записуються. Кліки також зберігаються журналом у документі.
 
 # @where: Settings → Recording, under the sound choice
 # @kind: hint
-# @max: 220
+# @max: 260
 rec-sound-tracks = Кожне джерело — окрема доріжка: у редакторі її можна вимкнути чи зробити тихішою. Системний звук — те, що відтворює цей комп'ютер; мікрофону потрібен дозвіл Windows (Конфіденційність → Мікрофон).
 
 # @where: Toast after a recording: Windows privacy settings deny the microphone
@@ -5962,6 +5962,11 @@ report-log = Лог
 # @kind: tooltip
 # @max: 20
 report-fold = Згорнути
+
+# @where: Access question: what «this session» and «always» cover
+# @kind: body
+# @max: 260
+agents-ask-all = «На цю сесію» і «Завжди» дозволяють цьому агенту все: знімки, запис екрана, читання й зміну бібліотеки, налаштування — крім звуку запису, про який спитаємо окремо. «Цього разу» — лише цю дію.
 
 # @where: Report page: the button that opens the baseline menu
 # @kind: button

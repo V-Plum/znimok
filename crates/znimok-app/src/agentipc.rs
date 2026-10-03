@@ -57,7 +57,11 @@ pub fn handle(method: &str, params: &Value) -> Option<Result<Value, znimok_ipc::
                 .and_then(|c| c.get("name"))
                 .and_then(Value::as_str)
                 .map(str::to_string);
-            Ok(json!({"grant": ask(client, scope, tool, confirm, WAIT)}))
+            // One question per client (ZK-251): «this session» and «always» cover every
+            // scope but the sound of a recording, which is asked for on its own.
+            let all = confirm.is_none() && scope != "record_audio";
+            let grant = ask(client, scope, tool, confirm, WAIT);
+            Ok(json!({"grant": grant, "all": all && grant.is_some_and(|g| g != "once")}))
         }
         "agents.record" => record(params),
         "agents.app" => app(params),
@@ -141,9 +145,18 @@ fn show(
                         "record_audio" => "agents-ask-record-audio",
                         _ => "agents-ask-other",
                     });
+                    let mut body = a.tr.tr_args("agents-ask-body", &args(&[("what", what)]));
+                    if scope != "record_audio" {
+                        body.push_str(
+                            "
+
+",
+                        );
+                        body.push_str(&a.tr.tr("agents-ask-all"));
+                    }
                     (
                         a.tr.tr_args("agents-ask-title", &args(&[])),
-                        a.tr.tr_args("agents-ask-body", &args(&[("what", what)])),
+                        body,
                         vec![
                             a.tr.tr("agents-ask-once"),
                             a.tr.tr("agents-ask-session"),

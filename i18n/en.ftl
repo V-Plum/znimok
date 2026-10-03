@@ -3570,7 +3570,7 @@ about-description = Znimok captures the screen — a region, a window, the whole
 
 # @where: About page: privacy in short, second paragraph (must match docs/privacy.md)
 # @kind: body
-# @max: 220
+# @max: 260
 about-local = Everything stays on your computer: no account, no telemetry, no ads. Nothing leaves it without your action; the only request the program makes by itself is the update check, and it can be turned off.
 
 # @where: About page: link button to the website
@@ -5029,12 +5029,12 @@ rec-error-save = The recording could not be saved: { $reason }
 
 # @where: Settings → Recording, under «Cursor and click highlight»
 # @kind: hint
-# @max: 220
+# @max: 260
 rec-cursor-hint = The pointer is drawn into the video, a click is a spreading ring and a held button a steady one; clicks on the recording bar are not recorded. The clicks are also kept as a log in the document.
 
 # @where: Settings → Recording, under the sound choice
 # @kind: hint
-# @max: 220
+# @max: 260
 rec-sound-tracks = Each source is a track of its own: in the editor it can be muted or made quieter. The system sound is what this computer plays; the microphone needs Windows' permission (Privacy → Microphone).
 
 # @where: Toast after a recording: Windows privacy settings deny the microphone
@@ -5914,6 +5914,11 @@ report-log = Log
 # @kind: tooltip
 # @max: 20
 report-fold = Fold
+
+# @where: Access question: what «this session» and «always» cover
+# @kind: body
+# @max: 260
+agents-ask-all = «This session» and «Always» allow this agent everything: screenshots, screen recording, reading and changing the library, the settings — but not the sound of a recording, which is asked for on its own. «This time» allows this one action.
 
 # @where: Report page: the button that opens the baseline menu
 # @kind: button
