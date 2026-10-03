@@ -6838,6 +6838,7 @@ dependencies = [
  "znimok-devtools",
  "znimok-export",
  "znimok-format",
+ "znimok-google",
  "znimok-gpu",
  "znimok-i18n",
  "znimok-ipc",
@@ -7191,6 +7192,7 @@ dependencies = [
  "base64",
  "serde",
  "serde_json",
+ "znimok-google",
  "znimok-models",
  "znimok-settings",
 ]
