@@ -5904,3 +5904,13 @@ agents-scope-record = screen recording
 # @kind: label
 # @max: 24
 agents-scope-sound = sound and microphone
+
+# @where: Report page: the button that brings the folded log back
+# @kind: button
+# @max: 12
+report-log = Log
+
+# @where: Report page: tooltip of the buttons that fold the log pane or the details away
+# @kind: tooltip
+# @max: 20
+report-fold = Fold

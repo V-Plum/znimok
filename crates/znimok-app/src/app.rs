@@ -8349,8 +8349,10 @@ impl App {
         }
         if let Some(u) = events
             .iter()
-            .find(|e| e["k"] == "tab" || e["k"] == "nav")
-            .and_then(|e| e["url"].as_str())
+            .filter(|e| e["k"] == "tab" || e["k"] == "nav")
+            .filter_map(|e| e["url"].as_str())
+            // The site, not the browser's own page the recording started on (ZK-246).
+            .find(|u| u.starts_with("http://") || u.starts_with("https://"))
         {
             rows.push((tr.tr("report-page"), u.to_string()));
         }
@@ -8375,6 +8377,7 @@ impl App {
                         &args(&[("version", env!("CARGO_PKG_VERSION").to_string())]),
                     ),
                     rights,
+                    link: "https://github.com/V-Plum/znimok".into(),
                     ..Default::default()
                 },
                 strings,
@@ -11926,6 +11929,8 @@ fn s_bars(a: &App, x: i32, y: i32) -> Option<(ObjectId, crate::video::Grip, (i64
 /// The words of the report's viewer (ZK-98), by their keys.
 const REPORT_STRINGS: &[&str] = &[
     "report-tab-details",
+    "report-log",
+    "report-fold",
     "report-pick",
     "report-copy",
     "report-h-type",

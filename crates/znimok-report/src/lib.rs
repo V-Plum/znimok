@@ -37,6 +37,8 @@ pub struct Meta {
     pub foot: String,
     /// Whose it is, before the footer: «© 2026 Acme. Confidential.» (ZK-245), or empty.
     pub rights: String,
+    /// Where the footer's «Made with Znimok» leads (ZK-246), or empty.
+    pub link: String,
     /// The exported video's size.
     pub width: u32,
     pub height: u32,
@@ -123,6 +125,7 @@ pub fn page(
             "masked": meta.masked,
             "foot": meta.foot,
             "rights": meta.rights,
+            "link": meta.link,
         },
         "strings": strings,
         "events": events,
