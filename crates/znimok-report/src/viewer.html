@@ -25,8 +25,10 @@ main{display:grid;gap:10px;padding:0 14px;min-height:0;grid-template-columns:min
 .fold .log,.fold .det,.nodet .det{display:none}
 .fold main,.nodet main{grid-template-columns:minmax(0,1fr) var(--w2)}
 .fold main{grid-template-columns:minmax(0,1fr)}
-.unfold{position:fixed;right:14px;bottom:36px;z-index:3;display:none;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:5px 10px;font-size:12px;box-shadow:0 2px 8px #0003}
-.fold .unfold,.nodet .unfold{display:block}
+.unf{display:none;white-space:nowrap}
+.fold .unf.l,.nodet .unf.d{display:inline-block}
+.unf.l{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:3px 10px;font-size:12px}
+.meta a{color:var(--accent);text-decoration:none}
 .stage{container-type:size;display:grid;place-items:start center;min-height:0;min-width:0}
 .fit{display:grid;gap:8px;width:min(100cqw,calc((100cqh - 38px) * var(--ar)))}
 .v{position:relative;line-height:0;border-radius:8px;overflow:hidden;background:#000;aspect-ratio:var(--ar)}
@@ -39,8 +41,9 @@ video{width:100%;height:100%;display:block}
 .sm{width:10px;margin-left:-5px;background:var(--accent);opacity:.28;display:none}
 .pane{background:var(--panel);border:1px solid var(--line);border-radius:10px;display:flex;flex-direction:column;min-height:0;min-width:0;overflow:hidden}
 .bar{display:flex;gap:8px;align-items:center;padding:8px;border-bottom:1px solid var(--line)}
-.bar input{flex:0 0 150px;min-width:0;padding:4px 8px;border:1px solid var(--line);border-radius:7px;background:var(--bg);color:var(--fg);font:inherit}
-.chips{display:flex;gap:4px;overflow-x:auto;scrollbar-width:none;flex:1;min-width:0}
+.bar input{flex:0 1 130px;min-width:84px;padding:4px 8px;border:1px solid var(--line);border-radius:7px;background:var(--bg);color:var(--fg);font:inherit}
+.chips{display:flex;gap:4px;overflow:hidden;flex:1;min-width:0}
+.chip.over{display:none}
 .chip{flex:none;border-radius:11px;padding:2px 9px;background:var(--soft);color:var(--fg2);font-weight:600;font-size:12px;white-space:nowrap}
 .chip b{font-weight:500;color:var(--muted);margin-left:5px}
 .chip.on{background:var(--sel);color:var(--fg)}
@@ -125,7 +128,7 @@ main{grid-template-columns:minmax(0,1fr);grid-template-rows:auto minmax(0,1fr)}
 }
 .nolog main{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,1fr)}
 .nolog .stage{grid-row:auto;height:auto}
-.nolog .log,.nolog .det,.nolog .tl,.nolog .unfold{display:none}
+.nolog .log,.nolog .det,.nolog .tl,.nolog .unf{display:none}
 .nolog #keys{display:inline}
 @media (prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}}
 </style></head><body>
@@ -137,7 +140,6 @@ main{grid-template-columns:minmax(0,1fr);grid-template-rows:auto minmax(0,1fr)}
 <section class="pane log" id="log"><div class="gut"></div></section>
 <section class="pane det" id="det"><div class="gut"></div></section>
 </main>
-<button class="unfold" id="unfold" type="button"></button>
 <footer><span id="foot"></span><span id="keys"></span></footer>
 <script type="application/json" id="zn-data">{{DATA}}</script>
 <script>
@@ -155,7 +157,9 @@ if (marks.length) (function f() { const t = v.currentTime; for (const [e, r] of 
 
 // The header and the footer.
 const meta = document.getElementById("meta");
-for (const [k, val] of D.meta.rows) { const s = $("span"); s.append($("b", null, k + ": "), val); meta.append(s); }
+const link = (href, text) => { const a = $("a", null, text); a.href = href; a.target = "_blank"; a.rel = "noopener"; return a; };
+let pageRow = null;
+for (const [k, val] of D.meta.rows) { const s = $("span"); s.append($("b", null, k + ": ")); if (/^https?:\/\/\S+$/.test(val)) { pageRow = s; s.append(link(val, val)); } else s.append(val); meta.append(s); }
 if (D.meta.masked) meta.append($("span", "masked", D.meta.masked));
 { const f = document.getElementById("foot"); if (D.meta.rights) f.append(D.meta.rights, "  ·  "); if (D.meta.link) { const a = $("a", null, D.meta.foot); a.href = D.meta.link; a.target = "_blank"; a.rel = "noopener"; f.append(a); } else f.append(D.meta.foot || ""); }
 
@@ -269,6 +273,33 @@ function matches(e, q) {
   return has(e.text) || has(e.url) || has(e.title) || has(e.src) || has(e.postData) || has(e.data) || has(e.method) || (!e.b64 && has(e.body)) || has(e.status);
 }
 
+// The pages of the recording (ZK-255): where it started and where it went — the tabs and the
+// navigations, the documents, the dataLayer's history changes, the pages its requests name as
+// their referer — each a link, in the order they came.
+function pages() {
+  const out = [], seen = new Set(), web = (u) => u && /^https?:$/.test(u.protocol);
+  const first = ev.map((e) => kindOf(e) === "nav" ? url(e.url) : null).find(web);
+  const add = (text, own) => { const u = url(text); if (!web(u) || (own && first && u.origin !== first.origin)) return; u.hash = ""; if (!seen.has(u.href)) { seen.add(u.href); out.push(u); } };
+  for (const e of ev) {
+    if (kindOf(e) === "nav") add(e.url);
+    else if (e.k === "net") {
+      if (e.type === "Document") add(e.url, true);
+      const h = e.reqHeaders || {}, r = url(h.referer || h.Referer);
+      // A bare origin is what a strict referrer policy leaves of any page; a file is a stylesheet asking.
+      if (web(r) && r.pathname !== "/" && !/\.\w{2,5}$/.test(r.pathname)) add(r.href, true);
+    } else if (e.k === "dl" && e.data && typeof e.data === "object") add(e.data["gtm.newUrl"] || e.data.page_location, true);
+  }
+  return out;
+}
+{ const pg = pages();
+  if (pg.length) {
+    if (!pageRow) { pageRow = $("span"); meta.append(pageRow); }
+    const label = pageRow.querySelector("b") ? pageRow.querySelector("b").textContent : L("report-page") + ": ";
+    pageRow.textContent = ""; pageRow.append($("b", null, label));
+    pg.slice(0, 6).forEach((u, i) => { if (i) pageRow.append(" → "); pageRow.append(link(u.href, i && u.origin === pg[0].origin ? u.pathname + u.search : u.href)); });
+    if (pg.length > 6) pageRow.append(" … +" + (pg.length - 6));
+  } }
+
 // The log: search, chips, the list.
 const save = (name, data) => { const a = $("a", null, name); a.tabIndex = 0; a.onclick = () => { const u = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: "application/json" })); const l = $("a"); l.href = u; l.download = name; l.click(); setTimeout(() => URL.revokeObjectURL(u), 1000); }; return a; };
 const dls = document.getElementById("dl");
@@ -278,15 +309,19 @@ if (dlOnly.length) dls.append(save("dataLayer.json", dlOnly.map((e) => ({ at: e.
 const bar = $("div", "bar"), search = $("input"), chips = $("div", "chips"), list = $("div", "list");
 search.type = "search"; search.placeholder = L("devp-search"); search.title = L("report-search-hint");
 // The panes: dragged wider or taller by their edges, folded away; the browser remembers.
-const gutLog = log.querySelector(".gut"), gutDet = det.querySelector(".gut"), unfold = document.getElementById("unfold");
+const gutLog = log.querySelector(".gut"), gutDet = det.querySelector(".gut");
 const store = (k, v) => { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, JSON.stringify(v)); } catch (x) { /* no storage */ } };
 const load = (k) => { try { return JSON.parse(localStorage.getItem(k)); } catch (x) { return null; } };
 const lay = load("zn-layout") || {};
 const wide = () => innerWidth >= 1500, mainEl = document.querySelector("main");
-const applyLay = () => { for (const [k, v] of [["w2", wide() ? lay.w2 : lay.v2], ["w3", lay.w3], ["h2", lay.h2]]) mainEl.style.setProperty("--" + k, v ? v + "px" : ""); B.classList.toggle("fold", !!lay.fold); B.classList.toggle("nodet", !lay.fold && !!lay.nodet); unfold.textContent = lay.fold ? "⇤ " + L("report-log") : "⇤ " + L("report-tab-details"); };
+const applyLay = () => { for (const [k, v] of [["w2", wide() ? lay.w2 : lay.v2], ["w3", lay.w3], ["h2", lay.h2]]) mainEl.style.setProperty("--" + k, v ? v + "px" : ""); B.classList.toggle("fold", !!lay.fold); B.classList.toggle("nodet", !lay.fold && !!lay.nodet); };
 applyLay();
 addEventListener("resize", applyLay);
-unfold.onclick = () => { lay.fold = false; lay.nodet = false; store("zn-layout", lay); applyLay(); };
+// A folded pane comes back where it was folded: the log — from the page's top right corner,
+// the details — from the right end of the log's bar (the top right corner then).
+const unfoldTo = (k) => () => { lay[k] = false; store("zn-layout", lay); applyLay(); };
+const unfoldLog = btn("unf l", "⇤ " + L("report-log"), null, unfoldTo("fold")), unfoldDet = btn("ib unf d", "⇤", L("report-tab-details"), unfoldTo("nodet"));
+document.querySelector(".top").append(unfoldLog);
 for (const [g, pane] of [[gutLog, "log"], [gutDet, "det"]]) {
   g.onpointerdown = (k) => {
     // A pane's left edge dragged left makes it wider; the details' top edge dragged down makes
@@ -353,8 +388,8 @@ function setBase(b) {
   if (b) cmpText.textContent = L("report-cmp-sum").replace("{name}", b.name).replace("{new}", diff.pair.filter((x) => x < 0).length).replace("{gone}", diff.gone.length).replace("{moved}", diff.moved.size).replace("{changed}", diff.change.size);
   refilter();
 }
-const menu = $("div", "menu"), cmpBtn = btn("chip", L("report-cmp") + " ▾", null, (k) => { k.stopPropagation(); buildMenu(); menu.classList.toggle("on"); });
-document.addEventListener("click", (k) => { if (!menu.contains(k.target)) menu.classList.remove("on"); });
+const menu = $("div", "menu"), cmpBtn = btn("chip", L("report-cmp") + " ▾", null, (k) => { k.stopPropagation(); buildMenu(); moreMenu.classList.remove("on"); menu.classList.toggle("on"); });
+document.addEventListener("click", (k) => { for (const m of [menu, moreMenu]) if (!m.contains(k.target)) m.classList.remove("on"); });
 const saveJson = (name, data) => { const u = URL.createObjectURL(new Blob([JSON.stringify(data)], { type: "application/json" })); const l = $("a"); l.href = u; l.download = name; l.click(); setTimeout(() => URL.revokeObjectURL(u), 1000); };
 const when = (t) => new Date(t).toLocaleString(undefined, { dateStyle: "short", timeStyle: "short" });
 function keepBase(b) {
@@ -389,7 +424,28 @@ file.onchange = () => {
   file.value = "";
 };
 const chipEls = CHIPS.map(([k], i) => { const b = btn("chip", null, null, () => { chip = i; refilter(); }); chips.append(b); return b; });
-bar.append(search, chips, cmpBtn, foldBtn, menu);
+// The chips that do not fit the bar wait under «⋯» (ZK-255: a mouse without a sideways wheel
+// could not reach them); the chosen one, when it is there, names the button.
+const moreMenu = $("div", "menu"), counts = [];
+let over = [];
+const moreBtn = btn("chip", "⋯", null, (k) => {
+  k.stopPropagation(); moreMenu.textContent = "";
+  for (const i of over) { const b = btn(null, null, null, () => { chip = i; moreMenu.classList.remove("on"); refilter(); }); b.append($("b", null, L(CHIPS[i][0])), $("i", null, counts[i])); moreMenu.append(b); }
+  menu.classList.remove("on"); moreMenu.classList.toggle("on");
+});
+chips.append(moreBtn);
+function fitChips() {
+  const fits = () => chips.scrollWidth <= chips.clientWidth + 1, live = chipEls.filter((b) => !b.hidden);
+  moreBtn.hidden = true; moreBtn.textContent = "⋯"; over = [];
+  for (const b of chipEls) b.classList.remove("over");
+  const drop = () => { for (let i = live.length - 1; i > 0 && !fits(); i--) if (!live[i].classList.contains("over")) { live[i].classList.add("over"); over.unshift(chipEls.indexOf(live[i])); } };
+  if (!fits()) { moreBtn.hidden = false; drop(); }
+  const act = over.includes(chip);
+  moreBtn.classList.toggle("on", act);
+  if (act) { moreBtn.textContent = L(CHIPS[chip][0]) + " " + counts[chip] + " ▾"; drop(); if (!fits()) moreBtn.textContent = "⋯"; }
+}
+new ResizeObserver(fitChips).observe(chips);
+bar.append(search, chips, cmpBtn, foldBtn, unfoldDet, menu, moreMenu);
 log.append(bar, cmpBar, list);
 
 let chip = 0, shown = [], rows = [], sel = -1, cur = -1, pin = -1;
@@ -400,8 +456,9 @@ function refilter() {
   chipEls.forEach((b, i) => {
     const n = inQ.filter(CHIPS[i][1]).length;
     b.textContent = L(CHIPS[i][0]); b.append($("b", null, n));
-    b.classList.toggle("on", i === chip); b.hidden = !n && i > 0 && i !== chip;
+    b.classList.toggle("on", i === chip); b.hidden = !n && i > 0 && i !== chip; counts[i] = n;
   });
+  fitChips();
   shown = []; rows = [];
   const differs = (i) => diff && (diff.isNew(i) || diff.moved.has(i) || diff.change.has(i));
   ev.forEach((e, i) => { if (CHIPS[chip][1](e) && hit(e) && (!onlyDiff || differs(i))) shown.push(i); });
