@@ -1549,7 +1549,7 @@ impl App {
             // this build, or hides again.
             // The About page (ZK-198): its links, and the version for a bug report.
             "about-link" => {
-                if let Some(url) = ABOUT_LINKS.get(value as usize) {
+                if let Some(url) = about_link(value as usize, self.tr.lang()) {
                     crate::codes::open_url(url);
                 }
             }
@@ -8377,7 +8377,7 @@ impl App {
                         &args(&[("version", env!("CARGO_PKG_VERSION").to_string())]),
                     ),
                     rights,
-                    link: "https://v-plum.github.io/znimok/".into(),
+                    link: site_url(tr.lang()).into(),
                     ..Default::default()
                 },
                 strings,
@@ -10058,13 +10058,28 @@ fn wave_pixels(
     out
 }
 
-/// The About page's links (ZK-198), in the order of its buttons.
-const ABOUT_LINKS: [&str; 4] = [
-    "https://v-plum.github.io/znimok/",
-    "https://github.com/V-Plum/znimok",
-    "https://github.com/V-Plum/znimok/blob/main/docs/privacy.md",
-    "https://github.com/V-Plum/znimok/blob/main/LICENSE",
-];
+/// The About page's links (ZK-198), in the order of its buttons; the site and the privacy notice
+/// in the interface's language (ZK-256: Ukrainian, else English).
+fn about_link(i: usize, lang: &str) -> Option<&'static str> {
+    let uk = lang == "uk";
+    Some(match i {
+        0 => site_url(lang),
+        1 => "https://github.com/V-Plum/znimok",
+        2 if uk => "https://github.com/V-Plum/znimok/blob/main/docs/privacy.md",
+        2 => "https://github.com/V-Plum/znimok/blob/main/docs/privacy.en.md",
+        3 => "https://github.com/V-Plum/znimok/blob/main/LICENSE",
+        _ => return None,
+    })
+}
+
+/// Znimok's site in a language: the Ukrainian page, else the English one.
+fn site_url(lang: &str) -> &'static str {
+    if lang == "uk" {
+        "https://v-plum.github.io/znimok/"
+    } else {
+        "https://v-plum.github.io/znimok/en/"
+    }
+}
 
 /// «build 1a2b3c4 · Windows x86_64» (ZK-198): the commit the release was built from (CI sets
 /// GITHUB_SHA), or «local build».
