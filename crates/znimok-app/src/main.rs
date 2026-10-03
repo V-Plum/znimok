@@ -924,32 +924,41 @@ fn leave_quietly(app: &Shared, ui: &AppWindow) -> bool {
     app.borrow_mut().save_now(ui)
 }
 
-fn pick_open(app: &Shared) -> Option<PathBuf> {
+/// The Image button / I (ZK-163): a picture file as a mark on the open document. The dialog
+/// off the UI thread (ZK-223).
+fn insert_image_with_dialog(app: &Shared, ui: &AppWindow) {
+    if filedlg::busy() {
+        return;
+    }
+    let dlg = rfd::FileDialog::new().add_filter("PNG, JPEG, WebP, GIF, BMP", io::IMAGE_EXTENSIONS);
+    let (app, weak) = (app.clone(), ui.as_weak());
+    filedlg::pick_file(dlg, move |p| {
+        let Some(ui) = weak.upgrade() else { return };
+        if let Some(p) = p {
+            app.borrow_mut().insert_image_file(&ui, &p);
+        }
+        ui.invoke_focus_canvas();
+    });
+}
+
+/// «Open…»: a document, a report or a picture (ZK-223: the dialog off the UI thread).
+fn open_with_dialog(app: &Shared, ui: &AppWindow) {
+    if filedlg::busy() {
+        return;
+    }
     let dir = app.borrow().lib_dir.clone();
     let mut exts: Vec<&str> = io::IMAGE_EXTENSIONS.to_vec();
     exts.push("znimok");
     exts.push("zreport");
-    rfd::FileDialog::new()
+    let dlg = rfd::FileDialog::new()
         .add_filter("Znimok, .zreport, PNG, JPEG, WebP, GIF, BMP", &exts)
-        .set_directory(dir)
-        .pick_file()
-}
-
-/// The Image button / I (ZK-163): a picture file as a mark on the open document.
-fn insert_image_with_dialog(app: &Shared, ui: &AppWindow) {
-    let file = rfd::FileDialog::new()
-        .add_filter("PNG, JPEG, WebP, GIF, BMP", io::IMAGE_EXTENSIONS)
-        .pick_file();
-    if let Some(p) = file {
-        app.borrow_mut().insert_image_file(ui, &p);
-    }
-    ui.invoke_focus_canvas();
-}
-
-fn open_with_dialog(app: &Shared, ui: &AppWindow) {
-    if let Some(p) = pick_open(app) {
-        app.borrow_mut().open_path(ui, &p);
-    }
+        .set_directory(dir);
+    let (app, weak) = (app.clone(), ui.as_weak());
+    filedlg::pick_file(dlg, move |p| {
+        if let (Some(p), Some(ui)) = (p, weak.upgrade()) {
+            app.borrow_mut().open_path(&ui, &p);
+        }
+    });
 }
 
 /// «Export» in the sheet (ZK-187): a file asks where, with the chosen format's extension.
@@ -977,22 +986,6 @@ fn export_go(app: &Shared, ui: &AppWindow) {
             app.borrow_mut().export_write(&ui, &p);
         }
     });
-}
-
-#[allow(dead_code)]
-fn export_with_dialog(app: &Shared, ui: &AppWindow) {
-    let name = app.borrow().doc_name();
-    let file = rfd::FileDialog::new()
-        .add_filter("PNG", &["png"])
-        .add_filter("JPEG", &["jpg", "jpeg"])
-        .add_filter("WebP", &["webp"])
-        .set_file_name(format!("{name}.png"))
-        .save_file();
-    if let Some(p) = file {
-        let mut a = app.borrow_mut();
-        a.export_to(ui, &p);
-        a.set_last_share(ui, true);
-    }
 }
 
 /// Screenshot of the display under the pointer: the window steps aside, the capture runs on a

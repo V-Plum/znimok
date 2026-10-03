@@ -3,7 +3,11 @@
 //! there: the Explorer window came up and nothing answered any more — not the dialog, not the
 //! app. The dialog now runs on a thread of its own (rfd initialises COM there), the UI thread
 //! keeps its loop, and the answer comes back through it to a continuation kept here. macOS:
-//! the panel runs on the main thread as before (rfd dispatches to it anyway).
+//! the panel runs on the main thread as before (rfd dispatches to it anyway), and the answer
+//! still comes on the next turn of the loop — the caller usually holds the App borrowed, and a
+//! continuation that borrows it again (`WeakCtx::with`) would find it taken and do nothing.
+//!
+//! Every dialog of the app goes through here (ZK-223): open, save, a folder.
 
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
@@ -25,6 +29,16 @@ pub fn busy() -> bool {
 /// «Save as»: `then` gets the path, or `None` when cancelled.
 pub fn save_file(dlg: rfd::FileDialog, then: impl FnOnce(Option<PathBuf>) + 'static) {
     run(move || dlg.save_file(), then);
+}
+
+/// «Open»: one file.
+pub fn pick_file(dlg: rfd::FileDialog, then: impl FnOnce(Option<PathBuf>) + 'static) {
+    run(move || dlg.pick_file(), then);
+}
+
+/// A folder.
+pub fn pick_folder(dlg: rfd::FileDialog, then: impl FnOnce(Option<PathBuf>) + 'static) {
+    run(move || dlg.pick_folder(), then);
 }
 
 #[cfg(windows)]
@@ -57,5 +71,6 @@ fn run(
     show: impl FnOnce() -> Option<PathBuf> + Send + 'static,
     then: impl FnOnce(Option<PathBuf>) + 'static,
 ) {
-    then(show());
+    let path = show();
+    slint::Timer::single_shot(std::time::Duration::ZERO, move || then(path));
 }
