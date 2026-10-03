@@ -45,7 +45,7 @@ video{width:100%;height:100%;display:block}
 .chip b{font-weight:500;color:var(--muted);margin-left:5px}
 .chip.on{background:var(--sel);color:var(--fg)}
 .list{flex:1;overflow-y:auto;overflow-x:hidden;min-height:0;overscroll-behavior:contain;padding:2px 0}
-.row{display:grid;grid-template-columns:50px 74px minmax(0,1fr) auto;gap:8px;padding:0 10px 0 7px;height:26px;align-items:center;cursor:pointer;border-left:3px solid transparent;outline-offset:-2px}
+.row{display:grid;grid-template-columns:66px 74px minmax(0,1fr) auto;gap:8px;padding:0 10px 0 7px;height:26px;align-items:center;cursor:pointer;border-left:3px solid transparent;outline-offset:-2px}
 .row>*{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .row:hover{background:var(--soft)}
 .row.fut{color:var(--muted)}
@@ -57,6 +57,22 @@ video{width:100%;height:100%;display:block}
 .kd{font-size:11.5px;font-weight:650}
 .msg i,.ttl i{font-style:normal;color:var(--muted);margin-left:8px}
 .src{font-size:11.5px;color:var(--muted);max-width:120px}
+.row.gone{color:var(--muted);text-decoration:line-through;cursor:default;opacity:.7}
+.row.new .tm::before{content:"+ ";color:var(--ok);font-weight:700}
+.row.moved .tm::before{content:"↕ ";color:var(--warn);font-weight:700}
+.row.gone .tm::before{content:"− ";color:var(--err);font-weight:700}
+.dif{color:var(--warn);font-weight:600}.dif.bad{color:var(--err)}.dif.good{color:var(--ok)}
+.cmp{display:none;gap:8px;align-items:center;padding:5px 8px;border-bottom:1px solid var(--line);font-size:12px;background:var(--soft)}
+.cmp span{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cmp.on{display:flex}
+.menu{position:absolute;z-index:4;top:38px;right:8px;background:var(--panel);border:1px solid var(--line);border-radius:10px;box-shadow:0 6px 24px #0004;min-width:260px;max-width:360px;padding:4px;display:none}
+.menu.on{display:block}
+.menu button{display:flex;gap:8px;width:100%;text-align:left;padding:6px 8px;border-radius:6px;font-size:12.5px;align-items:center}
+.menu button:hover{background:var(--soft)}
+.menu button b{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:500}
+.menu button i{font-style:normal;color:var(--muted);font-size:11px}
+.menu hr{border:0;border-top:1px solid var(--line);margin:4px 0}
+.menu .del{width:auto;padding:2px 6px;color:var(--muted)}
 .c4{color:var(--err)}.c3{color:var(--warn)}.c2{color:var(--dl)}.c1{color:var(--nav)}.c0{color:var(--net)}.c5{color:var(--click)}
 .empty{padding:18px 14px;color:var(--muted);text-align:center;margin:auto}
 .dhead{display:flex;gap:8px;align-items:center;padding:0 6px 0 10px;height:41px;border-bottom:1px solid var(--line);flex:none}
@@ -238,9 +254,93 @@ for (const [g, pane] of [[gutLog, "log"], [gutDet, "det"]]) {
   };
 }
 const foldBtn = btn("ib", "⇥", L("report-fold"), () => { lay.fold = true; store("zn-layout", lay); applyLay(); });
+
+// A baseline (ZK-247): the log's fingerprint — what each event is, without its bodies — kept
+// in the browser under a name, or in a file; another recording is compared against it.
+// Events pair up by a key (the k-th of a key with the k-th of the same key).
+function keyOf(e) {
+  const k = kindOf(e);
+  if (k === "net") { const u = url(e.url); return "net " + (e.method || "") + " " + (u ? u.host + u.pathname.replace(/\d{5,}|[0-9a-f]{16,}/gi, "#") + " " + [...u.searchParams.keys()].sort().join(",") : e.url); }
+  if (k === "dl") return "dl " + (e.ev || JSON.stringify(e.data).slice(0, 80));
+  if (k === "console" || k === "error") return k + " " + said(e).replace(/\d+/g, "#").slice(0, 120);
+  if (k === "nav") return "nav " + ((url(e.url) || {}).pathname || e.url || "");
+  return k + " " + (e.dir || "");
+}
+const prints = (list) => list.map((e) => ({ key: keyOf(e), at: e.at, dur: e.dur, status: e.status, lab: label(e), msg: message(e)[0], c: cls(e) }));
+const fingerprint = () => ({ name: "", date: Date.now(), title: document.title, n: ev.length, events: prints(ev) });
+const bases = () => load("zn-baselines") || [];
+let base = null, diff = null, onlyDiff = false;
+function lis(a) {
+  // Positions of a longest increasing subsequence.
+  const prev = new Array(a.length), idx = [];
+  a.forEach((x, i) => { let lo = 0, hi = idx.length; while (lo < hi) { const m = (lo + hi) >> 1; if (a[idx[m]] < x) lo = m + 1; else hi = m; } prev[i] = lo ? idx[lo - 1] : -1; idx[lo] = i; });
+  const out = new Set(); for (let i = idx.length ? idx[idx.length - 1] : -1; i >= 0; i = prev[i]) out.add(i);
+  return out;
+}
+function compare(b) {
+  const where = new Map(), seen = new Map(), pair = new Array(ev.length).fill(-1), used = new Set();
+  b.events.forEach((x, i) => { if (!where.has(x.key)) where.set(x.key, []); where.get(x.key).push(i); });
+  ev.forEach((e, i) => { const k = keyOf(e), n = seen.get(k) || 0; seen.set(k, n + 1); const l = where.get(k); if (l && l[n] != null) { pair[i] = l[n]; used.add(l[n]); } });
+  const seq = []; ev.forEach((e, i) => { if (pair[i] >= 0) seq.push(i); });
+  const keep = lis(seq.map((i) => pair[i])), moved = new Set(seq.filter((i, j) => !keep.has(j)));
+  const change = new Map();
+  ev.forEach((e, i) => {
+    if (pair[i] < 0) return;
+    const o = b.events[pair[i]], out = [];
+    if (o.status && e.status && o.status !== e.status) out.push([o.status + "→" + e.status, e.s === 2 ? "bad" : ""]);
+    if (e.dur != null && o.dur != null && Math.abs(e.dur - o.dur) >= Math.max(100, o.dur * 0.25)) out.push(["Δ" + (e.dur > o.dur ? "+" : "") + Math.round(e.dur - o.dur) + " ms", e.dur > o.dur ? "bad" : "good"]);
+    if (Math.abs(e.at - o.at) >= 0.5) out.push(["Δt " + (e.at > o.at ? "+" : "") + (e.at - o.at).toFixed(1) + " s", ""]);
+    if (out.length) change.set(i, out);
+  });
+  const gone = b.events.map((x, i) => i).filter((i) => !used.has(i));
+  return { pair, moved, change, gone, isNew: (i) => pair[i] < 0 };
+}
+const cmpBar = $("div", "cmp"), cmpText = $("span"), cmpOnly = btn("chip", L("report-cmp-only"), null, () => { onlyDiff = !onlyDiff; cmpOnly.classList.toggle("on", onlyDiff); refilter(); });
+cmpBar.append(cmpText, cmpOnly, btn("ib", "✕", L("report-cmp-stop"), () => setBase(null)));
+function setBase(b) {
+  base = b; diff = b ? compare(b) : null; onlyDiff = false; cmpOnly.classList.remove("on");
+  cmpBar.classList.toggle("on", !!b);
+  if (b) cmpText.textContent = L("report-cmp-sum").replace("{name}", b.name).replace("{new}", diff.pair.filter((x) => x < 0).length).replace("{gone}", diff.gone.length).replace("{moved}", diff.moved.size).replace("{changed}", diff.change.size);
+  refilter();
+}
+const menu = $("div", "menu"), cmpBtn = btn("chip", L("report-cmp") + " ▾", null, (k) => { k.stopPropagation(); buildMenu(); menu.classList.toggle("on"); });
+document.addEventListener("click", (k) => { if (!menu.contains(k.target)) menu.classList.remove("on"); });
+const saveJson = (name, data) => { const u = URL.createObjectURL(new Blob([JSON.stringify(data)], { type: "application/json" })); const l = $("a"); l.href = u; l.download = name; l.click(); setTimeout(() => URL.revokeObjectURL(u), 1000); };
+const when = (t) => new Date(t).toLocaleString(undefined, { dateStyle: "short", timeStyle: "short" });
+function keepBase(b) {
+  const all = bases().filter((x) => x.name !== b.name); all.unshift(b);
+  try { localStorage.setItem("zn-baselines", JSON.stringify(all)); return true; } catch (x) { alert(L("report-cmp-full")); return false; }
+}
+function buildMenu() {
+  menu.textContent = "";
+  const item = (text, fn, sub) => { const b = btn(null, null, null, fn); b.append($("b", null, text)); if (sub) b.append($("i", null, sub)); menu.append(b); return b; };
+  item(L("report-cmp-save"), () => { const name = prompt(L("report-cmp-name"), document.title); if (!name) return; const b = fingerprint(); b.name = name.trim(); keepBase(b); menu.classList.remove("on"); });
+  item(L("report-cmp-export"), () => { const b = fingerprint(); b.name = document.title; saveJson((document.title || "baseline") + ".baseline.json", b); menu.classList.remove("on"); });
+  item(L("report-cmp-import"), () => { file.click(); });
+  const all = bases();
+  menu.append($("hr"));
+  if (!all.length) { const e = $("div", "empty", L("report-cmp-none")); e.style.padding = "8px"; menu.append(e); }
+  for (const b of all) {
+    const row = item(b.name, () => { setBase(b); menu.classList.remove("on"); }, when(b.date) + " · " + b.n);
+    row.append(btn("ib del", "✕", L("common-delete"), (k) => { k.stopPropagation(); store("zn-baselines", all.filter((x) => x !== b)); if (base === b) setBase(null); buildMenu(); }));
+  }
+}
+// A baseline file, or another report's page: its events become the baseline.
+const file = $("input"); file.type = "file"; file.accept = ".json,.html,.htm"; file.hidden = true; B.append(file);
+file.onchange = () => {
+  const f = file.files[0]; if (!f) return;
+  f.text().then((t) => {
+    let b;
+    const m = t.match(/<script type="application\/json" id="zn-data">([\s\S]*?)<\/script>/);
+    if (m) { const list = JSON.parse(m[1]).events; b = { name: f.name.replace(/\.html?$/i, ""), date: f.lastModified, title: f.name, n: list.length, events: prints(list) }; }
+    else { b = JSON.parse(t); if (!Array.isArray(b.events)) throw new Error("not a baseline"); b.name = b.name || f.name; }
+    keepBase(b); setBase(b); menu.classList.remove("on");
+  }).catch((x) => alert(String(x.message || x)));
+  file.value = "";
+};
 const chipEls = CHIPS.map(([k], i) => { const b = btn("chip", null, null, () => { chip = i; refilter(); }); chips.append(b); return b; });
-bar.append(search, chips, foldBtn);
-log.append(bar, list);
+bar.append(search, chips, cmpBtn, foldBtn, menu);
+log.append(bar, cmpBar, list);
 
 let chip = 0, shown = [], rows = [], sel = -1, cur = -1, pin = -1;
 const tabOf = {};
@@ -253,18 +353,29 @@ function refilter() {
     b.classList.toggle("on", i === chip); b.hidden = !n && i > 0 && i !== chip;
   });
   shown = []; rows = [];
-  ev.forEach((e, i) => { if (CHIPS[chip][1](e) && matches(e, q)) shown.push(i); });
+  const differs = (i) => diff && (diff.isNew(i) || diff.moved.has(i) || diff.change.has(i));
+  ev.forEach((e, i) => { if (CHIPS[chip][1](e) && matches(e, q) && (!onlyDiff || differs(i))) shown.push(i); });
   list.textContent = "";
-  if (!shown.length) list.append($("div", "empty", L("devp-empty")));
+  if (!shown.length && !(diff && diff.gone.length)) list.append($("div", "empty", L("devp-empty")));
+  // The baseline's events missing here: a struck-out row each, where they would have been.
+  const gone = diff ? diff.gone.slice() : [];
+  const ghost = (g) => { const o = base.events[g], r = $("div", "row gone"); r.title = L("report-cmp-gone"); r.append($("span", "tm", fmt(o.at)), $("span", "kd c" + o.c, o.lab), $("span", "msg", o.msg), $("span", "src")); list.append(r); };
   for (const i of shown) {
     const e = ev[i], c = cls(e), [main, dim] = message(e);
-    const r = $("div", "row fut"), m = $("span", "msg" + (c === 4 ? " c4" : ""), main);
+    while (gone.length && diff.pair[i] >= 0 && gone[0] < diff.pair[i]) ghost(gone.shift());
+    const r = $("div", "row fut"), m = $("span", "msg" + (c === 4 ? " c4" : ""), main), src = $("span", "src", source(e));
     r.dataset.i = i;
     if (dim) m.append($("i", null, dim));
-    r.append($("span", "tm", fmt(e.at)), $("span", "kd c" + c, label(e)), m, $("span", "src", source(e)));
+    if (diff) {
+      if (diff.isNew(i)) { r.classList.add("new"); r.title = L("report-cmp-new"); } else if (diff.moved.has(i)) r.classList.add("moved");
+      const ch = diff.change.get(i);
+      if (ch) { src.textContent = ""; for (const [t, k] of ch) src.append($("b", "dif " + k, t + " ")); src.title = source(e); }
+    }
+    r.append($("span", "tm", fmt(e.at)), $("span", "kd c" + c, label(e)), m, src);
     if (i === sel) r.classList.add("sel");
     rows.push(r); list.append(r);
   }
+  gone.forEach(ghost);
   cur = -1; follow(false);
   B.dataset.shown = String(shown.length);
 }
