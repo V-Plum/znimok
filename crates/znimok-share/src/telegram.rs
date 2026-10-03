@@ -126,9 +126,12 @@ pub fn send(
         .file("document", &item.file_name, &item.mime, bytes)
         .finish();
     let msg = call(t, token, "sendDocument", Some((&body, &ct)), bytes.len())?;
-    // A public channel has an address of its message; a private chat has none.
+    // A public channel or group has an address of its message; a private chat has none (its
+    // `username` is the person's, and t.me/<person>/<id> leads nowhere).
+    let public = matches!(msg["chat"]["type"].as_str(), Some("channel" | "supergroup"));
     let url = msg["chat"]["username"]
         .as_str()
+        .filter(|_| public)
         .zip(msg["message_id"].as_i64())
         .map(|(u, id)| format!("https://t.me/{u}/{id}"));
     Ok(Sent { url })
@@ -153,10 +156,19 @@ mod tests {
     fn sends_a_document_with_its_caption() {
         let f = Fake::new(&[(
             200,
-            r#"{"ok":true,"result":{"message_id":7,"chat":{"id":-100,"username":"chan"}}}"#,
+            r#"{"ok":true,"result":{"message_id":7,"chat":{"id":-100,"type":"channel","username":"chan"}}}"#,
         )]);
         let s = send(&f, "123:abc", "-100", &item(), b"PNG").unwrap();
         assert_eq!(s.url.as_deref(), Some("https://t.me/chan/7"));
+        // A private chat: no link.
+        let f2 = Fake::new(&[(
+            200,
+            r#"{"ok":true,"result":{"message_id":4,"chat":{"id":5,"type":"private","username":"VPlum"}}}"#,
+        )]);
+        assert_eq!(
+            send(&f2, "123:abc", "5", &item(), b"PNG").unwrap().url,
+            None
+        );
         let r = &f.seen()[0];
         assert_eq!(r.method, "POST");
         assert_eq!(r.url, "https://api.telegram.org/bot123:abc/sendDocument");

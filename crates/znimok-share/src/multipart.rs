@@ -52,27 +52,13 @@ impl Form {
     }
 
     pub fn file(mut self, name: &str, file_name: &str, content_type: &str, bytes: &[u8]) -> Self {
-        // The name twice: plain (ASCII, for old receivers) and RFC 5987 (UTF-8, Cyrillic).
-        let ascii: String = file_name
-            .chars()
-            .map(|c| {
-                if c.is_ascii() && c != '"' && c != '\\' && !c.is_control() {
-                    c
-                } else {
-                    '_'
-                }
-            })
-            .collect();
-        let disposition = if ascii == file_name {
-            format!("name=\"{}\"; filename=\"{}\"", quote(name), ascii)
-        } else {
-            format!(
-                "name=\"{}\"; filename=\"{}\"; filename*=UTF-8''{}",
-                quote(name),
-                ascii,
-                percent(file_name)
-            )
-        };
+        // The name as UTF-8 right in `filename` (RFC 7578 §4.2): Telegram reads only this, and
+        // shows `filename*` as underscores; Jira, Slack and Redmine take it too.
+        let disposition = format!(
+            "name=\"{}\"; filename=\"{}\"",
+            quote(name),
+            quote(&file_name.replace(['\r', '\n'], " "))
+        );
         self.head(&disposition, Some(content_type));
         self.body.extend_from_slice(bytes);
         self.body.extend_from_slice(b"\r\n");
@@ -122,7 +108,7 @@ mod tests {
         assert!(b.starts_with(&format!(
             "--{boundary}\r\nContent-Disposition: form-data; name=\"chat_id\"\r\n\r\n42\r\n"
         )));
-        assert!(b.contains("filename=\"______ 1.png\"; filename*=UTF-8''%D0%97%D0%BD%D1%96%D0%BC%D0%BE%D0%BA%201.png"));
+        assert!(b.contains("filename=\"Знімок 1.png\"\r\n"));
         assert!(b.contains("Content-Type: image/png\r\n\r\n"));
         assert!(b.ends_with(&format!("--{boundary}--\r\n")));
     }
