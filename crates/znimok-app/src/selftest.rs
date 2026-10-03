@@ -4966,6 +4966,91 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
         );
     }));
 
+    // ZK-242: an agent's screenshot through the app — the windows to choose from, then the
+    // shot of one saved as a library document, the editor left alone.
+    #[cfg(windows)]
+    {
+        fn agent_captures(method: &'static str, params: serde_json::Value) {
+            *AGENT_ASKED.lock().unwrap() = None;
+            std::thread::spawn(move || {
+                let v = crate::agentipc::handle(method, &params);
+                *AGENT_ASKED.lock().unwrap() = v.map(|r| match r {
+                    Ok(v) => v,
+                    Err(e) => serde_json::json!({"error": e.message}),
+                });
+            });
+        }
+        steps.push(Box::new(|_, ui, _| {
+            ui.invoke_setting("mcp".into(), 1);
+            agent_captures("capture.windows", serde_json::json!({}));
+        }));
+        steps.push(Box::new(|_, _, r| {
+            let got = AGENT_ASKED.lock().unwrap().take();
+            let me = got.as_ref().and_then(|v| v.as_array()).and_then(|l| {
+                l.iter()
+                    .find(|w| w["pid"].as_u64() == Some(u64::from(std::process::id())))
+                    .cloned()
+            });
+            r.check(
+                "agent capture: the app lists the windows, without its own",
+                got.as_ref().is_some_and(|v| v.is_array()) && me.is_none(),
+                format!(
+                    "{} windows · own listed {}",
+                    got.as_ref()
+                        .and_then(|v| v.as_array())
+                        .map_or(0, |l| l.len()),
+                    me.is_some()
+                ),
+            );
+            // This app's own window: a display or another program's window gives no frame in a
+            // session without a desktop (RDP), this one draws.
+            let me = crate::devlog::windows_and_displays()
+                .0
+                .into_iter()
+                .find(|w| w.pid == std::process::id() && !w.minimized && w.bounds.width > 200)
+                .map(|w| w.id.0);
+            agent_captures(
+                "capture.take",
+                serde_json::json!({"target": {"kind": "window", "id": me}}),
+            );
+        }));
+        // WGC sends a window's frame when it is drawn anew: the window changes meanwhile.
+        for i in 0..12 {
+            steps.push(Box::new(move |_, ui, _| {
+                ui.set_toast(format!("знімок агента {i}").into())
+            }));
+        }
+        steps.push(Box::new(|_, ui, r| {
+            let got = AGENT_ASKED.lock().unwrap().take();
+            let path = got
+                .as_ref()
+                .and_then(|v| v["path"].as_str())
+                .map(std::path::PathBuf::from);
+            let doc = path
+                .as_ref()
+                .and_then(|p| znimok_format::open(p).ok())
+                .and_then(|l| match l {
+                    znimok_format::Loaded::Image(d) => Some((d.meta.source.clone(), d.frame().w)),
+                    _ => None,
+                });
+            let opened = path
+                .as_deref()
+                .is_some_and(|p| crate::wins::editor_of(p).is_some());
+            // A session without a desktop (RDP) gives no frame of an idle window: then the answer
+            // must say so, as an error — never a silent nothing.
+            let no_frame = got
+                .as_ref()
+                .and_then(|v| v["error"].as_str())
+                .is_some_and(|e| e.contains("WGC") || e.contains("DXGI"));
+            r.check(
+                "agent capture: the shot is a new library document, not opened (or the session's lack of frames, said)",
+                (doc.as_ref().is_some_and(|(src, w)| (src == "window" || src == "region") && *w > 0) && !opened) || no_frame,
+                format!("{got:?} · {doc:?} · opened {opened}"),
+            );
+            ui.invoke_setting("mcp".into(), 0);
+        }));
+    }
+
     // ZK-237: an agent's recording over IPC — started without the overlay, without sound,
     // stopped into a library document that the app does not open.
     #[cfg(windows)]

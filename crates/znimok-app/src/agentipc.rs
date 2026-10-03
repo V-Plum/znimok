@@ -65,6 +65,8 @@ pub fn handle(method: &str, params: &Value) -> Option<Result<Value, znimok_ipc::
         }
         "agents.record" => record(params),
         "agents.app" => app(params),
+        // ZK-242: screenshots for an agent — on macOS only the app may capture.
+        "capture.displays" | "capture.windows" | "capture.take" => capture(method, params),
         "agents.activity" => {
             let on = params
                 .get("active")
@@ -524,5 +526,47 @@ fn app(params: &Value) -> Result<Value, znimok_ipc::RpcError> {
         op => Err(znimok_ipc::RpcError::invalid_params(format!(
             "unknown op «{op}»"
         ))),
+    }
+}
+
+// ------------------------------------------------------------------ screenshots (ZK-242)
+
+/// `capture.displays`, `capture.windows`: what can be captured; `capture.take {target}`: the shot,
+/// saved as a new library document (as a quiet shot from the overlay is, with its source), its
+/// path back; the editor does not open. An IPC thread: the capture runs here, the save on the UI
+/// thread.
+fn capture(method: &str, params: &Value) -> Result<Value, znimok_ipc::RpcError> {
+    let fail = |m: String| znimok_ipc::RpcError::new(-32000, m);
+    // The settings live on the UI thread.
+    if !on_ui(|| crate::with_prefs(|p| p.agents.mcp_enabled).unwrap_or(false))? {
+        return Err(fail("MCP is switched off in Znimok's settings".into()));
+    }
+    let to = |e: serde_json::Error| fail(e.to_string());
+    match method {
+        "capture.displays" => serde_json::to_value(crate::capture::targets().0).map_err(to),
+        "capture.windows" => serde_json::to_value(crate::capture::targets().1).map_err(to),
+        _ => {
+            let target: znimok_platform::CaptureTarget =
+                serde_json::from_value(params.get("target").cloned().unwrap_or(Value::Null))
+                    .map_err(|e| znimok_ipc::RpcError::invalid_params(format!("target: {e}")))?;
+            let source = match target {
+                znimok_platform::CaptureTarget::Window { .. } => "window",
+                znimok_platform::CaptureTarget::Region { .. } => "region",
+                _ => "screen",
+            };
+            let raster = crate::capture::take(&target).map_err(|e| match e {
+                crate::capture::Fail::Permission => fail(
+                    "Znimok has no Screen Recording permission yet: the system asked the person — try again once it is given".into(),
+                ),
+                crate::capture::Fail::Other(m) => fail(m),
+            })?;
+            on_ui(move || {
+                let mut out = Err("Znimok's window is not ready".to_string());
+                crate::with_ctx(|a, ui| out = a.store_quietly(ui, raster, source));
+                out
+            })?
+            .map(|(path, name)| json!({"path": path.display().to_string(), "name": name}))
+            .map_err(fail)
+        }
     }
 }

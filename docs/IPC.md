@@ -106,7 +106,10 @@ asks it. If the app is not running, `znimok mcp` starts it with
 
 `DisplayInfo`, `WindowInfo` and `CaptureTarget` are the `znimok-platform` types in their serde
 form. `capture.take` saves the shot as a new library document (as a hotkey shot would, with
-`meta.source` = `screen` / `window` / `region`) and returns its path; do not open the editor.
+`meta.source` = `screen` / `window` / `region`) and returns its path (and `name`); the editor
+does not open. `capture.windows` lists the windows front to back, without Znimok's own and the
+minimised ones. Refused while MCP is switched off; on macOS without the Screen Recording
+permission the system asks the person and the call says to try again (ZK-242).
 Windows does not need these: the MCP server captures there itself.
 
 ## The command layer — `capture.*`, `record.*`, `editor.*`, `video.scrub`, `app.state`, `app.wait` (ZK-213)
