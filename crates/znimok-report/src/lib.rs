@@ -39,6 +39,8 @@ pub struct Meta {
     pub rights: String,
     /// Where the footer's «Made with Znimok» leads (ZK-246), or empty.
     pub link: String,
+    /// The keys whose values were hidden (ZK-248): the page hides them in what it unpacks itself.
+    pub hide_keys: Vec<String>,
     /// The exported video's size.
     pub width: u32,
     pub height: u32,
@@ -126,6 +128,7 @@ pub fn page(
             "foot": meta.foot,
             "rights": meta.rights,
             "link": meta.link,
+            "hide_keys": meta.hide_keys,
         },
         "strings": strings,
         "events": events,

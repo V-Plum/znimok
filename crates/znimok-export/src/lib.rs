@@ -947,6 +947,7 @@ fn report(
         znimok_report::mask::events(&mut events, &znimok_report::mask::Rules::new(keys))
     });
     let mut meta = o.meta.clone();
+    meta.hide_keys = o.mask.clone().unwrap_or_default();
     meta.width = out.0;
     meta.height = out.1;
     meta.fps = fps;
