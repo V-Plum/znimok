@@ -35,6 +35,23 @@ impl Transport for MacHttp {
     ) -> Result<Response, HttpError> {
         request("GET", url, headers, None, timeout, max_bytes)
     }
+
+    fn request(
+        &self,
+        method: &str,
+        url: &str,
+        headers: &[(&str, &str)],
+        body: Option<(&[u8], &str)>,
+        timeout: Duration,
+        max_bytes: usize,
+    ) -> Result<Response, HttpError> {
+        let mut all = Vec::with_capacity(headers.len() + 1);
+        if let Some((_, ct)) = body {
+            all.push(("content-type", ct));
+        }
+        all.extend_from_slice(headers);
+        request(method, url, &all, body.map(|(b, _)| b), timeout, max_bytes)
+    }
 }
 
 fn request(

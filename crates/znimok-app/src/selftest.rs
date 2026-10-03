@@ -5579,6 +5579,35 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
             format!("{own:?} · {usual:?} · saved {saved:?}"),
         );
     }));
+    // ZK-101: the «Extensions and integrations» page — a target switched on and filled in shows
+    // in «Send to» and as the quick one; switched off it goes. (No token is touched: nothing is
+    // written to the OS store and nothing is sent.)
+    steps.push(Box::new(|app, ui, r| {
+        ui.set_settings_page(11);
+        let before = ui.get_int_targets().row_count();
+        app.borrow_mut().setting(ui, "int-tg-enabled", 1);
+        app.borrow_mut().setting_text(ui, "int-tg-chat", "123456");
+        let on = ui.get_int_targets().row_count();
+        let name = ui
+            .get_int_targets()
+            .row_data(0)
+            .map(|t| t.key.to_string())
+            .unwrap_or_default();
+        let quick = crate::integrations::quick_target(&crate::integrations::current()).map(|q| q.0);
+        app.borrow_mut().int_action(ui, "default", "telegram");
+        let default = ui.get_int_default().to_string();
+        app.borrow_mut().setting(ui, "int-tg-enabled", 0);
+        app.borrow_mut().setting_text(ui, "int-tg-chat", "");
+        app.borrow_mut().int_action(ui, "default", "");
+        let after = ui.get_int_targets().row_count();
+        r.snapshot(ui, "S11-integrations");
+        ui.set_settings_page(0);
+        r.check(
+            "integrations: a filled-in target shows in «Send to» and as the quick one; off, it goes (ZK-101)",
+            before == 0 && on == 1 && name == "telegram" && quick.as_deref() == Some("telegram") && default == "telegram" && after == 0,
+            format!("{before} → {on} ({name}, quick {quick:?}, default {default:?}) → {after}"),
+        );
+    }));
 
     // Needs a live desktop: opt in with ZNIMOK_SELFTEST_CAPTURE=1.
     if std::env::var_os("ZNIMOK_SELFTEST_CAPTURE").is_some() {

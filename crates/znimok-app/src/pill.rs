@@ -269,6 +269,53 @@ fn wire(ui: &Pill) {
         })
     });
     ui.on_dismiss(close);
+    // «Send to …» (ZK-101): the picture as PNG to the quick target.
+    // From the integrations' own copy of the settings: the card shows up inside a borrow of the
+    // App (with_ctx), where the App cannot be read.
+    let quick = crate::integrations::quick_target(&crate::integrations::current());
+    if let Some((_, name)) = &quick {
+        ui.set_send_target(name.clone().into());
+    }
+    ui.on_send(move || {
+        let Some((key, _)) = quick.clone() else {
+            return;
+        };
+        let job = PILL.with(|p| {
+            p.borrow().as_ref().map(|s| {
+                (
+                    s.raster.width,
+                    s.raster.height,
+                    s.raster.rgba.clone(),
+                    s.name.clone(),
+                )
+            })
+        });
+        let Some((w, h, rgba, name)) = job else {
+            return;
+        };
+        close();
+        let opts = io::Encode {
+            format: io::Format::Png,
+            quality: 90,
+            lossless: true,
+            white_bg: false,
+        };
+        let meta = crate::filemeta::FileMeta::new_shot(&name);
+        let bytes = io::encode(w, h, &rgba, opts, Some(&meta));
+        crate::with_ctx(move |app, ui| match bytes {
+            Ok(b) => {
+                let item = znimok_share::Item {
+                    file_name: format!("{name}.png"),
+                    mime: "image/png".into(),
+                    title: name.clone(),
+                    text: String::new(),
+                    kind: "screenshot".into(),
+                };
+                app.share_bytes(ui, &key, item, &b);
+            }
+            Err(e) => app.toast(ui, format!("{} ({e})", app.tr.tr("export-error"))),
+        });
+    });
     ui.on_edit(|| {
         let path = PILL.with(|p| p.borrow().as_ref().map(|s| s.path.clone()));
         close();
