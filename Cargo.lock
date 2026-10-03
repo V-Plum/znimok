@@ -6949,6 +6949,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "znimok-google"
+version = "0.0.14"
+dependencies = [
+ "base64",
+ "serde",
+ "serde_json",
+ "uuid",
+ "znimok-update",
+]
+
+[[package]]
 name = "znimok-gpu"
 version = "0.0.14"
 dependencies = [
