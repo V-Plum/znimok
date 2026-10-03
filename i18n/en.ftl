@@ -6143,11 +6143,6 @@ int-default = In one click
 # @max: 16
 int-default-ask = Ask
 
-# @where: Settings → Extensions and integrations: how to set up Telegram
-# @kind: body
-# @max: 200
-int-tg-how = Make a bot with @BotFather, paste its token here, write anything to the bot, then «Find the chat».
-
 # @where: Settings → Extensions and integrations: placeholder of a secret field that has a saved value
 # @kind: label
 # @max: 60
@@ -6188,11 +6183,6 @@ int-checking = Checking…
 # @max: 80
 int-probe = Znimok: the connection works ✓
 
-# @where: Settings → Extensions and integrations: how to set up Jira
-# @kind: body
-# @max: 240
-int-jira-how = Jira Cloud: your site, your e-mail and an API token (id.atlassian.com → Security → API tokens). Without an issue, each sending makes a new one in the project.
-
 # @where: Settings → Extensions and integrations: placeholder, the Jira site
 # @kind: label
 # @max: 40
@@ -6223,11 +6213,6 @@ int-jira-issue = Issue (optional)
 # @max: 24
 int-jira-type = Type of a new issue
 
-# @where: Settings → Extensions and integrations: how to set up Slack
-# @kind: body
-# @max: 260
-int-slack-how = A Slack app with the files:write and chat:write scopes, installed to the workspace and added to the channel: its bot token (xoxb-…) and the channel's ID (the channel's details, at the bottom).
-
 # @where: Settings → Extensions and integrations: placeholder, the Slack bot token
 # @kind: label
 # @max: 24
@@ -6237,11 +6222,6 @@ int-slack-token = Bot token (xoxb-…)
 # @kind: label
 # @max: 24
 int-slack-channel = Channel ID (C0…)
-
-# @where: Settings → Extensions and integrations: how to set up Redmine
-# @kind: body
-# @max: 240
-int-rm-how = The REST API switched on in Redmine's administration, and your API key (My account → API access key). Without an issue, each sending makes a new one in the project.
 
 # @where: Settings → Extensions and integrations: placeholder, the Redmine address
 # @kind: label
@@ -6397,3 +6377,128 @@ share-sent-link = Sent to { $target } — the link is copied
 # @kind: body
 # @max: 120
 int-google-pick = Sending goes to the marked account — click another one to switch.
+
+# @where: Settings → Extensions and integrations: how to set up Telegram, step 1
+# @kind: body
+# @max: 200
+int-tg-step1 = Open @BotFather in Telegram (the button below) and send it /newbot.
+
+# @where: Settings → Extensions and integrations: how to set up Telegram, step 2
+# @kind: body
+# @max: 200
+int-tg-step2 = Give the bot any name, then a username that ends in «bot», e.g. my_team_znimok_bot.
+
+# @where: Settings → Extensions and integrations: how to set up Telegram, step 3
+# @kind: body
+# @max: 200
+int-tg-step3 = BotFather answers with a token — a long line like 123456789:AAH…. Copy it and paste it in the field below.
+
+# @where: Settings → Extensions and integrations: how to set up Telegram, step 4
+# @kind: body
+# @max: 200
+int-tg-step4 = Open your new bot and press Start. For a group or a channel: add the bot there and write any message.
+
+# @where: Settings → Extensions and integrations: how to set up Telegram, step 5
+# @kind: body
+# @max: 200
+int-tg-step5 = Press «Find the chat» — Znimok finds it itself.
+
+# @where: Settings → Extensions and integrations: button, opens the page needed to set up Telegram
+# @kind: label
+# @max: 36
+int-tg-open = Open @BotFather
+
+# @where: Settings → Extensions and integrations: how to set up Jira, step 1
+# @kind: body
+# @max: 200
+int-jira-step1 = The site is the address you open Jira at, e.g. your-team.atlassian.net.
+
+# @where: Settings → Extensions and integrations: how to set up Jira, step 2
+# @kind: body
+# @max: 200
+int-jira-step2 = The e-mail is the one you sign in to Jira with.
+
+# @where: Settings → Extensions and integrations: how to set up Jira, step 3
+# @kind: body
+# @max: 200
+int-jira-step3 = Open the API tokens page (the button below), press «Create API token», name it Znimok, copy the token and paste it below.
+
+# @where: Settings → Extensions and integrations: how to set up Jira, step 4
+# @kind: body
+# @max: 200
+int-jira-step4 = The project key is the letters before an issue's number: ZK in ZK-101. An issue is optional — without it each sending makes a new one.
+
+# @where: Settings → Extensions and integrations: how to set up Jira, step 5
+# @kind: body
+# @max: 200
+int-jira-step5 = Press «Check».
+
+# @where: Settings → Extensions and integrations: button, opens the page needed to set up Jira
+# @kind: label
+# @max: 36
+int-jira-open = Open the API tokens page
+
+# @where: Settings → Extensions and integrations: how to set up Slack, step 1
+# @kind: body
+# @max: 200
+int-slack-step1 = Press «Create the Slack app» below: Slack opens with everything filled in. Choose your workspace, then Next and Create.
+
+# @where: Settings → Extensions and integrations: how to set up Slack, step 2
+# @kind: body
+# @max: 200
+int-slack-step2 = On the app's page press «Install to Workspace», then «Allow».
+
+# @where: Settings → Extensions and integrations: how to set up Slack, step 3
+# @kind: body
+# @max: 200
+int-slack-step3 = Open «OAuth & Permissions», copy the «Bot User OAuth Token» (xoxb-…) and paste it below.
+
+# @where: Settings → Extensions and integrations: how to set up Slack, step 4
+# @kind: body
+# @max: 200
+int-slack-step4 = In the Slack channel write /invite @Znimok so the app may post there.
+
+# @where: Settings → Extensions and integrations: how to set up Slack, step 5
+# @kind: body
+# @max: 200
+int-slack-step5 = The channel's ID: click the channel's name — it is at the very bottom of the window (C0…). Copy it, paste it below and press «Check».
+
+# @where: Settings → Extensions and integrations: button, opens the page needed to set up Slack
+# @kind: label
+# @max: 36
+int-slack-open = Create the Slack app
+
+# @where: Settings → Extensions and integrations: how to set up Redmine, step 1
+# @kind: body
+# @max: 200
+int-rm-step1 = The address is what you open Redmine at, e.g. https://redmine.example.com — type it first.
+
+# @where: Settings → Extensions and integrations: how to set up Redmine, step 2
+# @kind: body
+# @max: 200
+int-rm-step2 = Press «Open My account» below: on the right find «API access key» → «Show», copy the key and paste it below.
+
+# @where: Settings → Extensions and integrations: how to set up Redmine, step 3
+# @kind: body
+# @max: 200
+int-rm-step3 = No such section? Ask your Redmine's administrator to switch on the REST API (Administration → Settings → API).
+
+# @where: Settings → Extensions and integrations: how to set up Redmine, step 4
+# @kind: body
+# @max: 200
+int-rm-step4 = The project's identifier is in its address: …/projects/identifier. An issue number is optional. Then «Check».
+
+# @where: Settings → Extensions and integrations: button, opens the page needed to set up Redmine
+# @kind: label
+# @max: 36
+int-rm-open = Open My account
+
+# @where: Settings → Extensions and integrations: button, show the steps of setting up a target again
+# @kind: label
+# @max: 30
+int-help-show = How to set it up
+
+# @where: Settings → Extensions and integrations: button, hide the steps of setting up a target
+# @kind: label
+# @max: 30
+int-help-hide = Hide the steps
