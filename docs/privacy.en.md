@@ -57,7 +57,18 @@ Only in these cases:
    turn it on. Each agent gets data only within the permissions you gave ("only now", "this session",
    "always"); a yellow indicator is shown while it captures, and every action is logged. What an agent does
    with the data afterwards is up to its developer and your settings of that agent.
-5. **A crash report** is sent only by you: the app keeps it locally and may offer to open an issue page on
+5. **Your Google account, if you sign in** (Settings → Extensions and integrations; off until you do).
+   Znimok asks Google only for access to **the files Znimok itself creates in your Google Drive**
+   (`drive.file`) and for your e-mail address, to show which account is signed in. It cannot see,
+   read or change any other file in your Drive, your mail, contacts or calendar. What it sends there is
+   what you send: a screenshot, a recording, a report, a document made from them. Sign-in happens in your
+   browser on Google's page — Znimok never sees your password; the token Google issues is kept in the
+   system credential store on your computer and is revoked when you sign out. Znimok does not keep,
+   sell or share Google user data, does not use it for advertising, and does not use it to train AI
+   models; its use of data received from Google APIs follows the
+   [Google API Services User Data Policy](https://developers.google.com/terms/api-services-user-data-policy),
+   including the Limited Use requirements.
+6. **A crash report** is sent only by you: the app keeps it locally and may offer to open an issue page on
    GitHub. You decide what to attach.
 
 ## The browser extension (Znimok — DevTools log)
@@ -104,6 +115,8 @@ metadata" strips everything except what is technically required.
 
 - Switch off update checks, cloud features and agent access in Settings.
 - Revoke agent permissions: Agents page → Revoke all permissions.
+- Sign out of Google: Settings → Extensions and integrations → Sign out (also at
+  [myaccount.google.com/permissions](https://myaccount.google.com/permissions)).
 - Remove the API key: Settings → Privacy.
 - Delete screenshots in the library (to the OS trash) or simply delete the files in the library folder.
 - Remove everything: uninstall the app, delete the library, cache and configuration folders; the key —
