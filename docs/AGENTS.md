@@ -29,21 +29,22 @@ command-line tool from the app bundle.
 ## Permissions
 
 The first time a client uses a scope, Znimok asks the person — **this time / this session /
-always**. Scopes:
+always** — and offers to allow everything at once (every scope but the sound of a recording).
+Scopes:
 
 | Scope | Tools |
 |---|---|
-| `capture` | `list_windows`, `capture_screen`, `capture_window`, `capture_active_window`, `capture_region`, `read_codes` on the screen |
-| `library_read` | `library_search`, `library_get`, `library_tags`, `list_marks`, `video_info`, `devlog_summary`, `devlog_get`, `find_text`, `ocr`, `export`, `open_in_editor`, `copy_to_clipboard`, `read_codes` on a document, resources |
-| `library_write` | `set_meta`, `library_import`, `library_duplicate`, `library_trash`, `library_restore`, `library_delete` (asks every time), `add_marks`, `update_marks`, `delete_marks`, `crop`, `rotate`, `resize`, `tone`, `annotate`, `redact_pii` |
-| `record` | `record_start` (`record_pause`, `record_resume`, `record_stop`, `record_status` only touch the agent's own recording and ask nothing) |
-| `record_audio` | `record_start` with `sound` other than `none` (asked on top of `record`) |
+| `capture` | `list_targets`, `capture`, `read_codes` on the screen |
+| `library_read` | `library_search`, `library_get`, `list_marks`, `video_info`, `devlog`, `ocr`, `export`, `hand_over`, `read_codes` on a document, resources |
+| `library_write` | `marks`, `transform`, `annotate`, `redact_pii`, `set_meta`, `library_edit`, `library_delete` (asks every time) |
+| `record` | `record` |
+| `record_audio` | `record` with `sound` other than `none` (asked on top of `record`) |
 
-`list_displays` and `app_state` need no permission. If Znimok is not running, nobody can be asked and the call is
-refused with a hint; the person can allow a client ahead of time:
+`record_status` and `app_state` need no permission. If Znimok is not running, nobody can be asked
+and the call is refused with a hint; the person can allow a client ahead of time:
 
 ```sh
-znimok agents allow "Claude Code" capture library_read library_write
+znimok agents allow "Claude Code" capture library_read library_write record
 znimok agents list
 znimok agents revoke "Claude Code"      # or --all
 znimok agents log --last 20             # who did what, when (90 days, no contents)
@@ -51,61 +52,45 @@ znimok agents log --last 20             # who did what, when (90 days, no conten
 
 The client name is what the client reports about itself; Znimok shows it as such.
 
+**Fewer questions on the client's side.** Every tool carries the MCP annotations (`readOnlyHint`,
+`destructiveHint`, `idempotentHint`, `openWorldHint: false` — everything is local), and there are
+21 tools, one per job, reads apart from writes. In Claude Desktop's connector settings a good
+start is: reads (`list_targets`, `library_search`, `library_get`, `list_marks`, `video_info`,
+`devlog`, `ocr`, `read_codes`, `record_status`, `app_state`) — *Always allow*; writes — *Needs
+approval*; `library_delete` — approval every time.
+
 ## Tools
 
-Documents are identified by the `id` a capture or `library_search` returns (the first 8+
-characters are enough) or by a path to a `.znimok` file. Coordinates are **screenshot pixels**,
-origin top-left. Every picture comes back scaled to what models take (long edge ≤ 2576 px) as
-PNG, plus a `resource_link` `znimok://library/<id>` to the original.
+Arguments marked `?` are optional. `document` is a library document's id (the first 8+
+characters do), or a path to a `.znimok` file. Every write returns the resulting picture.
 
-| Tool | Arguments | Result |
+| Tool | Arguments | Returns |
 |---|---|---|
-| `list_displays` | — | displays: `id`, `name`, `bounds` (desktop units), `scale`, `primary` |
-| `list_windows` | — | visible windows: `id`, `title`, `app`, `bounds` |
-| `capture_screen` | `display?` (id; primary by default) | new library document + picture |
-| `capture_window` | `window` (id from `list_windows`) | the window without what covers it |
-| `capture_region` | `x`, `y`, `width`, `height` (desktop units, one display) | new document + picture |
-| `annotate` | `document`, `commands` (editor commands, see `znimok schema command`) | saved document + picture |
-| `list_marks` | `document` | the marks: `id`, `kind`, box, `text`, `color`, `hidden`; the picture's size and crop |
-| `add_marks` | `document`, `marks` (each: `kind` — `rect`, `ellipse`, `arrow`, `line`, `pen`, `text`, `counter`, `hide`, `highlighter`, `stamp` — and its place, see below) | saved document, the new ids (`created`), the picture |
-| `update_marks` | `document`, `ids`, and what changes: `dx` / `dy`, `x` / `y` / `width` / `height`, `color`, `fill`, `line_width`, `opacity`, `text`, `size`, `bold`, `italic`, `hidden`, `name` | saved document + picture |
-| `delete_marks` | `document`, `ids` or `all: true` | saved document + picture |
-| `crop` | `document`, `x`, `y`, `width`, `height` (pixels of the whole picture) or `reset: true` | saved document + picture; nothing is thrown away |
-| `rotate` | `document`, `turn` (`right`, `left`, `half`) and/or `mirror` (`horizontal`, `vertical`) | saved document + picture |
-| `resize` | `document`, `width` and/or `height`, or `percent`; or `canvas` (`x`, `y`, `width`, `height`) with `fill` | saved document + picture |
-| `tone` | `document`, `exposure` (stops), `gamma`, `contrast`, or `reset: true` | saved document + picture |
-| `export` | `document`, `format` (`png`/`jpeg`/`webp`/`html`), `path?` | the written file |
-| `library_search` | `query?`, `tag?`, `kind?` (`screenshot` / `video`), `pinned?`, `has_log?`, `since?` / `until?` (YYYY-MM-DD), `trash?`, `limit?` (≤ 200) | documents, newest first: `id`, `name`, `kind`, `tags`, `pinned`, `duration_ms`, `has_log`… |
-| `library_tags` | — | the tags with the number of documents each |
-| `set_meta` | `document`, and what changes: `name`, `description`, `tags` / `add_tags` / `remove_tags`, `author`, `copyright`, `pinned` | saved document + picture |
-| `library_import` | `path` (PNG, JPEG, WebP or a `.znimok` file), `name?` | new document + picture |
-| `library_duplicate` | `document`, `name?` | the copy (a recording stays a recording) |
-| `library_trash` | `document` | moved to the trash — no question, `library_restore` brings it back |
-| `library_restore` | `document` (id of a trashed one) | the document, back in the library |
-| `library_delete` | `document` (in the library or the trash) | deleted for good — **the person confirms every time** in the Znimok window |
-| `library_get` | `document` | picture + metadata |
-| `capture_active_window` | `delay_seconds?` | the window in front (not Znimok's own) as a new document; the answer names the window |
-| `open_in_editor` | `document` | opens it in the Znimok editor and brings the window forward (the app must be running) |
-| `copy_to_clipboard` | `document` | the picture with its marks on the clipboard (the app must be running) |
-| `app_state` | — | `running`, and when it is: the page, the open document, the tool, the zoom, a recording, an agent at work |
-| `record_start` | `display?` (the primary one by default) or `window?` (id) or `region?` {x, y, width, height}; `sound?` none / system / microphone / both; `devtools_log?` (true); `limit_seconds?` (300, at most 3600) | starts a screen recording; the app must be running; the person sees the recording frame and the bar with Stop |
-| `record_pause`, `record_resume` | — | pause and resume the agent's recording |
-| `record_stop` | — | stops it and returns the recording as a library document (also one that ended by its limit) |
+| `list_targets` | — | the displays (id, name, bounds, scale, primary) and the visible windows in front-to-back order (id, title, app, bounds) |
+| `capture` | `target` screen / window / active_window / region; `display?`, `window?`, `x? y? width? height?`; `delay_seconds?` (≤ 30) | a new document: id, size, the picture; for the window in front — which window it was |
+| `record` | `action` start / pause / resume / stop; for start: `display?` or `window?` or `region?`, `sound?` none / system / microphone / both, `devtools_log?` (true), `limit_seconds?` (300, ≤ 3600) | start: recording, size, limit; stop: the recording as a library document (also one that ended by its limit) |
 | `record_status` | — | recording or not, the agent's or the person's, paused, length so far, the last finished document |
+| `library_search` | `query?`, `kind?` screenshot / video, `tags?`, `pinned?`, `has_log?`, `since?` / `until?` (YYYY-MM-DD), `trash?`, `limit?`, `with_tags?` | documents: id, name, size, created, source, tags, kind, pinned, duration, whether it has the browser log; with `with_tags` — every tag with its count |
+| `library_get` | `document`, `scale?` | the document's facts and its picture with marks |
+| `library_edit` | `action` import / duplicate / trash / restore; `path?` (import), `document?`, `name?` | the resulting document (trash: what went where) |
+| `library_delete` | `document` | deletes for good; the person confirms in the Znimok window every time |
+| `set_meta` | `document`, `name?`, `description?`, `tags?` / `add_tags?` / `remove_tags?`, `author?`, `copyright?`, `pinned?` | the document |
+| `list_marks` | `document` | every mark: id, kind, box, text, colour… |
+| `marks` | `document`, `delete?` {ids / all}, `update?` [{ids, dx, dy, x, y, width, height, text, color…}], `add?` [marks in plain words: rect, ellipse, arrow, line, pen, text, counter, hide, highlighter, stamp] — in that order | the picture |
+| `transform` | `document`, `crop?` {x, y, width, height / reset}, `rotate?` {turn right / left / half, mirror}, `resize?` {width / height / percent / canvas}, `tone?` {exposure, gamma, contrast / reset} — in that order | the picture |
+| `annotate` | `document`, `commands` (the editor's document commands as JSON) | the picture |
+| `redact_pii` | `document`, `apply?` (true), `kinds?` | what was (or would be) hidden |
+| `ocr` | `document`, `languages?`, `find?` | the text with the box of every line; with `find` — only the lines that contain it |
+| `read_codes` | `document?` (else the screen) | QR codes and barcodes: text, kind, box |
 | `video_info` | `document` (a recording) | length, size, frame rate, trims and cuts, sound tracks, marks with their times, clicks, whether it has the DevTools log |
-| `devlog_summary` | `document` | the browser log in short: counts by kind, errors, failed requests, navigations, dataLayer events — with times in the video |
-| `devlog_get` | `document`, `kinds?`, `errors_only?`, `query?`, `from_ms?` / `to_ms?`, `limit?` (≤ 500), `offset?`, or `index` for one event whole | events in time order (`i`, `at_ms`, `kind`, `level`, and the kind's own fields); sensitive values hidden as the settings say |
-| `find_text` | `document`, `text`, `languages?` | the lines that contain the text, with boxes in pixels |
-| `ocr` | `document`, `languages?` (e.g. `["uk","en"]`) | text and line boxes, on the device |
-| `read_codes` | `document`, or `display?`, or `x`, `y`, `width`, `height` (desktop units) | QR codes and barcodes, on the device: `text`, `kind` (`link` + `url`, `wifi` + `ssid`/`password`/`security`/`hidden`, `contact`, `event`, `email` + `address`, `phone` + `number`, `text`), `format`, `bounds`; the screen is read without adding a document (macOS: the app keeps its shot, `saved_as`) |
-| `redact_pii` | `document`, `apply?` (true), `faces?` (true) | what was found; with `apply` covered by Hide marks and saved |
-
-Resources: `resources/list` lists the library, `resources/read` gives a document as PNG; a
-recording with the browser's log also has `znimok://library/<id>/log` — the log as JSON.
+| `devlog` | `document`, `part?` summary / events, `kinds?`, `errors_only?`, `query?`, `from_ms?` / `to_ms?`, `limit?` (≤ 500), `offset?`, `index?` | summary: counts, errors, failed requests, navigations, dataLayer events with times; events: rows in time order; index: one event whole |
+| `export` | `document` (a screenshot), `format` png / jpeg / webp / html, `path?`, `scale?` | the file's path (a recording is refused: export it in Znimok) |
+| `hand_over` | `document`, `to` editor / clipboard | opens the document in Znimok's editor, or copies the picture |
+| `app_state` | — | whether Znimok runs; the page, the document, the tool, a recording, an agent at work |
 
 ### Marks in plain words
 
-`add_marks` takes each mark as a small object; colours are `#RRGGBB` or a name (`red`, `orange`,
+`marks` (add) takes each mark as a small object; colours are `#RRGGBB` or a name (`red`, `orange`,
 `yellow`, `green`, `blue`, `violet`, `black`, `white`, `grey`):
 
 ```json
@@ -150,20 +135,20 @@ over the tools above:
 
 ## Scenarios
 
-**Document a settings screen.** `list_windows` → `capture_window` the app → `ocr` to find the
+**Document a settings screen.** `list_targets` → `capture` the app's window → `ocr` to find the
 labels → `annotate` with numbered counters and short texts next to the controls → `export` as
 `html` (one self-contained page with the list of marks) or `png`.
 
-**A bug report.** `capture_region` around the problem → `redact_pii` (keys, e-mails, cards,
+**A bug report.** `capture` a region around the problem → `redact_pii` (keys, e-mails, cards,
 faces covered) → `annotate` a frame and an arrow at the error → `export` `png` → attach the file
 to the issue.
 
-**Record a bug.** `list_windows` → `record_start` with the browser's `window` → do or ask the
-person to do the steps → `record_stop` → `devlog_summary` on the returned document. Sound is off
+**Record a bug.** `list_targets` → `record` (start) with the browser's `window` → do or ask the
+person to do the steps → `record` (stop) → `devlog` on the returned document. Sound is off
 unless the person allows `record_audio`; a recording stops by itself at its time limit.
 
-**Read a bug recording.** `library_search` with `has_log: true` → `video_info` → `devlog_summary`
-(the errors and failed requests with their times) → `devlog_get` with `index` for the one that
+**Read a bug recording.** `library_search` with `has_log: true` → `video_info` → `devlog`
+(the errors and failed requests with their times) → `devlog` with `index` for the one that
 matters (its stack, headers and body) → say what went wrong and when in the video.
 
 **Before sharing a screenshot.** `library_search` → `redact_pii` with `apply: false` to see what

@@ -28,9 +28,9 @@ const PROMPTS: &[Prompt] = &[
             ),
         ],
         text: "Make a bug report screenshot with Znimok. The problem: {problem}.\n\
-1. `list_windows`, pick the window{window}; `capture_window` it (a region with `capture_region` if only a part matters).\n\
+1. `list_targets`, pick the window{window}; `capture` it (target window; a region if only a part matters).\n\
 2. `redact_pii` — cover keys, e-mails, cards and faces; tell me what was covered.\n\
-3. `find_text` (or `ocr`) to locate the words of the error; `add_marks`: a frame around the problem, an arrow to it, a short text saying what is wrong. Keep it to three or four marks.\n\
+3. `ocr` with `find` to locate the words of the error; `marks` (add): a frame around the problem, an arrow to it, a short text saying what is wrong. Keep it to three or four marks.\n\
 4. `set_meta`: a name that states the problem, the tag «bug», a description with the steps you can see.\n\
 5. `export` as `png` and give me the path. Answer in my language.",
     },
@@ -40,9 +40,9 @@ const PROMPTS: &[Prompt] = &[
         description: "A numbered walkthrough of a window: counters next to the controls and a legend.",
         args: &[("app", "The app or window to document", true)],
         text: "Document the screen of {app} with Znimok.\n\
-1. `list_windows` → `capture_window`.\n\
+1. `list_targets` → `capture` (target window).\n\
 2. `ocr` to read the labels and get their boxes.\n\
-3. `add_marks`: a `counter` next to every control worth explaining (in reading order), no more than nine; a thin frame where a group needs one.\n\
+3. `marks` (add): a `counter` next to every control worth explaining (in reading order), no more than nine; a thin frame where a group needs one.\n\
 4. `set_meta`: a description that lists the numbers with one line each — what the control does.\n\
 5. `export` as `html` (the page carries the list of marks) and give me the path. Answer in my language.",
     },
@@ -58,7 +58,7 @@ const PROMPTS: &[Prompt] = &[
         text: "Prepare a Znimok screenshot for sharing{document}.\n\
 1. `library_search` to find it (the newest when I named none).\n\
 2. `redact_pii` with `apply: false` — tell me what would be hidden.\n\
-3. `redact_pii` to apply; if something private is still readable, cover it with `add_marks` (`hide`, mode `plate`).\n\
+3. `redact_pii` to apply; if something private is still readable, cover it with `marks` (add a `hide`, mode `plate`).\n\
 4. `export` as `png` and give me the path. Answer in my language.",
     },
     Prompt {
@@ -73,8 +73,8 @@ const PROMPTS: &[Prompt] = &[
         text: "Read a Znimok recording and tell me what went wrong{document}.\n\
 1. `library_search` with `has_log: true` (and `kind: video`) to find it.\n\
 2. `video_info` — its length, the clicks, the marks.\n\
-3. `devlog_summary` — the errors, the failed requests, the pages, each with its time in the video.\n\
-4. `devlog_get` with `index` for each error or failed request that matters: the stack, the status, the response.\n\
+3. `devlog` (summary) — the errors, the failed requests, the pages, each with its time in the video.\n\
+4. `devlog` with `index` for each error or failed request that matters: the stack, the status, the response.\n\
 5. Tell me, in order of time: what the person did (pages, clicks), what failed and why you think so, and at which second to look. Offer to put that into the description with `set_meta`. Answer in my language.",
     },
 ];

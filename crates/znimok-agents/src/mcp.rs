@@ -21,15 +21,16 @@ const META_CLIENT: &str = "io.modelcontextprotocol/clientInfo";
 const META_SERVER: &str = "io.modelcontextprotocol/serverInfo";
 
 const INSTRUCTIONS: &str = "Znimok takes screenshots and screen recordings, edits them and keeps them in a local library. \
-Capture with capture_screen / capture_window / capture_region (each saves a library document and \
-returns its id). Edit with add_marks / update_marks / delete_marks (list_marks gives the ids), crop, \
-rotate, resize, tone; name and tag with set_meta; hide secrets with redact_pii; read text with ocr \
-and find_text, codes with read_codes. Find documents with library_search (kind, tags, pinned, with a \
-browser log); bring files in with library_import, copy with library_duplicate, remove with \
-library_trash (library_restore undoes it). Record the screen with record_start … record_stop (Znimok must be running; sound only when \
-the person asked for it). Read a recording with video_info, devlog_summary and \
-devlog_get. Hand results over with export, copy_to_clipboard or open_in_editor. The prompts are ready scenarios. The person approves \
-access the first time (per client and scope); deleting for good is confirmed every time.";
+list_targets shows the displays and windows; capture takes a screenshot of a screen, a window, the \
+window in front or a region (a new library document, its id comes back). marks adds, changes and \
+removes marks (list_marks gives the ids); transform crops, rotates, resizes and tones; set_meta names \
+and tags; redact_pii hides secrets; ocr reads text (find looks a word up); read_codes reads codes. \
+library_search finds documents (kind, tags, pinned, with a browser log); library_edit imports, copies, \
+trashes and restores; library_delete deletes for good (the person confirms every time). record starts, \
+pauses and stops a screen recording (sound only with the person's separate permission); video_info and \
+devlog read a recording and its DevTools log. export writes a picture; hand_over opens a document in \
+the editor or puts it on the clipboard. Reads ask nothing once allowed; the person approves a client's \
+access the first time (per scope, or everything at once).";
 
 fn server_info() -> Value {
     json!({"name": "znimok", "title": "Znimok", "version": env!("CARGO_PKG_VERSION")})

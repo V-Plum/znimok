@@ -74,7 +74,23 @@ pub(crate) fn doc_arg() -> Value {
     json!({"type": "string", "description": "Library document: its id (or the first 8+ characters of it) from library_search, or a path to a .znimok file"})
 }
 
-const TOOLS: &[Tool] = &[
+/// The commands of the app, not of a document: not for `annotate` (ZK-250).
+const APP_COMMANDS: &[&str] = &[
+    "capture",
+    "export",
+    "share",
+    "open",
+    "save",
+    "save_copy",
+    "library_rename",
+    "library_delete",
+    "library_restore",
+    "set_setting",
+    "agent_grant",
+    "agent_revoke",
+];
+
+pub(crate) const TOOLS: &[Tool] = &[
     Tool {
         name: "list_displays",
         title: "List displays",
@@ -149,6 +165,18 @@ const TOOLS: &[Tool] = &[
                 o.remove("$schema");
                 o.remove("$defs")
             });
+            // The document's own commands: the core refuses the app's (capture, export, the
+            // settings, the grants) anyway, and a client reads the schema as what the tool may do.
+            if let Some(list) = cmd["oneOf"].as_array_mut() {
+                list.retain(|v| {
+                    let c = &v["properties"]["cmd"];
+                    let name = c["const"]
+                        .as_str()
+                        .or_else(|| c["enum"][0].as_str())
+                        .unwrap_or("");
+                    !APP_COMMANDS.contains(&name)
+                });
+            }
             let mut s = obj(
                 json!({
                     "document": doc_arg(),
@@ -196,7 +224,8 @@ const TOOLS: &[Tool] = &[
                     "since": {"type": "string", "description": "Made on or after this day, YYYY-MM-DD (local time)"},
                     "until": {"type": "string", "description": "Made before this day, YYYY-MM-DD"},
                     "trash": {"type": "boolean", "description": "List the trash instead of the library"},
-                    "limit": {"type": "integer", "minimum": 1, "maximum": 200}
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 200},
+                    "with_tags": {"type": "boolean", "description": "Also every tag of the library with its count, the most used first"}
                 }),
                 &[],
             )
@@ -265,7 +294,8 @@ const TOOLS: &[Tool] = &[
 ];
 
 /// Every tool: the first ones, then the editing ones (ZK-233).
-fn all() -> impl Iterator<Item = &'static Tool> {
+/// Every inner tool, the handlers behind the published ones.
+fn inner() -> impl Iterator<Item = &'static Tool> {
     TOOLS
         .iter()
         .chain(crate::edit::TOOLS.iter())
@@ -273,6 +303,13 @@ fn all() -> impl Iterator<Item = &'static Tool> {
         .chain(crate::vidtools::TOOLS.iter())
         .chain(crate::rectools::TOOLS.iter())
         .chain(crate::apptools::TOOLS.iter())
+}
+
+/// The published tools (ZK-250): the facade's, and the inner ones it keeps as they are.
+fn all() -> impl Iterator<Item = &'static Tool> {
+    crate::facade::TOOLS
+        .iter()
+        .chain(inner().filter(|t| crate::facade::KEPT.contains(&t.name)))
 }
 
 /// `tools/list` entries, in a fixed order.
@@ -424,7 +461,7 @@ impl Agent {
             tool: name.into(),
             scope,
             grant: None,
-            capture: scope == Some(Scope::Capture) && name != "list_windows",
+            capture: scope == Some(Scope::Capture) && name != "list_targets",
             document: arg_str(args, "document").map(str::to_string),
             ok: false,
             error: None,
@@ -503,6 +540,17 @@ impl Agent {
     }
 
     fn run(&self, client: &str, name: &str, args: &Value) -> Result<Output, String> {
+        crate::facade::run(self, client, name, args)
+            .unwrap_or_else(|| self.run_inner(client, name, args))
+    }
+
+    /// An inner tool by its own name (the facade dispatches here).
+    pub(crate) fn run_inner(
+        &self,
+        client: &str,
+        name: &str,
+        args: &Value,
+    ) -> Result<Output, String> {
         match name {
             "list_displays" => {
                 let d: Vec<Value> = self
@@ -580,7 +628,12 @@ impl Agent {
                 ))
             }
             "export" => {
-                let (doc, _) = self.doc(args)?;
+                let (doc, src) = self.doc(args)?;
+                // A recording's export (MP4, GIF, the report) lives in the app (ZK-243): an agent
+                // got the poster frame in silence and took it for the video (ZK-250).
+                if library::peek_item(&src).is_some_and(|i| i.kind == "video") {
+                    return Err("this is a recording: the MCP export writes pictures only (video export comes later) — hand_over to the editor and export it in Znimok, or read it with video_info / devlog".into());
+                }
                 let f = arg_str(args, "format").ok_or("«format» is required")?;
                 let fmt = ExportFormat::parse(f).ok_or_else(|| format!("unknown format «{f}»"))?;
                 let ext = match fmt {
@@ -646,7 +699,15 @@ impl Agent {
                     },
                     limit,
                 );
-                Ok(Output::ok(json!({"documents": items}), vec![]))
+                let mut out = json!({"documents": items});
+                if args["with_tags"].as_bool() == Some(true) {
+                    out["tags"] = self
+                        .run_inner(client, "library_tags", &json!({}))?
+                        .structured
+                        .unwrap_or_default()["tags"]
+                        .take();
+                }
+                Ok(Output::ok(out, vec![]))
             }
             "library_get" => {
                 let (doc, path) = self.doc(args)?;

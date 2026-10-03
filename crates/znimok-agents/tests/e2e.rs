@@ -122,11 +122,11 @@ fn capture_annotate_export_library() {
     let mut run = Run::new();
 
     // 1. A region of the primary display: exactly the synthetic screen's pixels.
-    let displays = run.tool("list_displays", json!({}))["structuredContent"]["displays"].clone();
+    let displays = run.tool("list_targets", json!({}))["structuredContent"]["displays"].clone();
     assert_eq!(displays[0]["primary"], true);
     let shot = run.tool(
-        "capture_region",
-        json!({"x": 100, "y": 50, "width": 320, "height": 200}),
+        "capture",
+        json!({"target": "region", "x": 100, "y": 50, "width": 320, "height": 200}),
     );
     let s = &shot["structuredContent"];
     assert_eq!(
@@ -153,9 +153,9 @@ fn capture_annotate_export_library() {
     assert_eq!(kinds, ["text", "image", "resource_link"]);
 
     // 2. A window: filled with its synthetic colour.
-    let windows = run.tool("list_windows", json!({}))["structuredContent"]["windows"].clone();
+    let windows = run.tool("list_targets", json!({}))["structuredContent"]["windows"].clone();
     let wid = windows[0]["id"].as_u64().unwrap();
-    let wshot = run.tool("capture_window", json!({"window": wid}));
+    let wshot = run.tool("capture", json!({"target": "window", "window": wid}));
     let wpath = PathBuf::from(wshot["structuredContent"]["path"].as_str().unwrap());
     let wbgra = SyntheticOs::window_pixel(znimok_platform::WindowId(wid));
     assert_eq!(
