@@ -337,6 +337,105 @@ pub fn freeze_display(same: Option<Rect>) -> Result<Frozen, Fail> {
 }
 
 /// The window alone, unoccluded (WGC window capture / ScreenCaptureKit window filter).
+/// What an agent asked for (ZK-242: on macOS only the app may capture, so the MCP server asks
+/// it): a display, a window alone or a region, as sRGB RGBA. Runs on a worker thread.
+#[cfg(windows)]
+pub fn take(target: &CaptureTarget) -> Result<Raster, Fail> {
+    let cap = znimok_win::WinCapture::new();
+    take_with(&cap, target).or_else(|e| match target {
+        // WGC refuses some remote and virtual displays: Desktop Duplication then.
+        CaptureTarget::Window { .. } => Err(e),
+        _ => take_with(
+            &znimok_win::WinCapture::with_api(znimok_win::Api::Dxgi),
+            target,
+        ),
+    })
+}
+
+#[cfg(target_os = "macos")]
+pub fn take(target: &CaptureTarget) -> Result<Raster, Fail> {
+    use znimok_platform::{Permission, PermissionState, Permissions};
+    let cap = znimok_mac::MacCapture::new();
+    match cap.capture(
+        target,
+        &CaptureOptions {
+            cursor: false,
+            keep_hdr: false,
+        },
+    ) {
+        Ok(f) => Ok(to_raster(f)),
+        Err(PlatformError::PermissionDenied(_)) => {
+            if cap.request(Permission::ScreenRecording) != PermissionState::Granted {
+                let _ = cap.open_settings(Permission::ScreenRecording);
+            }
+            Err(Fail::Permission)
+        }
+        Err(e) => Err(Fail::Other(e.to_string())),
+    }
+}
+
+#[cfg(not(any(windows, target_os = "macos")))]
+pub fn take(_target: &CaptureTarget) -> Result<Raster, Fail> {
+    Err(Fail::Other(
+        "screen capture is not available on this system".into(),
+    ))
+}
+
+#[cfg(windows)]
+fn take_with(cap: &impl Capture, target: &CaptureTarget) -> Result<Raster, Fail> {
+    cap.capture(
+        target,
+        &CaptureOptions {
+            cursor: false,
+            keep_hdr: false,
+        },
+    )
+    .map(to_raster)
+    .map_err(|e| Fail::Other(e.to_string()))
+}
+
+/// The displays and the windows on screen (front to back, not Znimok's own, not minimised),
+/// for an agent.
+#[cfg(windows)]
+pub fn targets() -> (
+    Vec<znimok_platform::DisplayInfo>,
+    Vec<znimok_platform::WindowInfo>,
+) {
+    let cap = znimok_win::WinCapture::new();
+    (
+        cap.displays().unwrap_or_default(),
+        cap.windows()
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|w| !w.own && !w.minimized)
+            .collect(),
+    )
+}
+
+#[cfg(target_os = "macos")]
+pub fn targets() -> (
+    Vec<znimok_platform::DisplayInfo>,
+    Vec<znimok_platform::WindowInfo>,
+) {
+    let cap = znimok_mac::MacCapture::new();
+    (
+        cap.displays().unwrap_or_default(),
+        cap.windows()
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|w| !w.own && !w.minimized)
+            .collect(),
+    )
+}
+
+#[cfg(not(any(windows, target_os = "macos")))]
+pub fn targets() -> (
+    Vec<znimok_platform::DisplayInfo>,
+    Vec<znimok_platform::WindowInfo>,
+) {
+    (Vec::new(), Vec::new())
+}
+
 /// Runs on a worker thread.
 #[cfg(windows)]
 pub fn capture_window(id: u64) -> Result<Raster, Fail> {
