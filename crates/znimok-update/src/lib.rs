@@ -29,6 +29,8 @@ include!(concat!(env!("OUT_DIR"), "/release_key.rs"));
 
 pub const REPO: &str = "V-Plum/znimok";
 const API: &str = "https://api.github.com/repos/V-Plum/znimok/releases/latest";
+/// A release file through the API.
+const ASSETS: &str = "https://api.github.com/repos/V-Plum/znimok/releases/assets/";
 const SMALL: usize = 1 << 20;
 /// Largest installer accepted (today ~50 MB).
 const INSTALLER_MAX: usize = 512 << 20;
@@ -108,7 +110,27 @@ struct GhRelease {
 struct GhAsset {
     name: String,
     browser_download_url: String,
+    /// The same file through the API (`…/releases/assets/<id>`): the way round when
+    /// github.com's own download answers 5xx (ZK-253).
+    #[serde(default)]
+    url: String,
     size: u64,
+}
+
+/// Where a release file is: its download address, and the API's address of the same file.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct Source {
+    web: String,
+    api: String,
+}
+
+impl From<&GhAsset> for Source {
+    fn from(a: &GhAsset) -> Self {
+        Self {
+            web: a.browser_download_url.clone(),
+            api: a.url.clone(),
+        }
+    }
 }
 
 /// A newer release for this machine.
@@ -118,9 +140,9 @@ pub struct Available {
     pub version: String,
     /// The release page (notes).
     pub page: String,
-    installer: (String, String, u64),
-    sums: String,
-    sig: String,
+    installer: (String, Source, u64),
+    sums: Source,
+    sig: Source,
 }
 
 impl Available {
@@ -132,11 +154,46 @@ impl Available {
     }
 }
 
-fn headers(current: &str) -> [(&'static str, String); 2] {
+fn headers(current: &str, url: &str) -> [(&'static str, String); 2] {
+    // The API gives a file itself (not its description) only when asked for the bytes.
+    let accept = if url.starts_with(ASSETS) {
+        "application/octet-stream"
+    } else {
+        "application/vnd.github+json"
+    };
     [
         ("user-agent", format!("Znimok/{current}")),
-        ("accept", "application/vnd.github+json".into()),
+        ("accept", accept.into()),
     ]
+}
+
+/// A release file: from its download address, and — when github.com fails (a 5xx, no answer) —
+/// from the API's address of the same file (ZK-253: github.com answered 503 for every release
+/// download while the API worked). What comes is verified all the same.
+fn fetch(
+    t: &dyn Transport,
+    src: &Source,
+    current: &str,
+    max: usize,
+    timeout: Duration,
+) -> Result<Vec<u8>, UpdateError> {
+    let first = match get_status(t, &src.web, current, max, timeout) {
+        Ok((200, body)) => return Ok(body),
+        Ok((status, _)) if status < 500 && status != 429 => {
+            return Err(UpdateError::Release(format!(
+                "HTTP {status} for {}",
+                src.web
+            )));
+        }
+        Ok((status, _)) => UpdateError::Release(format!("HTTP {status} for {}", src.web)),
+        Err(e @ UpdateError::Network(_)) => e,
+        Err(e) => return Err(e),
+    };
+    if src.api.is_empty() {
+        return Err(first);
+    }
+    // The first failure is the one worth reading.
+    get(t, &src.api, current, max, timeout).map_err(|_| first)
 }
 
 fn get(
@@ -164,13 +221,14 @@ fn get_status(
 ) -> Result<(u16, Vec<u8>), UpdateError> {
     // Only our repository's release files, only HTTPS.
     let ours = url.starts_with(API)
+        || url.starts_with(ASSETS)
         || url.starts_with(&format!("https://github.com/{REPO}/releases/download/"));
     if !ours {
         return Err(UpdateError::Release(format!(
             "not a {REPO} release URL: {url}"
         )));
     }
-    let h = headers(current);
+    let h = headers(current, url);
     let h: Vec<(&str, &str)> = h.iter().map(|(k, v)| (*k, v.as_str())).collect();
     let r = t
         .get(url, &h, timeout, max)
@@ -237,13 +295,9 @@ pub fn pick(
         tag: rel.tag_name.clone(),
         version,
         page: rel.html_url,
-        installer: (
-            inst.name.clone(),
-            inst.browser_download_url.clone(),
-            inst.size,
-        ),
-        sums: sums.browser_download_url.clone(),
-        sig: sig.browser_download_url.clone(),
+        installer: (inst.name.clone(), inst.into(), inst.size),
+        sums: sums.into(),
+        sig: sig.into(),
     }))
 }
 
@@ -303,16 +357,16 @@ fn download_with(
     dir: &Path,
     key: &str,
 ) -> Result<PathBuf, UpdateError> {
-    let sums = get(t, &a.sums, current, SMALL, Duration::from_secs(30))?;
-    let sig = get(t, &a.sig, current, 4096, Duration::from_secs(30))?;
+    let sums = fetch(t, &a.sums, current, SMALL, Duration::from_secs(30))?;
+    let sig = fetch(t, &a.sig, current, 4096, Duration::from_secs(30))?;
     // The signature before the installer is even downloaded.
     match sig::verify(key, &sums, &sig) {
         Ok(true) => {}
         Ok(false) => return Err(UpdateError::BadSignature),
         Err(e) => return Err(UpdateError::Release(e)),
     }
-    let (name, url, _) = &a.installer;
-    let bytes = get(t, url, current, INSTALLER_MAX, Duration::from_secs(600))?;
+    let (name, src, _) = &a.installer;
+    let bytes = fetch(t, src, current, INSTALLER_MAX, Duration::from_secs(600))?;
     verify_download(key, &sums, &sig, name, &bytes)?;
     std::fs::create_dir_all(dir).map_err(|e| UpdateError::Io(e.to_string()))?;
     let path = dir.join(name);
@@ -349,7 +403,7 @@ mod tests {
         let assets: Vec<String> = names
             .iter()
             .map(|n| {
-                format!(r#"{{"name":"{n}","browser_download_url":"https://github.com/V-Plum/znimok/releases/download/{tag}/{n}","size":10}}"#)
+                format!(r#"{{"name":"{n}","browser_download_url":"https://github.com/V-Plum/znimok/releases/download/{tag}/{n}","url":"https://api.github.com/repos/V-Plum/znimok/releases/assets/{n}","size":10}}"#)
             })
             .collect();
         format!(
@@ -443,6 +497,8 @@ mod tests {
     struct Fake {
         files: Vec<(String, Vec<u8>)>,
         asked: std::sync::Mutex<Vec<String>>,
+        /// github.com answers this for every download (the API still works).
+        web_status: Option<u16>,
     }
 
     #[cfg(any(windows, target_os = "macos"))]
@@ -464,6 +520,16 @@ mod tests {
             _: usize,
         ) -> Result<znimok_models::http::Response, znimok_models::http::HttpError> {
             self.asked.lock().unwrap().push(url.to_string());
+            if let Some(status) = self
+                .web_status
+                .filter(|_| url.starts_with("https://github.com/"))
+            {
+                return Ok(znimok_models::http::Response {
+                    status,
+                    body: b"<title>Unicorn!</title>".to_vec(),
+                    retry_after: None,
+                });
+            }
             let body = self
                 .files
                 .iter()
@@ -494,12 +560,42 @@ mod tests {
                 ("SHA256SUMS.sig".into(), sig.to_vec()),
             ],
             asked: Default::default(),
+            web_status: None,
         };
 
         let good = fake(INSTALLER, SIG);
         let path = download_with(&good, &a, "1.1.0", &dir, KEY).unwrap();
         assert_eq!(std::fs::read(&path).unwrap(), INSTALLER);
         assert!(path.starts_with(&dir));
+
+        // ZK-253: github.com answers 503 for every download — the files come through the API,
+        // verified all the same; a 404 is not worked around.
+        let mut down = fake(INSTALLER, SIG);
+        down.web_status = Some(503);
+        let path = download_with(&down, &a, "1.1.0", &dir, KEY).unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), INSTALLER);
+        let asked = down.asked.lock().unwrap().clone();
+        assert!(asked.iter().any(|u| u.starts_with(ASSETS)), "{asked:?}");
+        let mut missing = fake(INSTALLER, SIG);
+        missing.web_status = Some(404);
+        assert!(matches!(
+            download_with(&missing, &a, "1.1.0", &dir, KEY),
+            Err(UpdateError::Release(m)) if m.starts_with("HTTP 404")
+        ));
+        assert!(
+            !missing
+                .asked
+                .lock()
+                .unwrap()
+                .iter()
+                .any(|u| u.starts_with(ASSETS))
+        );
+        let mut evil = fake(b"evil", SIG);
+        evil.web_status = Some(503);
+        assert_eq!(
+            download_with(&evil, &a, "1.1.0", &dir, KEY),
+            Err(UpdateError::BadChecksum)
+        );
 
         let swapped = fake(b"evil", SIG);
         assert_eq!(
