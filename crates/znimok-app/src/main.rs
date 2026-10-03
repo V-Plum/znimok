@@ -173,6 +173,19 @@ fn manual_wgpu(s: &slint::wgpu_30::WGPUSettings) -> Option<slint::wgpu_30::WGPUC
     }))
     .map_err(|e| eprintln!("wgpu: own device failed ({e}); Slint chooses"))
     .ok()?;
+    // wgpu's answer to an error nobody caught is a panic — and `Surface::configure` fails on
+    // DX12 when the GPU will not go idle for a resize (ZK-249: a crash after an hour of work).
+    // Logged instead: the next frame finds the surface lost and configures it anew.
+    device.on_uncaptured_error(std::sync::Arc::new(|e: wgpu::Error| {
+        static SEEN: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+        let n = SEEN.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        if n < 20 || n.is_multiple_of(500) {
+            tracing::error!(n, "wgpu: {e}");
+        }
+    }));
+    device.set_device_lost_callback(|reason, message| {
+        tracing::error!(?reason, "wgpu: device lost: {message}");
+    });
     Some(slint::wgpu_30::WGPUConfiguration::Manual {
         instance,
         adapter,

@@ -5962,3 +5962,98 @@ report-log = Лог
 # @kind: tooltip
 # @max: 20
 report-fold = Згорнути
+
+# @where: Report page: the button that opens the baseline menu
+# @kind: button
+# @max: 14
+report-cmp = Порівняти
+
+# @where: Report page, baseline menu: keep this log in the browser under a name
+# @kind: button
+# @max: 30
+report-cmp-save = Зберегти як еталон…
+
+# @where: Report page: the question for the baseline's name
+# @kind: body
+# @max: 40
+report-cmp-name = Ім'я еталона
+
+# @where: Report page, baseline menu: a baseline file or another report's page
+# @kind: button
+# @max: 40
+report-cmp-import = Імпортувати еталон чи звіт…
+
+# @where: Report page, baseline menu: download this log's baseline as a file
+# @kind: button
+# @max: 30
+report-cmp-export = Експортувати у файл
+
+# @where: Report page: tooltip of the button that ends the comparison
+# @kind: tooltip
+# @max: 24
+report-cmp-stop = Не порівнювати
+
+# @where: Report page, baseline menu: nothing saved yet
+# @kind: body
+# @max: 40
+report-cmp-none = Збережених еталонів ще немає
+
+# @where: Report page: the line over the list while comparing; the variables are counts
+# @kind: body
+# @max: 100
+report-cmp-sum = Еталон «{ name }»: +{ new } нових · −{ gone } зниклих · ↕{ moved } переставлених · ~{ changed } змінених
+
+# @where: Report page: the chip that leaves only the differences in the list
+# @kind: label
+# @max: 20
+report-cmp-only = Лише відмінності
+
+# @where: Report page: tooltip of a struck-out row — the baseline had it, this recording does not
+# @kind: tooltip
+# @max: 40
+report-cmp-gone = Є в еталоні, немає в цьому записі
+
+# @where: Report page: tooltip of a row the baseline does not have
+# @kind: tooltip
+# @max: 30
+report-cmp-new = Немає в еталоні
+
+# @where: Report page: the browser's storage would not take the baseline
+# @kind: body
+# @max: 90
+report-cmp-full = Сховище браузера переповнене — експортуйте еталон у файл.
+
+# @where: Report page: the chip that filters PostHog's requests and console lines
+# @kind: label
+# @max: 12
+report-chip-posthog = PostHog
+
+# @where: Report page: the details tab of a PostHog request — its events, flags or replay packet
+# @kind: label
+# @max: 12
+report-tab-posthog = PostHog
+
+# @where: Report page: tooltip of the button that copies a request as a cURL command
+# @kind: tooltip
+# @max: 30
+report-curl = Копіювати як cURL
+
+# @where: Report page: tooltip of the button that copies a link to this event and moment
+# @kind: tooltip
+# @max: 40
+report-link = Копіювати посилання на цей момент
+
+# @where: Report page: tooltip of the search field — the operators it understands
+# @kind: tooltip
+# @max: 120
+report-search-hint = Слова, -слова, status:5xx · method:post · host:posthog · type:xhr · dur>300
+
+# @where: Report page, PostHog: how many feature flags came, how many are on
+# @kind: body
+# @max: 40
+report-ph-flags = Прапорців: { n }, увімкнено { on }
+
+# @where: Report page, PostHog: a session replay packet with so many snapshots
+# @kind: body
+# @max: 40
+report-ph-replay = сесійний запис: { n } знімків

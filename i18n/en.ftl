@@ -5914,3 +5914,98 @@ report-log = Log
 # @kind: tooltip
 # @max: 20
 report-fold = Fold
+
+# @where: Report page: the button that opens the baseline menu
+# @kind: button
+# @max: 14
+report-cmp = Compare
+
+# @where: Report page, baseline menu: keep this log in the browser under a name
+# @kind: button
+# @max: 30
+report-cmp-save = Save as baseline…
+
+# @where: Report page: the question for the baseline's name
+# @kind: body
+# @max: 40
+report-cmp-name = Name of the baseline
+
+# @where: Report page, baseline menu: a baseline file or another report's page
+# @kind: button
+# @max: 40
+report-cmp-import = Import a baseline or a report…
+
+# @where: Report page, baseline menu: download this log's baseline as a file
+# @kind: button
+# @max: 30
+report-cmp-export = Export as a file
+
+# @where: Report page: tooltip of the button that ends the comparison
+# @kind: tooltip
+# @max: 24
+report-cmp-stop = Stop comparing
+
+# @where: Report page, baseline menu: nothing saved yet
+# @kind: body
+# @max: 40
+report-cmp-none = No saved baselines yet
+
+# @where: Report page: the line over the list while comparing; the variables are counts
+# @kind: body
+# @max: 100
+report-cmp-sum = Baseline «{ name }»: +{ new } new · −{ gone } missing · ↕{ moved } moved · ~{ changed } changed
+
+# @where: Report page: the chip that leaves only the differences in the list
+# @kind: label
+# @max: 20
+report-cmp-only = Differences only
+
+# @where: Report page: tooltip of a struck-out row — the baseline had it, this recording does not
+# @kind: tooltip
+# @max: 40
+report-cmp-gone = In the baseline, not in this recording
+
+# @where: Report page: tooltip of a row the baseline does not have
+# @kind: tooltip
+# @max: 30
+report-cmp-new = Not in the baseline
+
+# @where: Report page: the browser's storage would not take the baseline
+# @kind: body
+# @max: 90
+report-cmp-full = The browser's storage is full — export the baseline as a file instead.
+
+# @where: Report page: the chip that filters PostHog's requests and console lines
+# @kind: label
+# @max: 12
+report-chip-posthog = PostHog
+
+# @where: Report page: the details tab of a PostHog request — its events, flags or replay packet
+# @kind: label
+# @max: 12
+report-tab-posthog = PostHog
+
+# @where: Report page: tooltip of the button that copies a request as a cURL command
+# @kind: tooltip
+# @max: 30
+report-curl = Copy as cURL
+
+# @where: Report page: tooltip of the button that copies a link to this event and moment
+# @kind: tooltip
+# @max: 40
+report-link = Copy a link to this moment
+
+# @where: Report page: tooltip of the search field — the operators it understands
+# @kind: tooltip
+# @max: 120
+report-search-hint = Words, -words, status:5xx · method:post · host:posthog · type:xhr · dur>300
+
+# @where: Report page, PostHog: how many feature flags came, how many are on
+# @kind: body
+# @max: 40
+report-ph-flags = { n } flags, { on } on
+
+# @where: Report page, PostHog: a session replay packet with so many snapshots
+# @kind: body
+# @max: 40
+report-ph-replay = session replay: { n } snapshots
