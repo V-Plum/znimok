@@ -90,6 +90,10 @@ video{width:100%;height:100%;display:block}
 .kv{display:grid;grid-template-columns:min(38%,190px) minmax(0,1fr);gap:2px 12px;margin:0;font:12px/1.5 var(--mono)}
 .kv dt{color:var(--muted);overflow-wrap:anywhere}
 .kv dd{margin:0;overflow-wrap:anywhere}
+.kv a,.body a{color:var(--accent);text-decoration:none}
+.phe{margin:0 0 10px;padding:8px 10px;border:1px solid var(--line);border-radius:8px}
+.phe h4{margin:0 0 4px;font:600 12.5px system-ui,sans-serif;display:flex;gap:8px}
+.phe h4 i{font-style:normal;color:var(--muted);font-weight:400;margin-left:auto;font:11.5px var(--mono)}
 pre{margin:0;font:12px/1.5 var(--mono);white-space:pre-wrap;overflow-wrap:anywhere}
 pre+pre,.kv+pre,pre+.kv{margin-top:10px;padding-top:10px;border-top:1px dashed var(--line)}
 .jk{color:var(--dl)}.js{color:var(--ok)}.jn{color:var(--warn)}
@@ -166,7 +170,52 @@ const kindOf = (e) => e.k === "console" || e.k === "log" ? "console" : ["error",
 const cls = (e) => e.k === "click" ? 5 : e.s === 2 ? 4 : e.s === 1 ? 3 : e.k === "dl" ? 2 : kindOf(e) === "nav" ? 1 : 0;
 const CHIPS = [["devp-chip-all", () => true], ["devp-chip-errors", (e) => e.s === 2], ["devp-chip-warnings", (e) => e.s === 1],
   ["devp-chip-network", (e) => e.k === "net" || e.k === "ws"], ["devp-chip-console", (e) => ["console", "error"].includes(kindOf(e))],
-  ["devp-chip-nav", (e) => kindOf(e) === "nav"], ["devp-chip-datalayer", (e) => e.k === "dl"], ["report-chip-clicks", (e) => e.k === "click"]];
+  ["devp-chip-nav", (e) => kindOf(e) === "nav"], ["devp-chip-datalayer", (e) => e.k === "dl"], ["report-chip-clicks", (e) => e.k === "click"], ["report-chip-posthog", (e) => isPH(e)]];
+// PostHog (ZK-248): its requests (any host with the name, or the self-hosted paths) and its
+// console lines; the bodies are gzip bytes kept one to one — unpacked here.
+const isPH = (e) => e.k === "net" ? /posthog/i.test(e.url) || /^\/(i\/v0\/e|batch|capture|decide|flags)\/?$/.test((url(e.url) || {}).pathname || "") : kindOf(e) === "console" && /posthog/i.test(e.src || "");
+const phKind = (e) => { const p = (url(e.url) || {}).pathname || ""; return /\/(flags|decide)\/?$/.test(p) ? "flags" : /\/s\/?$/.test(p) ? "replay" : "events"; };
+const HIDE = (D.meta.hide_keys || []).map((k) => k.toLowerCase());
+const hideKey = (k) => HIDE.some((h) => k.toLowerCase().includes(h));
+function masked(v) {
+  if (!HIDE.length) return v;
+  if (Array.isArray(v)) return v.map(masked);
+  if (v && typeof v === "object") { const o = {}; for (const k of Object.keys(v)) o[k] = hideKey(k) ? "•••" : masked(v[k]); return o; }
+  if (typeof v === "string" && HIDE.includes("email")) return v.replace(/[\w.+-]+@[\w-]+\.[\w.-]+/g, "•••");
+  return v;
+}
+const gunzip = (str) => new Response(new Blob([Uint8Array.from(str, (c) => c.charCodeAt(0))]).stream().pipeThrough(new DecompressionStream("gzip"))).text();
+async function decode(e) {
+  let t = e.postData;
+  if (typeof t !== "string") return;
+  if (t.startsWith("\x1f\x8b")) t = await gunzip(t);
+  else if (t.startsWith("data=")) t = decodeURIComponent(t.slice(5).split("&")[0]).replace(/ /g, "+"), t = atob(t);
+  const j = JSON.parse(t), m = masked(j);
+  e._ph = m; e._dec = HIDE.length ? JSON.stringify(m) : t;
+}
+const phBatch = (e) => { const p = e._ph; return Array.isArray(p) ? p : p && Array.isArray(p.batch) ? p.batch : p && p.event ? [p] : []; };
+function phSummary(e) {
+  const k = phKind(e);
+  if (k === "flags") { let f = null; try { f = JSON.parse(e.body).flags || JSON.parse(e.body).featureFlags; } catch (x) { /* no flags */ } if (!f) return ""; const all = Object.values(f); return L("report-ph-flags").replace("{n}", all.length).replace("{on}", all.filter((x) => x === true || (x && typeof x === "object" ? x.enabled : typeof x === "string")).length); }
+  const b = phBatch(e);
+  if (!b.length) return "";
+  if (k === "replay") return L("report-ph-replay").replace("{n}", b.reduce((n, x) => n + (((x.properties || {}).$snapshot_data || []).length || 1), 0));
+  const count = new Map(); for (const x of b) count.set(x.event, (count.get(x.event) || 0) + 1);
+  return [...count].map(([n, c]) => n + (c > 1 ? " ×" + c : "")).join(", ");
+}
+// The search: words, -words, and status:5xx · method:post · host:posthog · type:xhr · dur>300.
+function terms(q) {
+  return q.split(/\s+/).filter(Boolean).map((w) => { const neg = w[0] === "-", x = neg ? w.slice(1) : w, m = x.match(/^(status|method|host|type|dur)([:<>])(.+)$/); return m ? { neg, op: m[1], cmp: m[2], v: m[3] } : { neg, text: x }; });
+}
+function term(e, t) {
+  if (t.text != null) return matches(e, t.text);
+  const u = url(e.url);
+  if (t.op === "status") { const st = String(e.status || ""); return t.v.endsWith("xx") ? st[0] === t.v[0] : st === t.v; }
+  if (t.op === "method") return (e.method || "").toLowerCase() === t.v;
+  if (t.op === "host") return !!u && u.host.includes(t.v);
+  if (t.op === "type") return ((e.type || "") + " " + (e.mime || "")).toLowerCase().includes(t.v);
+  return e.dur != null && (t.cmp === "<" ? e.dur < +t.v : e.dur > +t.v);
+}
 const fmt = (s) => { s = Math.max(0, s); const m = Math.floor(s / 60), r = s - m * 60; return m + ":" + (r < 10 ? "0" : "") + r.toFixed(2); };
 const oneLine = (s, n = 240) => { s = String(s == null ? "" : s).replace(/\s+/g, " "); return s.length > n ? s.slice(0, n) + "…" : s; };
 const tail = (s) => { s = String(s || ""); const i = s.lastIndexOf("/"); return i >= 0 && i < s.length - 1 ? s.slice(i + 1) : s; };
@@ -197,6 +246,7 @@ function message(e) {
       const u = url(e.url), err = e.err ? " — " + e.err : "";
       if (!u || !u.host) return [oneLine(e.url) + err, ""];
       const p = u.pathname.replace(/\/+$/, ""), name = tail(p) + oneLine(u.search, 60);
+      if (isPH(e)) { const sum = phSummary(e); if (sum) return ["posthog · " + oneLine(sum, 120) + err, u.host]; }
       return [(name || u.host) + err, name ? u.host : ""];
     }
     case "ws": return [oneLine(e.data), ""];
@@ -226,7 +276,7 @@ dls.append(save("log.json", ev));
 const dlOnly = ev.filter((e) => e.k === "dl");
 if (dlOnly.length) dls.append(save("dataLayer.json", dlOnly.map((e) => ({ at: e.at, event: e.ev, data: e.data }))));
 const bar = $("div", "bar"), search = $("input"), chips = $("div", "chips"), list = $("div", "list");
-search.type = "search"; search.placeholder = L("devp-search");
+search.type = "search"; search.placeholder = L("devp-search"); search.title = L("report-search-hint");
 // The panes: dragged wider or taller by their edges, folded away; the browser remembers.
 const gutLog = log.querySelector(".gut"), gutDet = det.querySelector(".gut"), unfold = document.getElementById("unfold");
 const store = (k, v) => { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, JSON.stringify(v)); } catch (x) { /* no storage */ } };
@@ -345,8 +395,8 @@ log.append(bar, cmpBar, list);
 let chip = 0, shown = [], rows = [], sel = -1, cur = -1, pin = -1;
 const tabOf = {};
 function refilter() {
-  const q = search.value.trim().toLowerCase();
-  const inQ = ev.filter((e) => matches(e, q));
+  const q = terms(search.value.trim().toLowerCase()), hit = (e) => q.every((t) => term(e, t) !== t.neg);
+  const inQ = ev.filter(hit);
   chipEls.forEach((b, i) => {
     const n = inQ.filter(CHIPS[i][1]).length;
     b.textContent = L(CHIPS[i][0]); b.append($("b", null, n));
@@ -354,7 +404,7 @@ function refilter() {
   });
   shown = []; rows = [];
   const differs = (i) => diff && (diff.isNew(i) || diff.moved.has(i) || diff.change.has(i));
-  ev.forEach((e, i) => { if (CHIPS[chip][1](e) && matches(e, q) && (!onlyDiff || differs(i))) shown.push(i); });
+  ev.forEach((e, i) => { if (CHIPS[chip][1](e) && hit(e) && (!onlyDiff || differs(i))) shown.push(i); });
   list.textContent = "";
   if (!shown.length && !(diff && diff.gone.length)) list.append($("div", "empty", L("devp-empty")));
   // The baseline's events missing here: a struck-out row each, where they would have been.
@@ -430,7 +480,7 @@ function pre(s, json) {
 }
 function kv(title, pairs) {
   const out = [], d = $("dl", "kv");
-  for (const [k, val] of pairs) if (val != null && val !== "") d.append($("dt", null, k), $("dd", null, val));
+  for (const [k, val] of pairs) if (val != null && val !== "") { const dd = $("dd"); if (/^https?:\/\/\S+$/.test(String(val))) { const a = $("a", null, val); a.href = val; a.target = "_blank"; a.rel = "noopener"; dd.append(a); } else dd.textContent = val; d.append($("dt", null, k), dd); }
   if (!d.children.length) return out;
   if (title) out.push($("h3", null, title));
   out.push(d);
@@ -477,7 +527,8 @@ function tabsOf(e) {
   if (k === "net") {
     const u = url(e.url), q = u && u.search.length > 1 ? form(u.search.slice(1)) : [], body = typeof e.body === "string";
     return [["devp-tab-headers", true, () => headers(e)],
-      ["devp-tab-payload", q.length || typeof e.postData === "string", () => [...kv(q.length && e.postData != null ? "query" : "", q), ...(e.postData != null && q.length ? [$("h3", null, "body")] : []), ...nice(e.postData)]],
+      ["devp-tab-payload", q.length || typeof e.postData === "string", () => [...kv(q.length && e.postData != null ? "query" : "", q), ...(e.postData != null && q.length ? [$("h3", null, "body")] : []), ...nice(e._dec != null ? e._dec : e.postData)]],
+      ...(isPH(e) ? [["report-tab-posthog", !!e._ph || phKind(e) === "flags", () => posthog(e)]] : []),
       ["devp-tab-preview", body, () => e.b64 ? [binary(e)] : nice(e.body)],
       ["devp-tab-response", body, () => e.b64 ? [binary(e)] : [pre(e.body + (e.bodyCut ? "\n\n… " + size(e.bodyCut) : ""))]],
       ["devp-tab-timing", !!e.timing || e.dur != null, () => timing(e)]];
@@ -490,17 +541,69 @@ function tabsOf(e) {
   else main = () => { const a = Array.isArray(e.args) ? e.args.slice(1).filter((x) => typeof x !== "string" || !/^[\w-]+\s*:[^{}]*;/.test(x)) : []; return [pre(said(e) || L("devp-nothing")), ...a.flatMap(nice), ...kv("", [[L("report-h-source"), e.src]])]; };
   return [["report-tab-details", true, main], ["devp-stack", !!stack, () => [pre(stack)]]];
 }
+// PostHog, in its own words: the events of a batch with what matters of their properties, the
+// flags of a flags answer, the size of a replay packet.
+function posthog(e) {
+  const k = phKind(e), out = [];
+  if (k === "flags") {
+    let f = {}; try { const j = JSON.parse(e.body); f = j.flags || j.featureFlags || {}; const pl = j.featureFlagPayloads || {}; for (const key of Object.keys(pl)) if (f[key] != null && typeof f[key] !== "object") f[key] = { enabled: f[key] !== false, variant: typeof f[key] === "string" ? f[key] : "", payload: pl[key] }; } catch (x) { /* no flags */ }
+    const rows = Object.keys(f).sort().map((key) => { const v = f[key], on = v === true || (v && typeof v === "object" ? v.enabled !== false : typeof v === "string"); const variant = v && typeof v === "object" ? v.variant : typeof v === "string" ? v : ""; return [key, (on ? "✓ " : "— ") + (variant || "") + (v && typeof v === "object" && v.payload != null ? "  " + oneLine(JSON.stringify(v.payload), 80) : "")]; });
+    out.push(...kv(L("report-ph-flags").replace("{n}", rows.length).replace("{on}", rows.filter((r) => r[1][0] === "✓").length), rows));
+    if (e._ph) out.push($("h3", null, "request"), ...kv("", [["distinct_id", e._ph.distinct_id], ["$anon_distinct_id", e._ph.$anon_distinct_id]]), ...nice(e._ph.person_properties || e._ph.groups || null));
+    return out;
+  }
+  for (const x of phBatch(e)) {
+    const pr = x.properties || {}, box = $("div", "phe"), h = $("h4", null, x.event || "?");
+    h.append($("i", null, x.timestamp ? new Date(x.timestamp).toLocaleTimeString() : ""));
+    box.append(h);
+    const chain = typeof pr.$elements_chain === "string" ? pr.$elements_chain.split(";")[0].replace(/:[^.]*$/, "") : "";
+    const keys = Object.keys(pr).filter((n) => !n.startsWith("$") && n !== "token" && n !== "distinct_id").slice(0, 12);
+    box.append(...kv("", [[L("devp-h-url"), pr.$current_url], ["distinct_id", x.distinct_id || pr.distinct_id], ["element", chain], ["$session_id", pr.$session_id], ["$lib", pr.$lib ? pr.$lib + " " + (pr.$lib_version || "") : ""], ["$snapshot", pr.$snapshot_bytes ? size(pr.$snapshot_bytes) : ""], ...keys.map((n) => [n, typeof pr[n] === "object" ? oneLine(JSON.stringify(pr[n]), 120) : String(pr[n])])]));
+    out.push(box);
+  }
+  return out.length ? out : nice(e._dec);
+}
+// A request as a shell line (cURL), the net log as a HAR file.
+const sq = (x) => "'" + String(x).replace(/'/g, "'\\''") + "'";
+function curl(e) {
+  const h = e.reqHeaders || {}, body = e._dec != null ? e._dec : e.postData;
+  let c = "curl " + sq(e.url) + (e.method && e.method !== "GET" ? " -X " + e.method : "");
+  for (const k of Object.keys(h)) if (!k.startsWith(":") && !/^(content-length|host)$/i.test(k) && !(e._dec != null && /^content-encoding$/i.test(k))) c += " \\\n  -H " + sq(k + ": " + h[k]);
+  if (typeof body === "string" && !isBin(body)) c += " \\\n  --data-raw " + sq(body);
+  return c;
+}
+function har() {
+  const hd = (h) => Object.keys(h || {}).filter((k) => !k.startsWith(":")).map((name) => ({ name, value: String(h[name]) }));
+  const entries = ev.filter((e) => e.k === "net").map((e) => {
+    const u = url(e.url), t = e.timing || {}, at = (k) => typeof t[k] === "number" && t[k] >= 0 ? t[k] : null, span = (a, b) => at(a) != null && at(b) != null && at(b) >= at(a) ? at(b) - at(a) : -1;
+    const firsts = [at("dnsStart"), at("connectStart"), at("sendStart")].filter((x) => x != null), body = e._dec != null ? e._dec : e.postData;
+    return {
+      startedDateTime: new Date(e.t || 0).toISOString(), time: e.dur || 0,
+      request: { method: e.method || "GET", url: e.url, httpVersion: e.proto || "", headers: hd(e.reqHeaders), queryString: u ? [...u.searchParams].map(([name, value]) => ({ name, value })) : [], cookies: [], headersSize: -1, bodySize: body ? body.length : 0,
+        ...(typeof body === "string" ? { postData: { mimeType: (e.reqHeaders || {})["content-type"] || "", text: body } } : {}) },
+      response: { status: e.status || 0, statusText: e.statusText || "", httpVersion: e.proto || "", headers: hd(e.resHeaders), cookies: [], redirectURL: e.redirect || "", headersSize: -1, bodySize: e.size || 0,
+        content: { size: e.size || 0, mimeType: e.mime || "", ...(typeof e.body === "string" ? { text: e.body, ...(e.b64 ? { encoding: "base64" } : {}) } : {}) } },
+      cache: {}, timings: { blocked: firsts.length ? Math.min(...firsts) : -1, dns: span("dnsStart", "dnsEnd"), connect: span("connectStart", "connectEnd"), ssl: span("sslStart", "sslEnd"), send: span("sendStart", "sendEnd"), wait: span("sendEnd", "receiveHeadersEnd"), receive: at("receiveHeadersEnd") != null && e.dur ? Math.max(0, e.dur - at("receiveHeadersEnd")) : -1 },
+    };
+  });
+  return { log: { version: "1.2", creator: { name: "Znimok", version: (D.meta.foot || "").replace(/\D+/, "") }, pages: [], entries } };
+}
+const harLink = $("a", null, "log.har"); harLink.tabIndex = 0; harLink.onclick = () => saveJson("log.har", har()); dls.append(harLink);
+// A link to this moment: the address carries the event and the second.
+const moment = () => location.href.split("#")[0] + "#e=" + sel + "&t=" + v.currentTime.toFixed(2);
+const toClip = (text, b) => { const done = () => { const was = b.textContent; b.textContent = "✓"; setTimeout(() => { b.textContent = was; }, 1200); }; (navigator.clipboard ? navigator.clipboard.writeText(text) : Promise.reject()).then(done, () => { const a = $("textarea"); a.value = text; B.append(a); a.select(); document.execCommand("copy"); a.remove(); done(); }); };
 const sameTime = () => sel >= 0 && Math.abs(ev[sel].at - v.currentTime) < 0.06;
 function pick(i) {
   sel = i; pin = i;
   for (const r of rows) r.classList.toggle("sel", Number(r.dataset.i) === i);
   if (!sameTime()) v.currentTime = Math.max(0, ev[i].at);
   cur = -2; follow(false);
+  history.replaceState(null, "", "#e=" + i);
   const r = rows[shown.indexOf(i)];
   if (r) r.scrollIntoView({ block: "nearest" });
   details();
 }
-function close() { sel = -1; pin = -1; for (const r of rows) r.classList.remove("sel"); details(); }
+function close() { sel = -1; pin = -1; for (const r of rows) r.classList.remove("sel"); details(); history.replaceState(null, "", location.href.split("#")[0]); }
 function details() {
   det.replaceChildren(gutDet);
   B.classList.toggle("open", sel >= 0);
@@ -514,11 +617,10 @@ function details() {
   if (dim) ttl.append($("i", null, dim));
   body.append(...tabs[on][2]());
   if (!body.childNodes.length) body.append($("div", "empty", L("devp-nothing")));
-  const copy = btn("ib", L("report-copy"), null, () => {
-    const s = body.innerText, done = () => { copy.textContent = "✓"; setTimeout(() => { copy.textContent = L("report-copy"); }, 1200); };
-    (navigator.clipboard ? navigator.clipboard.writeText(s) : Promise.reject()).then(done, () => { const a = $("textarea"); a.value = s; B.append(a); a.select(); document.execCommand("copy"); a.remove(); done(); });
-  });
-  head.append(btn("ib back", "←", L("common-close"), close), $("span", "kd c" + cls(e), label(e)), $("span", "tm", fmt(e.at)), ttl, copy, btn("ib x", "✕", L("common-close"), close), btn("ib x", "⇥", L("report-fold"), () => { lay.nodet = true; store("zn-layout", lay); applyLay(); }));
+  const copy = btn("ib", L("report-copy"), null, () => toClip(body.innerText, copy));
+  const extra = k === "net" ? [btn("ib", "cURL", L("report-curl"), (ev2) => toClip(curl(e), ev2.currentTarget))] : [];
+  extra.push(btn("ib", "🔗", L("report-link"), (ev2) => toClip(moment(), ev2.currentTarget)));
+  head.append(btn("ib back", "←", L("common-close"), close), $("span", "kd c" + cls(e), label(e)), $("span", "tm", fmt(e.at)), ttl, ...extra, copy, btn("ib x", "✕", L("common-close"), close), btn("ib x", "⇥", L("report-fold"), () => { lay.nodet = true; store("zn-layout", lay); applyLay(); }));
   const bar = $("div", "tabs");
   tabs.forEach(([name, ok], i) => { const b = btn("tab" + (i === on ? " on" : ""), L(name), null, () => { tabOf[k] = name; details(); }); b.disabled = !ok; bar.append(b); });
   det.append(head, bar, body);
@@ -552,6 +654,10 @@ document.addEventListener("keydown", (k) => {
 });
 refilter();
 details();
+Promise.allSettled(ev.filter(isPH).map(decode)).then(() => { if (ev.some((e) => e._ph)) { refilter(); if (sel >= 0) details(); } });
+{ const h = new URLSearchParams(location.hash.slice(1)), i = Number(h.get("e")), t = Number(h.get("t"));
+  if (h.has("e") && ev[i]) pick(i);
+  if (h.has("t") && t >= 0) { const seek = () => { v.currentTime = t; }; if (v.readyState) seek(); else v.addEventListener("loadedmetadata", seek, { once: true }); } }
 B.dataset.znimokReport = "ok";
 })();
 </script></body></html>
