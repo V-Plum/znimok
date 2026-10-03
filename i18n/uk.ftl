@@ -6391,16 +6391,6 @@ share-send-to-one = Надіслати в { $target }
 # @max: 260
 int-google-how = Увійдіть в акаунт Google у браузері. Znimok отримує доступ лише до файлів, які сам створює у вашому Drive (тека «Znimok»), і до адреси пошти — більше нічого у Drive чи пошті.
 
-# @where: Settings → Extensions and integrations: the Google account sending goes to
-# @kind: label
-# @max: 20
-int-google-active = Надсилає сюди
-
-# @where: Settings → Extensions and integrations: button, send to this Google account
-# @kind: label
-# @max: 16
-int-google-use = Вибрати
-
 # @where: Settings → Extensions and integrations: button, sign out of this Google account
 # @kind: label
 # @max: 16
@@ -6450,3 +6440,8 @@ int-google-no-drive = Google Drive не дозволено: увійдіть щ�
 # @kind: body
 # @max: 90
 share-sent-link = Надіслано в { $target } — посилання скопійовано
+
+# @where: Settings → Extensions and integrations: under several Google accounts
+# @kind: body
+# @max: 120
+int-google-pick = Надсилання йде на позначений акаунт — клацніть інший, щоб перемкнутися.

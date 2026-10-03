@@ -3046,13 +3046,28 @@ export component AppWindow inherits Window {
                                 if root.int-google-available && root.int-google-enabled: VerticalLayout {
                                     spacing: 8px;
                                     Text { text: @tr("int-google-how" => "Sign in with your Google account in the browser. Znimok gets access only to the files it creates in your Drive (the «Znimok» folder) and to your e-mail address — nothing else in your Drive or mail."); color: Theme.text3; font-size: 11px; wrap: word-wrap; }
-                                    for a in root.int-google-accounts: HorizontalLayout {
-                                        spacing: 8px;
-                                        Text { text: a.email; color: a.active ? Theme.text : Theme.text2; font-size: 12px; horizontal-stretch: 1; vertical-alignment: center; overflow: elide; }
-                                        if a.active: Text { text: @tr("int-google-active" => "Sends here"); color: Theme.accent; font-size: 11px; vertical-alignment: center; }
-                                        if !a.active: TextButton { text: @tr("int-google-use" => "Use"); clicked => { root.int-action("google-use", a.id); } }
-                                        TextButton { text: @tr("int-google-sign-out" => "Sign out"); clicked => { root.int-action("google-sign-out", a.id); } }
+                                    // The accounts as a choice (ZK-259): the marked one is where sending goes;
+                                    // a click on another switches to it.
+                                    for a in root.int-google-accounts: Rectangle {
+                                        height: 32px;
+                                        border-radius: 8px;
+                                        background: ga-ta.has-hover && !a.active ? Theme.elevated : transparent;
+                                        ga-ta := TouchArea {
+                                            mouse-cursor: a.active ? MouseCursor.default : MouseCursor.pointer;
+                                            clicked => { if (!a.active) { root.int-action("google-use", a.id); } }
+                                        }
+                                        HorizontalLayout {
+                                            padding-left: 6px;
+                                            spacing: 10px;
+                                            VerticalLayout {
+                                                alignment: center;
+                                                Rectangle { width: 16px; height: 16px; border-radius: 8px; border-width: a.active ? 5px : 1.5px; border-color: a.active ? Theme.accent : Theme.text3; }
+                                            }
+                                            Text { text: a.email; color: a.active ? Theme.text : Theme.text2; font-size: 12px; horizontal-stretch: 1; vertical-alignment: center; overflow: elide; }
+                                            TextButton { text: @tr("int-google-sign-out" => "Sign out"); clicked => { root.int-action("google-sign-out", a.id); } }
+                                        }
                                     }
+                                    if root.int-google-accounts.length > 1: Text { text: @tr("int-google-pick" => "Sending goes to the marked account — click another one to switch."); color: Theme.text3; font-size: 11px; wrap: word-wrap; }
                                     if root.int-google-accounts.length > 0: SwitchRow { text: @tr("int-google-link" => "Anyone with the link can view"); checked: root.int-google-link; toggled => { root.setting("int-google-link", self.checked ? 1 : 0); } }
                                     HorizontalLayout {
                                         spacing: 12px;

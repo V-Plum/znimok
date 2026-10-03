@@ -6343,16 +6343,6 @@ share-send-to-one = Send to { $target }
 # @max: 260
 int-google-how = Sign in with your Google account in the browser. Znimok gets access only to the files it creates in your Drive (the «Znimok» folder) and to your e-mail address — nothing else in your Drive or mail.
 
-# @where: Settings → Extensions and integrations: the Google account sending goes to
-# @kind: label
-# @max: 20
-int-google-active = Sends here
-
-# @where: Settings → Extensions and integrations: button, send to this Google account
-# @kind: label
-# @max: 16
-int-google-use = Use
-
 # @where: Settings → Extensions and integrations: button, sign out of this Google account
 # @kind: label
 # @max: 16
@@ -6402,3 +6392,8 @@ int-google-no-drive = Google Drive was not allowed: sign in again and tick Googl
 # @kind: body
 # @max: 90
 share-sent-link = Sent to { $target } — the link is copied
+
+# @where: Settings → Extensions and integrations: under several Google accounts
+# @kind: body
+# @max: 120
+int-google-pick = Sending goes to the marked account — click another one to switch.
