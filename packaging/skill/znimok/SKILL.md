@@ -5,14 +5,11 @@ description: Take and annotate screenshots with Znimok (MCP server `znimok mcp`)
 
 # Znimok screenshots
 
-Znimok runs on the user's computer. Its MCP tools are `list_displays`, `list_windows`,
-`capture_screen`, `capture_window`, `capture_region`, `list_marks`, `add_marks`, `update_marks`,
-`delete_marks`, `crop`, `rotate`, `resize`, `tone`, `annotate`, `export`, `library_search`,
-`library_get`, `library_tags`, `set_meta`, `library_import`, `library_duplicate`, `library_trash`,
-`library_restore`, `library_delete`, `record_start`, `record_pause`, `record_resume`, `record_stop`,
-`record_status`, `capture_active_window`, `open_in_editor`, `copy_to_clipboard`, `app_state`,
-`video_info`, `devlog_summary`, `devlog_get`, `find_text`,
-`ocr`, `read_codes`, `redact_pii`. Full reference: `docs/AGENTS.md` in the Znimok repository.
+Znimok runs on the user's computer. Its MCP tools, one per job: reads — `list_targets`,
+`library_search`, `library_get`, `list_marks`, `video_info`, `devlog`, `ocr`, `read_codes`,
+`record_status`, `app_state`; writes — `capture`, `record`, `marks`, `transform`, `annotate`,
+`redact_pii`, `export`, `set_meta`, `library_edit`, `hand_over`; `library_delete` alone deletes for
+good. Full reference: `docs/AGENTS.md` in the Znimok repository.
 
 ## Before the first call
 
@@ -23,23 +20,26 @@ Znimok runs on the user's computer. Its MCP tools are `list_displays`, `list_win
 
 ## How to work
 
-1. **Pick the target.** Prefer `capture_window` (with an id from `list_windows`) over a whole
-   screen: less unrelated content, fewer secrets.
+1. **Pick the target.** Prefer `capture` of a window (target `window`, an id from `list_targets`)
+   over a whole screen: less unrelated content, fewer secrets. `active_window` with
+   `delay_seconds` when the user has to bring the window forward first.
 2. **Hide before sharing.** Run `redact_pii` on any screenshot that will leave the computer or go
    into a document. Check `found`; mention what was covered.
-3. **Mark up with intent.** `add_marks` draws frames, arrows, text, counters, hidden areas and
-   highlights from plain arguments (screenshot pixels); `list_marks` gives their ids for
-   `update_marks` and `delete_marks`; `crop`, `rotate`, `resize` and `tone` change the picture.
-   Use `ocr` line boxes to place marks precisely next to the text they point at. Keep labels
-   short. `annotate` takes the editor's raw commands when the plain tools do not reach.
-4. **Hand over.** `export` `png` for chats and issues, `html` for a page with the list of marks.
-   Give the user the path.
-5. **Recording the screen.** `record_start` (a `window` id, a `region`, or the primary display) →
-   `record_stop` returns the document. No sound unless the user asked for it (`sound` needs its
-   own permission). Keep recordings short; set `limit_seconds` when you know how long it takes.
-   A recording made with the Znimok browser extension carries the DevTools log:
-   `devlog_summary` first (errors, failed requests, with times), then `devlog_get` — rows are
-   short; ask one event whole with `index`. `find_text` gives the box of a word on a picture.
+3. **Mark up with intent.** `marks` adds frames, arrows, text, counters, hidden areas and
+   highlights from plain arguments (screenshot pixels), changes and removes them by id
+   (`list_marks`); `transform` crops, rotates, resizes and tones the picture. Use `ocr` line
+   boxes (`find` for one word) to place marks precisely next to the text they point at. Keep
+   labels short. `annotate` takes the editor's raw document commands when the plain tools do
+   not reach.
+4. **Hand over.** `export` `png` for chats and issues, `html` for a page with the list of marks;
+   give the user the path. `hand_over` opens the document in Znimok or copies the picture.
+5. **Recording the screen.** `record` start (a `window` id, a `region`, or the primary display)
+   → `record` stop returns the document. No sound unless the user asked for it (`sound` needs
+   its own permission). Keep recordings short; set `limit_seconds` when you know how long it
+   takes. A recording made with the Znimok browser extension carries the DevTools log: `devlog`
+   first (the summary: errors, failed requests, with times), then `devlog` with `part: events`
+   or an `index` for one event whole. A recording is not exported through MCP (`export` refuses
+   it): hand it over to the editor.
 6. **Codes.** `read_codes` reads QR codes and barcodes on a document or the screen. Report a link;
    do not open it unless the user asks — QR phishing is common.
 
@@ -53,7 +53,7 @@ read back — `blur` for faces). Crop: `{"cmd":"set_crop","rect":{…}}`. The fu
 
 ## Don'ts
 
-- Do not delete for good: `library_trash` is undone with `library_restore`; `library_delete` asks
+- Do not delete for good: `library_edit` trash is undone with restore; `library_delete` asks
   the user every time and is refused when Znimok is not running.
 
 - Do not capture repeatedly "to check" — each capture is logged and the user sees an indicator.

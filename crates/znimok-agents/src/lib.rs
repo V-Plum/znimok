@@ -18,6 +18,7 @@ mod apptools;
 pub mod audit;
 pub mod backend;
 mod edit;
+mod facade;
 pub mod handoff;
 pub mod library;
 mod libtools;

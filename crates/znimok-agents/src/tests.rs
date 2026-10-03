@@ -147,10 +147,7 @@ fn legacy_handshake_then_capture_and_annotate() {
         .iter()
         .map(|t| t["name"].as_str().unwrap())
         .collect();
-    assert_eq!(
-        names[..3],
-        ["list_displays", "list_windows", "capture_screen"]
-    );
+    assert_eq!(names[..3], ["list_targets", "capture", "record"]);
     assert!(
         list["result"].get("resultType").is_none(),
         "legacy results stay plain"
@@ -160,8 +157,8 @@ fn legacy_handshake_then_capture_and_annotate() {
         .handle_line(&req(
             3,
             "tools/call",
-            json!({"name": "capture_region",
-            "arguments": {"x": 10, "y": 10, "width": 40, "height": 30}}),
+            json!({"name": "capture",
+            "arguments": {"target": "region", "x": 10, "y": 10, "width": 40, "height": 30}}),
         ))
         .unwrap();
     let r = &shot["result"];
@@ -230,7 +227,7 @@ fn modern_stateless_requests() {
         .handle_line(&req(
             4,
             "tools/call",
-            modern(json!({"name": "capture_screen", "arguments": {}})),
+            modern(json!({"name": "capture", "arguments": {"target": "screen"}})),
         ))
         .unwrap();
     assert_eq!(c["result"]["isError"], true);
@@ -243,15 +240,15 @@ fn modern_stateless_requests() {
     assert_eq!(j.len(), 1);
     assert!(!j[0].ok && !j[0].capture && j[0].grant.is_none());
 
-    // list_displays needs no permission.
+    // app_state needs no permission (list_targets does: window titles tell what the person does).
     let ds = s
         .handle_line(&req(
             5,
             "tools/call",
-            modern(json!({"name": "list_displays", "arguments": {}})),
+            modern(json!({"name": "app_state", "arguments": {}})),
         ))
         .unwrap();
-    assert_eq!(ds["result"]["structuredContent"]["displays"][0]["id"], "d1");
+    assert_eq!(ds["result"]["structuredContent"]["running"], false);
 
     let unknown = s
         .handle_line(&req(6, "sampling/createMessage", modern(json!({}))))
@@ -267,7 +264,7 @@ fn switched_off_refuses_every_tool() {
         .handle_line(&req(
             1,
             "tools/call",
-            modern(json!({"name": "list_displays", "arguments": {}})),
+            modern(json!({"name": "list_targets", "arguments": {}})),
         ))
         .unwrap();
     assert_eq!(c["result"]["isError"], true);
@@ -293,7 +290,7 @@ fn library_resources_search_export_and_redaction() {
         .handle_line(&req(
             1,
             "tools/call",
-            modern(json!({"name": "capture_screen", "arguments": {}})),
+            modern(json!({"name": "capture", "arguments": {"target": "screen"}})),
         ))
         .unwrap();
     let id = shot["result"]["structuredContent"]["id"]
@@ -457,7 +454,7 @@ fn export_does_not_clobber_files() {
         .handle_line(&req(
             1,
             "tools/call",
-            modern(json!({"name": "capture_screen", "arguments": {}})),
+            modern(json!({"name": "capture", "arguments": {"target": "screen"}})),
         ))
         .unwrap();
     let id = shot["result"]["structuredContent"]["id"]
@@ -566,13 +563,13 @@ fn editing_tools_over_plain_arguments() {
         out.structured.unwrap()
     };
     let shot = call(
-        "capture_region",
-        json!({"x": 0, "y": 0, "width": 200, "height": 120}),
+        "capture",
+        json!({"target": "region", "x": 0, "y": 0, "width": 200, "height": 120}),
     );
     let id = shot["id"].as_str().unwrap().to_string();
     let added = call(
-        "add_marks",
-        json!({"document": id, "marks": [
+        "marks",
+        json!({"document": id, "add": [
             {"kind": "rect", "x": 10, "y": 10, "width": 60, "height": 30, "color": "#00AA00", "fill": "yellow"},
             {"kind": "arrow", "from": [20, 100], "to": [120, 60]},
             {"kind": "text", "x": 80, "y": 12, "text": "Натисніть тут", "size": 18, "bold": true},
@@ -613,12 +610,11 @@ fn editing_tools_over_plain_arguments() {
 
     // Change: move the frame, recolour it, rewrite the text.
     call(
-        "update_marks",
-        json!({"document": id, "ids": [created[0]], "dx": 5, "dy": 5, "color": "blue", "fill": "none"}),
-    );
-    call(
-        "update_marks",
-        json!({"document": id, "ids": [created[2]], "text": "Сюди", "size": 22}),
+        "marks",
+        json!({"document": id, "update": [
+            {"ids": [created[0]], "dx": 5, "dy": 5, "color": "blue", "fill": "none"},
+            {"ids": [created[2]], "text": "Сюди", "size": 22},
+        ]}),
     );
     let listed = call("list_marks", json!({"document": id}));
     let m = &listed["marks"];
@@ -631,49 +627,66 @@ fn editing_tools_over_plain_arguments() {
     assert_eq!(m[2]["text"], "Сюди");
 
     // An unknown id is said, nothing changes.
-    let bad = e
-        .agent
-        .call("T", "delete_marks", &json!({"document": id, "ids": [9999]}));
+    let bad = e.agent.call(
+        "T",
+        "marks",
+        &json!({"document": id, "delete": {"ids": [9999]}}),
+    );
     assert!(bad.is_error);
-    let after = call("delete_marks", json!({"document": id, "ids": [created[6]]}));
+    let after = call(
+        "marks",
+        json!({"document": id, "delete": {"ids": [created[6]]}}),
+    );
     assert_eq!(after["marks"], 6);
 
     // The frame, a quarter turn, half the size, a tone — the size follows.
     let cropped = call(
-        "crop",
-        json!({"document": id, "x": 0, "y": 0, "width": 100, "height": 60}),
+        "transform",
+        json!({"document": id, "crop": {"x": 0, "y": 0, "width": 100, "height": 60}}),
     );
     assert_eq!(
         (cropped["width"].as_i64(), cropped["height"].as_i64()),
         (Some(100), Some(60))
     );
-    let whole = call("crop", json!({"document": id, "reset": true}));
+    let whole = call(
+        "transform",
+        json!({"document": id, "crop": {"reset": true}}),
+    );
     assert_eq!(whole["width"], 200);
-    let turned = call("rotate", json!({"document": id, "turn": "right"}));
+    let turned = call(
+        "transform",
+        json!({"document": id, "rotate": {"turn": "right"}}),
+    );
     assert_eq!(
         (turned["width"].as_i64(), turned["height"].as_i64()),
         (Some(120), Some(200))
     );
-    call(
-        "rotate",
-        json!({"document": id, "turn": "left", "mirror": "horizontal"}),
+    // Several steps in one call, in the tool's order: a turn and a mirror, then half the size.
+    let half = call(
+        "transform",
+        json!({"document": id, "rotate": {"turn": "left", "mirror": "horizontal"}, "resize": {"percent": 50}}),
     );
-    let half = call("resize", json!({"document": id, "percent": 50}));
     assert_eq!(
         (half["width"].as_i64(), half["height"].as_i64()),
         (Some(100), Some(60))
     );
-    let wide = call("resize", json!({"document": id, "width": 300}));
+    let wide = call(
+        "transform",
+        json!({"document": id, "resize": {"width": 300}}),
+    );
     assert_eq!(
         (wide["width"].as_i64(), wide["height"].as_i64()),
         (Some(300), Some(180))
     );
     call(
-        "tone",
-        json!({"document": id, "exposure": 0.5, "contrast": 10}),
+        "transform",
+        json!({"document": id, "tone": {"exposure": 0.5, "contrast": 10}}),
     );
-    call("tone", json!({"document": id, "reset": true}));
-    let all = call("delete_marks", json!({"document": id, "all": true}));
+    call(
+        "transform",
+        json!({"document": id, "tone": {"reset": true}}),
+    );
+    let all = call("marks", json!({"document": id, "delete": {"all": true}}));
     assert_eq!(all["marks"], 0);
 
     // The list of tools carries them, with the hints.
@@ -681,23 +694,34 @@ fn editing_tools_over_plain_arguments() {
         .iter()
         .map(|t| t["name"].as_str().unwrap().to_string())
         .collect();
-    for n in [
-        "list_marks",
-        "add_marks",
-        "update_marks",
-        "delete_marks",
-        "crop",
-        "rotate",
-        "resize",
-        "tone",
-    ] {
+    for n in ["list_marks", "marks", "transform"] {
         assert!(names.iter().any(|x| x == n), "{n} is listed");
+    }
+    // The published list is the facade's: one tool per job, 21 of them, the finer ones hidden.
+    assert_eq!(names.len(), 21, "{names:?}");
+    for n in [
+        "add_marks",
+        "crop",
+        "capture_region",
+        "record_start",
+        "devlog_get",
+    ] {
+        assert!(!names.iter().any(|x| x == n), "{n} is not published");
+        assert!(
+            e.agent.call("T", n, &json!({})).is_error,
+            "{n} is not callable"
+        );
     }
     let del = crate::tools::list()
         .into_iter()
-        .find(|t| t["name"] == "delete_marks")
+        .find(|t| t["name"] == "library_delete")
         .unwrap();
     assert_eq!(del["annotations"]["destructiveHint"], true);
+    let mk = crate::tools::list()
+        .into_iter()
+        .find(|t| t["name"] == "marks")
+        .unwrap();
+    assert_eq!(mk["annotations"]["destructiveHint"], false);
 }
 
 /// ZK-234: name and meta, a picture brought in, a copy, the trash and back, the tags, the
@@ -714,8 +738,8 @@ fn library_tools_meta_import_trash() {
         out.structured.unwrap()
     };
     let shot = call(
-        "capture_region",
-        json!({"x": 0, "y": 0, "width": 64, "height": 40}),
+        "capture",
+        json!({"target": "region", "x": 0, "y": 0, "width": 64, "height": 40}),
     );
     let id = shot["id"].as_str().unwrap().to_string();
 
@@ -741,7 +765,10 @@ fn library_tools_meta_import_trash() {
     let png = e.dir.join("outside.png");
     let r = Raster::solid(30, 20, Rgb::new(10, 20, 30));
     std::fs::write(&png, crate::library::encode_png(&r).unwrap()).unwrap();
-    let imp = call("library_import", json!({"path": png.display().to_string()}));
+    let imp = call(
+        "library_edit",
+        json!({"action": "import", "path": png.display().to_string()}),
+    );
     assert_eq!(imp["name"], "outside");
     assert_eq!(
         (imp["width"].as_i64(), imp["height"].as_i64()),
@@ -749,12 +776,15 @@ fn library_tools_meta_import_trash() {
     );
     let imported = imp["id"].as_str().unwrap().to_string();
 
-    let copy = call("library_duplicate", json!({"document": id}));
+    let copy = call(
+        "library_edit",
+        json!({"action": "duplicate", "document": id}),
+    );
     assert_ne!(copy["id"], json!(id));
     assert_eq!(copy["tags"], json!(["bug", "ui"]));
     assert_eq!(copy["pinned"], false, "a copy is not pinned");
 
-    let tags = call("library_tags", json!({}));
+    let tags = call("library_search", json!({"with_tags": true}));
     assert_eq!(tags["tags"][0], json!({"tag": "bug", "documents": 2}));
 
     // The filters.
@@ -771,7 +801,10 @@ fn library_tools_meta_import_trash() {
     assert!(bad.is_error);
 
     // The trash: no question, and back.
-    let t = call("library_trash", json!({"document": imported}));
+    let t = call(
+        "library_edit",
+        json!({"action": "trash", "document": imported}),
+    );
     assert_eq!(t["trashed"], true);
     assert_eq!(
         call("library_search", json!({}))["documents"]
@@ -782,7 +815,10 @@ fn library_tools_meta_import_trash() {
     );
     let in_trash = call("library_search", json!({"trash": true}));
     assert_eq!(in_trash["documents"][0]["id"], json!(imported));
-    let back = call("library_restore", json!({"document": imported}));
+    let back = call(
+        "library_edit",
+        json!({"action": "restore", "document": imported}),
+    );
     assert_eq!(back["id"], json!(imported));
     assert_eq!(
         call("library_search", json!({}))["documents"]
@@ -903,7 +939,7 @@ fn recording_info_and_devtools_log() {
     );
     assert_eq!(info["devtools_log"]["events"], 5);
 
-    let sum = call("devlog_summary", json!({"document": id}));
+    let sum = call("devlog", json!({"document": id}));
     assert_eq!(sum["events"], 5);
     assert_eq!(sum["by_kind"]["network"], 1);
     assert_eq!(sum["errors"][0]["text"], "TypeError: form is undefined");
@@ -912,15 +948,15 @@ fn recording_info_and_devtools_log() {
     assert_eq!(sum["datalayer_events"]["purchase"], 1);
     assert_eq!(sum["clicks"], 1);
 
-    let errs = call("devlog_get", json!({"document": id, "errors_only": true}));
+    let errs = call("devlog", json!({"document": id, "errors_only": true}));
     assert_eq!(
         errs["matching"], 2,
         "the failed request and the error: {errs}"
     );
-    let net = call("devlog_get", json!({"document": id, "kinds": ["network"]}));
+    let net = call("devlog", json!({"document": id, "kinds": ["network"]}));
     let i = net["events"][0]["i"].as_u64().unwrap();
     assert!(net["events"][0].get("body").is_none(), "rows are short");
-    let one = call("devlog_get", json!({"document": id, "index": i}));
+    let one = call("devlog", json!({"document": id, "index": i}));
     assert_eq!(one["event"]["body"], "{\"error\":\"boom\"}");
     // The token of the request is hidden (the settings' default: hide).
     let auth = one["event"]["reqHeaders"]["Authorization"]
@@ -928,17 +964,29 @@ fn recording_info_and_devtools_log() {
         .unwrap();
     assert!(!auth.contains("abc.def.ghi"), "{auth}");
     let window = call(
-        "devlog_get",
+        "devlog",
         json!({"document": id, "from_ms": 1000, "to_ms": 2050}),
     );
     assert_eq!(window["matching"], 2);
-    let q = call("devlog_get", json!({"document": id, "query": "PURCHASE"}));
+    let q = call("devlog", json!({"document": id, "query": "PURCHASE"}));
     assert_eq!(q["events"][0]["kind"], "datalayer");
+
+    // A recording is not exported as a picture in silence (ZK-250): said plainly.
+    let ex = e
+        .agent
+        .call("T", "export", &json!({"document": id, "format": "png"}));
+    assert!(ex.is_error, "{:?}", ex.content);
+    assert!(
+        ex.content[0]["text"]
+            .as_str()
+            .unwrap()
+            .contains("recording")
+    );
 
     // A screenshot is not a recording.
     let shot = call(
-        "capture_region",
-        json!({"x": 0, "y": 0, "width": 40, "height": 30}),
+        "capture",
+        json!({"target": "region", "x": 0, "y": 0, "width": 40, "height": 30}),
     );
     let not = e
         .agent
@@ -1021,9 +1069,37 @@ fn prompts_and_hints() {
         |n: &str, k: &str| tools.iter().find(|t| t["name"] == n).unwrap()["annotations"][k].clone();
     assert_eq!(hint("list_marks", "readOnlyHint"), true);
     assert_eq!(hint("list_marks", "idempotentHint"), true);
-    assert_eq!(hint("add_marks", "readOnlyHint"), false);
+    assert_eq!(hint("marks", "readOnlyHint"), false);
     assert_eq!(hint("library_delete", "destructiveHint"), true);
-    assert_eq!(hint("library_trash", "destructiveHint"), false);
+    assert_eq!(hint("library_edit", "destructiveHint"), false);
+    for t in &tools {
+        assert_eq!(t["annotations"]["openWorldHint"], false, "{}", t["name"]);
+    }
+    // annotate offers the document's commands only (ZK-250): no grants, settings or captures.
+    let ann = tools.iter().find(|t| t["name"] == "annotate").unwrap();
+    let cmds: Vec<&str> = ann["inputSchema"]["properties"]["commands"]["items"]["oneOf"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| {
+            v["properties"]["cmd"]["const"]
+                .as_str()
+                .or_else(|| v["properties"]["cmd"]["enum"][0].as_str())
+                .unwrap_or("")
+        })
+        .collect();
+    assert!(cmds.contains(&"add_object"), "{cmds:?}");
+    for bad in [
+        "agent_grant",
+        "agent_revoke",
+        "set_setting",
+        "library_delete",
+        "capture",
+        "export",
+        "share",
+    ] {
+        assert!(!cmds.contains(&bad), "{bad} is not an annotate command");
+    }
 }
 
 /// ZK-237: recording goes to the app over IPC; sound is a permission of its own, asked before
@@ -1044,7 +1120,7 @@ fn recording_through_the_app() {
         .perms
         .grant("T", Scope::Record, Grant::Always)
         .unwrap();
-    let out = e.agent.call("T", "record_start", &json!({}));
+    let out = e.agent.call("T", "record", &json!({"action": "start"}));
     assert!(out.is_error, "no app, no recording");
 
     // The document «the app» will return.
@@ -1084,7 +1160,9 @@ fn recording_through_the_app() {
     .unwrap();
 
     // Sound: the person refuses its permission → nothing reaches the recorder.
-    let out = e.agent.call("T", "record_start", &json!({"sound": "both"}));
+    let out = e
+        .agent
+        .call("T", "record", &json!({"action": "start", "sound": "both"}));
     assert!(out.is_error);
     assert!(
         seen.lock().unwrap().is_empty(),
@@ -1093,8 +1171,8 @@ fn recording_through_the_app() {
 
     let out = e.agent.call(
         "T",
-        "record_start",
-        &json!({"window": 42, "limit_seconds": 20, "devtools_log": false}),
+        "record",
+        &json!({"action": "start", "window": 42, "limit_seconds": 20, "devtools_log": false}),
     );
     assert!(!out.is_error, "{:?}", out.content);
     let sent = seen.lock().unwrap().last().cloned().unwrap();
@@ -1104,9 +1182,9 @@ fn recording_through_the_app() {
     assert_eq!(sent["system_audio"], false);
     assert_eq!(sent["microphone"], false);
 
-    let out = e.agent.call("T", "record_pause", &json!({}));
+    let out = e.agent.call("T", "record", &json!({"action": "pause"}));
     assert_eq!(out.structured.unwrap()["paused"], true);
-    let out = e.agent.call("T", "record_stop", &json!({}));
+    let out = e.agent.call("T", "record", &json!({"action": "stop"}));
     assert!(!out.is_error, "{:?}", out.content);
     let got = out.structured.unwrap();
     assert_eq!(got["id"], doc.id.to_string());
@@ -1122,13 +1200,7 @@ fn recording_through_the_app() {
     // A client without the permission and nobody saying yes... the fake app says «once» — so
     // check the scope instead: the tools belong to `record`.
     let tools = crate::tools::list();
-    for n in [
-        "record_start",
-        "record_pause",
-        "record_resume",
-        "record_stop",
-        "record_status",
-    ] {
+    for n in ["record", "record_status"] {
         assert!(tools.iter().any(|t| t["name"] == n), "{n}");
     }
 }
@@ -1153,7 +1225,9 @@ fn active_window_and_the_app() {
         .grant("T", Scope::LibraryRead, Grant::Always)
         .unwrap();
 
-    let out = e.agent.call("T", "capture_active_window", &json!({}));
+    let out = e
+        .agent
+        .call("T", "capture", &json!({"target": "active_window"}));
     assert!(!out.is_error, "{:?}", out.content);
     let shot = out.structured.unwrap();
     assert!(shot["window"]["title"].is_string(), "{shot}");
@@ -1168,7 +1242,7 @@ fn active_window_and_the_app() {
     assert_eq!(st["running"], false);
     assert!(
         e.agent
-            .call("T", "open_in_editor", &json!({"document": id}))
+            .call("T", "hand_over", &json!({"document": id, "to": "editor"}))
             .is_error
     );
 
@@ -1193,9 +1267,11 @@ fn active_window_and_the_app() {
         (st["running"].clone(), st["page"].clone()),
         (json!(true), json!("editor"))
     );
-    for (tool, op) in [("open_in_editor", "open"), ("copy_to_clipboard", "copy")] {
-        let out = e.agent.call("T", tool, &json!({"document": id}));
-        assert!(!out.is_error, "{tool}: {:?}", out.content);
+    for (to, op) in [("editor", "open"), ("clipboard", "copy")] {
+        let out = e
+            .agent
+            .call("T", "hand_over", &json!({"document": id, "to": to}));
+        assert!(!out.is_error, "hand_over {to}: {:?}", out.content);
         let sent = seen.lock().unwrap().last().cloned().unwrap();
         assert_eq!(sent["op"], op);
         assert!(sent["path"].as_str().unwrap().ends_with(".znimok"));
