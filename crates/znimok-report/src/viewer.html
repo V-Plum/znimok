@@ -12,25 +12,34 @@ html,body{height:100%}
 body{margin:0;background:var(--bg);color:var(--fg);font:13px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif;display:grid;grid-template-rows:auto minmax(0,1fr) auto;height:100dvh;overflow:hidden}
 button{font:inherit;color:inherit;border:0;background:none;cursor:pointer;padding:0}
 :focus-visible{outline:2px solid var(--accent);outline-offset:-2px;border-radius:4px}
-.top{display:flex;align-items:baseline;gap:6px 16px;flex-wrap:wrap;padding:10px 14px 8px}
+.top{display:flex;align-items:baseline;gap:6px 16px;padding:10px 14px 8px}
 h1{font-size:16px;margin:0;font-weight:650;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.meta{display:flex;flex-wrap:wrap;gap:2px 14px;color:var(--muted);font-size:12px;flex:1;min-width:0}
-.meta b{color:var(--fg2);font-weight:600}
 .masked{color:var(--warn)}
-.dl{display:flex;gap:12px;font-size:12px;margin-left:auto}
-.dl a{color:var(--accent);cursor:pointer}
-main{display:grid;gap:10px;padding:0 14px;min-height:0;grid-template-columns:minmax(0,1fr) var(--w2) var(--w3)}
-.gut{position:absolute;z-index:2;left:-8px;top:0;bottom:0;width:12px;cursor:col-resize;touch-action:none}
-.pane{position:relative}
-.fold .log,.fold .det,.nodet .det{display:none}
-.fold main,.nodet main{grid-template-columns:minmax(0,1fr) var(--w2)}
-.fold main{grid-template-columns:minmax(0,1fr)}
-.unf{display:none;white-space:nowrap}
-.fold .unf.l,.nodet .unf.d{display:inline-block}
-.unf.l{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:3px 10px;font-size:12px}
-.meta a{color:var(--accent);text-decoration:none}
-.stage{container-type:size;display:grid;place-items:start center;min-height:0;min-width:0}
-.fit{display:grid;gap:8px;width:min(100cqw,calc((100cqh - 38px) * var(--ar)))}
+/* The panes and the dividers between them (ZK-257): a divider is dragged to resize the pane to
+   its right, its button folds that pane away and brings it back — smoothly. */
+main{display:grid;gap:0;padding:0 14px;min-height:0;grid-template-columns:minmax(0,1fr) 14px var(--w2) 14px var(--w3);grid-template-rows:minmax(0,1fr);transition:grid-template-columns .28s ease,grid-template-rows .28s ease}
+.drag main,.drag .pane{transition:none!important}
+.stage{grid-area:1/1}.d1{grid-area:1/2}.log{grid-area:1/3}.d2{grid-area:1/4}.det{grid-area:1/5}
+.dv{position:relative;cursor:col-resize;touch-action:none;display:flex;justify-content:center;min-width:0;min-height:0}
+.dv::before{content:"";position:absolute;top:36px;bottom:4px;left:50%;width:2px;margin-left:-1px;border-radius:1px;background:var(--line);transition:background .15s}
+.dv:hover::before,.drag .dv::before{background:var(--accent)}
+.fb{position:relative;z-index:1;margin-top:4px;width:22px;height:28px;border-radius:7px;background:var(--panel);border:1px solid var(--line);color:var(--fg2);font-size:15px;line-height:1}
+.fb:hover{border-color:var(--accent);color:var(--accent)}
+.pane{transition:opacity .2s}
+.pane.shut{opacity:0;visibility:hidden;transition:opacity .2s,visibility 0s .28s}
+/* What the header said, under the video, where the room is. */
+.stage{container-type:size;display:flex;flex-direction:column;align-items:center;min-height:0;min-width:0}
+.col{display:flex;flex-direction:column;gap:8px;min-height:0;width:min(100cqw,calc((100cqh - 46px - var(--ih,0px)) * var(--ar)))}
+.fit{display:grid;gap:8px}
+.info{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 14px;display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px 20px;font-size:12.5px;overflow:auto;max-height:45cqh}
+.info .f{min-width:0}
+.info .f>b{display:block;font-size:10.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);font-weight:650;margin-bottom:1px}
+.info .f>span{overflow-wrap:anywhere}
+.info .wide{grid-column:1/-1}
+.info .note{color:var(--muted);font-size:12px}
+.info a{color:var(--accent);text-decoration:none;cursor:pointer}
+.files{display:flex;flex-wrap:wrap;gap:2px 14px;white-space:nowrap}
+footer a{color:var(--accent);text-decoration:none}
 .v{position:relative;line-height:0;border-radius:8px;overflow:hidden;background:#000;aspect-ratio:var(--ar)}
 video{width:100%;height:100%;display:block}
 .m{position:absolute;inset:0;width:100%;height:100%;display:none;pointer-events:none}
@@ -106,18 +115,23 @@ pre+pre,.kv+pre,pre+.kv{margin-top:10px;padding-top:10px;border-top:1px dashed v
 footer{display:flex;gap:16px;justify-content:space-between;color:var(--muted);font-size:11.5px;padding:7px 14px 9px}
 footer span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
 @media (max-width:1499px){
-main{--w2:max(360px,42vw);grid-template-columns:minmax(0,1fr) var(--w2);grid-template-rows:minmax(120px,var(--h2)) minmax(120px,1fr)}
-.stage{grid-row:1/3}
-.nodet main{grid-template-rows:minmax(0,1fr)}
-.det .gut{left:0;right:0;top:-8px;bottom:auto;height:12px;width:auto;cursor:row-resize}
+main{--w2:max(360px,42vw);grid-template-columns:minmax(0,1fr) 14px var(--w2);grid-template-rows:minmax(0,var(--h2)) 14px minmax(0,1fr)}
+.stage{grid-area:1/1/4/2}.d1{grid-area:1/2/4/3}.log{grid-area:1/3}.d2{grid-area:2/3}.det{grid-area:3/3}
+.d2{cursor:row-resize;justify-content:flex-start;align-items:center}
+.d2::before{top:50%;bottom:auto;left:36px;right:4px;width:auto;height:2px;margin:-1px 0 0}
+.d2 .fb{margin:0 0 0 4px;width:28px;height:22px}
+.fd main{grid-template-rows:minmax(0,1fr) 14px 0px}
+.fl .d2{visibility:hidden}
 }
 @media (max-width:899px){
-main{grid-template-columns:minmax(0,1fr);grid-template-rows:auto minmax(0,1fr)}
-.stage{grid-row:auto;height:calc(min(38dvh,(100vw - 28px) / var(--ar)) + 38px)}
-.meta{flex:1 0 100%;order:1}
+main{grid-template-columns:minmax(0,1fr);grid-template-rows:auto minmax(0,1fr);row-gap:10px}
+.stage{grid-area:1/1;container-type:inline-size}
+.col{width:100%}
+.fit{width:min(100%,calc(38dvh * var(--ar)));margin:0 auto}
+.info{max-height:24dvh}
 .x{display:none}
 .log,.det{grid-area:2/1}
-.gut{display:none}
+.dv{display:none}
 .det{display:none}
 .open .det{display:flex}
 .open .log{display:none}
@@ -127,18 +141,21 @@ main{grid-template-columns:minmax(0,1fr);grid-template-rows:auto minmax(0,1fr)}
 #keys{display:none}
 }
 .nolog main{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,1fr)}
-.nolog .stage{grid-row:auto;height:auto}
-.nolog .log,.nolog .det,.nolog .tl,.nolog .unf{display:none}
+.nolog .stage{grid-area:1/1}
+.nolog .log,.nolog .det,.nolog .tl,.nolog .dv{display:none}
 .nolog #keys{display:inline}
 @media (prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}}
 </style></head><body>
-<header class="top"><h1>{{TITLE}}</h1><div class="meta" id="meta"></div><div class="dl" id="dl"></div></header>
+<header class="top"><h1>{{TITLE}}</h1></header>
 <main>
-<section class="stage"><div class="fit"><div class="v"><video controls playsinline preload="auto" src="{{VIDEO}}"></video>
+<section class="stage"><div class="col"><div class="fit"><div class="v"><video controls playsinline preload="auto" src="{{VIDEO}}"></video>
 {{LAYERS}}</div>
-<div class="tl" id="tl"><div class="sm"></div><div class="ph"></div></div></div></section>
-<section class="pane log" id="log"><div class="gut"></div></section>
-<section class="pane det" id="det"><div class="gut"></div></section>
+<div class="tl" id="tl"><div class="sm"></div><div class="ph"></div></div></div>
+<div class="info" id="info"></div></div></section>
+<div class="dv d1" id="d1"></div>
+<section class="pane log" id="log"></section>
+<div class="dv d2" id="d2"></div>
+<section class="pane det" id="det"></section>
 </main>
 <footer><span id="foot"></span><span id="keys"></span></footer>
 <script type="application/json" id="zn-data">{{DATA}}</script>
@@ -148,20 +165,29 @@ const D = JSON.parse(document.getElementById("zn-data").textContent);
 const L = (k) => D.strings[k] || k;
 const B = document.body, v = document.querySelector("video");
 const $ = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
-const btn = (cls, text, title, fn) => { const b = $("button", cls, text); b.type = "button"; if (title) b.title = title; b.onclick = fn; return b; };
+// Every button says what it does on a long hover (ZK-257): its title, else its own words.
+const btn = (cls, text, title, fn) => { const b = $("button", cls, text); b.type = "button"; if (title || text) b.title = title || text; b.onclick = fn; return b; };
 
 // The video keeps its shape in whatever room there is; the marks: a layer each, shown in its time.
 v.addEventListener("loadedmetadata", () => { if (v.videoWidth && v.videoHeight) document.documentElement.style.setProperty("--ar", v.videoWidth / v.videoHeight); });
 const marks = [...document.querySelectorAll(".m")].map((e) => [e, e.dataset.t.split(";").map((s) => s.split(",").map(Number))]);
 if (marks.length) (function f() { const t = v.currentTime; for (const [e, r] of marks) e.style.display = r.some(([a, b]) => t >= a && t < b) ? "block" : "none"; requestAnimationFrame(f); })();
 
-// The header and the footer.
-const meta = document.getElementById("meta");
-const link = (href, text) => { const a = $("a", null, text); a.href = href; a.target = "_blank"; a.rel = "noopener"; return a; };
-let pageRow = null;
-for (const [k, val] of D.meta.rows) { const s = $("span"); s.append($("b", null, k + ": ")); if (/^https?:\/\/\S+$/.test(val)) { pageRow = s; s.append(link(val, val)); } else s.append(val); meta.append(s); }
-if (D.meta.masked) meta.append($("span", "masked", D.meta.masked));
-{ const f = document.getElementById("foot"); if (D.meta.rights) f.append(D.meta.rights, "  ·  "); if (D.meta.link) { const a = $("a", null, D.meta.foot); a.href = D.meta.link; a.target = "_blank"; a.rel = "noopener"; f.append(a); } else f.append(D.meta.foot || ""); }
+// The facts of the recording, under the video (ZK-257: the header kept them in one crowded
+// line while the room under the video stood empty); the footer says who made the page.
+const info = document.getElementById("info"), stageEl = document.querySelector(".stage");
+const link = (href, text) => { const a = $("a", null, text); a.href = href; a.target = "_blank"; a.rel = "noopener"; a.title = href; return a; };
+const fact = (k, val, wide, before) => {
+  const f = $("div", "f" + (wide ? " wide" : "")), s = $("span");
+  f.append($("b", null, k), s); if (val instanceof Node) s.append(val); else s.textContent = val;
+  info.insertBefore(f, before || null); return s;
+};
+let pageRow = null, pageKey = L("report-page");
+for (const [k, val] of D.meta.rows) { if (/^https?:\/\/\S+$/.test(val)) { pageKey = k; pageRow = fact(k, link(val, val), true); } else fact(k, val, String(val).length > 34); }
+if (D.meta.masked) info.append($("div", "f wide masked", D.meta.masked));
+const rightsEl = D.meta.rights ? info.appendChild($("div", "f wide note", D.meta.rights)) : null;
+new ResizeObserver(() => { const h = Math.round(info.offsetHeight); if (Math.abs(h - (stageEl._ih || 0)) > 2) { stageEl._ih = h; stageEl.style.setProperty("--ih", h + "px"); } }).observe(info);
+{ const f = document.getElementById("foot"); if (D.meta.link) f.append(link(D.meta.link, D.meta.foot)); else f.append(D.meta.foot || ""); }
 
 const ev = D.events;
 const log = document.getElementById("log"), det = document.getElementById("det");
@@ -293,52 +319,62 @@ function pages() {
 }
 { const pg = pages();
   if (pg.length) {
-    if (!pageRow) { pageRow = $("span"); meta.append(pageRow); }
-    const label = pageRow.querySelector("b") ? pageRow.querySelector("b").textContent : L("report-page") + ": ";
-    pageRow.textContent = ""; pageRow.append($("b", null, label));
+    if (!pageRow) pageRow = fact(pageKey, "", true, rightsEl);
+    pageRow.textContent = "";
     pg.slice(0, 6).forEach((u, i) => { if (i) pageRow.append(" → "); pageRow.append(link(u.href, i && u.origin === pg[0].origin ? u.pathname + u.search : u.href)); });
     if (pg.length > 6) pageRow.append(" … +" + (pg.length - 6));
   } }
 
 // The log: search, chips, the list.
-const save = (name, data) => { const a = $("a", null, name); a.tabIndex = 0; a.onclick = () => { const u = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: "application/json" })); const l = $("a"); l.href = u; l.download = name; l.click(); setTimeout(() => URL.revokeObjectURL(u), 1000); }; return a; };
-const dls = document.getElementById("dl");
+const save = (name, data) => { const a = $("a", null, name); a.tabIndex = 0; a.title = L("report-download") + " " + name; a.onclick = () => { const u = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: "application/json" })); const l = $("a"); l.href = u; l.download = name; l.click(); setTimeout(() => URL.revokeObjectURL(u), 1000); }; return a; };
+const dls = fact(L("report-files"), "", false, rightsEl); dls.className = "files";
 dls.append(save("log.json", ev));
 const dlOnly = ev.filter((e) => e.k === "dl");
 if (dlOnly.length) dls.append(save("dataLayer.json", dlOnly.map((e) => ({ at: e.at, event: e.ev, data: e.data }))));
 const bar = $("div", "bar"), search = $("input"), chips = $("div", "chips"), list = $("div", "list");
 search.type = "search"; search.placeholder = L("devp-search"); search.title = L("report-search-hint");
-// The panes: dragged wider or taller by their edges, folded away; the browser remembers.
-const gutLog = log.querySelector(".gut"), gutDet = det.querySelector(".gut");
+// The panes (ZK-257): a divider before each — dragged to resize the pane to its right, its
+// button folds that pane away and brings it back; the browser remembers. In two columns the
+// first divider folds the whole column, the second (between the list and the details) the
+// details; in one column there are none.
+const d1 = document.getElementById("d1"), d2 = document.getElementById("d2");
 const store = (k, v) => { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, JSON.stringify(v)); } catch (x) { /* no storage */ } };
 const load = (k) => { try { return JSON.parse(localStorage.getItem(k)); } catch (x) { return null; } };
 const lay = load("zn-layout") || {};
-const wide = () => innerWidth >= 1500, mainEl = document.querySelector("main");
-const applyLay = () => { for (const [k, v] of [["w2", wide() ? lay.w2 : lay.v2], ["w3", lay.w3], ["h2", lay.h2]]) mainEl.style.setProperty("--" + k, v ? v + "px" : ""); B.classList.toggle("fold", !!lay.fold); B.classList.toggle("nodet", !lay.fold && !!lay.nodet); };
-applyLay();
+const mode = () => innerWidth >= 1500 ? 3 : innerWidth >= 900 ? 2 : 1, mainEl = document.querySelector("main");
+const px = (n) => n ? n + "px" : "";
+const flip = (k) => () => { lay[k] = !lay[k]; store("zn-layout", lay); applyLay(); };
+const b1 = btn("fb", "", "", flip("fold")), b2 = btn("fb", "", "", flip("nodet"));
+d1.append(b1); d2.append(b2);
+d1.title = d2.title = L("report-drag");
+function applyLay() {
+  const m = mode(), fl = m > 1 && !!lay.fold, fd = m > 1 && !!lay.nodet;
+  mainEl.style.setProperty("--w2", fl ? "0px" : px(m === 3 ? lay.w2 : lay.v2));
+  mainEl.style.setProperty("--w3", fd ? "0px" : px(lay.w3));
+  mainEl.style.setProperty("--h2", px(lay.h2));
+  B.classList.toggle("fl", fl); B.classList.toggle("fd", fd);
+  log.classList.toggle("shut", fl); det.classList.toggle("shut", fd || (m === 2 && fl));
+  // Folded: the arrow points where the pane comes back from; open: where it goes.
+  b1.textContent = fl ? "‹" : "›"; b1.title = L(fl ? "report-show-log" : "report-fold-log");
+  b2.textContent = m === 2 ? (fd ? "⌃" : "⌄") : (fd ? "‹" : "›"); b2.title = L(fd ? "report-show-det" : "report-fold-det");
+}
+// The remembered layout is there at once, not animated into on opening.
+B.classList.add("drag"); applyLay(); requestAnimationFrame(() => requestAnimationFrame(() => B.classList.remove("drag")));
 addEventListener("resize", applyLay);
-// A folded pane comes back where it was folded: the log — from the page's top right corner,
-// the details — from the right end of the log's bar (the top right corner then).
-const unfoldTo = (k) => () => { lay[k] = false; store("zn-layout", lay); applyLay(); };
-const unfoldLog = btn("unf l", "⇤ " + L("report-log"), null, unfoldTo("fold")), unfoldDet = btn("ib unf d", "⇤", L("report-tab-details"), unfoldTo("nodet"));
-document.querySelector(".top").append(unfoldLog);
-for (const [g, pane] of [[gutLog, "log"], [gutDet, "det"]]) {
-  g.onpointerdown = (k) => {
-    // A pane's left edge dragged left makes it wider; the details' top edge dragged down makes
-    // the list taller.
-    const row = getComputedStyle(g).cursor === "row-resize", x0 = k.clientX, y0 = k.clientY;
-    const w0 = (pane === "log" ? log : det).getBoundingClientRect().width, h0 = log.getBoundingClientRect().height;
-    g.setPointerCapture(k.pointerId);
-    g.onpointermove = (m) => {
-      if (!g.hasPointerCapture(m.pointerId)) return;
-      if (row) lay.h2 = Math.max(120, h0 + (m.clientY - y0));
-      else lay[pane === "log" ? (wide() ? "w2" : "v2") : "w3"] = Math.min(innerWidth * 0.6, Math.max(300, w0 + (x0 - m.clientX)));
+for (const [d, which] of [[d1, "log"], [d2, "det"]]) {
+  d.onpointerdown = (k) => {
+    if (k.target.closest("button") || (which === "log" ? lay.fold : lay.nodet)) return;
+    const m = mode(), row = m === 2 && which === "det", x0 = k.clientX, y0 = k.clientY;
+    const w0 = (which === "det" && m === 3 ? det : log).getBoundingClientRect().width, h0 = log.getBoundingClientRect().height;
+    d.setPointerCapture(k.pointerId); B.classList.add("drag");
+    d.onpointermove = (e) => {
+      if (row) lay.h2 = Math.max(120, Math.min(mainEl.clientHeight - 134, h0 + e.clientY - y0));
+      else lay[which === "det" ? "w3" : m === 3 ? "w2" : "v2"] = Math.min(innerWidth * 0.6, Math.max(300, w0 + x0 - e.clientX));
       applyLay();
     };
-    g.onpointerup = () => { g.onpointermove = null; store("zn-layout", lay); };
+    d.onpointerup = () => { d.onpointermove = null; B.classList.remove("drag"); store("zn-layout", lay); };
   };
 }
-const foldBtn = btn("ib", "⇥", L("report-fold"), () => { lay.fold = true; store("zn-layout", lay); applyLay(); });
 
 // A baseline (ZK-247): the log's fingerprint — what each event is, without its bodies — kept
 // in the browser under a name, or in a file; another recording is compared against it.
@@ -388,7 +424,7 @@ function setBase(b) {
   if (b) cmpText.textContent = L("report-cmp-sum").replace("{name}", b.name).replace("{new}", diff.pair.filter((x) => x < 0).length).replace("{gone}", diff.gone.length).replace("{moved}", diff.moved.size).replace("{changed}", diff.change.size);
   refilter();
 }
-const menu = $("div", "menu"), cmpBtn = btn("chip", L("report-cmp") + " ▾", null, (k) => { k.stopPropagation(); buildMenu(); moreMenu.classList.remove("on"); menu.classList.toggle("on"); });
+const menu = $("div", "menu"), cmpBtn = btn("chip", L("report-cmp") + " ▾", L("report-cmp-hint"), (k) => { k.stopPropagation(); buildMenu(); moreMenu.classList.remove("on"); menu.classList.toggle("on"); });
 document.addEventListener("click", (k) => { for (const m of [menu, moreMenu]) if (!m.contains(k.target)) m.classList.remove("on"); });
 const saveJson = (name, data) => { const u = URL.createObjectURL(new Blob([JSON.stringify(data)], { type: "application/json" })); const l = $("a"); l.href = u; l.download = name; l.click(); setTimeout(() => URL.revokeObjectURL(u), 1000); };
 const when = (t) => new Date(t).toLocaleString(undefined, { dateStyle: "short", timeStyle: "short" });
@@ -398,7 +434,7 @@ function keepBase(b) {
 }
 function buildMenu() {
   menu.textContent = "";
-  const item = (text, fn, sub) => { const b = btn(null, null, null, fn); b.append($("b", null, text)); if (sub) b.append($("i", null, sub)); menu.append(b); return b; };
+  const item = (text, fn, sub) => { const b = btn(null, null, sub ? text + " · " + sub : text, fn); b.append($("b", null, text)); if (sub) b.append($("i", null, sub)); menu.append(b); return b; };
   item(L("report-cmp-save"), () => { const name = prompt(L("report-cmp-name"), document.title); if (!name) return; const b = fingerprint(); b.name = name.trim(); keepBase(b); menu.classList.remove("on"); });
   item(L("report-cmp-export"), () => { const b = fingerprint(); b.name = document.title; saveJson((document.title || "baseline") + ".baseline.json", b); menu.classList.remove("on"); });
   item(L("report-cmp-import"), () => { file.click(); });
@@ -428,9 +464,9 @@ const chipEls = CHIPS.map(([k], i) => { const b = btn("chip", null, null, () => 
 // could not reach them); the chosen one, when it is there, names the button.
 const moreMenu = $("div", "menu"), counts = [];
 let over = [];
-const moreBtn = btn("chip", "⋯", null, (k) => {
+const moreBtn = btn("chip", "⋯", L("report-more"), (k) => {
   k.stopPropagation(); moreMenu.textContent = "";
-  for (const i of over) { const b = btn(null, null, null, () => { chip = i; moreMenu.classList.remove("on"); refilter(); }); b.append($("b", null, L(CHIPS[i][0])), $("i", null, counts[i])); moreMenu.append(b); }
+  for (const i of over) { const b = btn(null, null, L(CHIPS[i][0]) + " — " + counts[i], () => { chip = i; moreMenu.classList.remove("on"); refilter(); }); b.append($("b", null, L(CHIPS[i][0])), $("i", null, counts[i])); moreMenu.append(b); }
   menu.classList.remove("on"); moreMenu.classList.toggle("on");
 });
 chips.append(moreBtn);
@@ -445,7 +481,7 @@ function fitChips() {
   if (act) { moreBtn.textContent = L(CHIPS[chip][0]) + " " + counts[chip] + " ▾"; drop(); if (!fits()) moreBtn.textContent = "⋯"; }
 }
 new ResizeObserver(fitChips).observe(chips);
-bar.append(search, chips, cmpBtn, foldBtn, unfoldDet, menu, moreMenu);
+bar.append(search, chips, cmpBtn, menu, moreMenu);
 log.append(bar, cmpBar, list);
 
 let chip = 0, shown = [], rows = [], sel = -1, cur = -1, pin = -1;
@@ -455,7 +491,7 @@ function refilter() {
   const inQ = ev.filter(hit);
   chipEls.forEach((b, i) => {
     const n = inQ.filter(CHIPS[i][1]).length;
-    b.textContent = L(CHIPS[i][0]); b.append($("b", null, n));
+    b.textContent = L(CHIPS[i][0]); b.append($("b", null, n)); b.title = L(CHIPS[i][0]) + " — " + n;
     b.classList.toggle("on", i === chip); b.hidden = !n && i > 0 && i !== chip; counts[i] = n;
   });
   fitChips();
@@ -509,6 +545,7 @@ v.addEventListener("seeked", () => follow(false));
 
 // The strip under the video: a tick per event (a dot per click), the playhead, the picked event.
 const tl = document.getElementById("tl"), ph = tl.querySelector(".ph"), sm = tl.querySelector(".sm");
+tl.title = L("report-tl-hint");
 const dur = () => (isFinite(v.duration) && v.duration > 0) ? v.duration : Math.max(1, ...ev.map((e) => e.at));
 const pos = (t) => (Math.min(1, Math.max(0, t / dur())) * 100) + "%";
 function buildTl() {
@@ -645,7 +682,7 @@ function har() {
   });
   return { log: { version: "1.2", creator: { name: "Znimok", version: (D.meta.foot || "").replace(/\D+/, "") }, pages: [], entries } };
 }
-const harLink = $("a", null, "log.har"); harLink.tabIndex = 0; harLink.onclick = () => saveJson("log.har", har()); dls.append(harLink);
+const harLink = $("a", null, "log.har"); harLink.tabIndex = 0; harLink.title = L("report-download") + " log.har"; harLink.onclick = () => saveJson("log.har", har()); dls.append(harLink);
 // A link to this moment: the address carries the event and the second.
 const moment = () => location.href.split("#")[0] + "#e=" + sel + "&t=" + v.currentTime.toFixed(2);
 const toClip = (text, b) => { const done = () => { const was = b.textContent; b.textContent = "✓"; setTimeout(() => { b.textContent = was; }, 1200); }; (navigator.clipboard ? navigator.clipboard.writeText(text) : Promise.reject()).then(done, () => { const a = $("textarea"); a.value = text; B.append(a); a.select(); document.execCommand("copy"); a.remove(); done(); }); };
@@ -662,7 +699,7 @@ function pick(i) {
 }
 function close() { sel = -1; pin = -1; for (const r of rows) r.classList.remove("sel"); details(); history.replaceState(null, "", location.href.split("#")[0]); }
 function details() {
-  det.replaceChildren(gutDet);
+  det.replaceChildren();
   B.classList.toggle("open", sel >= 0);
   sm.style.display = sel >= 0 ? "block" : "none";
   if (sel < 0) { det.append($("div", "empty", L("report-pick"))); return; }
@@ -674,10 +711,10 @@ function details() {
   if (dim) ttl.append($("i", null, dim));
   body.append(...tabs[on][2]());
   if (!body.childNodes.length) body.append($("div", "empty", L("devp-nothing")));
-  const copy = btn("ib", L("report-copy"), null, () => toClip(body.innerText, copy));
+  const copy = btn("ib", L("report-copy"), L("report-copy-hint"), () => toClip(body.innerText, copy));
   const extra = k === "net" ? [btn("ib", "cURL", L("report-curl"), (ev2) => toClip(curl(e), ev2.currentTarget))] : [];
   extra.push(btn("ib", "🔗", L("report-link"), (ev2) => toClip(moment(), ev2.currentTarget)));
-  head.append(btn("ib back", "←", L("common-close"), close), $("span", "kd c" + cls(e), label(e)), $("span", "tm", fmt(e.at)), ttl, ...extra, copy, btn("ib x", "✕", L("common-close"), close), btn("ib x", "⇥", L("report-fold"), () => { lay.nodet = true; store("zn-layout", lay); applyLay(); }));
+  head.append(btn("ib back", "←", L("common-close"), close), $("span", "kd c" + cls(e), label(e)), $("span", "tm", fmt(e.at)), ttl, ...extra, copy, btn("ib x", "✕", L("common-close"), close));
   const bar = $("div", "tabs");
   tabs.forEach(([name, ok], i) => { const b = btn("tab" + (i === on ? " on" : ""), L(name), null, () => { tabOf[k] = name; details(); }); b.disabled = !ok; bar.append(b); });
   det.append(head, bar, body);

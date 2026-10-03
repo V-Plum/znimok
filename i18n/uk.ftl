@@ -6062,3 +6062,58 @@ report-ph-flags = Прапорців: { n }, увімкнено { on }
 # @kind: body
 # @max: 40
 report-ph-replay = сесійний запис: { n } знімків
+
+# @where: Report page: tooltip of a divider between panes
+# @kind: tooltip
+# @max: 60
+report-drag = Потягніть, щоб змінити розмір
+
+# @where: Report page: tooltip of the divider button that hides the log pane
+# @kind: tooltip
+# @max: 30
+report-fold-log = Сховати лог
+
+# @where: Report page: tooltip of the divider button that shows the hidden log pane
+# @kind: tooltip
+# @max: 30
+report-show-log = Показати лог
+
+# @where: Report page: tooltip of the divider button that hides the details pane
+# @kind: tooltip
+# @max: 30
+report-fold-det = Сховати подробиці
+
+# @where: Report page: tooltip of the divider button that shows the hidden details pane
+# @kind: tooltip
+# @max: 30
+report-show-det = Показати подробиці
+
+# @where: Report page, the facts under the video: label of the downloadable files (log.json, log.har…)
+# @kind: label
+# @max: 20
+report-files = Файли
+
+# @where: Report page: tooltip of a file link, before the file name
+# @kind: tooltip
+# @max: 20
+report-download = Завантажити
+
+# @where: Report page: tooltip of «⋯», the filters that do not fit
+# @kind: tooltip
+# @max: 30
+report-more = Інші фільтри
+
+# @where: Report page: tooltip of «Compare»
+# @kind: tooltip
+# @max: 80
+report-cmp-hint = Зберегти лог як еталон або порівняти з еталоном
+
+# @where: Report page: tooltip of «Copy» in the details
+# @kind: tooltip
+# @max: 60
+report-copy-hint = Скопіювати те, що показують подробиці
+
+# @where: Report page: tooltip of the strip of events under the video
+# @kind: tooltip
+# @max: 60
+report-tl-hint = Клацніть або потягніть, щоб перемотати запис
