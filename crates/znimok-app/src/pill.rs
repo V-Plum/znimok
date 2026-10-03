@@ -309,13 +309,17 @@ fn wire(ui: &Pill) {
             return;
         };
         close();
-        let file = rfd::FileDialog::new()
+        if crate::filedlg::busy() {
+            return;
+        }
+        let dlg = rfd::FileDialog::new()
             .add_filter("PNG", &["png"])
             .add_filter("JPEG", &["jpg", "jpeg"])
             .add_filter("WebP", &["webp"])
-            .set_file_name(format!("{name}.png"))
-            .save_file();
-        if let Some(p) = file {
+            .set_file_name(format!("{name}.png"));
+        // Off the UI thread (ZK-223), as every dialog of the app.
+        crate::filedlg::save_file(dlg, move |file| {
+            let Some(p) = file else { return };
             let meta = crate::filemeta::FileMeta::new_shot(&name);
             let r = io::write_image(&p, w, h, rgba, Some(&meta));
             crate::with_ctx(move |app, ui| {
@@ -333,7 +337,7 @@ fn wire(ui: &Pill) {
                 };
                 app.toast(ui, msg);
             });
-        }
+        });
     });
     ui.on_drag_out(|| {
         let job = PILL.with(|p| {
