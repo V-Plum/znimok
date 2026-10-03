@@ -8377,7 +8377,7 @@ impl App {
                         &args(&[("version", env!("CARGO_PKG_VERSION").to_string())]),
                     ),
                     rights,
-                    link: "https://github.com/V-Plum/znimok".into(),
+                    link: "https://v-plum.github.io/znimok/".into(),
                     ..Default::default()
                 },
                 strings,
@@ -11931,6 +11931,7 @@ const REPORT_STRINGS: &[&str] = &[
     "report-tab-details",
     "report-log",
     "report-fold",
+    "report-page",
     "report-chip-posthog",
     "report-tab-posthog",
     "report-curl",
