@@ -6014,3 +6014,58 @@ report-ph-flags = { n } flags, { on } on
 # @kind: body
 # @max: 40
 report-ph-replay = session replay: { n } snapshots
+
+# @where: Report page: tooltip of a divider between panes
+# @kind: tooltip
+# @max: 60
+report-drag = Drag to resize
+
+# @where: Report page: tooltip of the divider button that hides the log pane
+# @kind: tooltip
+# @max: 30
+report-fold-log = Hide the log
+
+# @where: Report page: tooltip of the divider button that shows the hidden log pane
+# @kind: tooltip
+# @max: 30
+report-show-log = Show the log
+
+# @where: Report page: tooltip of the divider button that hides the details pane
+# @kind: tooltip
+# @max: 30
+report-fold-det = Hide the details
+
+# @where: Report page: tooltip of the divider button that shows the hidden details pane
+# @kind: tooltip
+# @max: 30
+report-show-det = Show the details
+
+# @where: Report page, the facts under the video: label of the downloadable files (log.json, log.har…)
+# @kind: label
+# @max: 20
+report-files = Files
+
+# @where: Report page: tooltip of a file link, before the file name
+# @kind: tooltip
+# @max: 20
+report-download = Download
+
+# @where: Report page: tooltip of «⋯», the filters that do not fit
+# @kind: tooltip
+# @max: 30
+report-more = More filters
+
+# @where: Report page: tooltip of «Compare»
+# @kind: tooltip
+# @max: 80
+report-cmp-hint = Save this log as a baseline, or compare it with one
+
+# @where: Report page: tooltip of «Copy» in the details
+# @kind: tooltip
+# @max: 60
+report-copy-hint = Copy what the details show
+
+# @where: Report page: tooltip of the strip of events under the video
+# @kind: tooltip
+# @max: 60
+report-tl-hint = Click or drag to move through the recording
