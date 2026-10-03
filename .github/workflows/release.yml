@@ -297,7 +297,17 @@ jobs:
           v="${{ needs.version.outputs.version }}"
           mkdir -p dmg && cp -R dist/Znimok.app dmg/ && ln -s /Applications dmg/Applications
           hdiutil create -volname "Znimok $v" -srcfolder dmg -ov -format UDZO "dist/Znimok-$v-macos-arm64.dmg"
-          hdiutil verify "dist/Znimok-$v-macos-arm64.dmg"
+          # The runner sometimes cannot read the image it has just written ("Resource temporarily
+          # unavailable", 0.0.5 and 0.0.12, ZK-253): that one error is retried; any other fails.
+          for try in 1 2 3; do
+            if out=$(hdiutil verify "dist/Znimok-$v-macos-arm64.dmg" 2>&1); then
+              echo "$out"; break
+            fi
+            echo "$out"
+            if [[ $try == 3 || "$out" != *"Resource temporarily unavailable"* ]]; then exit 1; fi
+            echo "::warning::hdiutil verify: the image is busy, again in 5 s ($try/3)"
+            sync; sleep 5
+          done
       - name: appcast (Sparkle, ZK-143) — the DMG signed with the Ed25519 key
         env:
           ZNIMOK_SPARKLE_KEY: ${{ secrets.ZNIMOK_SPARKLE_KEY }}

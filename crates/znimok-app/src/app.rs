@@ -1766,15 +1766,19 @@ impl App {
                 self.save_prefs(ui, |p| p.library.video_limit_mb = n);
             }
             "lib-folder" => {
-                let Some(dir) = rfd::FileDialog::new()
-                    .set_directory(&self.lib_dir)
-                    .pick_folder()
-                else {
+                if crate::filedlg::busy() {
                     return;
-                };
-                self.save_prefs(ui, |p| p.library.dir = Some(dir.clone()));
-                self.lib_dir = dir;
-                self.refresh_library(ui);
+                }
+                let me = self.me();
+                let dlg = rfd::FileDialog::new().set_directory(&self.lib_dir);
+                crate::filedlg::pick_folder(dlg, move |dir| {
+                    let Some(dir) = dir else { return };
+                    me.with(|a, ui| {
+                        a.save_prefs(ui, |p| p.library.dir = Some(dir.clone()));
+                        a.lib_dir = dir;
+                        a.refresh_library(ui);
+                    });
+                });
             }
             "lib-default" => {
                 self.save_prefs(ui, |p| p.library.dir = None);
@@ -7575,6 +7579,9 @@ impl App {
         let Some(doc) = self.s.as_ref().map(|s| s.ed.doc.clone()) else {
             return;
         };
+        if crate::filedlg::busy() {
+            return;
+        }
         let dir = self.prefs().editor.save_dir;
         let mut dlg = rfd::FileDialog::new()
             .add_filter("Znimok", &["znimok"])
@@ -7582,15 +7589,25 @@ impl App {
         if let Some(d) = dir.filter(|d| d.is_dir()) {
             dlg = dlg.set_directory(d);
         }
-        let Some(mut path) = dlg.save_file() else {
+        // The dialog off the UI thread (ZK-223); the document as it is when it answers.
+        let me = self.me();
+        crate::filedlg::save_file(dlg, move |path| {
+            let Some(mut path) = path else { return };
+            if path.extension().is_none() {
+                path.set_extension("znimok");
+            }
+            me.with(|a, ui| a.save_as_to(ui, &path));
+        });
+    }
+
+    /// «Зберегти як…» to `path`, once the dialog answered.
+    fn save_as_to(&mut self, ui: &AppWindow, path: &Path) {
+        let Some(doc) = self.s.as_ref().map(|s| s.ed.doc.clone()) else {
             return;
         };
-        if path.extension().is_none() {
-            path.set_extension("znimok");
-        }
         let opts = self.options_for(&doc);
         let video = self.s.as_ref().and_then(|s| s.video.clone());
-        let r = znimok_format::save_same_kind(&path, &doc, video.as_ref(), &opts).map(|_| ());
+        let r = znimok_format::save_same_kind(path, &doc, video.as_ref(), &opts).map(|_| ());
         let name = path
             .file_name()
             .map(|n| n.to_string_lossy().into_owned())
@@ -11107,22 +11124,31 @@ impl App {
                 let Some(bytes) = crate::devpanel::body_bytes(e) else {
                     return;
                 };
+                if crate::filedlg::busy() {
+                    return;
+                }
                 let mut dlg = rfd::FileDialog::new().set_file_name(&name);
                 if let Some(d) = self.prefs().editor.export_dir.filter(|d| d.is_dir()) {
                     dlg = dlg.set_directory(d);
                 }
-                let Some(path) = dlg.save_file() else { return };
-                let text = match std::fs::write(&path, bytes) {
-                    Ok(()) => {
-                        let name = path
-                            .file_name()
-                            .map(|n| n.to_string_lossy().into_owned())
-                            .unwrap_or_default();
-                        self.tr.tr_args("devp-saved", &args(&[("name", name)]))
-                    }
-                    Err(_) => self.tr.tr("devp-save-failed"),
-                };
-                self.toast(ui, text);
+                let me = self.me();
+                crate::filedlg::save_file(dlg, move |path| {
+                    let Some(path) = path else { return };
+                    let saved = std::fs::write(&path, bytes);
+                    me.with(|a, ui| {
+                        let text = match saved {
+                            Ok(()) => {
+                                let name = path
+                                    .file_name()
+                                    .map(|n| n.to_string_lossy().into_owned())
+                                    .unwrap_or_default();
+                                a.tr.tr_args("devp-saved", &args(&[("name", name)]))
+                            }
+                            Err(_) => a.tr.tr("devp-save-failed"),
+                        };
+                        a.toast(ui, text);
+                    });
+                });
                 return;
             }
             _ => return,
