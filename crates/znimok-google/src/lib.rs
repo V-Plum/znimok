@@ -24,12 +24,10 @@ pub const AUTH_URL: &str = "https://accounts.google.com/o/oauth2/v2/auth";
 pub const TOKEN_URL: &str = "https://oauth2.googleapis.com/token";
 /// Where a refresh token is revoked on «Sign out».
 pub const REVOKE_URL: &str = "https://oauth2.googleapis.com/revoke";
+/// The files Znimok made in Drive, nothing else.
+pub const DRIVE_FILE: &str = "https://www.googleapis.com/auth/drive.file";
 /// The files Znimok made, nothing else; and who the person is (to show the account).
-pub const SCOPES: &[&str] = &[
-    "https://www.googleapis.com/auth/drive.file",
-    "openid",
-    "email",
-];
+pub const SCOPES: &[&str] = &[DRIVE_FILE, "openid", "email"];
 
 /// The OAuth client of the Google Cloud project (type «Desktop app»).
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -56,11 +54,19 @@ pub struct Tokens {
     /// The OpenID token: who signed in.
     #[serde(default)]
     pub id_token: Option<String>,
+    /// What the person actually allowed, space-separated: Google asks about each scope with its
+    /// own checkbox, so Drive may be left out.
+    #[serde(default)]
+    pub scope: String,
 }
 
 impl Tokens {
     /// The account's e-mail from the OpenID token (its payload; the token came straight from
     /// Google over TLS, so its signature is not checked here).
+    pub fn can_drive(&self) -> bool {
+        self.scope.split_whitespace().any(|s| s == DRIVE_FILE)
+    }
+
     pub fn email(&self) -> Option<String> {
         let payload = self.id_token.as_ref()?.split('.').nth(1)?;
         let raw = base64::engine::general_purpose::URL_SAFE_NO_PAD
@@ -508,5 +514,20 @@ mod tests {
             revoke(&bad, "rt").is_ok(),
             "already revoked is signed out too"
         );
+    }
+
+    #[test]
+    fn drive_may_be_left_unticked() {
+        let t = |scope: &str| Tokens {
+            scope: scope.into(),
+            ..Tokens::default()
+        };
+        assert!(
+            t(&format!(
+                "{DRIVE_FILE} openid https://www.googleapis.com/auth/userinfo.email"
+            ))
+            .can_drive()
+        );
+        assert!(!t("openid https://www.googleapis.com/auth/userinfo.email").can_drive());
     }
 }
