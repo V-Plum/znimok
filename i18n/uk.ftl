@@ -6385,3 +6385,68 @@ share-send-to = Надіслати в
 # @kind: label
 # @max: 40
 share-send-to-one = Надіслати в { $target }
+
+# @where: Settings → Extensions and integrations: how Google Drive works
+# @kind: body
+# @max: 260
+int-google-how = Увійдіть в акаунт Google у браузері. Znimok отримує доступ лише до файлів, які сам створює у вашому Drive (тека «Znimok»), і до адреси пошти — більше нічого у Drive чи пошті.
+
+# @where: Settings → Extensions and integrations: the Google account sending goes to
+# @kind: label
+# @max: 20
+int-google-active = Надсилає сюди
+
+# @where: Settings → Extensions and integrations: button, send to this Google account
+# @kind: label
+# @max: 16
+int-google-use = Вибрати
+
+# @where: Settings → Extensions and integrations: button, sign out of this Google account
+# @kind: label
+# @max: 16
+int-google-sign-out = Вийти
+
+# @where: Settings → Extensions and integrations: switch, what is sent to Drive opens for anyone with the link
+# @kind: label
+# @max: 50
+int-google-link = Відкрити за посиланням може будь-хто
+
+# @where: Settings → Extensions and integrations: button, the first Google sign-in
+# @kind: label
+# @max: 30
+int-google-sign-in = Увійти через Google
+
+# @where: Settings → Extensions and integrations: button, sign in to one more Google account
+# @kind: label
+# @max: 30
+int-google-add = Додати акаунт
+
+# @where: Settings → Extensions and integrations: the browser shows Google's sign-in
+# @kind: body
+# @max: 60
+int-google-waiting = Завершіть вхід у браузері…
+
+# @where: Browser tab after the Google sign-in: title
+# @kind: label
+# @max: 50
+int-google-done-title = Znimok увійшов у Google
+
+# @where: Browser tab after the Google sign-in: text
+# @kind: body
+# @max: 80
+int-google-done-text = Цю вкладку можна закрити й повернутися до Znimok.
+
+# @where: Browser tab after a failed Google sign-in: title
+# @kind: label
+# @max: 50
+int-google-failed-title = Znimok не ввійшов
+
+# @where: Settings → Extensions and integrations: signed in, but Drive was not ticked on Google's page
+# @kind: body
+# @max: 120
+int-google-no-drive = Google Drive не дозволено: увійдіть ще раз і позначте Google Drive
+
+# @where: Toast: a file was delivered and its link is on the clipboard; $target its name
+# @kind: body
+# @max: 90
+share-sent-link = Надіслано в { $target } — посилання скопійовано

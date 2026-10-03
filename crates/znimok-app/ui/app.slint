@@ -73,6 +73,7 @@ export struct DevTiming { label: string, a: float, w: float, ms: string }
 // Sharing targets (ZK-101): a webhook on the integrations page, and the targets «Send to» offers.
 export struct IntWebhook { id: string, enabled: bool, name: string, url: string, header: string, secret-set: bool, status: string, busy: bool }
 export struct IntTarget { key: string, name: string }
+export struct IntGoogleAccount { id: string, email: string, active: bool }
 
 // A group title in the library grid (ZK-177): titles and card rows above it.
 export struct LibHeader {
@@ -2274,6 +2275,12 @@ export component AppWindow inherits Window {
     in property <string> int-jira-type;
     in property <string> int-jira-status;
     in property <bool> int-jira-busy;
+    in property <bool> int-google-available;
+    in property <bool> int-google-enabled;
+    in property <bool> int-google-link;
+    in property <[IntGoogleAccount]> int-google-accounts;
+    in property <string> int-google-status;
+    in property <bool> int-google-busy;
     in property <bool> int-slack-enabled;
     in property <bool> int-slack-token-set;
     in property <string> int-slack-channel;
@@ -3031,6 +3038,27 @@ export component AppWindow inherits Window {
                                         spacing: 4px;
                                         SegOption { text: @tr("int-default-ask" => "Ask"); on: root.int-default == ""; clicked => { root.int-action("default", ""); } }
                                         for t in root.int-targets: SegOption { text: t.name; on: root.int-default == t.key; clicked => { root.int-action("default", t.key); } }
+                                    }
+                                }
+                                // Google Drive (ZK-259/260): only in a build with the OAuth client
+                                if root.int-google-available: Rectangle { height: 1px; background: Theme.line; }
+                                if root.int-google-available: SwitchRow { text: "Google Drive"; checked: root.int-google-enabled; toggled => { root.setting("int-google-enabled", self.checked ? 1 : 0); } }
+                                if root.int-google-available && root.int-google-enabled: VerticalLayout {
+                                    spacing: 8px;
+                                    Text { text: @tr("int-google-how" => "Sign in with your Google account in the browser. Znimok gets access only to the files it creates in your Drive (the «Znimok» folder) and to your e-mail address — nothing else in your Drive or mail."); color: Theme.text3; font-size: 11px; wrap: word-wrap; }
+                                    for a in root.int-google-accounts: HorizontalLayout {
+                                        spacing: 8px;
+                                        Text { text: a.email; color: a.active ? Theme.text : Theme.text2; font-size: 12px; horizontal-stretch: 1; vertical-alignment: center; overflow: elide; }
+                                        if a.active: Text { text: @tr("int-google-active" => "Sends here"); color: Theme.accent; font-size: 11px; vertical-alignment: center; }
+                                        if !a.active: TextButton { text: @tr("int-google-use" => "Use"); clicked => { root.int-action("google-use", a.id); } }
+                                        TextButton { text: @tr("int-google-sign-out" => "Sign out"); clicked => { root.int-action("google-sign-out", a.id); } }
+                                    }
+                                    if root.int-google-accounts.length > 0: SwitchRow { text: @tr("int-google-link" => "Anyone with the link can view"); checked: root.int-google-link; toggled => { root.setting("int-google-link", self.checked ? 1 : 0); } }
+                                    HorizontalLayout {
+                                        spacing: 12px;
+                                        Text { text: root.int-google-status; color: Theme.text2; font-size: 11px; wrap: word-wrap; horizontal-stretch: 1; vertical-alignment: center; }
+                                        TextButton { text: root.int-google-accounts.length == 0 ? @tr("int-google-sign-in" => "Sign in with Google") : @tr("int-google-add" => "Add an account"); enabled: !root.int-google-busy; clicked => { root.int-action("google-sign-in", ""); } }
+                                        if root.int-google-accounts.length > 0: TextButton { text: @tr("int-check" => "Check"); enabled: !root.int-google-busy; clicked => { root.int-action("check", "google"); } }
                                     }
                                 }
                                 // Telegram

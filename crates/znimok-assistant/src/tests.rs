@@ -30,6 +30,7 @@ impl Transport for Shared {
             status: 200,
             body: r.to_string().into_bytes(),
             retry_after: None,
+            location: None,
         })
     }
 }

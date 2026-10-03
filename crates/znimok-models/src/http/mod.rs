@@ -10,12 +10,15 @@ mod win;
 use std::fmt;
 use std::time::Duration;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Response {
     pub status: u16,
     pub body: Vec<u8>,
     /// `retry-after`, seconds, when the server sent it (429 / 529).
     pub retry_after: Option<u64>,
+    /// `location` (only [`Transport::request`] fills it): where a resumable upload goes on (Google
+    /// Drive, ZK-260).
+    pub location: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

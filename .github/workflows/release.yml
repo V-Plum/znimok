@@ -25,6 +25,11 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
+  # Google sign-in (ZK-259): the «Desktop app» OAuth client, built in (option_env! in
+  # znimok-share). Not a secret for an installed app, but kept out of git; without it the
+  # build has no Google.
+  ZNIMOK_GOOGLE_CLIENT_ID: ${{ secrets.ZNIMOK_GOOGLE_CLIENT_ID }}
+  ZNIMOK_GOOGLE_CLIENT_SECRET: ${{ secrets.ZNIMOK_GOOGLE_CLIENT_SECRET }}
 
 jobs:
   version:

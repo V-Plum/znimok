@@ -306,6 +306,7 @@ mod tests {
                 status: self.status,
                 body: self.body.clone().into_bytes(),
                 retry_after: Some(7),
+                location: None,
             })
         }
     }

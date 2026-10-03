@@ -76,6 +76,7 @@ impl Transport for WinHttp {
             status,
             body: text.to_string().into_bytes(),
             retry_after: retry_after(retry),
+            location: None,
         })
     }
 
@@ -152,6 +153,7 @@ impl Transport for WinHttp {
             status,
             body,
             retry_after: None,
+            location: None,
         })
     }
 
@@ -212,6 +214,11 @@ impl Transport for WinHttp {
             .ok()
             .and_then(|h| h.Lookup(&HSTRING::from("retry-after")).ok())
             .map(|v| v.to_string());
+        let location = resp
+            .Headers()
+            .ok()
+            .and_then(|h| h.Lookup(&HSTRING::from("location")).ok())
+            .map(|v| v.to_string());
         let read = resp
             .Content()
             .map_err(net)?
@@ -236,6 +243,7 @@ impl Transport for WinHttp {
             status,
             body: out,
             retry_after: retry_after(retry),
+            location,
         })
     }
 }

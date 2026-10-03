@@ -1,5 +1,5 @@
 //! Sharing targets (ZK-101): a screenshot, a recording or a report sent where the work is
-//! discussed — a Telegram chat, a Jira issue, a Slack channel, a Redmine issue, or any service
+//! discussed — Google Drive (ZK-260), a Telegram chat, a Jira issue, a Slack channel, a Redmine issue, or any service
 //! through a webhook.
 //!
 //! Each target can check its connection ([`check`]) and send one file ([`send`]). The HTTP goes
@@ -8,6 +8,7 @@
 //! sending, never from `settings.json`. [`queue`] keeps what is being sent on disk and retries
 //! what failed for a reason that passes (no network, the service busy).
 
+pub mod google;
 pub mod jira;
 mod multipart;
 pub mod queue;
@@ -41,6 +42,7 @@ pub struct Item {
 /// Which target: the keys of [`Integrations::default_target`].
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum TargetId {
+    Google,
     Telegram,
     Jira,
     Slack,
@@ -51,6 +53,7 @@ pub enum TargetId {
 impl TargetId {
     pub fn key(&self) -> String {
         match self {
+            Self::Google => "google".into(),
             Self::Telegram => "telegram".into(),
             Self::Jira => "jira".into(),
             Self::Slack => "slack".into(),
@@ -61,6 +64,7 @@ impl TargetId {
 
     pub fn parse(s: &str) -> Option<Self> {
         Some(match s {
+            "google" => Self::Google,
             "telegram" => Self::Telegram,
             "jira" => Self::Jira,
             "slack" => Self::Slack,
@@ -73,6 +77,11 @@ impl TargetId {
 /// The targets that are switched on and filled in enough to send, in the order of the menu.
 pub fn ready(cfg: &Integrations) -> Vec<(TargetId, String)> {
     let mut out = Vec::new();
+    if cfg.google.enabled
+        && let Some(a) = cfg.google.current()
+    {
+        out.push((TargetId::Google, format!("Google Drive · {}", a.email)));
+    }
     if cfg.telegram.enabled && !cfg.telegram.chat_id.trim().is_empty() {
         let t = &cfg.telegram;
         let name = if t.chat_title.is_empty() {
@@ -186,6 +195,31 @@ fn secret(v: &Vault, s: znimok_settings::Secret, what: &str) -> Result<String, S
     }
 }
 
+/// An access token for the Google account sending goes to.
+fn google_access(
+    t: &dyn Transport,
+    vault: &Vault,
+    cfg: &Integrations,
+) -> Result<String, ShareError> {
+    let client = google::client()
+        .ok_or_else(|| ShareError::Fail("Google: not available in this build".into()))?;
+    let account = cfg
+        .google
+        .current()
+        .ok_or_else(|| ShareError::Fail("Google: no account signed in".into()))?;
+    let refresh = match vault.get_named(&google::secret_name(&account.id)) {
+        Ok(Some(r)) if !r.trim().is_empty() => r,
+        Ok(_) => {
+            return Err(ShareError::Fail(format!(
+                "Google: sign in again ({})",
+                account.email
+            )));
+        }
+        Err(e) => return Err(ShareError::Fail(format!("Google: {e}"))),
+    };
+    google::access(t, &client, refresh.trim())
+}
+
 /// The name of a webhook's header value in the OS store.
 pub fn webhook_secret_name(id: &str) -> String {
     format!("share-webhook-{id}")
@@ -203,6 +237,7 @@ pub fn check(
 ) -> Result<String, ShareError> {
     use znimok_settings::Secret;
     match id {
+        TargetId::Google => google::check(t, &google_access(t, vault, cfg)?),
         TargetId::Telegram => {
             let token = secret(vault, Secret::TelegramBotToken, "Telegram")?;
             telegram::check(t, &token, &cfg.telegram.chat_id, probe)
@@ -242,6 +277,10 @@ pub fn send(
 ) -> Result<Sent, ShareError> {
     use znimok_settings::Secret;
     match id {
+        TargetId::Google => {
+            let a = google_access(t, vault, cfg)?;
+            google::send(t, &a, cfg.google.link_anyone, item, bytes)
+        }
         TargetId::Telegram => {
             let token = secret(vault, Secret::TelegramBotToken, "Telegram")?;
             telegram::send(t, &token, &cfg.telegram.chat_id, item, bytes)
@@ -327,10 +366,19 @@ pub(crate) mod fake {
                 .unwrap()
                 .pop()
                 .unwrap_or((500, "no more answers".into()));
+            // «Location: …» on the first line is the answer's header (a resumable upload).
+            let (location, body) = match body.strip_prefix("Location: ") {
+                Some(rest) => {
+                    let (l, b) = rest.split_once('\n').unwrap_or((rest, ""));
+                    (Some(l.to_string()), b.to_string())
+                }
+                None => (None, body),
+            };
             Ok(Response {
                 status,
                 body: body.into_bytes(),
                 retry_after: None,
+                location,
             })
         }
     }
@@ -392,6 +440,7 @@ mod tests {
     #[test]
     fn target_ids_and_the_menu() {
         for id in [
+            TargetId::Google,
             TargetId::Telegram,
             TargetId::Jira,
             TargetId::Slack,
@@ -418,6 +467,20 @@ mod tests {
         });
         let names: Vec<String> = ready(&cfg).into_iter().map(|(_, n)| n).collect();
         assert_eq!(names, ["Telegram · Plum", "Jira · ZT", "n8n"]);
+        // Google: switched on and an account signed in; the active one, or the first.
+        cfg.google.enabled = true;
+        assert_eq!(ready(&cfg).len(), 3);
+        for (id, email) in [("1", "a@x.org"), ("2", "b@x.org")] {
+            cfg.google.accounts.push(znimok_settings::GoogleAccount {
+                id: id.into(),
+                email: email.into(),
+            });
+        }
+        assert_eq!(ready(&cfg)[0].1, "Google Drive · a@x.org");
+        cfg.google.active = "2".into();
+        assert_eq!(ready(&cfg)[0].1, "Google Drive · b@x.org");
+        cfg.google.active = "gone".into();
+        assert_eq!(ready(&cfg)[0].1, "Google Drive · a@x.org");
     }
 
     #[test]
@@ -426,6 +489,7 @@ mod tests {
             status: s,
             body: b"x".to_vec(),
             retry_after: None,
+            location: None,
         };
         assert!(status_error("T", &r(503)).retry());
         assert!(status_error("T", &r(429)).retry());

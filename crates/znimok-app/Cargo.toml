@@ -19,6 +19,7 @@ path = "src/main.rs"
 znimok-core = { path = "../znimok-core" }
 znimok-format = { path = "../znimok-format" }
 znimok-agents = { path = "../znimok-agents" }
+znimok-google = { path = "../znimok-google" }
 znimok-models = { path = "../znimok-models" }
 znimok-update = { path = "../znimok-update" }
 znimok-codes = { path = "../znimok-codes", features = ["encode"] }

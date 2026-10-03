@@ -528,6 +528,7 @@ mod tests {
                     status,
                     body: b"<title>Unicorn!</title>".to_vec(),
                     retry_after: None,
+                    location: None,
                 });
             }
             let body = self
@@ -538,6 +539,7 @@ mod tests {
                 status: if body.is_some() { 200 } else { 404 },
                 body: body.map(|(_, b)| b.clone()).unwrap_or_default(),
                 retry_after: None,
+                location: None,
             })
         }
     }

@@ -68,12 +68,21 @@ impl Tokens {
     }
 
     pub fn email(&self) -> Option<String> {
+        self.claim("email")
+    }
+
+    /// Google's stable id of the person (`sub`): the same account signed in again is the same.
+    pub fn subject(&self) -> Option<String> {
+        self.claim("sub")
+    }
+
+    fn claim(&self, k: &str) -> Option<String> {
         let payload = self.id_token.as_ref()?.split('.').nth(1)?;
         let raw = base64::engine::general_purpose::URL_SAFE_NO_PAD
             .decode(payload.trim_end_matches('='))
             .ok()?;
         let v: serde_json::Value = serde_json::from_slice(&raw).ok()?;
-        v["email"].as_str().map(str::to_string)
+        v[k].as_str().map(str::to_string)
     }
 }
 
@@ -167,9 +176,10 @@ pub fn start(client: &Client) -> std::io::Result<Pending> {
             ("code_challenge", &challenge),
             ("code_challenge_method", "S256"),
             ("state", &state),
-            // A refresh token, and the question shown again after a sign-out.
+            // A refresh token, the question shown again after a sign-out, and the choice of the
+            // account (several can be signed in, the owner's wish of 04.10).
             ("access_type", "offline"),
-            ("prompt", "consent"),
+            ("prompt", "select_account consent"),
         ])
     );
     Ok(Pending {
@@ -474,12 +484,12 @@ mod tests {
             verifier: "ver".into(),
             redirect: "http://127.0.0.1:5555/".into(),
         };
-        // The OpenID token's payload: {"email":"a@b.c"}.
+        // The OpenID token's payload: {"email":"a@b.c","sub":"42"}.
         let ok = Fake {
             sent: Default::default(),
             answer: (
                 200,
-                r#"{"access_token":"at","refresh_token":"rt","expires_in":3599,"id_token":"h.eyJlbWFpbCI6ImFAYi5jIn0.s"}"#,
+                r#"{"access_token":"at","refresh_token":"rt","expires_in":3599,"id_token":"h.eyJlbWFpbCI6ImFAYi5jIiwic3ViIjoiNDIifQ.s"}"#,
             ),
         };
         let t = exchange(&ok, &client, &code).unwrap();
@@ -488,6 +498,7 @@ mod tests {
             ("at", Some("rt"))
         );
         assert_eq!(t.email().as_deref(), Some("a@b.c"));
+        assert_eq!(t.subject().as_deref(), Some("42"));
         let (url, body) = ok.sent.lock().unwrap()[0].clone();
         assert_eq!(url, TOKEN_URL);
         assert!(body.contains("code=4%2Fxyz") && body.contains("code_verifier=ver"));
