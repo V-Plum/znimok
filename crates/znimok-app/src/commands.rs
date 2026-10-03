@@ -62,6 +62,21 @@ pub fn hub() -> &'static Hub {
     HUB.get_or_init(Hub::new)
 }
 
+/// When a program last waited for events (`app.wait`), ms since the epoch — the Logi plugin does
+/// so all the time while it runs (ZK-101: «connected» on the integrations page).
+static LAST_WAIT_MS: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(0);
+
+fn now_ms() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_millis() as i64)
+}
+
+/// A program follows Znimok's events now (it waited within the last 45 s; a wait lasts ≤ 30 s).
+pub fn poller_connected() -> bool {
+    now_ms() - LAST_WAIT_MS.load(std::sync::atomic::Ordering::Relaxed) < 45_000
+}
+
 impl Default for Hub {
     fn default() -> Self {
         Self::new()
@@ -154,7 +169,9 @@ impl Hub {
                     .and_then(Value::as_u64)
                     .unwrap_or(15_000)
                     .min(30_000);
+                LAST_WAIT_MS.store(now_ms(), std::sync::atomic::Ordering::Relaxed);
                 let (seq, events, state) = self.wait(since, Duration::from_millis(ms));
+                LAST_WAIT_MS.store(now_ms(), std::sync::atomic::Ordering::Relaxed);
                 Ok(json!({"seq": seq, "events": events, "state": state}))
             }
             m if METHODS.contains(&m) => {

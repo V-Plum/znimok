@@ -40,6 +40,7 @@ slint = { version = "~1.18", default-features = false, features = ["std", "compa
 png = "0.18"
 global-hotkey = "0.8"
 znimok-settings = { path = "../znimok-settings" }
+znimok-share = { path = "../znimok-share" }
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp", "gif", "bmp"] }
 # WebP with a quality (ZK-197): libwebp, built from its C source by libwebp-sys (BSD-3-Clause).
 webp = { version = "0.3", default-features = false }

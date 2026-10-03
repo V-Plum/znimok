@@ -353,6 +353,10 @@ pub struct App {
     vexp_sizes: [Option<u64>; 4],
     /// How many of the log's values the report would hide (counted on a worker), if known.
     vexp_hidden: Option<usize>,
+    /// The integrations page (ZK-101): per target key, the last check's words and whether one runs.
+    int_state: std::collections::HashMap<String, (String, bool)>,
+    /// A video export made for «Send to» (ZK-101): the target its file goes to when it is done.
+    vexp_share: Option<String>,
     vexp_serial: u64,
     vexp_run: Option<std::sync::Arc<znimok_export::Progress>>,
     vexp_timer: Option<slint::Timer>,
@@ -587,6 +591,8 @@ impl App {
             vexp: Default::default(),
             vexp_sizes: [None; 4],
             vexp_hidden: None,
+            int_state: std::collections::HashMap::new(),
+            vexp_share: None,
             vexp_serial: 0,
             vexp_run: None,
             vexp_timer: None,
@@ -1488,12 +1494,378 @@ impl App {
                 .into(),
         );
         ui.set_pref_build(about_build(&self.tr).into());
+        self.int_sync(ui, &p);
+    }
+
+    // ------------------------------------------------------------------ integrations (ZK-101)
+
+    /// The «Extensions and integrations» page from the settings and the OS store.
+    fn int_sync(&self, ui: &AppWindow, p: &znimok_settings::Settings) {
+        use znimok_settings::{Secret, Vault};
+        let i = &p.integrations;
+        crate::integrations::set_settings(i);
+        let v = Vault::default();
+        let has = |s: Secret| v.has(s).unwrap_or(false);
+        let st = |k: &str| self.int_state.get(k).cloned().unwrap_or_default();
+        ui.set_int_chrome_on(crate::devlog::hub().hosts() > 0);
+        ui.set_int_logi_on(crate::commands::poller_connected());
+        let (s, b) = st("telegram");
+        ui.set_int_tg_enabled(i.telegram.enabled);
+        ui.set_int_tg_token_set(has(Secret::TelegramBotToken));
+        ui.set_int_tg_chat(i.telegram.chat_id.clone().into());
+        ui.set_int_tg_chat_title(i.telegram.chat_title.clone().into());
+        ui.set_int_tg_status(s.into());
+        ui.set_int_tg_busy(b);
+        let (s, b) = st("jira");
+        ui.set_int_jira_enabled(i.jira.enabled);
+        ui.set_int_jira_site(i.jira.site.clone().into());
+        ui.set_int_jira_email(i.jira.email.clone().into());
+        ui.set_int_jira_token_set(has(Secret::JiraApiToken));
+        ui.set_int_jira_project(i.jira.project.clone().into());
+        ui.set_int_jira_issue(i.jira.issue.clone().into());
+        ui.set_int_jira_type(i.jira.issue_type.clone().into());
+        ui.set_int_jira_status(s.into());
+        ui.set_int_jira_busy(b);
+        let (s, b) = st("slack");
+        ui.set_int_slack_enabled(i.slack.enabled);
+        ui.set_int_slack_token_set(has(Secret::SlackBotToken));
+        ui.set_int_slack_channel(i.slack.channel.clone().into());
+        ui.set_int_slack_status(s.into());
+        ui.set_int_slack_busy(b);
+        let (s, b) = st("redmine");
+        ui.set_int_rm_enabled(i.redmine.enabled);
+        ui.set_int_rm_url(i.redmine.url.clone().into());
+        ui.set_int_rm_key_set(has(Secret::RedmineApiKey));
+        ui.set_int_rm_project(i.redmine.project.clone().into());
+        ui.set_int_rm_issue(i.redmine.issue.clone().into());
+        ui.set_int_rm_status(s.into());
+        ui.set_int_rm_busy(b);
+        let hooks: Vec<crate::IntWebhook> = i
+            .webhooks
+            .iter()
+            .map(|w| {
+                let (s, b) = st(&format!("webhook:{}", w.id));
+                crate::IntWebhook {
+                    id: w.id.clone().into(),
+                    enabled: w.enabled,
+                    name: w.name.clone().into(),
+                    url: w.url.clone().into(),
+                    header: w.header.clone().into(),
+                    secret_set: v
+                        .get_named(&znimok_share::webhook_secret_name(&w.id))
+                        .ok()
+                        .flatten()
+                        .is_some(),
+                    status: s.into(),
+                    busy: b,
+                }
+            })
+            .collect();
+        ui.set_int_webhooks(std::rc::Rc::new(slint::VecModel::from(hooks)).into());
+        let targets: Vec<crate::IntTarget> = znimok_share::ready(i)
+            .into_iter()
+            .map(|(id, name)| crate::IntTarget {
+                key: id.key().into(),
+                name: name.into(),
+            })
+            .collect();
+        ui.set_int_targets(std::rc::Rc::new(slint::VecModel::from(targets)).into());
+        ui.set_int_default(i.default_target.clone().into());
+    }
+
+    /// A field of the integrations page: a setting, or a token / key into the OS store.
+    fn int_text(&mut self, ui: &AppWindow, key: &str, text: &str) {
+        use znimok_settings::{Secret, Vault};
+        let t = text.trim().to_string();
+        let secret = |s: Secret, t: &str| {
+            let v = Vault::default();
+            if t.is_empty() {
+                v.delete(s).map(|_| ())
+            } else {
+                v.set(s, t)
+            }
+        };
+        let r = match key {
+            "int-tg-token" => secret(Secret::TelegramBotToken, &t),
+            "int-jira-token" => secret(Secret::JiraApiToken, &t),
+            "int-slack-token" => secret(Secret::SlackBotToken, &t),
+            "int-rm-key" => secret(Secret::RedmineApiKey, &t),
+            _ => Ok(()),
+        };
+        if let Err(e) = r {
+            self.toast(ui, e.to_string());
+        }
+        if let Some((field, id)) = key.split_once(':')
+            && field.starts_with("int-wh-")
+        {
+            if field == "int-wh-value" {
+                let v = Vault::default();
+                let name = znimok_share::webhook_secret_name(id);
+                let r = if t.is_empty() {
+                    v.delete_named(&name).map(|_| ())
+                } else {
+                    v.set_named(&name, &t)
+                };
+                if let Err(e) = r {
+                    self.toast(ui, e.to_string());
+                }
+            } else {
+                let id = id.to_string();
+                let field = field.to_string();
+                self.save_prefs(ui, move |p| {
+                    if let Some(w) = p.integrations.webhooks.iter_mut().find(|w| w.id == id) {
+                        match field.as_str() {
+                            "int-wh-name" => w.name = t,
+                            "int-wh-url" => w.url = t,
+                            "int-wh-header" => w.header = t,
+                            "int-wh-enabled" => w.enabled = t == "1",
+                            _ => {}
+                        }
+                    }
+                });
+            }
+            self.settings_sync(ui);
+            return;
+        }
+        match key {
+            "int-tg-chat" => self.save_prefs(ui, |p| {
+                if p.integrations.telegram.chat_id != t {
+                    p.integrations.telegram.chat_title.clear();
+                }
+                p.integrations.telegram.chat_id = t;
+            }),
+            "int-jira-site" => self.save_prefs(ui, |p| p.integrations.jira.site = t),
+            "int-jira-email" => self.save_prefs(ui, |p| p.integrations.jira.email = t),
+            "int-jira-project" => {
+                self.save_prefs(ui, |p| p.integrations.jira.project = t.to_uppercase())
+            }
+            "int-jira-issue" => {
+                self.save_prefs(ui, |p| p.integrations.jira.issue = t.to_uppercase())
+            }
+            "int-jira-type" => self.save_prefs(ui, |p| p.integrations.jira.issue_type = t),
+            "int-slack-channel" => self.save_prefs(ui, |p| p.integrations.slack.channel = t),
+            "int-rm-url" => self.save_prefs(ui, |p| p.integrations.redmine.url = t),
+            "int-rm-project" => self.save_prefs(ui, |p| p.integrations.redmine.project = t),
+            "int-rm-issue" => self.save_prefs(ui, |p| p.integrations.redmine.issue = t),
+            _ => {}
+        }
+        self.settings_sync(ui);
+    }
+
+    /// A button of the integrations page.
+    pub fn int_action(&mut self, ui: &AppWindow, what: &str, target: &str) {
+        match what {
+            "store" => crate::codes::open_url(&if target == "chrome" {
+                format!(
+                    "https://chromewebstore.google.com/detail/{}",
+                    znimok_devtools::STORE_EXTENSION_ID
+                )
+            } else {
+                "https://marketplace.logi.com/".to_string()
+            }),
+            "default" => {
+                let t = target.to_string();
+                self.save_prefs(ui, |p| p.integrations.default_target = t);
+            }
+            "add-webhook" => self.save_prefs(ui, |p| {
+                p.integrations
+                    .webhooks
+                    .push(znimok_settings::WebhookTarget {
+                        id: crate::integrations::new_webhook_id(),
+                        enabled: true,
+                        ..Default::default()
+                    })
+            }),
+            "remove-webhook" => {
+                let id = target.to_string();
+                let _ = znimok_settings::Vault::default()
+                    .delete_named(&znimok_share::webhook_secret_name(&id));
+                self.save_prefs(ui, |p| {
+                    p.integrations.webhooks.retain(|w| w.id != id);
+                    if p.integrations.default_target == format!("webhook:{id}") {
+                        p.integrations.default_target.clear();
+                    }
+                });
+            }
+            "send" => {
+                if self.vexp_open {
+                    self.share_video(ui, target);
+                } else if self.exp.is_some() {
+                    self.share_shot(ui, target);
+                }
+                return;
+            }
+            "check" | "find-chat" => {
+                let Some(id) = znimok_share::TargetId::parse(target) else {
+                    return;
+                };
+                let key = id.key();
+                if self.int_state.get(&key).is_some_and(|s| s.1) {
+                    return;
+                }
+                let words = self.tr.tr("int-checking");
+                self.int_state.insert(key.clone(), (words, true));
+                let cfg = self.prefs().integrations;
+                let probe = self.tr.tr("int-probe");
+                let find = what == "find-chat";
+                let me = self.me();
+                std::thread::spawn(move || {
+                    let t = znimok_models::http::system();
+                    let vault = znimok_settings::Vault::default();
+                    let r = if find {
+                        match vault.get(znimok_settings::Secret::TelegramBotToken) {
+                            Ok(Some(token)) => {
+                                znimok_share::telegram::find_chats(t.as_ref(), token.trim())
+                                    .map(Found::Chats)
+                            }
+                            _ => Err(znimok_share::ShareError::Fail(
+                                "Telegram: no token in the settings".into(),
+                            )),
+                        }
+                    } else {
+                        znimok_share::check(t.as_ref(), &vault, &cfg, &id, &probe).map(Found::Check)
+                    };
+                    let _ = slint::invoke_from_event_loop(move || {
+                        me.with(|a, ui| a.int_done(ui, &key, r))
+                    });
+                });
+            }
+            _ => {}
+        }
+        self.settings_sync(ui);
+    }
+
+    /// A check or a search finished.
+    fn int_done(&mut self, ui: &AppWindow, key: &str, r: Result<Found, znimok_share::ShareError>) {
+        let words = match r {
+            Ok(Found::Check(who)) => format!("✓ {who}"),
+            Ok(Found::Chats(chats)) => match chats.first() {
+                None => self.tr.tr("int-tg-no-chats"),
+                Some((id, name)) => {
+                    let (id, name) = (id.clone(), name.clone());
+                    let others = chats.len() - 1;
+                    self.save_prefs(ui, |p| {
+                        p.integrations.telegram.chat_id = id;
+                        p.integrations.telegram.chat_title = name.clone();
+                    });
+                    let mut w = format!("✓ {name}");
+                    if others > 0 {
+                        w.push_str(&format!(" (+{others})"));
+                    }
+                    w
+                }
+            },
+            Err(e) => format!("✗ {e}"),
+        };
+        self.int_state.insert(key.to_string(), (words, false));
+        self.settings_sync(ui);
+    }
+
+    /// What the sending queue said (ZK-101).
+    pub fn share_event(&mut self, ui: &AppWindow, ev: znimok_share::queue::Event) {
+        let i = self.prefs().integrations;
+        let (key, target, more) = crate::integrations::event_words(&ev);
+        let name = crate::integrations::target_name(&i, target);
+        let mut msg = self.tr.tr_args(key, &args(&[("target", name)]));
+        if let Some(m) = more.filter(|m| !m.is_empty()) {
+            msg = format!("{msg} — {m}");
+        }
+        self.toast(ui, msg);
+    }
+
+    /// The screenshot as the export sheet has it (format, quality, size) to a target.
+    fn share_shot(&mut self, ui: &AppWindow, target: &str) {
+        let Some(prefs) = self.exp.as_ref().map(|e| e.prefs.clone()) else {
+            return;
+        };
+        let Some((w, h, rgba)) = self.flatten() else {
+            return;
+        };
+        let (tw, th) = export_size(w, h, &prefs);
+        let (tw, th, rgba) = io::scaled(w, h, rgba, tw, th);
+        let meta = self.file_meta();
+        let bytes = match io::encode(
+            tw,
+            th,
+            &rgba,
+            export_encode(&prefs, prefs.format),
+            meta.as_ref(),
+        ) {
+            Ok(b) => b,
+            Err(e) => {
+                self.toast(ui, format!("{} ({e})", self.tr.tr("export-error")));
+                return;
+            }
+        };
+        let ext = export_ext(prefs.format);
+        let name = file_safe(ui.get_exp_name().trim());
+        let name = if name.is_empty() {
+            self.doc_name()
+        } else {
+            name
+        };
+        let item = znimok_share::Item {
+            file_name: format!("{name}.{ext}"),
+            mime: crate::integrations::mime_of(ext).into(),
+            title: name,
+            text: self
+                .s
+                .as_ref()
+                .map(|s| s.ed.doc.meta.description.clone())
+                .unwrap_or_default(),
+            kind: "screenshot".into(),
+        };
+        self.export_close(ui);
+        self.share_bytes(ui, target, item, &bytes);
+    }
+
+    /// The video export with the sheet's choices, to a target when it is done.
+    fn share_video(&mut self, ui: &AppWindow, target: &str) {
+        use crate::vexport::*;
+        if self.vexp_run.is_some() || matches!(self.vexp.kind, FRAME) {
+            return;
+        }
+        let name = file_safe(ui.get_exp_name().trim());
+        let name = if name.is_empty() {
+            self.doc_name()
+        } else {
+            name
+        };
+        let mut p = self.vexp.clone();
+        // Into the cache, as for the clipboard; `vexport_done` sends it.
+        p.to = TO_CLIPBOARD;
+        self.vexp_share = Some(target.to_string());
+        self.vexport_start(ui, &p, &name, true);
+    }
+
+    /// Sends a file to a target through the queue; the toast says it is on its way.
+    pub fn share_bytes(
+        &mut self,
+        ui: &AppWindow,
+        target: &str,
+        item: znimok_share::Item,
+        bytes: &[u8],
+    ) {
+        let Some(id) = znimok_share::TargetId::parse(target) else {
+            return;
+        };
+        let i = self.prefs().integrations;
+        let name = crate::integrations::target_name(&i, &id);
+        let msg = match crate::integrations::send(id, item, bytes) {
+            Ok(()) => self.tr.tr_args("share-queued", &args(&[("target", name)])),
+            Err(e) => format!("{} ({e})", self.tr.tr("share-queue-error")),
+        };
+        self.toast(ui, msg);
     }
 
     /// One control of the settings page changed. Numbers come as `value`; texts are read from
     /// the page's own fields.
     /// A text setting (ZK-98: the keys hidden in a report, comma-separated).
     pub fn setting_text(&mut self, ui: &AppWindow, key: &str, text: &str) {
+        if key.starts_with("int-") {
+            self.int_text(ui, key, text);
+            return;
+        }
         // The words before the date in new names (ZK-221).
         if key == "shot-prefix" {
             let t = text.trim().to_string();
@@ -1721,6 +2093,10 @@ impl App {
             "rec-open-editor" => self.save_prefs(ui, |p| p.video.open_editor = on),
             "rec-devlog" => self.save_prefs(ui, |p| p.video.devtools_log = on),
             "rec-ext-control" => self.save_prefs(ui, |p| p.video.extension_control = on),
+            "int-tg-enabled" => self.save_prefs(ui, |p| p.integrations.telegram.enabled = on),
+            "int-jira-enabled" => self.save_prefs(ui, |p| p.integrations.jira.enabled = on),
+            "int-slack-enabled" => self.save_prefs(ui, |p| p.integrations.slack.enabled = on),
+            "int-rm-enabled" => self.save_prefs(ui, |p| p.integrations.redmine.enabled = on),
             "lib-search-text" => {
                 self.save_prefs(ui, |p| p.library.search_text = on);
                 if !on {
@@ -8662,6 +9038,39 @@ impl App {
         self.vexp_run = None;
         self.vexp_timer = None;
         let fmt = p.name().to_string();
+        // Made for «Send to» (ZK-101): the file goes to the queue, not to the clipboard.
+        if let (Some(target), Ok((_, path))) = (self.vexp_share.take(), &r) {
+            let ext = path
+                .extension()
+                .and_then(|e| e.to_str())
+                .unwrap_or("mp4")
+                .to_string();
+            let file_name = path
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            match std::fs::read(path) {
+                Ok(bytes) => {
+                    let item = znimok_share::Item {
+                        title: path
+                            .file_stem()
+                            .map(|n| n.to_string_lossy().into_owned())
+                            .unwrap_or_default(),
+                        file_name,
+                        mime: crate::integrations::mime_of(&ext).into(),
+                        text: String::new(),
+                        kind: if p.kind == REPORT { "report" } else { "video" }.into(),
+                    };
+                    let _ = std::fs::remove_file(path);
+                    if self.vexp_open {
+                        self.vexport_close(ui);
+                    }
+                    self.share_bytes(ui, &target, item, &bytes);
+                }
+                Err(e) => self.toast(ui, format!("{} ({e})", self.tr.tr("share-queue-error"))),
+            }
+            return;
+        }
         let msg = match r {
             Ok((_, path)) => {
                 let shown = path
@@ -11883,6 +12292,12 @@ fn s_bars(a: &App, x: i32, y: i32) -> Option<(ObjectId, crate::video::Grip, (i64
     let bars = v.mark_bars(&t.marks, &s.ed.doc.objects, s.ed.selection());
     let (id, grip) = crate::video::Vid::bar_at(&bars, x, y)?;
     Some((id, grip, *t.marks.get(&id)?))
+}
+
+/// What a check of the integrations page found (ZK-101).
+enum Found {
+    Check(String),
+    Chats(Vec<(String, String)>),
 }
 
 #[cfg(test)]

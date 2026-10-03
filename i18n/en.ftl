@@ -6069,3 +6069,271 @@ report-copy-hint = Copy what the details show
 # @kind: tooltip
 # @max: 60
 report-tl-hint = Click or drag to move through the recording
+
+## Extensions and integrations, sending to targets (ZK-101)
+
+
+# @where: Settings: page in the left list — browser extension, Logi plugin, sharing targets
+# @kind: label
+# @max: 32
+set-page-integrations = Extensions and integrations
+
+# @where: Settings → Extensions and integrations: what the page is for
+# @kind: body
+# @max: 260
+int-intro = Znimok in the browser and on Logitech devices, and where «Send to» delivers a screenshot, a recording or a report. Tokens and keys stay in the system's secret store.
+
+# @where: Settings → Extensions and integrations: heading
+# @kind: label
+# @max: 30
+int-extensions = Extensions
+
+# @where: Settings → Extensions and integrations: the browser extension row
+# @kind: label
+# @max: 40
+int-chrome = Chrome and Edge extension
+
+# @where: Settings → Extensions and integrations: status — the extension or plugin is connected now
+# @kind: label
+# @max: 20
+int-connected = Connected
+
+# @where: Settings → Extensions and integrations: what the browser extension does (shown when not connected)
+# @kind: body
+# @max: 120
+int-chrome-off = The browser's DevTools log in recordings, and «Record this window»
+
+# @where: Settings → Extensions and integrations: button, open the Chrome Web Store page
+# @kind: label
+# @max: 24
+int-chrome-store = Chrome Web Store
+
+# @where: Settings → Extensions and integrations: the Logi Options+ plugin row
+# @kind: label
+# @max: 40
+int-logi = Logi Options+ plugin
+
+# @where: Settings → Extensions and integrations: what the Logi plugin does (shown when not connected)
+# @kind: body
+# @max: 120
+int-logi-off = Znimok on the MX Creative Console and the Actions Ring, haptics on the MX Master 4
+
+# @where: Settings → Extensions and integrations: button, open the plugin's page
+# @kind: label
+# @max: 20
+int-logi-page = The plugin
+
+# @where: Settings → Extensions and integrations: heading of the sharing targets
+# @kind: label
+# @max: 30
+int-targets = Send to
+
+# @where: Settings → Extensions and integrations: how the targets work
+# @kind: body
+# @max: 240
+int-targets-hint = Switched on and filled in, a target appears in «Send to» on the card after a shot and in the export sheets. If it cannot be reached, Znimok tries again later.
+
+# @where: Settings → Extensions and integrations: the target of a one-click «Send»
+# @kind: label
+# @max: 30
+int-default = In one click
+
+# @where: Settings → Extensions and integrations: option — no default target, the menu asks
+# @kind: label
+# @max: 16
+int-default-ask = Ask
+
+# @where: Settings → Extensions and integrations: how to set up Telegram
+# @kind: body
+# @max: 200
+int-tg-how = Make a bot with @BotFather, paste its token here, write anything to the bot, then «Find the chat».
+
+# @where: Settings → Extensions and integrations: placeholder of a secret field that has a saved value
+# @kind: label
+# @max: 60
+int-secret-saved = Saved — type a new one to replace it
+
+# @where: Settings → Extensions and integrations: placeholder, the Telegram bot token
+# @kind: label
+# @max: 30
+int-tg-token = Bot token
+
+# @where: Settings → Extensions and integrations: placeholder, the Telegram chat
+# @kind: label
+# @max: 30
+int-tg-chat = Chat ID or @channel
+
+# @where: Settings → Extensions and integrations: button, find the chat that wrote to the bot
+# @kind: label
+# @max: 20
+int-tg-find = Find the chat
+
+# @where: Settings → Extensions and integrations: no one has written to the bot yet
+# @kind: body
+# @max: 120
+int-tg-no-chats = No chats yet — write anything to the bot in Telegram, then try again.
+
+# @where: Settings → Extensions and integrations: button, check the connection
+# @kind: label
+# @max: 16
+int-check = Check
+
+# @where: Settings → Extensions and integrations: a check runs
+# @kind: label
+# @max: 30
+int-checking = Checking…
+
+# @where: Message sent to Telegram or a webhook by «Check»
+# @kind: body
+# @max: 80
+int-probe = Znimok: the connection works ✓
+
+# @where: Settings → Extensions and integrations: how to set up Jira
+# @kind: body
+# @max: 240
+int-jira-how = Jira Cloud: your site, your e-mail and an API token (id.atlassian.com → Security → API tokens). Without an issue, each sending makes a new one in the project.
+
+# @where: Settings → Extensions and integrations: placeholder, the Jira site
+# @kind: label
+# @max: 40
+int-jira-site = Site: your-team.atlassian.net
+
+# @where: Settings → Extensions and integrations: placeholder, the e-mail
+# @kind: label
+# @max: 16
+int-jira-email = E-mail
+
+# @where: Settings → Extensions and integrations: placeholder, the Jira API token
+# @kind: label
+# @max: 20
+int-jira-token = API token
+
+# @where: Settings → Extensions and integrations: placeholder, the project key
+# @kind: label
+# @max: 20
+int-jira-project = Project key
+
+# @where: Settings → Extensions and integrations: placeholder, an issue to attach to
+# @kind: label
+# @max: 24
+int-jira-issue = Issue (optional)
+
+# @where: Settings → Extensions and integrations: placeholder, the type of a new issue
+# @kind: label
+# @max: 24
+int-jira-type = Type of a new issue
+
+# @where: Settings → Extensions and integrations: how to set up Slack
+# @kind: body
+# @max: 260
+int-slack-how = A Slack app with the files:write and chat:write scopes, installed to the workspace and added to the channel: its bot token (xoxb-…) and the channel's ID (the channel's details, at the bottom).
+
+# @where: Settings → Extensions and integrations: placeholder, the Slack bot token
+# @kind: label
+# @max: 24
+int-slack-token = Bot token (xoxb-…)
+
+# @where: Settings → Extensions and integrations: placeholder, the channel ID
+# @kind: label
+# @max: 24
+int-slack-channel = Channel ID (C0…)
+
+# @where: Settings → Extensions and integrations: how to set up Redmine
+# @kind: body
+# @max: 240
+int-rm-how = The REST API switched on in Redmine's administration, and your API key (My account → API access key). Without an issue, each sending makes a new one in the project.
+
+# @where: Settings → Extensions and integrations: placeholder, the Redmine address
+# @kind: label
+# @max: 44
+int-rm-url = Address: https://redmine.example.com
+
+# @where: Settings → Extensions and integrations: placeholder, the Redmine API key
+# @kind: label
+# @max: 16
+int-rm-key = API key
+
+# @where: Settings → Extensions and integrations: placeholder, the project identifier
+# @kind: label
+# @max: 24
+int-rm-project = Project identifier
+
+# @where: Settings → Extensions and integrations: placeholder, an issue number
+# @kind: label
+# @max: 32
+int-rm-issue = Issue number (optional)
+
+# @where: Settings → Extensions and integrations: the webhooks heading
+# @kind: label
+# @max: 20
+int-webhooks = Webhooks
+
+# @where: Settings → Extensions and integrations: what a webhook sends
+# @kind: body
+# @max: 240
+int-webhooks-how = For n8n, Zapier, Make or a server of your own: a POST with two parts, meta (JSON) and file; a header you set, e.g. Authorization, goes with it.
+
+# @where: Settings → Extensions and integrations: button, add a webhook
+# @kind: label
+# @max: 24
+int-webhook-add = Add a webhook
+
+# @where: Settings → Extensions and integrations: a webhook without a name
+# @kind: label
+# @max: 16
+int-webhook = Webhook
+
+# @where: Settings → Extensions and integrations: button, remove the webhook
+# @kind: label
+# @max: 16
+int-webhook-remove = Remove
+
+# @where: Settings → Extensions and integrations: placeholder, the webhook's name in the menu
+# @kind: label
+# @max: 24
+int-webhook-name = Name in the menu
+
+# @where: Settings → Extensions and integrations: placeholder, the header's name
+# @kind: label
+# @max: 32
+int-webhook-header = Header, e.g. Authorization
+
+# @where: Settings → Extensions and integrations: placeholder, the header's secret value
+# @kind: label
+# @max: 32
+int-webhook-value = Its value, e.g. Bearer …
+
+# @where: Toast: a file is on its way to a target; $target its name
+# @kind: body
+# @max: 80
+share-queued = Sending to { $target }…
+
+# @where: Toast: a file was delivered; $target its name
+# @kind: body
+# @max: 80
+share-sent = Sent to { $target }
+
+# @where: Toast: sending failed for now, Znimok tries again later; $target its name
+# @kind: body
+# @max: 120
+share-retrying = Could not send to { $target } — I will try again
+
+# @where: Toast: sending failed for good; $target its name
+# @kind: body
+# @max: 80
+share-failed = Not sent to { $target }
+
+# @where: Toast: the file could not be put into the sending queue
+# @kind: body
+# @max: 80
+share-queue-error = Could not prepare the sending
+
+# @where: Export sheet: heading of the row of sharing targets
+# @kind: label
+# @max: 24
+share-send-to = Send to
+
+# @where: After-capture card: button, send to the quick target; {0} its name
+# @kind: label
+# @max: 40
+share-send-to-one = Send to { $target }
