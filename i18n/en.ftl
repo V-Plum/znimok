@@ -5974,3 +5974,38 @@ report-cmp-new = Not in the baseline
 # @kind: body
 # @max: 90
 report-cmp-full = The browser's storage is full — export the baseline as a file instead.
+
+# @where: Report page: the chip that filters PostHog's requests and console lines
+# @kind: label
+# @max: 12
+report-chip-posthog = PostHog
+
+# @where: Report page: the details tab of a PostHog request — its events, flags or replay packet
+# @kind: label
+# @max: 12
+report-tab-posthog = PostHog
+
+# @where: Report page: tooltip of the button that copies a request as a cURL command
+# @kind: tooltip
+# @max: 30
+report-curl = Copy as cURL
+
+# @where: Report page: tooltip of the button that copies a link to this event and moment
+# @kind: tooltip
+# @max: 40
+report-link = Copy a link to this moment
+
+# @where: Report page: tooltip of the search field — the operators it understands
+# @kind: tooltip
+# @max: 120
+report-search-hint = Words, -words, status:5xx · method:post · host:posthog · type:xhr · dur>300
+
+# @where: Report page, PostHog: how many feature flags came, how many are on
+# @kind: body
+# @max: 40
+report-ph-flags = { n } flags, { on } on
+
+# @where: Report page, PostHog: a session replay packet with so many snapshots
+# @kind: body
+# @max: 40
+report-ph-replay = session replay: { n } snapshots
