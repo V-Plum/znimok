@@ -3,7 +3,8 @@
 <title>{{TITLE}}</title>
 <style>
 :root{color-scheme:light dark;--bg:#f3f4f7;--panel:#fff;--soft:#f0f2f6;--line:#dde0e7;--fg:#15171c;--fg2:#3d424d;--muted:#6a707d;--accent:#2f6fed;--sel:#dfe9ff;
---err:#d0343a;--warn:#a86400;--dl:#7446d8;--nav:#2f6fed;--net:#5a606d;--click:#b98700;--ok:#1f8a4c;--mono:ui-monospace,"JetBrains Mono","Cascadia Mono",Consolas,monospace;--ar:calc({{VW}} / {{VH}})}
+--err:#d0343a;--warn:#a86400;--dl:#7446d8;--nav:#2f6fed;--net:#5a606d;--click:#b98700;--ok:#1f8a4c;--mono:ui-monospace,"JetBrains Mono","Cascadia Mono",Consolas,monospace;--ar:calc({{VW}} / {{VH}});
+--w2:max(360px,26vw);--w3:max(380px,30vw);--h2:50%}
 @media (prefers-color-scheme:dark){:root{--bg:#0e1014;--panel:#16191f;--soft:#1d2129;--line:#2a2f39;--fg:#e9ebef;--fg2:#c3c7cf;--muted:#8f96a3;--accent:#74a2ff;--sel:#223355;
 --err:#ff6b70;--warn:#f0a431;--dl:#ae7bff;--nav:#74a2ff;--net:#9aa1ad;--click:#f2c230;--ok:#4cc27d}}
 *{box-sizing:border-box}
@@ -18,7 +19,14 @@ h1{font-size:16px;margin:0;font-weight:650;max-width:100%;white-space:nowrap;ove
 .masked{color:var(--warn)}
 .dl{display:flex;gap:12px;font-size:12px;margin-left:auto}
 .dl a{color:var(--accent);cursor:pointer}
-main{display:grid;gap:10px;padding:0 14px;min-height:0;grid-template-columns:minmax(0,1fr) minmax(360px,26vw) minmax(380px,30vw)}
+main{display:grid;gap:10px;padding:0 14px;min-height:0;grid-template-columns:minmax(0,1fr) var(--w2) var(--w3)}
+.gut{position:absolute;z-index:2;left:-8px;top:0;bottom:0;width:12px;cursor:col-resize;touch-action:none}
+.pane{position:relative}
+.fold .log,.fold .det,.nodet .det{display:none}
+.fold main,.nodet main{grid-template-columns:minmax(0,1fr) var(--w2)}
+.fold main{grid-template-columns:minmax(0,1fr)}
+.unfold{position:fixed;right:14px;bottom:36px;z-index:3;display:none;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:5px 10px;font-size:12px;box-shadow:0 2px 8px #0003}
+.fold .unfold,.nodet .unfold{display:block}
 .stage{container-type:size;display:grid;place-items:start center;min-height:0;min-width:0}
 .fit{display:grid;gap:8px;width:min(100cqw,calc((100cqh - 38px) * var(--ar)))}
 .v{position:relative;line-height:0;border-radius:8px;overflow:hidden;background:#000;aspect-ratio:var(--ar)}
@@ -75,8 +83,10 @@ pre+pre,.kv+pre,pre+.kv{margin-top:10px;padding-top:10px;border-top:1px dashed v
 footer{display:flex;gap:16px;justify-content:space-between;color:var(--muted);font-size:11.5px;padding:7px 14px 9px}
 footer span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
 @media (max-width:1499px){
-main{grid-template-columns:minmax(0,1fr) minmax(360px,42%);grid-template-rows:minmax(0,1fr) minmax(0,1fr)}
+main{--w2:max(360px,42vw);grid-template-columns:minmax(0,1fr) var(--w2);grid-template-rows:minmax(120px,var(--h2)) minmax(120px,1fr)}
 .stage{grid-row:1/3}
+.nodet main{grid-template-rows:minmax(0,1fr)}
+.det .gut{left:0;right:0;top:-8px;bottom:auto;height:12px;width:auto;cursor:row-resize}
 }
 @media (max-width:899px){
 main{grid-template-columns:minmax(0,1fr);grid-template-rows:auto minmax(0,1fr)}
@@ -84,6 +94,7 @@ main{grid-template-columns:minmax(0,1fr);grid-template-rows:auto minmax(0,1fr)}
 .meta{flex:1 0 100%;order:1}
 .x{display:none}
 .log,.det{grid-area:2/1}
+.gut{display:none}
 .det{display:none}
 .open .det{display:flex}
 .open .log{display:none}
@@ -94,7 +105,7 @@ main{grid-template-columns:minmax(0,1fr);grid-template-rows:auto minmax(0,1fr)}
 }
 .nolog main{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,1fr)}
 .nolog .stage{grid-row:auto;height:auto}
-.nolog .log,.nolog .det,.nolog .tl{display:none}
+.nolog .log,.nolog .det,.nolog .tl,.nolog .unfold{display:none}
 .nolog #keys{display:inline}
 @media (prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}}
 </style></head><body>
@@ -103,9 +114,10 @@ main{grid-template-columns:minmax(0,1fr);grid-template-rows:auto minmax(0,1fr)}
 <section class="stage"><div class="fit"><div class="v"><video controls playsinline preload="auto" src="{{VIDEO}}"></video>
 {{LAYERS}}</div>
 <div class="tl" id="tl"><div class="sm"></div><div class="ph"></div></div></div></section>
-<section class="pane log" id="log"></section>
-<section class="pane det" id="det"></section>
+<section class="pane log" id="log"><div class="gut"></div></section>
+<section class="pane det" id="det"><div class="gut"></div></section>
 </main>
+<button class="unfold" id="unfold" type="button"></button>
 <footer><span id="foot"></span><span id="keys"></span></footer>
 <script type="application/json" id="zn-data">{{DATA}}</script>
 <script>
@@ -125,7 +137,7 @@ if (marks.length) (function f() { const t = v.currentTime; for (const [e, r] of 
 const meta = document.getElementById("meta");
 for (const [k, val] of D.meta.rows) { const s = $("span"); s.append($("b", null, k + ": "), val); meta.append(s); }
 if (D.meta.masked) meta.append($("span", "masked", D.meta.masked));
-document.getElementById("foot").textContent = [D.meta.rights, D.meta.foot].filter(Boolean).join("  ·  ");
+{ const f = document.getElementById("foot"); if (D.meta.rights) f.append(D.meta.rights, "  ·  "); if (D.meta.link) { const a = $("a", null, D.meta.foot); a.href = D.meta.link; a.target = "_blank"; a.rel = "noopener"; f.append(a); } else f.append(D.meta.foot || ""); }
 
 const ev = D.events;
 const log = document.getElementById("log"), det = document.getElementById("det");
@@ -199,8 +211,35 @@ const dlOnly = ev.filter((e) => e.k === "dl");
 if (dlOnly.length) dls.append(save("dataLayer.json", dlOnly.map((e) => ({ at: e.at, event: e.ev, data: e.data }))));
 const bar = $("div", "bar"), search = $("input"), chips = $("div", "chips"), list = $("div", "list");
 search.type = "search"; search.placeholder = L("devp-search");
+// The panes: dragged wider or taller by their edges, folded away; the browser remembers.
+const gutLog = log.querySelector(".gut"), gutDet = det.querySelector(".gut"), unfold = document.getElementById("unfold");
+const store = (k, v) => { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, JSON.stringify(v)); } catch (x) { /* no storage */ } };
+const load = (k) => { try { return JSON.parse(localStorage.getItem(k)); } catch (x) { return null; } };
+const lay = load("zn-layout") || {};
+const wide = () => innerWidth >= 1500, mainEl = document.querySelector("main");
+const applyLay = () => { for (const [k, v] of [["w2", wide() ? lay.w2 : lay.v2], ["w3", lay.w3], ["h2", lay.h2]]) mainEl.style.setProperty("--" + k, v ? v + "px" : ""); B.classList.toggle("fold", !!lay.fold); B.classList.toggle("nodet", !lay.fold && !!lay.nodet); unfold.textContent = lay.fold ? "⇤ " + L("report-log") : "⇤ " + L("report-tab-details"); };
+applyLay();
+addEventListener("resize", applyLay);
+unfold.onclick = () => { lay.fold = false; lay.nodet = false; store("zn-layout", lay); applyLay(); };
+for (const [g, pane] of [[gutLog, "log"], [gutDet, "det"]]) {
+  g.onpointerdown = (k) => {
+    // A pane's left edge dragged left makes it wider; the details' top edge dragged down makes
+    // the list taller.
+    const row = getComputedStyle(g).cursor === "row-resize", x0 = k.clientX, y0 = k.clientY;
+    const w0 = (pane === "log" ? log : det).getBoundingClientRect().width, h0 = log.getBoundingClientRect().height;
+    g.setPointerCapture(k.pointerId);
+    g.onpointermove = (m) => {
+      if (!g.hasPointerCapture(m.pointerId)) return;
+      if (row) lay.h2 = Math.max(120, h0 + (m.clientY - y0));
+      else lay[pane === "log" ? (wide() ? "w2" : "v2") : "w3"] = Math.min(innerWidth * 0.6, Math.max(300, w0 + (x0 - m.clientX)));
+      applyLay();
+    };
+    g.onpointerup = () => { g.onpointermove = null; store("zn-layout", lay); };
+  };
+}
+const foldBtn = btn("ib", "⇥", L("report-fold"), () => { lay.fold = true; store("zn-layout", lay); applyLay(); });
 const chipEls = CHIPS.map(([k], i) => { const b = btn("chip", null, null, () => { chip = i; refilter(); }); chips.append(b); return b; });
-bar.append(search, chips);
+bar.append(search, chips, foldBtn);
 log.append(bar, list);
 
 let chip = 0, shown = [], rows = [], sel = -1, cur = -1, pin = -1;
@@ -352,7 +391,7 @@ function pick(i) {
 }
 function close() { sel = -1; pin = -1; for (const r of rows) r.classList.remove("sel"); details(); }
 function details() {
-  det.textContent = "";
+  det.replaceChildren(gutDet);
   B.classList.toggle("open", sel >= 0);
   sm.style.display = sel >= 0 ? "block" : "none";
   if (sel < 0) { det.append($("div", "empty", L("report-pick"))); return; }
@@ -368,7 +407,7 @@ function details() {
     const s = body.innerText, done = () => { copy.textContent = "✓"; setTimeout(() => { copy.textContent = L("report-copy"); }, 1200); };
     (navigator.clipboard ? navigator.clipboard.writeText(s) : Promise.reject()).then(done, () => { const a = $("textarea"); a.value = s; B.append(a); a.select(); document.execCommand("copy"); a.remove(); done(); });
   });
-  head.append(btn("ib back", "←", L("common-close"), close), $("span", "kd c" + cls(e), label(e)), $("span", "tm", fmt(e.at)), ttl, copy, btn("ib x", "✕", L("common-close"), close));
+  head.append(btn("ib back", "←", L("common-close"), close), $("span", "kd c" + cls(e), label(e)), $("span", "tm", fmt(e.at)), ttl, copy, btn("ib x", "✕", L("common-close"), close), btn("ib x", "⇥", L("report-fold"), () => { lay.nodet = true; store("zn-layout", lay); applyLay(); }));
   const bar = $("div", "tabs");
   tabs.forEach(([name, ok], i) => { const b = btn("tab" + (i === on ? " on" : ""), L(name), null, () => { tabOf[k] = name; details(); }); b.disabled = !ok; bar.append(b); });
   det.append(head, bar, body);
