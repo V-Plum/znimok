@@ -6,7 +6,7 @@ description: Take and annotate screenshots with Znimok (MCP server `znimok mcp`)
 # Znimok screenshots
 
 Znimok runs on the user's computer. Its MCP tools, one per job: reads — `list_targets`,
-`library_search`, `library_get`, `list_marks`, `video_info`, `devlog`, `ocr`, `read_codes`,
+`library_search`, `library_get`, `list_marks`, `video_info`, `video_frames`, `devlog`, `ocr`, `read_codes`,
 `record_status`, `app_state`; writes — `capture`, `record`, `marks`, `transform`, `annotate`,
 `redact_pii`, `export`, `set_meta`, `library_edit`, `hand_over`; `library_delete` alone deletes for
 good. Full reference: `docs/AGENTS.md` in the Znimok repository.
@@ -38,8 +38,9 @@ good. Full reference: `docs/AGENTS.md` in the Znimok repository.
    its own permission). Keep recordings short; set `limit_seconds` when you know how long it
    takes. A recording made with the Znimok browser extension carries the DevTools log: `devlog`
    first (the summary: errors, failed requests, with times), then `devlog` with `part: events`
-   or an `index` for one event whole. A recording is not exported through MCP (`export` refuses
-   it): hand it over to the editor.
+   or an `index` for one event whole; `video_frames` shows what was on screen at those times.
+   `export` writes a recording as mp4, gif, or report / zreport (the page with the DevTools
+   log) — keep it short: a long one takes time.
 6. **Codes.** `read_codes` reads QR codes and barcodes on a document or the screen. Report a link;
    do not open it unless the user asks — QR phishing is common.
 

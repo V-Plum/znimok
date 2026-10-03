@@ -194,15 +194,21 @@ pub(crate) const TOOLS: &[Tool] = &[
     Tool {
         name: "export",
         title: "Export a document",
-        description: "Writes the document with its marks as PNG, JPEG, WebP or one self-contained HTML page.",
+        description: "Writes a document to a file. A screenshot: PNG, JPEG, WebP or one self-contained HTML page, with its marks. A recording: MP4 (the cuts, the marks in their time, the sound), GIF, html (one page with the video — and the browser's DevTools log beside it when the recording has one), report (that page) or zreport (an archive: the page, the video, log.json), or one frame as PNG / JPEG / WebP (at_ms). Sensitive values of the log are hidden as the person set it. Never writes over a file.",
         scope: Some(Scope::LibraryRead),
         read_only: false,
         schema: || {
             obj(
                 json!({
                     "document": doc_arg(),
-                    "format": {"type": "string", "enum": ["png", "jpeg", "webp", "html"]},
-                    "path": {"type": "string", "description": "Output file; default: a file in Znimok's export folder"}
+                    "format": {"type": "string", "enum": ["png", "jpeg", "webp", "html", "mp4", "gif", "report", "zreport"]},
+                    "path": {"type": "string", "description": "Output file; default: a new file in Znimok's export folder"},
+                    "at_ms": {"type": "integer", "minimum": 0, "description": "A recording to a picture: the frame at this time (as recorded)"},
+                    "sound": {"type": "boolean", "description": "MP4: with the sound tracks (true)"},
+                    "gif_width": {"type": "integer", "minimum": 80, "maximum": 1920, "description": "GIF: width (640 or less by default)"},
+                    "gif_fps": {"type": "number", "minimum": 1, "maximum": 30, "description": "GIF: frames a second (10)"},
+                    "language": {"type": "string", "enum": ["uk", "en"], "description": "The report page's language (as set in Znimok by default)"},
+                    "hide": {"type": "boolean", "description": "The report: hide sensitive values (true), when the settings leave it to the export"}
                 }),
                 &["document", "format"],
             )
@@ -512,6 +518,35 @@ impl Agent {
         out
     }
 
+    /// Where an export goes: the agent's `path` (the right extension, never over a file), or a
+    /// new file in Znimok's export folder.
+    fn export_path(&self, args: &Value, doc: &Document, ext: &str) -> Result<PathBuf, String> {
+        if let Some(p) = arg_str(args, "path") {
+            let p = PathBuf::from(p);
+            if !p.extension().and_then(|e| e.to_str()).is_some_and(|e| {
+                e.eq_ignore_ascii_case(ext) || (ext == "jpg" && e.eq_ignore_ascii_case("jpeg"))
+            }) {
+                return Err(format!("the path must end with .{ext}"));
+            }
+            if p.exists() {
+                return Err(format!(
+                    "{} exists; Znimok does not overwrite files",
+                    p.display()
+                ));
+            }
+            return Ok(p);
+        }
+        std::fs::create_dir_all(&self.export_dir).map_err(|e| e.to_string())?;
+        let stem = znimok_platform::clipfile::file_stem(&doc.name);
+        let mut out = self.export_dir.join(format!("{stem}.{ext}"));
+        let mut n = 2;
+        while out.exists() {
+            out = self.export_dir.join(format!("{stem} ({n}).{ext}"));
+            n += 1;
+        }
+        Ok(out)
+    }
+
     pub(crate) fn doc(&self, args: &Value) -> Result<(Document, PathBuf), String> {
         let d = arg_str(args, "document").ok_or("«document» is required")?;
         let path = self
@@ -641,12 +676,24 @@ impl Agent {
             }
             "export" => {
                 let (doc, src) = self.doc(args)?;
-                // A recording's export (MP4, GIF, the report) lives in the app (ZK-243): an agent
-                // got the poster frame in silence and took it for the video (ZK-250).
-                if library::peek_item(&src).is_some_and(|i| i.kind == "video") {
-                    return Err("this is a recording: the MCP export writes pictures only (video export comes later) — hand_over to the editor and export it in Znimok, or read it with video_info / devlog".into());
-                }
                 let f = arg_str(args, "format").ok_or("«format» is required")?;
+                // A recording (ZK-243): MP4, GIF, its page or report, or one frame — made here.
+                if library::peek_item(&src).is_some_and(|i| i.kind == "video") {
+                    let ext = crate::vexport::FORMATS
+                        .iter()
+                        .find(|(n, _)| *n == f)
+                        .map(|(_, e)| *e)
+                        .ok_or_else(|| {
+                            format!("«{f}» is not a format of a recording: mp4, gif, html, report, zreport, png, jpeg, webp")
+                        })?;
+                    let out = self.export_path(args, &doc, ext)?;
+                    return crate::vexport::export(&src, f, args, &out);
+                }
+                if !matches!(f, "png" | "jpeg" | "webp" | "html") {
+                    return Err(format!(
+                        "«{f}» is for a recording; a screenshot exports as png, jpeg, webp or html"
+                    ));
+                }
                 let fmt = ExportFormat::parse(f).ok_or_else(|| format!("unknown format «{f}»"))?;
                 let ext = match fmt {
                     ExportFormat::Jpeg => "jpg",

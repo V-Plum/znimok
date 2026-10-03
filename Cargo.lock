@@ -6791,6 +6791,7 @@ dependencies = [
  "uuid",
  "znimok-codes",
  "znimok-core",
+ "znimok-export",
  "znimok-format",
  "znimok-html",
  "znimok-i18n",
@@ -6799,6 +6800,7 @@ dependencies = [
  "znimok-mask",
  "znimok-models",
  "znimok-platform",
+ "znimok-play",
  "znimok-render",
  "znimok-report",
  "znimok-settings",
@@ -6920,14 +6922,17 @@ dependencies = [
 name = "znimok-export"
 version = "0.0.13"
 dependencies = [
+ "chrono",
  "gif",
  "png",
  "serde_json",
  "znimok-core",
  "znimok-format",
+ "znimok-i18n",
  "znimok-play",
  "znimok-render",
  "znimok-report",
+ "znimok-settings",
  "znimok-video",
  "znimok-video-mac",
  "znimok-video-win",

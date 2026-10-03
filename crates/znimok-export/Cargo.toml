@@ -18,6 +18,9 @@ znimok-render = { path = "../znimok-render" }
 znimok-video = { path = "../znimok-video" }
 znimok-play = { path = "../znimok-play" }
 znimok-report = { path = "../znimok-report" }
+znimok-i18n = { path = "../znimok-i18n" }
+znimok-settings = { path = "../znimok-settings" }
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 serde_json = "1"
 png = "0.18"
 

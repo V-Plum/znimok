@@ -24,6 +24,9 @@ use znimok_video::edit::VideoEdit;
 use znimok_video::export::{KeepSeg, kept_frames, src_of_out};
 use znimok_video::gifenc;
 
+mod report_opts;
+pub use report_opts::{REPORT_STRINGS, report_options, site_url};
+
 /// What to make.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Kind {

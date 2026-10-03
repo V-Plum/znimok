@@ -22,6 +22,8 @@ znimok-settings = { path = "../znimok-settings" }
 znimok-ipc = { path = "../znimok-ipc" }
 znimok-html = { path = "../znimok-html" }
 znimok-report = { path = "../znimok-report" }
+znimok-export = { path = "../znimok-export" }
+znimok-play = { path = "../znimok-play" }
 znimok-i18n = { path = "../znimok-i18n" }
 znimok-codes = { path = "../znimok-codes" }
 serde = { version = "1", features = ["derive"] }

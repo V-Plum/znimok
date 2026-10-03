@@ -8290,98 +8290,25 @@ impl App {
             znimok_settings::HideOnExport::Ask => p.hide,
         };
         // The page speaks the language chosen for it, not the interface's (ZK-245).
+        let lang = self.report_lang(&prefs.video);
         let own;
-        let tr: &Localizer = if self.report_lang(&prefs.video) == self.tr.lang() {
+        let tr: &Localizer = if lang == self.tr.lang() {
             &self.tr
         } else {
-            own = Localizer::new(self.report_lang(&prefs.video));
+            own = Localizer::new(lang);
             &own
         };
-        let mut rows = Vec::new();
-        // Who recorded it and whose it is — when the person signs their reports.
-        let v = &prefs.video;
-        let by = [v.sign_name.as_str(), v.sign_contact.as_str()]
-            .into_iter()
-            .filter(|s| !s.is_empty())
-            .collect::<Vec<_>>()
-            .join(", ");
-        if v.report_sign && !by.is_empty() {
-            rows.push((tr.tr("report-author"), by));
-        }
-        let rights = if v.report_sign {
-            v.sign_rights.clone()
-        } else {
-            String::new()
-        };
-        if s.ed.doc.meta.created_ms > 0
-            && let Some(t) = chrono::DateTime::from_timestamp_millis(s.ed.doc.meta.created_ms)
-        {
-            rows.push((
-                tr.tr("report-recorded"),
-                t.with_timezone(&chrono::Local)
-                    .format("%d.%m.%Y %H:%M")
-                    .to_string(),
-            ));
-        }
-        if let Some(v) = s.vid.as_ref() {
-            rows.push((
-                tr.tr("report-length"),
-                crate::video::fmt_time(v.kept() as f64 / v.fps.max(1e-6)),
-            ));
-        }
-        let (_, out) = znimok_export::out_geometry(&s.ed.doc, &part.video);
-        rows.push((tr.tr("report-size"), format!("{} × {}", out.0, out.1)));
-        // Where it was recorded: the browser and the page the log starts on.
-        let events: Vec<serde_json::Value> = part
-            .video
-            .devlog
-            .as_ref()
-            .map(|l| {
-                l.events
-                    .iter()
-                    .take(200)
-                    .filter_map(|e| serde_json::from_str(&e.json).ok())
-                    .collect()
-            })
-            .unwrap_or_default();
-        if let Some(b) = events.iter().find_map(|e| e["b"].as_str()) {
-            rows.push((tr.tr("report-browser"), b.to_string()));
-        }
-        if let Some(u) = events
-            .iter()
-            .filter(|e| e["k"] == "tab" || e["k"] == "nav")
-            .filter_map(|e| e["url"].as_str())
-            // The site, not the browser's own page the recording started on (ZK-246).
-            .find(|u| u.starts_with("http://") || u.starts_with("https://"))
-        {
-            rows.push((tr.tr("report-page"), u.to_string()));
-        }
-        let mut strings = std::collections::BTreeMap::new();
-        for k in REPORT_STRINGS {
-            strings.insert(k.to_string(), tr.tr(k));
-        }
-        strings.insert(
-            "devp-binary".into(),
-            tr.tr_args("devp-binary", &args(&[("size", "{size}".to_string())])),
-        );
+        let seconds = s.vid.as_ref().map(|v| v.kept() as f64 / v.fps.max(1e-6));
         Some(znimok_export::Kind::Report(Box::new(
-            znimok_export::ReportOptions {
-                zip: p.zreport,
-                mask: hide.then(|| prefs.video.hide_keys.clone()),
-                meta: znimok_report::Meta {
-                    title: s.ed.doc.name.clone(),
-                    rows,
-                    masked: tr.tr_args("report-masked", &args(&[("n", "{n}".to_string())])),
-                    foot: tr.tr_args(
-                        "report-foot",
-                        &args(&[("version", env!("CARGO_PKG_VERSION").to_string())]),
-                    ),
-                    rights,
-                    link: site_url(tr.lang()).into(),
-                    ..Default::default()
-                },
-                strings,
-            },
+            znimok_export::report_options(
+                &s.ed.doc,
+                &part.video,
+                &prefs,
+                tr,
+                seconds,
+                p.zreport,
+                hide,
+            ),
         )))
     }
 
@@ -10063,22 +9990,13 @@ fn wave_pixels(
 fn about_link(i: usize, lang: &str) -> Option<&'static str> {
     let uk = lang == "uk";
     Some(match i {
-        0 => site_url(lang),
+        0 => znimok_export::site_url(lang),
         1 => "https://github.com/V-Plum/znimok",
         2 if uk => "https://github.com/V-Plum/znimok/blob/main/docs/privacy.md",
         2 => "https://github.com/V-Plum/znimok/blob/main/docs/privacy.en.md",
         3 => "https://github.com/V-Plum/znimok/blob/main/LICENSE",
         _ => return None,
     })
-}
-
-/// Znimok's site in a language: the Ukrainian page, else the English one.
-fn site_url(lang: &str) -> &'static str {
-    if lang == "uk" {
-        "https://v-plum.github.io/znimok/"
-    } else {
-        "https://v-plum.github.io/znimok/en/"
-    }
 }
 
 /// «build 1a2b3c4 · Windows x86_64» (ZK-198): the commit the release was built from (CI sets
@@ -11940,91 +11858,6 @@ fn s_bars(a: &App, x: i32, y: i32) -> Option<(ObjectId, crate::video::Grip, (i64
     let (id, grip) = crate::video::Vid::bar_at(&bars, x, y)?;
     Some((id, grip, *t.marks.get(&id)?))
 }
-
-/// The words of the report's viewer (ZK-98), by their keys.
-const REPORT_STRINGS: &[&str] = &[
-    "report-tab-details",
-    "report-drag",
-    "report-fold-log",
-    "report-show-log",
-    "report-fold-det",
-    "report-show-det",
-    "report-files",
-    "report-download",
-    "report-more",
-    "report-cmp-hint",
-    "report-copy-hint",
-    "report-tl-hint",
-    "report-page",
-    "report-chip-posthog",
-    "report-tab-posthog",
-    "report-curl",
-    "report-link",
-    "report-search-hint",
-    "report-ph-flags",
-    "report-ph-replay",
-    "report-cmp",
-    "report-cmp-save",
-    "report-cmp-name",
-    "report-cmp-import",
-    "report-cmp-export",
-    "report-cmp-stop",
-    "report-cmp-none",
-    "report-cmp-sum",
-    "report-cmp-only",
-    "report-cmp-gone",
-    "report-cmp-new",
-    "report-cmp-full",
-    "common-delete",
-    "report-pick",
-    "report-copy",
-    "report-h-type",
-    "report-h-size",
-    "report-h-source",
-    "report-h-title",
-    "report-chip-clicks",
-    "report-click",
-    "report-keys",
-    "devp-search",
-    "devp-empty",
-    "devp-chip-all",
-    "devp-chip-errors",
-    "devp-chip-warnings",
-    "devp-chip-network",
-    "devp-chip-console",
-    "devp-chip-nav",
-    "devp-chip-datalayer",
-    "devp-tab-headers",
-    "devp-tab-payload",
-    "devp-tab-preview",
-    "devp-tab-response",
-    "devp-tab-timing",
-    "devp-general",
-    "devp-res-headers",
-    "devp-req-headers",
-    "devp-h-url",
-    "devp-h-method",
-    "devp-h-status",
-    "devp-h-remote",
-    "devp-h-protocol",
-    "devp-h-initiator",
-    "devp-h-cache",
-    "devp-h-error",
-    "devp-stack",
-    "devp-nothing",
-    "devp-dl-pre",
-    "devp-dl-frame",
-    "devp-t-queue",
-    "devp-t-dns",
-    "devp-t-connect",
-    "devp-t-tls",
-    "devp-t-send",
-    "devp-t-wait",
-    "devp-t-download",
-    "devp-t-total",
-    "report-no-log",
-    "common-close",
-];
 
 #[cfg(test)]
 mod wave_tests {

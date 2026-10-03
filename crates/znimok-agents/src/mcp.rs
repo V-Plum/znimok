@@ -28,7 +28,7 @@ and tags; redact_pii hides secrets; ocr reads text (find looks a word up); read_
 library_search finds documents (kind, tags, pinned, with a browser log); library_edit imports, copies, \
 trashes and restores; library_delete deletes for good (the person confirms every time). record starts, \
 pauses and stops a screen recording (sound only with the person's separate permission); video_info and \
-devlog read a recording and its DevTools log. export writes a picture; hand_over opens a document in \
+devlog read a recording and its DevTools log, video_frames shows its frames. export writes a picture, or a recording as mp4, gif or a report; hand_over opens a document in \
 the editor or puts it on the clipboard. Reads ask nothing once allowed; the person approves a client's \
 access the first time (per scope, or everything at once).";
 

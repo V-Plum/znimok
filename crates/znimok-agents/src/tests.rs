@@ -698,7 +698,7 @@ fn editing_tools_over_plain_arguments() {
         assert!(names.iter().any(|x| x == n), "{n} is listed");
     }
     // The published list is the facade's: one tool per job, 21 of them, the finer ones hidden.
-    assert_eq!(names.len(), 21, "{names:?}");
+    assert_eq!(names.len(), 22, "{names:?}");
     for n in [
         "add_marks",
         "crop",
@@ -971,10 +971,26 @@ fn recording_info_and_devtools_log() {
     let q = call("devlog", json!({"document": id, "query": "PURCHASE"}));
     assert_eq!(q["events"][0]["kind"], "datalayer");
 
-    // A recording is not exported as a picture in silence (ZK-250): said plainly.
+    // A recording exports as a recording (ZK-243), not as its poster (ZK-250): an untouched one
+    // goes out as its MP4, byte for byte; a format that is not a recording's is refused by name.
     let ex = e
         .agent
-        .call("T", "export", &json!({"document": id, "format": "png"}));
+        .call("T", "export", &json!({"document": id, "format": "svg"}));
+    assert!(ex.is_error, "{:?}", ex.content);
+    assert!(ex.content[0]["text"].as_str().unwrap().contains("mp4, gif"));
+    let mp4 = call("export", json!({"document": id, "format": "mp4"}));
+    let out = std::path::PathBuf::from(mp4["path"].as_str().unwrap());
+    assert_eq!(out.extension().unwrap(), "mp4");
+    assert_eq!(
+        std::fs::read(&out).unwrap(),
+        (0..2048u32).map(|i| (i * 7) as u8).collect::<Vec<u8>>()
+    );
+    // The second goes beside the first, not over it.
+    let again = call("export", json!({"document": id, "format": "mp4"}));
+    assert_ne!(again["path"], mp4["path"]);
+    let ex = e
+        .agent
+        .call("T", "export", &json!({"document": id, "format": "zip"}));
     assert!(ex.is_error, "{:?}", ex.content);
     assert!(
         ex.content[0]["text"]
@@ -1340,4 +1356,67 @@ fn one_question_covers_every_scope_but_sound() {
             Some("record_audio")
         );
     }
+}
+
+/// ZK-243 on a real recording (`ZNIMOK_TEST_RECORDING` = a `.znimok` video with a real MP4;
+/// needs a GPU and the system's encoder, so it runs by hand: `cargo test -p znimok-agents --
+/// --ignored real_recording`): MP4, GIF, the report page and archive, a frame, frames to see.
+#[test]
+#[ignore]
+fn real_recording_exports_and_frames() {
+    let Ok(src) = std::env::var("ZNIMOK_TEST_RECORDING") else {
+        eprintln!("ZNIMOK_TEST_RECORDING is not set");
+        return;
+    };
+    let e = env("realrec", true);
+    e.agent
+        .perms
+        .grant("T", Scope::LibraryRead, Grant::Always)
+        .unwrap();
+    std::fs::create_dir_all(&e.agent.lib.dir).unwrap();
+    let path = e.agent.lib.dir.join("rec.znimok");
+    std::fs::copy(&src, &path).unwrap();
+    let id = crate::library::peek_item(&path).unwrap().id;
+    let call = |name: &str, args: Value| {
+        let out = e.agent.call("T", name, &args);
+        assert!(!out.is_error, "{name} {args}: {:?}", out.content);
+        out
+    };
+    for f in ["mp4", "gif", "html", "report", "zreport", "png"] {
+        let t0 = std::time::Instant::now();
+        let out = call(
+            "export",
+            json!({"document": id, "format": f, "gif_width": 320, "at_ms": 500, "language": "en"}),
+        );
+        let s = out.structured.unwrap();
+        let p = std::path::PathBuf::from(s["path"].as_str().unwrap());
+        let len = std::fs::metadata(&p).unwrap().len();
+        eprintln!("{f}: {len} bytes in {:?} → {}", t0.elapsed(), p.display());
+        assert!(len > 1000, "{f}: {len} bytes");
+        if f == "report" {
+            let page = std::fs::read_to_string(&p).unwrap();
+            assert!(
+                page.contains("v-plum.github.io/znimok/en/"),
+                "English page links to the English site"
+            );
+        }
+    }
+    let shown = call("video_frames", json!({"document": id, "count": 3}));
+    assert_eq!(
+        shown.structured.as_ref().unwrap()["frames"]
+            .as_array()
+            .unwrap()
+            .len(),
+        3
+    );
+    assert_eq!(
+        shown
+            .content
+            .iter()
+            .filter(|c| c["type"] == "image")
+            .count(),
+        3
+    );
+    let at = call("video_frames", json!({"document": id, "at_ms": [0, 1000]}));
+    eprintln!("{}", at.structured.unwrap());
 }
