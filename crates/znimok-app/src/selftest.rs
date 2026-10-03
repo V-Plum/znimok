@@ -4508,6 +4508,13 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
                 let (x, y) = (f.x + f.width as i32 / 2, f.y + f.height as i32 / 2);
                 crate::rec::note_click(x, y, i == 2);
             }
+            // ZK-252: a click beside the recorded window is not the recording's.
+            if i == 4
+                && let Some((f, _, _)) = crate::rec::indicators()
+            {
+                crate::rec::note_click(f.x - 120, f.y - 60, true);
+                crate::rec::note_click(f.x - 120, f.y - 60, false);
+            }
         }));
     }
     #[cfg(windows)]
@@ -4621,7 +4628,7 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
         let clicks = doc.as_ref().map(|d| d.5.clone()).unwrap_or_default();
         let middle = doc.as_ref().map(|d| (d.0 as i32 / 2, d.1 as i32 / 2));
         r.check(
-            "recording: a click is in the mouse log (MOUS) in video pixels",
+            "recording: the click on the window is in the mouse log (MOUS) in video pixels, the one beside it is not",
             clicks.len() == 2
                 && clicks[0].2
                 && !clicks[1].2

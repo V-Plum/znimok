@@ -640,10 +640,15 @@ fn wrap(
     for (t, p) in video.audio.iter_mut().zip(&result.audio_peaks) {
         t.peaks = p.clone();
     }
-    // The clicks, in video time and video pixels (the MOUS log, ZK-90).
+    // The clicks, in video time and video pixels (the MOUS log, ZK-90) — those on the recorded
+    // part only: the hook hears the whole desktop, and a click in another window (an agent's
+    // permission dialog beside the recorded browser) is not this recording's (ZK-252).
     video.mouse = result
         .events
         .iter()
+        .filter(|e| {
+            (0..size.0 as i32).contains(&e.event.x) && (0..size.1 as i32).contains(&e.event.y)
+        })
         .map(|e| znimok_format::video::MouseEvent {
             ms: e.ms.clamp(0, i32::MAX as i64) as i32,
             x: e.event.x,
