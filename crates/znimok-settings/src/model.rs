@@ -23,6 +23,8 @@ pub struct Settings {
     pub report: Report,
     pub updates: Updates,
     pub agents: Agents,
+    /// Where «Send to…» goes (ZK-101).
+    pub integrations: Integrations,
 }
 
 impl Default for Settings {
@@ -38,8 +40,96 @@ impl Default for Settings {
             report: Report::default(),
             updates: Updates::default(),
             agents: Agents::default(),
+            integrations: Integrations::default(),
         }
     }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Sharing targets (ZK-101). Tokens and keys live in the OS store (`Secret::*`), never here.
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(default)]
+pub struct Integrations {
+    /// The target of «Send» in one click: `telegram`, `jira`, `slack`, `redmine`,
+    /// `webhook:<id>`, or empty (the menu asks).
+    pub default_target: String,
+    pub telegram: TelegramTarget,
+    pub jira: JiraTarget,
+    pub slack: SlackTarget,
+    pub redmine: RedmineTarget,
+    pub webhooks: Vec<WebhookTarget>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(default)]
+pub struct TelegramTarget {
+    pub enabled: bool,
+    /// A chat id (`123456789`, `-100…` for a group or channel) or `@channel`.
+    pub chat_id: String,
+    /// The chat's name as Telegram gave it, for the settings page.
+    pub chat_title: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(default)]
+pub struct JiraTarget {
+    pub enabled: bool,
+    /// `your-site.atlassian.net` or a full URL.
+    pub site: String,
+    pub email: String,
+    /// The project of new issues (`ZK`).
+    pub project: String,
+    /// An issue to attach to (`ZK-101`); empty = a new issue each time.
+    pub issue: String,
+    /// The type of a new issue.
+    pub issue_type: String,
+}
+
+impl Default for JiraTarget {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            site: String::new(),
+            email: String::new(),
+            project: String::new(),
+            issue: String::new(),
+            issue_type: "Task".into(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(default)]
+pub struct SlackTarget {
+    pub enabled: bool,
+    /// The channel's ID (`C0123ABCD`; Slack: channel details → the bottom of the About tab).
+    pub channel: String,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(default)]
+pub struct RedmineTarget {
+    pub enabled: bool,
+    /// The Redmine's address, `https://redmine.example.com`.
+    pub url: String,
+    /// The project of new issues (its identifier).
+    pub project: String,
+    /// An issue to attach to (its number); empty = a new issue each time.
+    pub issue: String,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(default)]
+pub struct WebhookTarget {
+    /// Stable, made once (the secret's name and `webhook:<id>` hang on it).
+    pub id: String,
+    pub enabled: bool,
+    pub name: String,
+    pub url: String,
+    /// A header sent with every request (`Authorization`, `X-Api-Key`…); its value is a secret
+    /// (`share-webhook-<id>`). Empty = none.
+    pub header: String,
 }
 
 // ---------------------------------------------------------------------------------------------

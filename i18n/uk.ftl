@@ -6117,3 +6117,271 @@ report-copy-hint = Скопіювати те, що показують подро
 # @kind: tooltip
 # @max: 60
 report-tl-hint = Клацніть або потягніть, щоб перемотати запис
+
+## Extensions and integrations, sending to targets (ZK-101)
+
+
+# @where: Settings: page in the left list — browser extension, Logi plugin, sharing targets
+# @kind: label
+# @max: 32
+set-page-integrations = Розширення та інтеграції
+
+# @where: Settings → Extensions and integrations: what the page is for
+# @kind: body
+# @max: 260
+int-intro = Znimok у браузері й на пристроях Logitech, і куди «Надіслати в…» доставляє знімок, запис чи звіт. Токени й ключі лишаються в сховищі секретів системи.
+
+# @where: Settings → Extensions and integrations: heading
+# @kind: label
+# @max: 30
+int-extensions = Розширення
+
+# @where: Settings → Extensions and integrations: the browser extension row
+# @kind: label
+# @max: 40
+int-chrome = Розширення для Chrome і Edge
+
+# @where: Settings → Extensions and integrations: status — the extension or plugin is connected now
+# @kind: label
+# @max: 20
+int-connected = Підключено
+
+# @where: Settings → Extensions and integrations: what the browser extension does (shown when not connected)
+# @kind: body
+# @max: 120
+int-chrome-off = Лог DevTools браузера в записі і «Записати це вікно»
+
+# @where: Settings → Extensions and integrations: button, open the Chrome Web Store page
+# @kind: label
+# @max: 24
+int-chrome-store = Chrome Web Store
+
+# @where: Settings → Extensions and integrations: the Logi Options+ plugin row
+# @kind: label
+# @max: 40
+int-logi = Плагін для Logi Options+
+
+# @where: Settings → Extensions and integrations: what the Logi plugin does (shown when not connected)
+# @kind: body
+# @max: 120
+int-logi-off = Znimok на MX Creative Console та Actions Ring, вібровідгук на MX Master 4
+
+# @where: Settings → Extensions and integrations: button, open the plugin's page
+# @kind: label
+# @max: 20
+int-logi-page = Плагін
+
+# @where: Settings → Extensions and integrations: heading of the sharing targets
+# @kind: label
+# @max: 30
+int-targets = Надсилати в
+
+# @where: Settings → Extensions and integrations: how the targets work
+# @kind: body
+# @max: 240
+int-targets-hint = Увімкнена й заповнена ціль з'являється в «Надіслати в…» на картці після знімка і в листах експорту. Якщо до неї не достукатися, Znimok спробує пізніше.
+
+# @where: Settings → Extensions and integrations: the target of a one-click «Send»
+# @kind: label
+# @max: 30
+int-default = В один клік
+
+# @where: Settings → Extensions and integrations: option — no default target, the menu asks
+# @kind: label
+# @max: 16
+int-default-ask = Питати
+
+# @where: Settings → Extensions and integrations: how to set up Telegram
+# @kind: body
+# @max: 200
+int-tg-how = Створіть бота в @BotFather, вставте сюди його токен, напишіть боту будь-що й натисніть «Знайти чат».
+
+# @where: Settings → Extensions and integrations: placeholder of a secret field that has a saved value
+# @kind: label
+# @max: 60
+int-secret-saved = Збережено — введіть новий, щоб замінити
+
+# @where: Settings → Extensions and integrations: placeholder, the Telegram bot token
+# @kind: label
+# @max: 30
+int-tg-token = Токен бота
+
+# @where: Settings → Extensions and integrations: placeholder, the Telegram chat
+# @kind: label
+# @max: 30
+int-tg-chat = ID чату або @канал
+
+# @where: Settings → Extensions and integrations: button, find the chat that wrote to the bot
+# @kind: label
+# @max: 20
+int-tg-find = Знайти чат
+
+# @where: Settings → Extensions and integrations: no one has written to the bot yet
+# @kind: body
+# @max: 120
+int-tg-no-chats = Чатів ще немає — напишіть боту будь-що в Telegram і спробуйте ще раз.
+
+# @where: Settings → Extensions and integrations: button, check the connection
+# @kind: label
+# @max: 16
+int-check = Перевірити
+
+# @where: Settings → Extensions and integrations: a check runs
+# @kind: label
+# @max: 30
+int-checking = Перевіряю…
+
+# @where: Message sent to Telegram or a webhook by «Check»
+# @kind: body
+# @max: 80
+int-probe = Znimok: з'єднання працює ✓
+
+# @where: Settings → Extensions and integrations: how to set up Jira
+# @kind: body
+# @max: 240
+int-jira-how = Jira Cloud: ваш сайт, e-mail і API-токен (id.atlassian.com → Security → API tokens). Без задачі кожне надсилання створює нову в проєкті.
+
+# @where: Settings → Extensions and integrations: placeholder, the Jira site
+# @kind: label
+# @max: 40
+int-jira-site = Сайт: your-team.atlassian.net
+
+# @where: Settings → Extensions and integrations: placeholder, the e-mail
+# @kind: label
+# @max: 16
+int-jira-email = E-mail
+
+# @where: Settings → Extensions and integrations: placeholder, the Jira API token
+# @kind: label
+# @max: 20
+int-jira-token = API-токен
+
+# @where: Settings → Extensions and integrations: placeholder, the project key
+# @kind: label
+# @max: 20
+int-jira-project = Ключ проєкту
+
+# @where: Settings → Extensions and integrations: placeholder, an issue to attach to
+# @kind: label
+# @max: 24
+int-jira-issue = Задача (необов'язково)
+
+# @where: Settings → Extensions and integrations: placeholder, the type of a new issue
+# @kind: label
+# @max: 24
+int-jira-type = Тип нової задачі
+
+# @where: Settings → Extensions and integrations: how to set up Slack
+# @kind: body
+# @max: 260
+int-slack-how = Slack-застосунок із дозволами files:write і chat:write, встановлений у робочий простір і доданий до каналу: його токен бота (xoxb-…) та ID каналу (деталі каналу, унизу).
+
+# @where: Settings → Extensions and integrations: placeholder, the Slack bot token
+# @kind: label
+# @max: 24
+int-slack-token = Токен бота (xoxb-…)
+
+# @where: Settings → Extensions and integrations: placeholder, the channel ID
+# @kind: label
+# @max: 24
+int-slack-channel = ID каналу (C0…)
+
+# @where: Settings → Extensions and integrations: how to set up Redmine
+# @kind: body
+# @max: 240
+int-rm-how = REST API, увімкнений в адмініструванні Redmine, і ваш API-ключ (Мій обліковий запис → Ключ доступу до API). Без задачі кожне надсилання створює нову в проєкті.
+
+# @where: Settings → Extensions and integrations: placeholder, the Redmine address
+# @kind: label
+# @max: 44
+int-rm-url = Адреса: https://redmine.example.com
+
+# @where: Settings → Extensions and integrations: placeholder, the Redmine API key
+# @kind: label
+# @max: 16
+int-rm-key = API-ключ
+
+# @where: Settings → Extensions and integrations: placeholder, the project identifier
+# @kind: label
+# @max: 24
+int-rm-project = Ідентифікатор проєкту
+
+# @where: Settings → Extensions and integrations: placeholder, an issue number
+# @kind: label
+# @max: 32
+int-rm-issue = Номер задачі (необов'язково)
+
+# @where: Settings → Extensions and integrations: the webhooks heading
+# @kind: label
+# @max: 20
+int-webhooks = Вебхуки
+
+# @where: Settings → Extensions and integrations: what a webhook sends
+# @kind: body
+# @max: 240
+int-webhooks-how = Для n8n, Zapier, Make чи власного сервера: POST із двома частинами, meta (JSON) і file; заданий вами заголовок, наприклад Authorization, іде разом.
+
+# @where: Settings → Extensions and integrations: button, add a webhook
+# @kind: label
+# @max: 24
+int-webhook-add = Додати вебхук
+
+# @where: Settings → Extensions and integrations: a webhook without a name
+# @kind: label
+# @max: 16
+int-webhook = Вебхук
+
+# @where: Settings → Extensions and integrations: button, remove the webhook
+# @kind: label
+# @max: 16
+int-webhook-remove = Прибрати
+
+# @where: Settings → Extensions and integrations: placeholder, the webhook's name in the menu
+# @kind: label
+# @max: 24
+int-webhook-name = Назва в меню
+
+# @where: Settings → Extensions and integrations: placeholder, the header's name
+# @kind: label
+# @max: 32
+int-webhook-header = Заголовок, напр. Authorization
+
+# @where: Settings → Extensions and integrations: placeholder, the header's secret value
+# @kind: label
+# @max: 32
+int-webhook-value = Його значення, напр. Bearer …
+
+# @where: Toast: a file is on its way to a target; $target its name
+# @kind: body
+# @max: 80
+share-queued = Надсилаю в { $target }…
+
+# @where: Toast: a file was delivered; $target its name
+# @kind: body
+# @max: 80
+share-sent = Надіслано в { $target }
+
+# @where: Toast: sending failed for now, Znimok tries again later; $target its name
+# @kind: body
+# @max: 120
+share-retrying = Не вдалося надіслати в { $target } — спробую ще
+
+# @where: Toast: sending failed for good; $target its name
+# @kind: body
+# @max: 80
+share-failed = Не надіслано в { $target }
+
+# @where: Toast: the file could not be put into the sending queue
+# @kind: body
+# @max: 80
+share-queue-error = Не вдалося підготувати надсилання
+
+# @where: Export sheet: heading of the row of sharing targets
+# @kind: label
+# @max: 24
+share-send-to = Надіслати в
+
+# @where: After-capture card: button, send to the quick target; {0} its name
+# @kind: label
+# @max: 40
+share-send-to-one = Надіслати в { $target }

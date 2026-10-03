@@ -19,15 +19,31 @@ use std::fmt;
 pub enum Secret {
     /// The user's Anthropic API key for the assistant and cloud features (BYOK).
     AnthropicApiKey,
+    /// Sharing targets (ZK-101): a Telegram bot's token, a Jira API token, a Slack bot token, a
+    /// Redmine API key. A webhook's header value has a name of its own ([`Vault::get_named`]).
+    TelegramBotToken,
+    JiraApiToken,
+    SlackBotToken,
+    RedmineApiKey,
 }
 
 impl Secret {
-    pub const ALL: &'static [Secret] = &[Secret::AnthropicApiKey];
+    pub const ALL: &'static [Secret] = &[
+        Secret::AnthropicApiKey,
+        Secret::TelegramBotToken,
+        Secret::JiraApiToken,
+        Secret::SlackBotToken,
+        Secret::RedmineApiKey,
+    ];
 
     /// Name inside the store.
     pub const fn name(self) -> &'static str {
         match self {
             Self::AnthropicApiKey => "anthropic-api-key",
+            Self::TelegramBotToken => "share-telegram-token",
+            Self::JiraApiToken => "share-jira-token",
+            Self::SlackBotToken => "share-slack-token",
+            Self::RedmineApiKey => "share-redmine-key",
         }
     }
 }
@@ -94,6 +110,20 @@ impl Vault {
 
     pub fn has(&self, s: Secret) -> Result<bool> {
         Ok(self.get(s)?.is_some())
+    }
+
+    /// A secret of a thing the user adds any number of (a webhook's header value, ZK-101):
+    /// `name` is Znimok's own, e.g. `share-webhook-<id>`.
+    pub fn get_named(&self, name: &str) -> Result<Option<String>> {
+        self.get_raw(name)
+    }
+
+    pub fn set_named(&self, name: &str, value: &str) -> Result<()> {
+        self.set_raw(name, value)
+    }
+
+    pub fn delete_named(&self, name: &str) -> Result<bool> {
+        self.delete_raw(name)
     }
 
     #[cfg(windows)]

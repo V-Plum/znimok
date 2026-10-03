@@ -25,6 +25,7 @@ mod filedlg;
 mod filemeta;
 mod frame;
 mod hotkeys;
+mod integrations;
 mod io;
 mod library;
 mod ocrindex;
@@ -303,6 +304,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // the self-test (a running Znimok holds the endpoint).
     let _ipc = if selftest_dir.is_none() {
         devlog::register_host();
+        // Sending to Telegram, Jira… (ZK-101): what was left in the queue goes now.
+        integrations::start();
         devlog::start_server()
     } else {
         None
@@ -1725,6 +1728,9 @@ fn wire(ui: &AppWindow, app: &Shared) {
     });
     on!(ui, app, on_setting_text, |a, w, key, text| {
         a.setting_text(&w, &key, &text);
+    });
+    on!(ui, app, on_int_action, |a, w, what, target| {
+        a.int_action(&w, &what, &target);
     });
     {
         // Reported while laying out, possibly from inside the app's own code (as lib-layout).

@@ -70,6 +70,9 @@ export struct DevTick { x: length, cls: int }
 export struct DevChip { label: string, count: int }
 export struct DevRow { time: string, label: string, text: string, src: string, cls: int }
 export struct DevTiming { label: string, a: float, w: float, ms: string }
+// Sharing targets (ZK-101): a webhook on the integrations page, and the targets «Send to» offers.
+export struct IntWebhook { id: string, enabled: bool, name: string, url: string, header: string, secret-set: bool, status: string, busy: bool }
+export struct IntTarget { key: string, name: string }
 
 // A group title in the library grid (ZK-177): titles and card rows above it.
 export struct LibHeader {
@@ -1285,6 +1288,9 @@ component PillButton inherits Rectangle {
 }
 
 export component Pill inherits Window {
+    // «Send to …» in one click (ZK-101): the default target or the first ready one; empty = none.
+    in property <string> send-target;
+    callback send();
     default-font-family: "Onest";
     // Matched by the window-attributes hook in main.rs: no activation, no taskbar button.
     title: "Znimok pill";
@@ -1364,6 +1370,7 @@ export component Pill inherits Window {
                     b-edit := TextButton { text: @tr("pill-edit" => "Edit"); primary: true; clicked => { root.edit(); } }
                     b-save := PillButton { icon: "M12 4 v11 M7 10 l5 5 5 -5 M5 19 h14"; label: @tr("pill-save-file" => "Save as file…"); clicked => { root.save-file(); } }
                     b-lib := PillButton { icon: "M4 4 h7 v7 H4 z M13 4 h7 v7 h-7 z M4 13 h7 v7 H4 z M13 13 h7 v7 h-7 z"; label: @tr("pill-show-library" => "Show in library"); clicked => { root.show-library(); } }
+                    if root.send-target != "": PillButton { icon: "M4 12 L20 4 L14 20 L11 13 Z M11 13 L20 4"; label: @tr("share-send-to-one" => "Send to {0}", root.send-target); clicked => { root.send(); } }
                 }
             }
             VerticalLayout {
@@ -2247,6 +2254,41 @@ export component AppWindow inherits Window {
     in property <string> pref-rec-sign-contact;
     in property <string> pref-rec-sign-rights;
     callback setting-text(string, string);
+    // ZK-101: Extensions and integrations. `int-action(what, target)`: check, find-chat,
+    // add-webhook, remove-webhook, default, store, plugin.
+    callback int-action(string, string);
+    in property <bool> int-chrome-on;
+    in property <bool> int-logi-on;
+    in property <bool> int-tg-enabled;
+    in property <bool> int-tg-token-set;
+    in property <string> int-tg-chat;
+    in property <string> int-tg-chat-title;
+    in property <string> int-tg-status;
+    in property <bool> int-tg-busy;
+    in property <bool> int-jira-enabled;
+    in property <string> int-jira-site;
+    in property <string> int-jira-email;
+    in property <bool> int-jira-token-set;
+    in property <string> int-jira-project;
+    in property <string> int-jira-issue;
+    in property <string> int-jira-type;
+    in property <string> int-jira-status;
+    in property <bool> int-jira-busy;
+    in property <bool> int-slack-enabled;
+    in property <bool> int-slack-token-set;
+    in property <string> int-slack-channel;
+    in property <string> int-slack-status;
+    in property <bool> int-slack-busy;
+    in property <bool> int-rm-enabled;
+    in property <string> int-rm-url;
+    in property <bool> int-rm-key-set;
+    in property <string> int-rm-project;
+    in property <string> int-rm-issue;
+    in property <string> int-rm-status;
+    in property <bool> int-rm-busy;
+    in property <[IntWebhook]> int-webhooks;
+    in property <[IntTarget]> int-targets;
+    in property <string> int-default;
     in property <string> rec-browsers;
     in property <bool> rec-browsers-on;
     in-out property <string> pref-ret-mb;
@@ -2760,6 +2802,7 @@ export component AppWindow inherits Window {
                                 { p: 1, t: @tr("set-page-keys" => "Hotkeys") },
                                 { p: 2, t: @tr("set-page-library" => "Library") },
                                 { p: 3, t: @tr("set-page-sharing" => "Sharing") },
+                                { p: 11, t: @tr("set-page-integrations" => "Extensions and integrations") },
                                 { p: 8, t: @tr("set-page-agents" => "Agents and models") },
                                 { p: 4, t: @tr("set-page-look" => "Appearance and language") },
                                 { p: 5, t: @tr("set-page-privacy" => "Privacy") },
@@ -2949,6 +2992,152 @@ export component AppWindow inherits Window {
                                 Text { text: @tr("sharing-intro" => "What the main Copy button does and which format comes out."); color: Theme.text3; font-size: 12px; wrap: word-wrap; }
                                 SwitchRow { text: @tr("sharing-metadata" => "Write metadata into files"); checked: root.pref-metadata; toggled => { root.setting("metadata", self.checked ? 1 : 0); } }
                                 Text { text: @tr("export-metadata" => "Write metadata (title, description, author, date)"); color: Theme.text3; font-size: 11px; wrap: word-wrap; }
+                            }
+                            // ---- Extensions and integrations (ZK-101)
+                            if root.settings-page == 11: VerticalLayout {
+                                spacing: 14px;
+                                Text { text: @tr("int-intro" => "Znimok in the browser and on Logitech devices, and where «Send to» delivers a screenshot, a recording or a report. Tokens and keys stay in the system's secret store."); color: Theme.text3; font-size: 12px; wrap: word-wrap; }
+                                // Extensions
+                                Text { text: @tr("int-extensions" => "Extensions"); color: Theme.text; font-size: 14px; font-weight: 700; }
+                                HorizontalLayout {
+                                    spacing: 12px;
+                                    VerticalLayout {
+                                        horizontal-stretch: 1;
+                                        spacing: 2px;
+                                        Text { text: @tr("int-chrome" => "Chrome and Edge extension"); color: Theme.text2; font-size: 12px; }
+                                        Text { text: root.int-chrome-on ? @tr("int-connected" => "Connected") : @tr("int-chrome-off" => "The browser's DevTools log in recordings, and «Record this window»"); color: root.int-chrome-on ? Theme.accent : Theme.text3; font-size: 11px; wrap: word-wrap; }
+                                    }
+                                    TextButton { text: @tr("int-chrome-store" => "Chrome Web Store"); clicked => { root.int-action("store", "chrome"); } }
+                                }
+                                HorizontalLayout {
+                                    spacing: 12px;
+                                    VerticalLayout {
+                                        horizontal-stretch: 1;
+                                        spacing: 2px;
+                                        Text { text: @tr("int-logi" => "Logi Options+ plugin"); color: Theme.text2; font-size: 12px; }
+                                        Text { text: root.int-logi-on ? @tr("int-connected" => "Connected") : @tr("int-logi-off" => "Znimok on the MX Creative Console and the Actions Ring, haptics on the MX Master 4"); color: root.int-logi-on ? Theme.accent : Theme.text3; font-size: 11px; wrap: word-wrap; }
+                                    }
+                                    TextButton { text: @tr("int-logi-page" => "The plugin"); clicked => { root.int-action("store", "logi"); } }
+                                }
+                                Rectangle { height: 1px; background: Theme.line; }
+                                // Where to send
+                                Text { text: @tr("int-targets" => "Send to"); color: Theme.text; font-size: 14px; font-weight: 700; }
+                                Text { text: @tr("int-targets-hint" => "Switched on and filled in, a target appears in «Send to» on the card after a shot and in the export sheets. If it cannot be reached, Znimok tries again later."); color: Theme.text3; font-size: 11px; wrap: word-wrap; }
+                                if root.int-targets.length > 0: VerticalLayout {
+                                    spacing: 6px;
+                                    Text { text: @tr("int-default" => "In one click"); color: Theme.text2; font-size: 12px; }
+                                    HorizontalLayout {
+                                        alignment: start;
+                                        spacing: 4px;
+                                        SegOption { text: @tr("int-default-ask" => "Ask"); on: root.int-default == ""; clicked => { root.int-action("default", ""); } }
+                                        for t in root.int-targets: SegOption { text: t.name; on: root.int-default == t.key; clicked => { root.int-action("default", t.key); } }
+                                    }
+                                }
+                                // Telegram
+                                Rectangle { height: 1px; background: Theme.line; }
+                                SwitchRow { text: "Telegram"; checked: root.int-tg-enabled; toggled => { root.setting("int-tg-enabled", self.checked ? 1 : 0); } }
+                                if root.int-tg-enabled: VerticalLayout {
+                                    spacing: 8px;
+                                    Text { text: @tr("int-tg-how" => "Make a bot with @BotFather, paste its token here, write anything to the bot, then «Find the chat»."); color: Theme.text3; font-size: 11px; wrap: word-wrap; }
+                                    LineEdit { input-type: password; placeholder-text: root.int-tg-token-set ? @tr("int-secret-saved" => "Saved — type a new one to replace it") : @tr("int-tg-token" => "Bot token"); edited(t) => { root.setting-text("int-tg-token", t); } }
+                                    HorizontalLayout {
+                                        spacing: 8px;
+                                        LineEdit { horizontal-stretch: 1; text: root.int-tg-chat; placeholder-text: @tr("int-tg-chat" => "Chat ID or @channel"); edited(t) => { root.setting-text("int-tg-chat", t); } }
+                                        TextButton { text: @tr("int-tg-find" => "Find the chat"); enabled: !root.int-tg-busy; clicked => { root.int-action("find-chat", "telegram"); } }
+                                    }
+                                    if root.int-tg-chat-title != "": Text { text: root.int-tg-chat-title; color: Theme.text2; font-size: 11px; }
+                                    HorizontalLayout {
+                                        spacing: 12px;
+                                        Text { text: root.int-tg-status; color: Theme.text2; font-size: 11px; wrap: word-wrap; horizontal-stretch: 1; vertical-alignment: center; }
+                                        TextButton { text: @tr("int-check" => "Check"); enabled: !root.int-tg-busy; clicked => { root.int-action("check", "telegram"); } }
+                                    }
+                                }
+                                // Jira
+                                Rectangle { height: 1px; background: Theme.line; }
+                                SwitchRow { text: "Jira"; checked: root.int-jira-enabled; toggled => { root.setting("int-jira-enabled", self.checked ? 1 : 0); } }
+                                if root.int-jira-enabled: VerticalLayout {
+                                    spacing: 8px;
+                                    Text { text: @tr("int-jira-how" => "Jira Cloud: your site, your e-mail and an API token (id.atlassian.com → Security → API tokens). Without an issue, each sending makes a new one in the project."); color: Theme.text3; font-size: 11px; wrap: word-wrap; }
+                                    LineEdit { text: root.int-jira-site; placeholder-text: @tr("int-jira-site" => "Site: your-team.atlassian.net"); edited(t) => { root.setting-text("int-jira-site", t); } }
+                                    LineEdit { text: root.int-jira-email; placeholder-text: @tr("int-jira-email" => "E-mail"); edited(t) => { root.setting-text("int-jira-email", t); } }
+                                    LineEdit { input-type: password; placeholder-text: root.int-jira-token-set ? @tr("int-secret-saved" => "Saved — type a new one to replace it") : @tr("int-jira-token" => "API token"); edited(t) => { root.setting-text("int-jira-token", t); } }
+                                    HorizontalLayout {
+                                        spacing: 8px;
+                                        LineEdit { horizontal-stretch: 1; text: root.int-jira-project; placeholder-text: @tr("int-jira-project" => "Project key"); edited(t) => { root.setting-text("int-jira-project", t); } }
+                                        LineEdit { horizontal-stretch: 1; text: root.int-jira-issue; placeholder-text: @tr("int-jira-issue" => "Issue (optional)"); edited(t) => { root.setting-text("int-jira-issue", t); } }
+                                        LineEdit { horizontal-stretch: 1; text: root.int-jira-type; placeholder-text: @tr("int-jira-type" => "Type of a new issue"); edited(t) => { root.setting-text("int-jira-type", t); } }
+                                    }
+                                    HorizontalLayout {
+                                        spacing: 12px;
+                                        Text { text: root.int-jira-status; color: Theme.text2; font-size: 11px; wrap: word-wrap; horizontal-stretch: 1; vertical-alignment: center; }
+                                        TextButton { text: @tr("int-check" => "Check"); enabled: !root.int-jira-busy; clicked => { root.int-action("check", "jira"); } }
+                                    }
+                                }
+                                // Slack
+                                Rectangle { height: 1px; background: Theme.line; }
+                                SwitchRow { text: "Slack"; checked: root.int-slack-enabled; toggled => { root.setting("int-slack-enabled", self.checked ? 1 : 0); } }
+                                if root.int-slack-enabled: VerticalLayout {
+                                    spacing: 8px;
+                                    Text { text: @tr("int-slack-how" => "A Slack app with the files:write and chat:write scopes, installed to the workspace and added to the channel: its bot token (xoxb-…) and the channel's ID (the channel's details, at the bottom)."); color: Theme.text3; font-size: 11px; wrap: word-wrap; }
+                                    LineEdit { input-type: password; placeholder-text: root.int-slack-token-set ? @tr("int-secret-saved" => "Saved — type a new one to replace it") : @tr("int-slack-token" => "Bot token (xoxb-…)"); edited(t) => { root.setting-text("int-slack-token", t); } }
+                                    LineEdit { text: root.int-slack-channel; placeholder-text: @tr("int-slack-channel" => "Channel ID (C0…)"); edited(t) => { root.setting-text("int-slack-channel", t); } }
+                                    HorizontalLayout {
+                                        spacing: 12px;
+                                        Text { text: root.int-slack-status; color: Theme.text2; font-size: 11px; wrap: word-wrap; horizontal-stretch: 1; vertical-alignment: center; }
+                                        TextButton { text: @tr("int-check" => "Check"); enabled: !root.int-slack-busy; clicked => { root.int-action("check", "slack"); } }
+                                    }
+                                }
+                                // Redmine
+                                Rectangle { height: 1px; background: Theme.line; }
+                                SwitchRow { text: "Redmine"; checked: root.int-rm-enabled; toggled => { root.setting("int-rm-enabled", self.checked ? 1 : 0); } }
+                                if root.int-rm-enabled: VerticalLayout {
+                                    spacing: 8px;
+                                    Text { text: @tr("int-rm-how" => "The REST API switched on in Redmine's administration, and your API key (My account → API access key). Without an issue, each sending makes a new one in the project."); color: Theme.text3; font-size: 11px; wrap: word-wrap; }
+                                    LineEdit { text: root.int-rm-url; placeholder-text: @tr("int-rm-url" => "Address: https://redmine.example.com"); edited(t) => { root.setting-text("int-rm-url", t); } }
+                                    LineEdit { input-type: password; placeholder-text: root.int-rm-key-set ? @tr("int-secret-saved" => "Saved — type a new one to replace it") : @tr("int-rm-key" => "API key"); edited(t) => { root.setting-text("int-rm-key", t); } }
+                                    HorizontalLayout {
+                                        spacing: 8px;
+                                        LineEdit { horizontal-stretch: 1; text: root.int-rm-project; placeholder-text: @tr("int-rm-project" => "Project identifier"); edited(t) => { root.setting-text("int-rm-project", t); } }
+                                        LineEdit { horizontal-stretch: 1; text: root.int-rm-issue; placeholder-text: @tr("int-rm-issue" => "Issue number (optional)"); edited(t) => { root.setting-text("int-rm-issue", t); } }
+                                    }
+                                    HorizontalLayout {
+                                        spacing: 12px;
+                                        Text { text: root.int-rm-status; color: Theme.text2; font-size: 11px; wrap: word-wrap; horizontal-stretch: 1; vertical-alignment: center; }
+                                        TextButton { text: @tr("int-check" => "Check"); enabled: !root.int-rm-busy; clicked => { root.int-action("check", "redmine"); } }
+                                    }
+                                }
+                                // Webhooks
+                                Rectangle { height: 1px; background: Theme.line; }
+                                HorizontalLayout {
+                                    spacing: 12px;
+                                    VerticalLayout {
+                                        horizontal-stretch: 1;
+                                        spacing: 2px;
+                                        Text { text: @tr("int-webhooks" => "Webhooks"); color: Theme.text2; font-size: 12px; }
+                                        Text { text: @tr("int-webhooks-how" => "For n8n, Zapier, Make or a server of your own: a POST with two parts, meta (JSON) and file; a header you set, e.g. Authorization, goes with it."); color: Theme.text3; font-size: 11px; wrap: word-wrap; }
+                                    }
+                                    TextButton { text: @tr("int-webhook-add" => "Add a webhook"); clicked => { root.int-action("add-webhook", ""); } }
+                                }
+                                for w in root.int-webhooks: VerticalLayout {
+                                    spacing: 8px;
+                                    HorizontalLayout {
+                                        spacing: 8px;
+                                        SwitchRow { horizontal-stretch: 1; text: w.name != "" ? w.name : @tr("int-webhook" => "Webhook"); checked: w.enabled; toggled => { root.setting-text("int-wh-enabled:" + w.id, self.checked ? "1" : "0"); } }
+                                        TextButton { text: @tr("int-webhook-remove" => "Remove"); clicked => { root.int-action("remove-webhook", w.id); } }
+                                    }
+                                    LineEdit { text: w.name; placeholder-text: @tr("int-webhook-name" => "Name in the menu"); edited(t) => { root.setting-text("int-wh-name:" + w.id, t); } }
+                                    LineEdit { text: w.url; placeholder-text: "https://…"; edited(t) => { root.setting-text("int-wh-url:" + w.id, t); } }
+                                    HorizontalLayout {
+                                        spacing: 8px;
+                                        LineEdit { horizontal-stretch: 1; text: w.header; placeholder-text: @tr("int-webhook-header" => "Header, e.g. Authorization"); edited(t) => { root.setting-text("int-wh-header:" + w.id, t); } }
+                                        LineEdit { horizontal-stretch: 2; input-type: password; placeholder-text: w.secret-set ? @tr("int-secret-saved" => "Saved — type a new one to replace it") : @tr("int-webhook-value" => "Its value, e.g. Bearer …"); edited(t) => { root.setting-text("int-wh-value:" + w.id, t); } }
+                                    }
+                                    HorizontalLayout {
+                                        spacing: 12px;
+                                        Text { text: w.status; color: Theme.text2; font-size: 11px; wrap: word-wrap; horizontal-stretch: 1; vertical-alignment: center; }
+                                        TextButton { text: @tr("int-check" => "Check"); enabled: !w.busy; clicked => { root.int-action("check", "webhook:" + w.id); } }
+                                    }
+                                }
                             }
                             // ---- Look and language
                             if root.settings-page == 4: VerticalLayout {
@@ -5191,6 +5380,15 @@ export component AppWindow inherits Window {
                             SegOption { text: @tr("export-to-library" => "To the library"); enabled: root.vexp-library-ok; on: root.exp-to == 2; clicked => { root.exp-set("to", 2); } }
                         }
                         if (root.exp-format <= 2 || root.exp-format == 4) && root.exp-to == 0: Text { text: @tr("vexp-clipboard-note" => "The clipboard gets the file: paste it into a chat or a folder."); color: Theme.text3; font-size: 11px; wrap: word-wrap; }
+                        if root.int-targets.length > 0 && (root.exp-format <= 2 || root.exp-format == 4): VerticalLayout {
+                            spacing: 6px;
+                            Text { text: @tr("share-send-to" => "Send to"); color: Theme.text3; font-size: 11px; font-weight: 600; letter-spacing: 0.4px; }
+                            HorizontalLayout {
+                                alignment: start;
+                                spacing: 4px;
+                                for t in root.int-targets: SegOption { text: t.name; on: false; clicked => { root.int-action("send", t.key); } }
+                            }
+                        }
                         if root.vexp-progress >= 0: VerticalLayout {
                             spacing: 6px;
                             Rectangle {
@@ -5279,6 +5477,15 @@ export component AppWindow inherits Window {
                             SegOption { text: @tr("export-to-library" => "To the library"); on: root.exp-to == 2; clicked => { root.exp-set("to", 2); } }
                         }
                         if root.exp-to == 0: Text { text: @tr("export-clipboard-note" => "The clipboard takes the picture itself; the format and quality are for files."); color: Theme.text3; font-size: 11px; wrap: word-wrap; }
+                        if root.int-targets.length > 0: VerticalLayout {
+                            spacing: 6px;
+                            Text { text: @tr("share-send-to" => "Send to"); color: Theme.text3; font-size: 11px; font-weight: 600; letter-spacing: 0.4px; }
+                            HorizontalLayout {
+                                alignment: start;
+                                spacing: 4px;
+                                for t in root.int-targets: SegOption { text: t.name; on: false; clicked => { root.int-action("send", t.key); } }
+                            }
+                        }
                         HorizontalLayout {
                             padding-top: 6px;
                             spacing: 8px;

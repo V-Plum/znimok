@@ -59,6 +59,21 @@ pub trait Transport: Send + Sync {
     ) -> Result<Response, HttpError> {
         Err(HttpError::Unsupported)
     }
+
+    /// Any request (ZK-101: uploads to Telegram, Jira, Slack, Redmine, a webhook): `method`,
+    /// the body with its `content_type` (`None`: no body), the answer's body as bytes, at most
+    /// `max_bytes`.
+    fn request(
+        &self,
+        _method: &str,
+        _url: &str,
+        _headers: &[(&str, &str)],
+        _body: Option<(&[u8], &str)>,
+        _timeout: Duration,
+        _max_bytes: usize,
+    ) -> Result<Response, HttpError> {
+        Err(HttpError::Unsupported)
+    }
 }
 
 /// The OS transport.

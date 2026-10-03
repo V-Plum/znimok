@@ -6849,6 +6849,7 @@ dependencies = [
  "znimok-render",
  "znimok-report",
  "znimok-settings",
+ "znimok-share",
  "znimok-stitch",
  "znimok-update",
  "znimok-video",
@@ -7181,6 +7182,17 @@ dependencies = [
  "serde_json",
  "windows",
  "znimok-platform",
+]
+
+[[package]]
+name = "znimok-share"
+version = "0.0.14"
+dependencies = [
+ "base64",
+ "serde",
+ "serde_json",
+ "znimok-models",
+ "znimok-settings",
 ]
 
 [[package]]
