@@ -4,7 +4,7 @@
 //! published.
 //!
 //! Reads: `list_targets`, `library_search`, `library_get`, `list_marks`, `video_info`, `devlog`,
-//! `ocr`, `read_codes`, `record_status`, `app_state`. Writes: `capture`, `record`, `marks`,
+//! `video_frames`, `ocr`, `read_codes`, `record_status`, `app_state`. Writes: `capture`, `record`, `marks`,
 //! `transform`, `annotate`, `redact_pii`, `export`, `set_meta`, `library_edit`, `hand_over`;
 //! `library_delete` alone is destructive.
 
@@ -172,6 +172,22 @@ pub(crate) const TOOLS: &[Tool] = &[
         },
     },
     Tool {
+        name: "video_frames",
+        title: "Look at a recording",
+        description: "Frames of a recording as pictures, with the marks of their moment: at the times given (at_ms, as recorded, up to 8), or count frames spread over it (4 by default). To see what happened at an error's or a click's time from devlog / video_info.",
+        scope: Some(Scope::LibraryRead),
+        read_only: true,
+        schema: || {
+            with_doc(
+                json!({
+                    "at_ms": {"type": "array", "items": {"type": "integer", "minimum": 0}, "maxItems": 8},
+                    "count": {"type": "integer", "minimum": 1, "maximum": 8},
+                }),
+                &[],
+            )
+        },
+    },
+    Tool {
         name: "ocr",
         title: "Read the text",
         description: "The text on a document with the box of every line, on the device. With find: only the lines that contain that text (to place a mark, or to check a word is on screen).",
@@ -296,6 +312,7 @@ pub(crate) fn run(
                 inner("devlog_summary", a)
             }
         }
+        "video_frames" => crate::vexport::frames(agent, args),
         "ocr" => match a.get("find").and_then(Value::as_str).map(str::to_string) {
             Some(text) => {
                 a["text"] = json!(text);

@@ -35,7 +35,7 @@ Scopes:
 | Scope | Tools |
 |---|---|
 | `capture` | `list_targets`, `capture`, `read_codes` on the screen |
-| `library_read` | `library_search`, `library_get`, `list_marks`, `video_info`, `devlog`, `ocr`, `export`, `hand_over`, `read_codes` on a document, resources |
+| `library_read` | `library_search`, `library_get`, `list_marks`, `video_info`, `video_frames`, `devlog`, `ocr`, `export`, `hand_over`, `read_codes` on a document, resources |
 | `library_write` | `marks`, `transform`, `annotate`, `redact_pii`, `set_meta`, `library_edit`, `library_delete` (asks every time) |
 | `record` | `record` |
 | `record_audio` | `record` with `sound` other than `none` (asked on top of `record`) |
@@ -54,9 +54,9 @@ The client name is what the client reports about itself; Znimok shows it as such
 
 **Fewer questions on the client's side.** Every tool carries the MCP annotations (`readOnlyHint`,
 `destructiveHint`, `idempotentHint`, `openWorldHint: false` — everything is local), and there are
-21 tools, one per job, reads apart from writes. In Claude Desktop's connector settings a good
+22 tools, one per job, reads apart from writes. In Claude Desktop's connector settings a good
 start is: reads (`list_targets`, `library_search`, `library_get`, `list_marks`, `video_info`,
-`devlog`, `ocr`, `read_codes`, `record_status`, `app_state`) — *Always allow*; writes — *Needs
+`video_frames`, `devlog`, `ocr`, `read_codes`, `record_status`, `app_state`) — *Always allow*; writes — *Needs
 approval*; `library_delete` — approval every time.
 
 ## Tools
@@ -84,7 +84,8 @@ characters do), or a path to a `.znimok` file. Every write returns the resulting
 | `read_codes` | `document?` (else the screen) | QR codes and barcodes: text, kind, box |
 | `video_info` | `document` (a recording) | length, size, frame rate, trims and cuts, sound tracks, marks with their times, clicks, whether it has the DevTools log |
 | `devlog` | `document`, `part?` summary / events, `kinds?`, `errors_only?`, `query?`, `from_ms?` / `to_ms?`, `limit?` (≤ 500), `offset?`, `index?` | summary: counts, errors, failed requests, navigations, dataLayer events with times; events: rows in time order; index: one event whole |
-| `export` | `document` (a screenshot), `format` png / jpeg / webp / html, `path?`, `scale?` | the file's path (a recording is refused: export it in Znimok) |
+| `export` | `document`, `format`; a screenshot: png / jpeg / webp / html; a recording: mp4 (`sound?`), gif (`gif_width?`, `gif_fps?`), html, report, zreport (`language?` uk / en, `hide?`), or png / jpeg / webp of the frame at `at_ms`; `path?` | the file's path (never over a file); a recording's html is the report page when it has the DevTools log |
+| `video_frames` | `document` (a recording), `at_ms?` [times, ≤ 8] or `count?` (4) | the frames as pictures with the marks of their moment, and their times |
 | `hand_over` | `document`, `to` editor / clipboard | opens the document in Znimok's editor, or copies the picture |
 | `app_state` | — | whether Znimok runs; the page, the document, the tool, a recording, an agent at work |
 

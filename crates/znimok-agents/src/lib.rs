@@ -27,6 +27,7 @@ pub mod permissions;
 pub mod prompts;
 mod rectools;
 pub mod tools;
+mod vexport;
 mod vidtools;
 
 use std::path::PathBuf;
