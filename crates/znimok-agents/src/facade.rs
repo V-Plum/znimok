@@ -6,7 +6,7 @@
 //! Reads: `list_targets`, `library_search`, `library_get`, `list_marks`, `video_info`, `devlog`,
 //! `video_frames`, `ocr`, `read_codes`, `record_status`, `app_state`, `share_targets`. Writes:
 //! `capture`, `record`, `marks`, `transform`, `annotate`, `redact_pii`, `export`, `set_meta`,
-//! `library_edit`, `hand_over`, `share`; `library_delete` alone is destructive.
+//! `library_edit`, `hand_over`, `share`, `settings`; `library_delete` alone is destructive.
 
 use crate::permissions::Scope;
 use crate::tools::{Agent, Output, Tool, arg_str, doc_arg, obj};
@@ -251,6 +251,7 @@ pub(crate) const KEPT: &[&str] = &[
     "redact_pii",
     "export",
     "set_meta",
+    "settings",
     "library_delete",
 ];
 

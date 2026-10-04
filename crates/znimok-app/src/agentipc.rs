@@ -65,6 +65,8 @@ pub fn handle(method: &str, params: &Value) -> Option<Result<Value, znimok_ipc::
         }
         "agents.record" => record(params),
         "agents.app" => app(params),
+        // ZK-239: an agent changes the white-listed settings; the app saves them, its window follows.
+        "agents.settings" => settings(params),
         // ZK-274: an agent sends a document to a connected service.
         "agents.share" => share(params),
         // ZK-242: screenshots for an agent — on macOS only the app may capture.
@@ -491,6 +493,35 @@ fn start(what: What, opts: crate::rec::AgentOpts, limit_s: u64) -> Result<Value,
 
 /// `agents.app {op: open | copy, path}`: a library document in the editor, or its picture on the
 /// clipboard. An IPC thread.
+/// The white-listed settings (ZK-239), changed as the settings page would: saved through the
+/// app (which re-reads the file first), then the page shows the new values.
+fn settings(params: &Value) -> Result<Value, znimok_ipc::RpcError> {
+    let fail = |m: String| znimok_ipc::RpcError::new(-32000, m);
+    let set = params.get("set").cloned().unwrap_or(Value::Null);
+    znimok_agents::settools::check(&set).map_err(znimok_ipc::RpcError::invalid_params)?;
+    on_ui(move || {
+        if !crate::with_prefs(|p| p.agents.mcp_enabled).unwrap_or(false) {
+            return Err("MCP is switched off in Znimok's settings".to_string());
+        }
+        let mut out = Err("the library window is not open".to_string());
+        crate::with_ctx(|a, ui| {
+            let mut err = None;
+            a.save_prefs(ui, |p| {
+                if let Err(e) = znimok_agents::settools::apply(p, &set) {
+                    err = Some(e);
+                }
+            });
+            a.settings_sync(ui);
+            out = match err {
+                Some(e) => Err(e),
+                None => Ok(znimok_agents::settools::view(&a.prefs())),
+            };
+        });
+        out
+    })?
+    .map_err(fail)
+}
+
 fn app(params: &Value) -> Result<Value, znimok_ipc::RpcError> {
     let fail = |m: String| znimok_ipc::RpcError::new(-32000, m);
     let path = std::path::PathBuf::from(params.get("path").and_then(Value::as_str).unwrap_or(""));

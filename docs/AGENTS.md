@@ -41,6 +41,7 @@ Scopes:
 | `record` | `record` |
 | `record_audio` | `record` with `sound` other than `none` (asked on top of `record`) |
 | `share` | `share_targets`, `share` — sending documents out to the person's connected services; never part of «everything» |
+| `settings` | `settings` — only the white-listed ones (ZK-239); turning the sound of recordings on asks `record_audio` too |
 
 `record_status` and `app_state` need no permission. If Znimok is not running, nobody can be asked
 and the call is refused with a hint; the person can allow a client ahead of time:
@@ -56,7 +57,7 @@ The client name is what the client reports about itself; Znimok shows it as such
 
 **Fewer questions on the client's side.** Every tool carries the MCP annotations (`readOnlyHint`,
 `destructiveHint`, `idempotentHint`, `openWorldHint: false` — everything is local), and there are
-24 tools, one per job, reads apart from writes. In Claude Desktop's connector settings a good
+25 tools, one per job, reads apart from writes. In Claude Desktop's connector settings a good
 start is: reads (`list_targets`, `library_search`, `library_get`, `list_marks`, `video_info`,
 `video_frames`, `devlog`, `ocr`, `read_codes`, `record_status`, `app_state`, `share_targets`) — *Always allow*; writes — *Needs
 approval*; `library_delete` — approval every time.
@@ -91,7 +92,8 @@ characters do), or a path to a `.znimok` file. Every write returns the resulting
 | `hand_over` | `document`, `to` editor / clipboard | opens the document in Znimok's editor, or copies the picture |
 | `share_targets` | `target?` | the connected services: key, name (a service can have several accounts), whether it needs a place, the place used last; with `target` — its places (Slack channels, Jira / Redmine projects, Telegram chats). No tokens |
 | `share` | `document`, `target` (a key from `share_targets`), `what?` image / document for a screenshot, video / report / document / logs for a recording, `place?` (a channel, project, issue or chat; the last one when left out), `text?`, `hide?` | queued: Znimok sends it itself (and tries again when the network is away); the person sees it |
-| `app_state` | — | whether Znimok runs; the page, the document, the tool, a recording, an agent at work |
+| `app_state` | — | whether Znimok runs; the page, the document, the tool, a recording, an agent at work; `settings` — the ones an agent may change |
+| `settings` | any of: `fps` (30 / 60), `quality` (small / normal / high), `open_editor`, `devtools_log`, `hide_keys` (or `hide_keys_add` / `hide_keys_remove`), `shot_prefix`, `video_prefix`, `system_sound`, `microphone` — nothing else | what changed, the values now (through the app when it runs, else into `settings.json`) |
 
 ### Editing a recording (ZK-239)
 
@@ -140,6 +142,13 @@ The same commands the app uses (`crates/znimok-core/schema/`). Frequent ones:
 
 The capture tools take `delay_seconds` (up to 30): time for the person to bring the right window
 forward or open a menu.
+
+## Resources
+
+Each library document is `znimok://library/<id>` (its picture with the marks, PNG); a recording
+with a browser log also has `znimok://library/<id>/log` (JSON). Frames of a recording are a
+template, `znimok://library/<id>/frame/<n>` — frame `n` as recorded (0-based; `video_info` gives
+the fps), full size, with the marks of its moment (ZK-239). All need `library_read`.
 
 ## Prompts
 

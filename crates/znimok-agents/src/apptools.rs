@@ -52,7 +52,7 @@ pub(crate) const TOOLS: &[Tool] = &[
     Tool {
         name: "app_state",
         title: "What Znimok is doing",
-        description: "Whether the Znimok app is running and what it shows: the page (library, editor, settings, overlay, recording), the open document, the tool, the zoom, a running recording.",
+        description: "Whether the Znimok app is running and what it shows: the page (library, editor, settings, overlay, recording), the open document, the tool, the zoom, a running recording — and the settings an agent may change (see settings).",
         scope: None,
         read_only: true,
         schema: || obj(json!({}), &[]),
@@ -102,16 +102,17 @@ pub(crate) fn run(agent: &Agent, name: &str, args: &Value) -> Option<Result<Outp
             )?;
             Ok(Output::ok(v, vec![]))
         })(),
-        "app_state" => Ok(Output::ok(
-            match agent.gui.call("app.state", json!({})) {
+        "app_state" => {
+            let mut v = match agent.gui.call("app.state", json!({})) {
                 Ok(mut v) => {
                     v["running"] = json!(true);
                     v
                 }
                 Err(_) => json!({"running": false}),
-            },
-            vec![],
-        )),
+            };
+            v["settings"] = crate::settools::view(&agent.settings());
+            Ok(Output::ok(v, vec![]))
+        }
         _ => return None,
     })
 }

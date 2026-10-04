@@ -8,7 +8,8 @@ description: Take and annotate screenshots with Znimok (MCP server `znimok mcp`)
 Znimok runs on the user's computer. Its MCP tools, one per job: reads — `list_targets`,
 `library_search`, `library_get`, `list_marks`, `video_info`, `video_frames`, `devlog`, `ocr`, `read_codes`,
 `record_status`, `app_state`, `share_targets`; writes — `capture`, `record`, `marks`, `transform`, `annotate`,
-`redact_pii`, `export`, `set_meta`, `library_edit`, `hand_over`, `share` (to the person's connected
+`redact_pii`, `export`, `set_meta`, `library_edit`, `hand_over`, `settings` (a white list: recording
+fps and quality, the DevTools log and its hidden keys, name prefixes, sound), `share` (to the person's connected
 services: Google Drive, Gmail, Telegram, Jira, Slack, Redmine — its own permission); `library_delete` alone deletes for
 good. Full reference: `docs/AGENTS.md` in the Znimok repository.
 

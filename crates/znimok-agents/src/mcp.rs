@@ -220,7 +220,16 @@ impl<'a> Server<'a> {
             "resources/templates/list" => self.ok(
                 id,
                 modern,
-                cacheable(json!({"resourceTemplates": []}), modern),
+                // A frame of a recording (ZK-239), any of them: not listed one by one.
+                cacheable(
+                    json!({"resourceTemplates": [{
+                        "uriTemplate": "znimok://library/{document}/frame/{n}",
+                        "name": "A frame of a recording",
+                        "description": "Frame n (0-based, as recorded; video_info gives the fps) of a library recording, full size, with the marks of its moment",
+                        "mimeType": "image/png"
+                    }]}),
+                    modern,
+                ),
             ),
             "resources/read" => {
                 let uri = params["uri"].as_str().unwrap_or("");

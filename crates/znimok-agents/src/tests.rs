@@ -92,6 +92,7 @@ fn env(tag: &str, enabled: bool) -> Env {
             capture: Box::new(FakeScreen),
             enabled,
             export_dir: dir.join("exports"),
+            settings_file: dir.join("settings.json"),
         },
         dir,
     }
@@ -698,7 +699,7 @@ fn editing_tools_over_plain_arguments() {
         assert!(names.iter().any(|x| x == n), "{n} is listed");
     }
     // The published list is the facade's: one tool per job, 24 of them, the finer ones hidden.
-    assert_eq!(names.len(), 24, "{names:?}");
+    assert_eq!(names.len(), 25, "{names:?}");
     for n in [
         "add_marks",
         "crop",
@@ -1160,6 +1161,72 @@ fn recording_edits_through_transform_and_timed_marks() {
         .contains("screenshot")
     );
     assert!(refused("marks", json!({"document": shot["id"], "add": [{"kind": "rect", "x": 1, "y": 1, "width": 5, "height": 5, "from_ms": 0, "to_ms": 100}]})).contains("recordings"));
+}
+
+/// ZK-239: the white-listed settings — changed into the test's own settings.json (no app
+/// running), shown by app_state; anything off the list, a bad value, or the sound turned on
+/// without the sound permission is refused and nothing is saved.
+#[test]
+fn settings_by_white_list() {
+    let e = env("settings", true);
+    e.agent
+        .perms
+        .grant("T", Scope::Settings, Grant::Always)
+        .unwrap();
+    let call = |args: Value| e.agent.call("T", "settings", &args);
+    let r = call(
+        json!({"fps": 60, "quality": "high", "hide_keys_add": ["X-Secret"],
+                        "shot_prefix": "Bug", "open_editor": false}),
+    );
+    assert!(!r.is_error, "{:?}", r.content);
+    let s = r.structured.unwrap();
+    for k in ["fps", "quality", "hide_keys", "shot_prefix", "open_editor"] {
+        assert!(
+            s["changed"].as_array().unwrap().contains(&json!(k)),
+            "{k}: {s}"
+        );
+    }
+    let saved = znimok_settings::Store::open(&e.agent.settings_file).get();
+    assert_eq!(saved.video.fps, 60);
+    assert_eq!(saved.video.quality, znimok_settings::Quality::High);
+    assert!(saved.video.hide_keys.iter().any(|k| k == "X-Secret"));
+    assert_eq!(saved.library.shot_prefix, "Bug");
+    assert!(!saved.video.open_editor);
+
+    let state = e.agent.call("T", "app_state", &json!({}));
+    let st = state.structured.unwrap();
+    assert_eq!(st["running"], false);
+    assert_eq!(st["settings"]["fps"], 60);
+    assert_eq!(st["settings"]["shot_prefix"], "Bug");
+
+    for (bad, why) in [
+        (
+            json!({"theme": "dark"}),
+            "not a setting an agent may change",
+        ),
+        (json!({"fps": 24}), "30 or 60"),
+        (json!({"video_prefix": "a/b"}), "short word"),
+        (json!({}), "nothing to change"),
+    ] {
+        let r = call(bad.clone());
+        assert!(r.is_error, "{bad} should be refused");
+        let text = r.content[0]["text"].as_str().unwrap();
+        assert!(text.contains(why), "{bad}: {text}");
+    }
+    // The sound on: its own permission, which nobody can give here (no app to ask).
+    let r = call(json!({"microphone": true}));
+    assert!(r.is_error, "{:?}", r.structured);
+    let saved = znimok_settings::Store::open(&e.agent.settings_file).get();
+    assert!(!saved.video.audio.microphone);
+    // Turning it off needs no more than the settings permission.
+    assert!(!call(json!({"microphone": false, "fps": 30})).is_error);
+    assert_eq!(
+        znimok_settings::Store::open(&e.agent.settings_file)
+            .get()
+            .video
+            .fps,
+        30
+    );
 }
 
 /// ZK-236: the ready scenarios are listed and filled in; every tool they name exists; the hints
@@ -1636,4 +1703,43 @@ fn real_recording_exports_and_frames() {
     );
     let at = call("video_frames", json!({"document": id, "at_ms": [0, 1000]}));
     eprintln!("{}", at.structured.unwrap());
+    // A frame as a resource (ZK-239), full size.
+    let res = e
+        .agent
+        .read_resource("T", &format!("znimok://library/{id}/frame/15"))
+        .unwrap();
+    assert_eq!(res["mimeType"], "image/png");
+    use base64::Engine;
+    let png = base64::engine::general_purpose::STANDARD
+        .decode(res["blob"].as_str().unwrap())
+        .unwrap();
+    let img = image::load_from_memory(&png).unwrap();
+    eprintln!("frame 15: {}×{}", img.width(), img.height());
+    assert!(img.width() > 100 && img.height() > 100);
+
+    // Edits an agent makes reach the export (ZK-239): most of it cut, half the size → a much
+    // smaller MP4 than the untouched one.
+    e.agent
+        .perms
+        .grant("T", Scope::LibraryWrite, Grant::Always)
+        .unwrap();
+    let whole = call("export", json!({"document": id, "format": "mp4"}));
+    let whole = std::fs::metadata(whole.structured.unwrap()["path"].as_str().unwrap())
+        .unwrap()
+        .len();
+    let len = call("video_info", json!({"document": id}))
+        .structured
+        .unwrap()["duration_ms"]
+        .as_i64()
+        .unwrap();
+    call(
+        "transform",
+        json!({"document": id, "video": {"cut": [{"from_ms": len / 4, "to_ms": len}]}, "resize": {"percent": 50}}),
+    );
+    let edited = call("export", json!({"document": id, "format": "mp4"}));
+    let edited = std::fs::metadata(edited.structured.unwrap()["path"].as_str().unwrap())
+        .unwrap()
+        .len();
+    eprintln!("mp4 whole {whole} bytes, a quarter at half size {edited} bytes");
+    assert!(edited * 2 < whole, "{edited} vs {whole}");
 }
