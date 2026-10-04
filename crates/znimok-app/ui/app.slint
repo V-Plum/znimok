@@ -2758,7 +2758,6 @@ export component AppWindow inherits Window {
                 spacing: 8px;
                 onb-hide := CheckBox { text: @tr("onb-dont-show" => "Don't show next time"); checked: true; }
                 Rectangle { horizontal-stretch: 1; }
-                TextButton { text: @tr("onb-skip-all" => "Skip all"); clicked => { root.setting("onb-done", onb-hide.checked ? 1 : 0); } }
                 TextButton { text: @tr("common-done" => "Done"); primary: true; clicked => { root.setting("onb-done", onb-hide.checked ? 1 : 0); } }
             }
         }
