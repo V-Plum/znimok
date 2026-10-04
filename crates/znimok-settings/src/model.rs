@@ -60,6 +60,42 @@ pub struct Integrations {
     pub slack: SlackTarget,
     pub redmine: RedmineTarget,
     pub webhooks: Vec<WebhookTarget>,
+    /// The «Share» window (ZK-279): the target chosen last, and what was chosen for each target
+    /// (by its key) — shown again next time, always changeable.
+    pub share_last: String,
+    pub share_memory: std::collections::BTreeMap<String, ShareMemory>,
+}
+
+/// What «Share» chose for a target last (ZK-279).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(default)]
+pub struct ShareMemory {
+    /// The places sent to lately, the last first (at most 6).
+    pub recent: Vec<SharePlace>,
+    /// What went for a screenshot: `image` or `document`.
+    pub shot: String,
+    /// What went for a recording: `video`, `report`, `document` or `logs`.
+    pub video: String,
+    /// Hide the log's sensitive values.
+    pub hide: bool,
+}
+
+impl Default for ShareMemory {
+    fn default() -> Self {
+        Self {
+            recent: Vec::new(),
+            shot: String::new(),
+            video: String::new(),
+            hide: true,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(default)]
+pub struct SharePlace {
+    pub id: String,
+    pub name: String,
 }
 
 /// Google Drive (ZK-259/260): the accounts signed in through the browser; each one's refresh

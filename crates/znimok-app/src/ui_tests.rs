@@ -168,3 +168,50 @@ fn the_integrations_page_scrolls_to_its_end() {
         "what {last_what}, check {bottom}"
     );
 }
+
+/// ZK-279: the «Share» window — a service, then a place in it; «Send» only with a place.
+#[test]
+fn the_share_window_picks_a_service_and_a_place() {
+    let ui = window();
+    ui.set_page(1);
+    let rows = |r: &[(&str, &str)]| -> slint::ModelRc<crate::IntTarget> {
+        let v: Vec<crate::IntTarget> = r
+            .iter()
+            .map(|(k, n)| crate::IntTarget {
+                key: (*k).into(),
+                name: (*n).into(),
+            })
+            .collect();
+        std::rc::Rc::new(slint::VecModel::from(v)).into()
+    };
+    ui.set_sh_targets(rows(&[
+        ("slack", "Slack"),
+        ("google", "Google Drive · a@b.c"),
+    ]));
+    ui.set_sh_target("slack".into());
+    ui.set_sh_has_places(true);
+    ui.set_sh_places(rows(&[("C1", "#general"), ("C2", "#design")]));
+    ui.set_sh_whats(rows(&[
+        ("image", "Picture"),
+        ("document", "Znimok document"),
+    ]));
+    ui.set_sh_what("image".into());
+    ui.set_sh_open(true);
+    settle();
+    let seen = Rc::new(RefCell::new(Vec::new()));
+    {
+        let seen = seen.clone();
+        ui.on_sh_set(move |a, b| seen.borrow_mut().push(format!("{a}:{b}")));
+    }
+    by_label(&ui, "#design").mock_single_click(PointerEventButton::Left);
+    by_label(&ui, "Google Drive · a@b.c").mock_single_click(PointerEventButton::Left);
+    by_label(&ui, "Znimok document").mock_single_click(PointerEventButton::Left);
+    // Without a place «Send» does nothing; with one it sends.
+    by_label(&ui, "Send").mock_single_click(PointerEventButton::Left);
+    ui.set_sh_can_send(true);
+    by_label(&ui, "Send").mock_single_click(PointerEventButton::Left);
+    assert_eq!(
+        *seen.borrow(),
+        ["place:C2", "target:google", "what:document", "send:"]
+    );
+}

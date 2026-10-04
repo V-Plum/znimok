@@ -6155,8 +6155,8 @@ int-tg-token = Bot token
 
 # @where: Settings → Extensions and integrations: placeholder, the Telegram chat
 # @kind: label
-# @max: 30
-int-tg-chat = Chat ID or @channel
+# @max: 44
+int-tg-chat = Chat by default (optional)
 
 # @where: Settings → Extensions and integrations: button, find the chat that wrote to the bot
 # @kind: label
@@ -6200,8 +6200,8 @@ int-jira-token = API token
 
 # @where: Settings → Extensions and integrations: placeholder, the project key
 # @kind: label
-# @max: 20
-int-jira-project = Project key
+# @max: 44
+int-jira-project = Project by default (optional)
 
 # @where: Settings → Extensions and integrations: placeholder, an issue to attach to
 # @kind: label
@@ -6220,8 +6220,8 @@ int-slack-token = Bot token (xoxb-…)
 
 # @where: Settings → Extensions and integrations: placeholder, the channel ID
 # @kind: label
-# @max: 24
-int-slack-channel = Channel ID (C0…)
+# @max: 44
+int-slack-channel = Channel by default (optional)
 
 # @where: Settings → Extensions and integrations: placeholder, the Redmine address
 # @kind: label
@@ -6235,8 +6235,8 @@ int-rm-key = API key
 
 # @where: Settings → Extensions and integrations: placeholder, the project identifier
 # @kind: label
-# @max: 24
-int-rm-project = Project identifier
+# @max: 44
+int-rm-project = Project by default (optional)
 
 # @where: Settings → Extensions and integrations: placeholder, an issue number
 # @kind: label
@@ -6542,3 +6542,88 @@ int-webhook-logs = Logs only
 # @kind: body
 # @max: 220
 int-webhook-what-hint = The whole file: a recording as a report package (video, logs, details), a screenshot as a Znimok document. Logs only: the browser's console, network and dataLayer as JSON (a screenshot goes as a picture).
+
+# @where: The «Share» window: the list of connected services
+# @kind: label
+# @max: 20
+share-where = Where
+
+# @where: The «Share» window: the channel, project, issue or chat inside the service
+# @kind: label
+# @max: 24
+share-place = Where exactly
+
+# @where: The «Share» window: placeholder of the field that searches the places or takes one typed
+# @kind: label
+# @max: 60
+share-place-search = Search or type: a channel, a project, an issue, a chat
+
+# @where: The «Share» window: a row that sends to what was typed; $place the typed text
+# @kind: label
+# @max: 50
+share-place-use = Use «{ $place }»
+
+# @where: The «Share» window: the service's list is being fetched
+# @kind: label
+# @max: 40
+share-places-loading = Loading the list…
+
+# @where: The «Share» window: nothing chosen where exactly
+# @kind: body
+# @max: 60
+share-place-needed = Choose or type where exactly
+
+# @where: The «Share» window: what is sent
+# @kind: label
+# @max: 20
+share-what = What
+
+# @where: The «Share» window: a screenshot as a picture (PNG)
+# @kind: label
+# @max: 22
+share-what-image = Picture
+
+# @where: The «Share» window: the Znimok document itself
+# @kind: label
+# @max: 22
+share-what-document = Znimok document
+
+# @where: The «Share» window: a recording as a video (MP4)
+# @kind: label
+# @max: 22
+share-what-video = Video
+
+# @where: The «Share» window: a recording as a page with the video and its log
+# @kind: label
+# @max: 26
+share-what-report = Video with the log (HTML)
+
+# @where: The «Share» window: only a recording's logs (JSON)
+# @kind: label
+# @max: 22
+share-what-logs = Logs only
+
+# @where: The «Share» window: switch, hide the log's sensitive values
+# @kind: label
+# @max: 40
+share-hide = Hide sensitive values
+
+# @where: The «Share» window: placeholder of the comment that goes with the file
+# @kind: label
+# @max: 40
+share-comment = Comment (optional)
+
+# @where: The «Share» window: button, sends
+# @kind: label
+# @max: 16
+share-send = Send
+
+# @where: Settings → Extensions and integrations: the label at the top, the integrations are experimental
+# @kind: label
+# @max: 30
+int-experimental-badge = Experimental
+
+# @where: Settings → Extensions and integrations: the note at the top, the integrations are experimental
+# @kind: body
+# @max: 160
+int-experimental = Experimental: the integrations are still being built — things may change or not work yet. Tell us what goes wrong.

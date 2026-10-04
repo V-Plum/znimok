@@ -356,9 +356,10 @@ pub struct App {
     /// The integrations page (ZK-101): per target key, the last check's words and whether one runs.
     int_state: std::collections::HashMap<String, (String, bool)>,
     /// A video export made for «Send to» (ZK-101): the target its file goes to when it is done.
-    vexp_share: Option<String>,
-    /// The export for «Share» is a `.zreport` of which only the log goes (a webhook, ZK-275).
-    vexp_share_log: bool,
+    /// An export made to be sent (ZK-101, ZK-279): `vexport_done` puts it in the queue.
+    vexp_share: Option<ShareJob>,
+    /// The «Share» window while it is open (ZK-279).
+    sh: Option<ShareSheet>,
     vexp_serial: u64,
     vexp_run: Option<std::sync::Arc<znimok_export::Progress>>,
     vexp_timer: Option<slint::Timer>,
@@ -595,7 +596,7 @@ impl App {
             vexp_hidden: None,
             int_state: std::collections::HashMap::new(),
             vexp_share: None,
-            vexp_share_log: false,
+            sh: None,
             vexp_serial: 0,
             vexp_run: None,
             vexp_timer: None,
@@ -1736,17 +1737,6 @@ impl App {
                 self.save_prefs(ui, |p| p.integrations.google.active = id);
             }
             "google-sign-out" => self.google_sign_out(ui, target),
-            // «Share» next to «Copy» (ZK-271).
-            "share" => {
-                self.share_now(ui, target);
-                return;
-            }
-            // The menu is about to show: the targets as the settings have them now (an editor's
-            // own window is not synced with the settings page).
-            "share-menu" => {
-                set_int_targets(ui, &self.prefs().integrations);
-                return;
-            }
             "connect" => {
                 ui.set_settings_page(11);
                 self.settings_open(ui);
@@ -1954,61 +1944,322 @@ impl App {
         self.toast(ui, msg);
     }
 
-    /// «Share» in the editor (ZK-271): what it shows, to a target in one click — a screenshot as
-    /// PNG, a recording as MP4 (the video export's choices, a frame becoming the MP4).
-    fn share_now(&mut self, ui: &AppWindow, target: &str) {
-        // A webhook says what it takes (ZK-275).
-        let content = target
-            .strip_prefix("webhook:")
-            .and_then(|id| {
-                let i = self.prefs().integrations;
-                i.webhooks
-                    .iter()
-                    .find(|w| w.id == id)
-                    .map(|w| w.content.clone())
-            })
-            .unwrap_or_default();
-        if ui.get_vid_mode() {
-            let keep = (self.vexp.kind, self.vexp.zreport);
-            if content == "all" || content == "logs" {
-                self.vexp.kind = crate::vexport::REPORT;
-                self.vexp.zreport = true;
-            } else if keep.0 == crate::vexport::FRAME || keep.0 == crate::vexport::REPORT {
-                self.vexp.kind = crate::vexport::MP4;
+    // ------------------------------------------------------------------ «Share» (ZK-279)
+
+    /// A control of the «Share» window.
+    pub fn share_set(&mut self, ui: &AppWindow, what: &str, value: &str) {
+        match what {
+            "open" => self.share_open(ui),
+            "close" => {
+                self.sh = None;
+                ui.set_sh_open(false);
             }
-            self.share_video(ui, target);
-            self.vexp_share_log = self.vexp_share.is_some() && content == "logs";
-            (self.vexp.kind, self.vexp.zreport) = keep;
-            return;
-        }
-        // The whole file: the document as it is saved.
-        if content == "all" {
-            if !self.save_now(ui) {
-                return;
+            "connect" => {
+                self.sh = None;
+                ui.set_sh_open(false);
+                ui.set_settings_page(11);
+                self.settings_open(ui);
             }
-            let Some(path) = self.doc_path() else {
-                return;
-            };
-            match std::fs::read(&path) {
-                Ok(bytes) => {
-                    let name = self.doc_name();
-                    let item = znimok_share::Item {
-                        file_name: path
-                            .file_name()
-                            .map(|n| n.to_string_lossy().into_owned())
-                            .unwrap_or_else(|| format!("{name}.znimok")),
-                        mime: "application/octet-stream".into(),
-                        title: name,
-                        text: String::new(),
-                        kind: "document".into(),
-                        place: String::new(),
-                    };
-                    self.share_bytes(ui, target, item, &bytes);
+            "target" => self.share_pick(ui, value),
+            "typed" => {
+                if let Some(sh) = self.sh.as_mut() {
+                    sh.typed = value.trim().to_string();
+                    sh.place = sh.typed.clone();
+                    sh.place_name = sh.typed.clone();
                 }
-                Err(e) => self.toast(ui, format!("{} ({e})", self.tr.tr("share-queue-error"))),
+                self.share_sync(ui);
             }
+            "place" => {
+                if let Some(sh) = self.sh.as_mut() {
+                    sh.place = value.to_string();
+                    sh.place_name = sh
+                        .places
+                        .iter()
+                        .find(|p| p.id == value)
+                        .map(|p| p.name.clone())
+                        .unwrap_or_else(|| value.to_string());
+                    sh.typed.clear();
+                    ui.set_sh_typed("".into());
+                }
+                self.share_sync(ui);
+            }
+            "what" => {
+                if let Some(sh) = self.sh.as_mut() {
+                    sh.what = value.to_string();
+                }
+                self.share_sync(ui);
+            }
+            "hide" => {
+                if let Some(sh) = self.sh.as_mut() {
+                    sh.hide = value == "1";
+                }
+                self.share_sync(ui);
+            }
+            "send" => self.share_send(ui),
+            _ => {}
+        }
+    }
+
+    /// «Share»: the window opens on the target chosen last (or the default one), with what was
+    /// chosen for it last — all of it changeable.
+    fn share_open(&mut self, ui: &AppWindow) {
+        if self.s.is_none() {
             return;
         }
+        let i = self.prefs().integrations;
+        let ready = znimok_share::ready(&i);
+        let video = ui.get_vid_mode();
+        self.sh = Some(ShareSheet {
+            video,
+            has_log: video && self.has_devlog(),
+            ..Default::default()
+        });
+        ui.set_sh_text("".into());
+        ui.set_sh_typed("".into());
+        ui.set_sh_subtitle(self.doc_name().into());
+        set_list(
+            ui,
+            AppWindow::set_sh_targets,
+            ready.iter().map(|(id, n)| (id.key(), n.clone())),
+        );
+        let first = [i.share_last.as_str(), i.default_target.as_str()]
+            .into_iter()
+            .find(|k| ready.iter().any(|(id, _)| id.key() == *k))
+            .map(str::to_string)
+            .or_else(|| ready.first().map(|(id, _)| id.key()));
+        ui.set_sh_open(true);
+        match first {
+            Some(k) => self.share_pick(ui, &k),
+            None => self.share_sync(ui),
+        }
+    }
+
+    /// A target chosen: its last place and choices, and its places fetched from the service.
+    fn share_pick(&mut self, ui: &AppWindow, key: &str) {
+        let Some(id) = znimok_share::TargetId::parse(key) else {
+            return;
+        };
+        let i = self.prefs().integrations;
+        let memory = i.share_memory.get(key).cloned().unwrap_or_default();
+        let Some(sh) = self.sh.as_mut() else {
+            return;
+        };
+        sh.target = key.to_string();
+        sh.serial += 1;
+        sh.loading = znimok_share::needs_place(&id);
+        sh.note.clear();
+        sh.typed.clear();
+        ui.set_sh_typed("".into());
+        sh.places = memory
+            .recent
+            .iter()
+            .map(|p| znimok_share::Place {
+                id: p.id.clone(),
+                name: p.name.clone(),
+            })
+            .collect();
+        sh.place = znimok_share::default_place(&i, &id);
+        sh.place_name = sh
+            .places
+            .iter()
+            .find(|p| p.id == sh.place)
+            .map(|p| p.name.clone())
+            .unwrap_or_else(|| sh.place.clone());
+        if !sh.place.is_empty() && !sh.places.iter().any(|p| p.id == sh.place) {
+            sh.places.insert(
+                0,
+                znimok_share::Place {
+                    id: sh.place.clone(),
+                    name: sh.place_name.clone(),
+                },
+            );
+        }
+        // What: the last choice for this target; a webhook's setting the first time.
+        let whats = share_whats(sh.video, sh.has_log);
+        let last = if sh.video {
+            &memory.video
+        } else {
+            &memory.shot
+        };
+        let webhook = match &id {
+            znimok_share::TargetId::Webhook(w) => i
+                .webhooks
+                .iter()
+                .find(|h| &h.id == w)
+                .map(|h| match h.content.as_str() {
+                    "logs" => "logs",
+                    "all" => "document",
+                    _ => "",
+                })
+                .unwrap_or(""),
+            _ => "",
+        };
+        sh.what = [last.as_str(), webhook]
+            .into_iter()
+            .find(|w| whats.contains(w))
+            .unwrap_or(whats[0])
+            .to_string();
+        sh.hide = memory.hide;
+        let (serial, loading) = (sh.serial, sh.loading);
+        self.share_sync(ui);
+        if loading {
+            let me = self.me();
+            let key = key.to_string();
+            std::thread::spawn(move || {
+                let t = znimok_models::http::system();
+                let vault = znimok_settings::Vault::default();
+                let r = znimok_share::places(t.as_ref(), &vault, &i, &id);
+                let _ = slint::invoke_from_event_loop(move || {
+                    me.with(|a, ui| a.share_places_came(ui, &key, serial, r))
+                });
+            });
+        }
+    }
+
+    /// The service's places came (or why not): after the ones sent to lately.
+    fn share_places_came(
+        &mut self,
+        ui: &AppWindow,
+        key: &str,
+        serial: u64,
+        r: Result<Vec<znimok_share::Place>, znimok_share::ShareError>,
+    ) {
+        let Some(sh) = self
+            .sh
+            .as_mut()
+            .filter(|s| s.target == key && s.serial == serial)
+        else {
+            return;
+        };
+        sh.loading = false;
+        match r {
+            Ok(list) => {
+                for p in list {
+                    if !sh.places.iter().any(|q| q.id == p.id) {
+                        sh.places.push(p);
+                    }
+                }
+            }
+            Err(e) => sh.note = e.to_string(),
+        }
+        self.share_sync(ui);
+    }
+
+    /// The window from the state: the places filtered by what is typed (and what is typed as a
+    /// place of its own), what can go, whether «Send» can.
+    fn share_sync(&self, ui: &AppWindow) {
+        let Some(sh) = self.sh.as_ref() else {
+            ui.set_sh_open(false);
+            return;
+        };
+        let id = znimok_share::TargetId::parse(&sh.target);
+        let needs = id.as_ref().is_some_and(znimok_share::needs_place);
+        ui.set_sh_target(sh.target.clone().into());
+        ui.set_sh_has_places(needs);
+        let q = sh.typed.to_lowercase();
+        let mut rows: Vec<(String, String)> = Vec::new();
+        if !q.is_empty() && !sh.places.iter().any(|p| p.id.to_lowercase() == q) {
+            rows.push((
+                sh.typed.clone(),
+                self.tr
+                    .tr_args("share-place-use", &args(&[("place", sh.typed.clone())])),
+            ));
+        }
+        rows.extend(
+            sh.places
+                .iter()
+                .filter(|p| {
+                    q.is_empty()
+                        || p.name.to_lowercase().contains(&q)
+                        || p.id.to_lowercase().contains(&q)
+                })
+                .take(8)
+                .map(|p| (p.id.clone(), p.name.clone())),
+        );
+        set_list(ui, AppWindow::set_sh_places, rows.into_iter());
+        ui.set_sh_place(sh.place.clone().into());
+        ui.set_sh_note(
+            if sh.loading {
+                self.tr.tr("share-places-loading")
+            } else {
+                sh.note.clone()
+            }
+            .into(),
+        );
+        let whats = share_whats(sh.video, sh.has_log);
+        set_list(
+            ui,
+            AppWindow::set_sh_whats,
+            whats
+                .iter()
+                .map(|w| (w.to_string(), self.tr.tr(&format!("share-what-{w}")))),
+        );
+        ui.set_sh_what(sh.what.clone().into());
+        let ask = self.prefs().video.hide_on_export == znimok_settings::HideOnExport::Ask;
+        ui.set_sh_hide_shown(sh.has_log && ask && (sh.what == "report" || sh.what == "logs"));
+        ui.set_sh_hide(sh.hide);
+        ui.set_sh_can_send(id.is_some() && (!needs || !sh.place.trim().is_empty()));
+    }
+
+    /// «Send»: the choice is remembered for the target, and what was chosen goes.
+    fn share_send(&mut self, ui: &AppWindow) {
+        let Some(sh) = self.sh.take() else {
+            return;
+        };
+        ui.set_sh_open(false);
+        let text = ui.get_sh_text().trim().to_string();
+        let place = sh.place.trim().to_string();
+        let target = sh.target.clone();
+        {
+            let (target, place, name) = (target.clone(), place.clone(), sh.place_name.clone());
+            let (video, what, hide) = (sh.video, sh.what.clone(), sh.hide);
+            self.save_prefs(ui, move |p| {
+                let i = &mut p.integrations;
+                i.share_last = target.clone();
+                let m = i.share_memory.entry(target).or_default();
+                if video {
+                    m.video = what;
+                } else {
+                    m.shot = what;
+                }
+                m.hide = hide;
+                if !place.is_empty() {
+                    m.recent.retain(|r| r.id != place);
+                    let name = if name.trim().is_empty() {
+                        place.clone()
+                    } else {
+                        name
+                    };
+                    m.recent
+                        .insert(0, znimok_settings::SharePlace { id: place, name });
+                    m.recent.truncate(6);
+                }
+            });
+        }
+        let job = ShareJob {
+            target: target.clone(),
+            place: place.clone(),
+            text: text.clone(),
+            only_log: sh.what == "logs",
+        };
+        match sh.what.as_str() {
+            "document" => self.share_document(ui, &job),
+            "video" | "report" | "logs" => {
+                let mut p = self.vexp.clone();
+                (p.kind, p.zreport) = match sh.what.as_str() {
+                    "video" => (crate::vexport::MP4, false),
+                    "report" => (crate::vexport::REPORT, false),
+                    _ => (crate::vexport::REPORT, true),
+                };
+                p.hide = sh.hide;
+                self.share_video_with(ui, p, job);
+            }
+            _ => self.share_picture(ui, &job),
+        }
+    }
+
+    /// The screenshot as a PNG.
+    fn share_picture(&mut self, ui: &AppWindow, job: &ShareJob) {
         let Some((w, h, rgba)) = self.flatten() else {
             return;
         };
@@ -2031,15 +2282,39 @@ impl App {
             file_name: format!("{name}.png"),
             mime: "image/png".into(),
             title: name,
-            text: self
-                .s
-                .as_ref()
-                .map(|s| s.ed.doc.meta.description.clone())
-                .unwrap_or_default(),
+            text: job.text.clone(),
             kind: "screenshot".into(),
-            place: String::new(),
+            place: job.place.clone(),
         };
-        self.share_bytes(ui, target, item, &bytes);
+        self.share_bytes(ui, &job.target, item, &bytes);
+    }
+
+    /// The Znimok document as it is saved.
+    fn share_document(&mut self, ui: &AppWindow, job: &ShareJob) {
+        if !self.save_now(ui) {
+            return;
+        }
+        let Some(path) = self.doc_path() else {
+            return;
+        };
+        match std::fs::read(&path) {
+            Ok(bytes) => {
+                let name = self.doc_name();
+                let item = znimok_share::Item {
+                    file_name: path
+                        .file_name()
+                        .map(|n| n.to_string_lossy().into_owned())
+                        .unwrap_or_else(|| format!("{name}.znimok")),
+                    mime: "application/octet-stream".into(),
+                    title: name,
+                    text: job.text.clone(),
+                    kind: "document".into(),
+                    place: job.place.clone(),
+                };
+                self.share_bytes(ui, &job.target, item, &bytes);
+            }
+            Err(e) => self.toast(ui, format!("{} ({e})", self.tr.tr("share-queue-error"))),
+        }
     }
 
     /// The screenshot as the export sheet has it (format, quality, size) to a target.
@@ -2091,21 +2366,33 @@ impl App {
 
     /// The video export with the sheet's choices, to a target when it is done.
     fn share_video(&mut self, ui: &AppWindow, target: &str) {
+        let job = ShareJob {
+            target: target.to_string(),
+            ..Default::default()
+        };
+        self.share_video_with(ui, self.vexp.clone(), job);
+    }
+
+    /// A video export (`p`) made for sending: into the cache, `vexport_done` queues it.
+    fn share_video_with(
+        &mut self,
+        ui: &AppWindow,
+        mut p: crate::vexport::VidExport,
+        job: ShareJob,
+    ) {
         use crate::vexport::*;
-        if self.vexp_run.is_some() || matches!(self.vexp.kind, FRAME) {
+        if self.vexp_run.is_some() || p.kind == FRAME {
             return;
         }
         let name = file_safe(ui.get_exp_name().trim());
-        let name = if name.is_empty() {
+        let name = if name.is_empty() || !self.vexp_open {
             self.doc_name()
         } else {
             name
         };
-        let mut p = self.vexp.clone();
-        // Into the cache, as for the clipboard; `vexport_done` sends it.
         p.to = TO_CLIPBOARD;
-        self.vexp_share = Some(target.to_string());
-        self.vexport_start(ui, &p, &name, true);
+        self.vexp_share = Some(job);
+        self.vexport_start(ui, &p, &name, self.vexp_open);
     }
 
     /// Sends a file to a target through the queue; the toast says it is on its way.
@@ -9311,7 +9598,7 @@ impl App {
         self.vexp_timer = None;
         let fmt = p.name().to_string();
         // Made for «Send to» (ZK-101): the file goes to the queue, not to the clipboard.
-        if let (Some(target), Ok((_, path))) = (self.vexp_share.take(), &r) {
+        if let (Some(job), Ok((_, path))) = (self.vexp_share.take(), &r) {
             let ext = path
                 .extension()
                 .and_then(|e| e.to_str())
@@ -9321,7 +9608,7 @@ impl App {
                 .file_name()
                 .map(|n| n.to_string_lossy().into_owned())
                 .unwrap_or_default();
-            let only_log = std::mem::take(&mut self.vexp_share_log);
+            let only_log = job.only_log;
             match std::fs::read(path) {
                 Ok(bytes) => {
                     let title = path
@@ -9332,9 +9619,9 @@ impl App {
                         title: title.clone(),
                         file_name,
                         mime: crate::integrations::mime_of(&ext).into(),
-                        text: String::new(),
+                        text: job.text.clone(),
                         kind: if p.kind == REPORT { "report" } else { "video" }.into(),
-                        place: String::new(),
+                        place: job.place.clone(),
                     };
                     // Logs only (ZK-275): the report's own log.json — masked and on the cut
                     // time line just as in the report.
@@ -9361,7 +9648,7 @@ impl App {
                     if self.vexp_open {
                         self.vexport_close(ui);
                     }
-                    self.share_bytes(ui, &target, item, &bytes);
+                    self.share_bytes(ui, &job.target, item, &bytes);
                 }
                 Err(e) => self.toast(ui, format!("{} ({e})", self.tr.tr("share-queue-error"))),
             }
@@ -12598,7 +12885,7 @@ enum Found {
 
 /// The targets of «Send to» and «Share», ready to send (ZK-101, ZK-271).
 fn set_int_targets(ui: &AppWindow, i: &znimok_settings::Integrations) {
-    let targets: Vec<crate::IntTarget> = znimok_share::ready(i)
+    let targets: Vec<crate::IntTarget> = znimok_share::ready_now(i)
         .into_iter()
         .map(|(id, name)| crate::IntTarget {
             key: id.key().into(),
@@ -12606,6 +12893,60 @@ fn set_int_targets(ui: &AppWindow, i: &znimok_settings::Integrations) {
         })
         .collect();
     ui.set_int_targets(std::rc::Rc::new(slint::VecModel::from(targets)).into());
+}
+
+/// An export or a file on its way to a target (ZK-279): where exactly, the comment, and whether
+/// only the report's log goes.
+#[derive(Clone, Debug, Default)]
+struct ShareJob {
+    target: String,
+    place: String,
+    text: String,
+    only_log: bool,
+}
+
+/// The «Share» window's state (ZK-279).
+#[derive(Clone, Debug, Default)]
+struct ShareSheet {
+    target: String,
+    video: bool,
+    has_log: bool,
+    /// The places sent to lately, then the service's.
+    places: Vec<znimok_share::Place>,
+    place: String,
+    place_name: String,
+    typed: String,
+    what: String,
+    hide: bool,
+    loading: bool,
+    note: String,
+    /// Which fetch of places is the current one.
+    serial: u64,
+}
+
+/// What «Share» can send: a screenshot — the picture or the document; a recording — the video,
+/// the page with its log, the document, the log alone (the two last with a log only).
+fn share_whats(video: bool, has_log: bool) -> Vec<&'static str> {
+    match (video, has_log) {
+        (false, _) => vec!["image", "document"],
+        (true, true) => vec!["video", "report", "document", "logs"],
+        (true, false) => vec!["video", "document"],
+    }
+}
+
+/// A list of `(key, name)` into one of the window's `[IntTarget]` properties.
+fn set_list(
+    ui: &AppWindow,
+    set: fn(&AppWindow, slint::ModelRc<crate::IntTarget>),
+    rows: impl Iterator<Item = (String, String)>,
+) {
+    let rows: Vec<crate::IntTarget> = rows
+        .map(|(k, n)| crate::IntTarget {
+            key: k.into(),
+            name: n.into(),
+        })
+        .collect();
+    set(ui, std::rc::Rc::new(slint::VecModel::from(rows)).into());
 }
 
 #[cfg(test)]

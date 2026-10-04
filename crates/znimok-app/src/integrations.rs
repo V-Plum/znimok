@@ -99,7 +99,7 @@ pub fn mime_of(ext: &str) -> &'static str {
 
 /// The target «Send» in one click goes to: the default one if it is ready, else the first ready.
 pub fn quick_target(i: &Integrations) -> Option<(String, String)> {
-    let ready = znimok_share::ready(i);
+    let ready = znimok_share::ready_now(i);
     ready
         .iter()
         .find(|(id, _)| id.key() == i.default_target)

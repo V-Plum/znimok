@@ -147,7 +147,7 @@ pub fn ready(cfg: &Integrations) -> Vec<(TargetId, String)> {
     {
         out.push((TargetId::Google, format!("Google Drive · {}", a.email)));
     }
-    if cfg.telegram.enabled && !cfg.telegram.chat_id.trim().is_empty() {
+    if cfg.telegram.enabled {
         let t = &cfg.telegram;
         let name = if t.chat_title.is_empty() {
             "Telegram".into()
@@ -156,7 +156,7 @@ pub fn ready(cfg: &Integrations) -> Vec<(TargetId, String)> {
         };
         out.push((TargetId::Telegram, name));
     }
-    if cfg.jira.enabled && !cfg.jira.site.trim().is_empty() && !cfg.jira.project.trim().is_empty() {
+    if cfg.jira.enabled && !cfg.jira.site.trim().is_empty() {
         let j = &cfg.jira;
         let what = if j.issue.trim().is_empty() {
             j.project.trim().to_string()
@@ -165,7 +165,7 @@ pub fn ready(cfg: &Integrations) -> Vec<(TargetId, String)> {
         };
         out.push((TargetId::Jira, named("Jira", &what)));
     }
-    if cfg.slack.enabled && !cfg.slack.channel.trim().is_empty() {
+    if cfg.slack.enabled {
         out.push((TargetId::Slack, named("Slack", cfg.slack.channel.trim())));
     }
     if cfg.redmine.enabled && !cfg.redmine.url.trim().is_empty() {
@@ -188,6 +188,47 @@ pub fn ready(cfg: &Integrations) -> Vec<(TargetId, String)> {
         }
     }
     out
+}
+
+/// The targets that can send without asking where exactly (ZK-279): the one-click «Send to» of
+/// the card after a shot and of the export sheets. A target that needs a place has one in the
+/// settings or one sent to last.
+pub fn ready_now(cfg: &Integrations) -> Vec<(TargetId, String)> {
+    ready(cfg)
+        .into_iter()
+        .filter(|(id, _)| !needs_place(id) || !default_place(cfg, id).is_empty())
+        .collect()
+}
+
+/// Whether a target sends to a place inside it (a channel, a project, a chat).
+pub fn needs_place(id: &TargetId) -> bool {
+    matches!(
+        id,
+        TargetId::Telegram | TargetId::Slack | TargetId::Jira | TargetId::Redmine
+    )
+}
+
+/// Where a target sends when nothing is chosen: the place sent to last, else the settings' one.
+pub fn default_place(cfg: &Integrations, id: &TargetId) -> String {
+    if let Some(p) = cfg
+        .share_memory
+        .get(&id.key())
+        .and_then(|m| m.recent.first())
+        .filter(|p| !p.id.trim().is_empty())
+    {
+        return p.id.clone();
+    }
+    match id {
+        TargetId::Telegram => cfg.telegram.chat_id.trim().to_string(),
+        TargetId::Slack => cfg.slack.channel.trim().to_string(),
+        TargetId::Jira if !cfg.jira.issue.trim().is_empty() => cfg.jira.issue.trim().to_string(),
+        TargetId::Jira => cfg.jira.project.trim().to_string(),
+        TargetId::Redmine if !cfg.redmine.issue.trim().is_empty() => {
+            format!("#{}", cfg.redmine.issue.trim())
+        }
+        TargetId::Redmine => cfg.redmine.project.trim().to_string(),
+        _ => String::new(),
+    }
 }
 
 /// «Slack · C0123», or «Slack» when the place is chosen when sharing.
@@ -356,6 +397,16 @@ pub fn send(
     bytes: &[u8],
 ) -> Result<Sent, ShareError> {
     use znimok_settings::Secret;
+    let chosen;
+    let item = if item.place.trim().is_empty() && needs_place(id) {
+        chosen = Item {
+            place: default_place(cfg, id),
+            ..item.clone()
+        };
+        &chosen
+    } else {
+        item
+    };
     match id {
         TargetId::Google => {
             let a = google_access(t, vault, cfg)?;
@@ -610,6 +661,33 @@ mod tests {
         let v: serde_json::Value = serde_json::from_slice(&f.seen()[2].body).unwrap();
         assert_eq!(v["channel_id"], "CCHOSEN");
         assert_eq!(or("", "CSETTINGS"), "CSETTINGS");
+    }
+
+    #[test]
+    fn ready_now_wants_a_place_where_one_is_needed() {
+        let mut cfg = Integrations::default();
+        cfg.slack.enabled = true;
+        cfg.telegram.enabled = true;
+        // Ready in the window (the place is chosen there), not in one click.
+        assert_eq!(ready(&cfg).len(), 2);
+        assert!(ready_now(&cfg).is_empty());
+        cfg.slack.channel = "C1".into();
+        assert_eq!(ready_now(&cfg)[0].0, TargetId::Slack);
+        // The place sent to last counts as well, and comes first.
+        cfg.share_memory.insert(
+            "telegram".into(),
+            znimok_settings::ShareMemory {
+                recent: vec![znimok_settings::SharePlace {
+                    id: "42".into(),
+                    name: "Plum".into(),
+                }],
+                ..Default::default()
+            },
+        );
+        assert_eq!(ready_now(&cfg).len(), 2);
+        assert_eq!(default_place(&cfg, &TargetId::Telegram), "42");
+        cfg.redmine.issue = "7".into();
+        assert_eq!(default_place(&cfg, &TargetId::Redmine), "#7");
     }
 
     #[test]
