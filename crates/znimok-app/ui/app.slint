@@ -5412,10 +5412,11 @@ export component AppWindow inherits Window {
                         alignment: start;
                         if root.sh-has-places: Text { text: @tr("share-place" => "Where exactly"); color: Theme.text3; font-size: 11px; font-weight: 600; letter-spacing: 0.4px; }
                         if root.sh-has-places: LineEdit { text <=> root.sh-typed; placeholder-text: @tr("share-place-search" => "Search or type: a channel, a project, an issue, a chat"); edited(t) => { root.sh-set("typed", t); } }
-                        if root.sh-has-places: VerticalLayout {
-                            spacing: 2px;
+                        // Every place, scrolling past eight rows (ZK-290); typing narrows it.
+                        if root.sh-has-places: ListView {
+                            height: min(8, root.sh-places.length) * 32px;
                             for p in root.sh-places: Rectangle {
-                                height: 30px;
+                                height: 32px;
                                 border-radius: 7px;
                                 background: root.sh-place == p.key ? Theme.accent.transparentize(0.86) : (pt.has-hover ? Theme.hover : transparent);
                                 pt := TouchArea { mouse-cursor: MouseCursor.pointer; clicked => { root.sh-set("place", p.key); } }

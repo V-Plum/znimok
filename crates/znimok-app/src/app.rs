@@ -2619,7 +2619,7 @@ impl App {
                         || p.name.to_lowercase().contains(&q)
                         || p.id.to_lowercase().contains(&q)
                 })
-                .take(8)
+                // All of them: the window's list scrolls (ZK-290).
                 .map(|p| (p.id.clone(), p.name.clone())),
         );
         set_list(ui, AppWindow::set_sh_places, rows.into_iter());
