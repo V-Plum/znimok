@@ -232,6 +232,7 @@ mod tests {
             title: "Знімок".into(),
             text: "кнопка не та".into(),
             kind: "screenshot".into(),
+            place: String::new(),
         }
     }
 

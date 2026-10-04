@@ -149,6 +149,7 @@ mod tests {
             title: "Знімок".into(),
             text: "кнопка не працює".into(),
             kind: "screenshot".into(),
+            place: String::new(),
         }
     }
 

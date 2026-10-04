@@ -39,7 +39,7 @@ pub fn app_url() -> String {
     let manifest = json!({
         "display_information": {"name": "Znimok", "description": "Screenshots and recordings from Znimok"},
         "features": {"bot_user": {"display_name": "Znimok", "always_online": false}},
-        "oauth_config": {"scopes": {"bot": ["files:write", "chat:write"]}},
+        "oauth_config": {"scopes": {"bot": ["files:write", "chat:write", "channels:read", "groups:read"]}},
         "settings": {"org_deploy_enabled": false, "socket_mode_enabled": false, "token_rotation_enabled": false}
     });
     format!(
@@ -50,6 +50,53 @@ pub fn app_url() -> String {
 
 fn bearer(token: &str) -> String {
     format!("Bearer {token}")
+}
+
+/// The channels the bot can post to (ZK-278): the public ones and the private ones it is in,
+/// `(id, #name)`, by name. Needs `channels:read` / `groups:read` (the app made from the manifest
+/// has them; an older app says so).
+pub fn channels(t: &dyn Transport, token: &str) -> Result<Vec<(String, String)>, ShareError> {
+    let a = bearer(token);
+    let mut out = Vec::new();
+    let mut cursor = String::new();
+    for _ in 0..10 {
+        let mut url = format!(
+            "{API}/conversations.list?types=public_channel,private_channel&exclude_archived=true&limit=200"
+        );
+        if !cursor.is_empty() {
+            url.push_str(&format!("&cursor={}", percent(&cursor)));
+        }
+        let r = t.request(
+            "GET",
+            &url,
+            &[("Authorization", &a)],
+            None,
+            timeout_for(0),
+            MAX_ANSWER,
+        )?;
+        let v = match answer(&r) {
+            Err(ShareError::Fail(m)) if m.contains("missing_scope") => {
+                return Err(ShareError::Fail(
+                    "Slack: the app may not list channels — make it again with «Create the Slack app» or type the channel's ID".into(),
+                ));
+            }
+            other => other?,
+        };
+        for c in v["channels"].as_array().into_iter().flatten() {
+            if let (Some(id), Some(name)) = (c["id"].as_str(), c["name"].as_str()) {
+                out.push((id.to_string(), format!("#{name}")));
+            }
+        }
+        cursor = v["response_metadata"]["next_cursor"]
+            .as_str()
+            .unwrap_or("")
+            .to_string();
+        if cursor.is_empty() {
+            break;
+        }
+    }
+    out.sort_by_key(|p| p.1.to_lowercase());
+    Ok(out)
 }
 
 /// The workspace and the bot (`auth.test`).
@@ -190,6 +237,36 @@ mod tests {
         assert!(u.starts_with("https://api.slack.com/apps?new_app=1&manifest_json=%7B"));
         assert!(u.contains("files%3Awrite") && u.contains("chat%3Awrite"));
         assert!(!u.contains(' ') && !u.contains('"'));
+    }
+
+    #[test]
+    fn channels_by_name_over_pages() {
+        let f = Fake::new(&[
+            (
+                200,
+                r#"{"ok":true,"channels":[{"id":"C2","name":"zeta"}],"response_metadata":{"next_cursor":"abc="}}"#,
+            ),
+            (
+                200,
+                r#"{"ok":true,"channels":[{"id":"C1","name":"Alpha"}],"response_metadata":{"next_cursor":""}}"#,
+            ),
+        ]);
+        let c = channels(&f, "xoxb").unwrap();
+        assert_eq!(
+            c,
+            [
+                ("C1".to_string(), "#Alpha".to_string()),
+                ("C2".into(), "#zeta".into())
+            ]
+        );
+        assert!(f.seen()[1].url.ends_with("&cursor=abc%3D"));
+        let f = Fake::new(&[(200, r#"{"ok":false,"error":"missing_scope"}"#)]);
+        assert!(
+            channels(&f, "xoxb")
+                .unwrap_err()
+                .to_string()
+                .contains("Create the Slack app")
+        );
     }
 
     #[test]
