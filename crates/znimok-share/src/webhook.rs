@@ -108,6 +108,7 @@ mod tests {
             name: "n8n".into(),
             url: url.into(),
             header: "Authorization".into(),
+            content: String::new(),
         }
     }
 

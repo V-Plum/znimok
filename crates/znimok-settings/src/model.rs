@@ -162,6 +162,10 @@ pub struct WebhookTarget {
     /// A header sent with every request (`Authorization`, `X-Api-Key`…); its value is a secret
     /// (`share-webhook-<id>`). Empty = none.
     pub header: String,
+    /// What «Share» sends (ZK-275): empty = the video (MP4) or the screenshot (PNG); `all` = the
+    /// whole file (a recording's `.zreport`, a screenshot's `.znimok`); `logs` = a recording's
+    /// log (JSON; a screenshot goes as PNG).
+    pub content: String,
 }
 
 // ---------------------------------------------------------------------------------------------

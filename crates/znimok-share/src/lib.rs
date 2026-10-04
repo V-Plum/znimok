@@ -35,7 +35,8 @@ pub struct Item {
     pub title: String,
     /// Words that go with it (a caption, a comment); may be empty.
     pub text: String,
-    /// `screenshot`, `video`, `report` — for a webhook's receiver.
+    /// `screenshot`, `video`, `report`, `document` (a `.znimok`), `log` (JSON) — for a webhook's
+    /// receiver.
     pub kind: String,
 }
 
@@ -464,6 +465,7 @@ mod tests {
             name: "n8n".into(),
             url: "https://example.org/hook".into(),
             header: String::new(),
+            content: String::new(),
         });
         let names: Vec<String> = ready(&cfg).into_iter().map(|(_, n)| n).collect();
         assert_eq!(names, ["Telegram · Plum", "Jira · ZT", "n8n"]);

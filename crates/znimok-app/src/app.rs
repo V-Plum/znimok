@@ -357,6 +357,8 @@ pub struct App {
     int_state: std::collections::HashMap<String, (String, bool)>,
     /// A video export made for «Send to» (ZK-101): the target its file goes to when it is done.
     vexp_share: Option<String>,
+    /// The export for «Share» is a `.zreport` of which only the log goes (a webhook, ZK-275).
+    vexp_share_log: bool,
     vexp_serial: u64,
     vexp_run: Option<std::sync::Arc<znimok_export::Progress>>,
     vexp_timer: Option<slint::Timer>,
@@ -593,6 +595,7 @@ impl App {
             vexp_hidden: None,
             int_state: std::collections::HashMap::new(),
             vexp_share: None,
+            vexp_share_log: false,
             vexp_serial: 0,
             vexp_run: None,
             vexp_timer: None,
@@ -1576,6 +1579,7 @@ impl App {
                         .is_some(),
                     status: s.into(),
                     busy: b,
+                    content: w.content.clone().into(),
                 }
             })
             .collect();
@@ -1629,6 +1633,7 @@ impl App {
                             "int-wh-name" => w.name = t,
                             "int-wh-url" => w.url = t,
                             "int-wh-header" => w.header = t,
+                            "int-wh-content" => w.content = t,
                             "int-wh-enabled" => w.enabled = t == "1",
                             _ => {}
                         }
@@ -1952,13 +1957,55 @@ impl App {
     /// «Share» in the editor (ZK-271): what it shows, to a target in one click — a screenshot as
     /// PNG, a recording as MP4 (the video export's choices, a frame becoming the MP4).
     fn share_now(&mut self, ui: &AppWindow, target: &str) {
+        // A webhook says what it takes (ZK-275).
+        let content = target
+            .strip_prefix("webhook:")
+            .and_then(|id| {
+                let i = self.prefs().integrations;
+                i.webhooks
+                    .iter()
+                    .find(|w| w.id == id)
+                    .map(|w| w.content.clone())
+            })
+            .unwrap_or_default();
         if ui.get_vid_mode() {
-            let keep = self.vexp.kind;
-            if keep == crate::vexport::FRAME {
+            let keep = (self.vexp.kind, self.vexp.zreport);
+            if content == "all" || content == "logs" {
+                self.vexp.kind = crate::vexport::REPORT;
+                self.vexp.zreport = true;
+            } else if keep.0 == crate::vexport::FRAME || keep.0 == crate::vexport::REPORT {
                 self.vexp.kind = crate::vexport::MP4;
             }
             self.share_video(ui, target);
-            self.vexp.kind = keep;
+            self.vexp_share_log = self.vexp_share.is_some() && content == "logs";
+            (self.vexp.kind, self.vexp.zreport) = keep;
+            return;
+        }
+        // The whole file: the document as it is saved.
+        if content == "all" {
+            if !self.save_now(ui) {
+                return;
+            }
+            let Some(path) = self.doc_path() else {
+                return;
+            };
+            match std::fs::read(&path) {
+                Ok(bytes) => {
+                    let name = self.doc_name();
+                    let item = znimok_share::Item {
+                        file_name: path
+                            .file_name()
+                            .map(|n| n.to_string_lossy().into_owned())
+                            .unwrap_or_else(|| format!("{name}.znimok")),
+                        mime: "application/octet-stream".into(),
+                        title: name,
+                        text: String::new(),
+                        kind: "document".into(),
+                    };
+                    self.share_bytes(ui, target, item, &bytes);
+                }
+                Err(e) => self.toast(ui, format!("{} ({e})", self.tr.tr("share-queue-error"))),
+            }
             return;
         }
         let Some((w, h, rgba)) = self.flatten() else {
@@ -9271,17 +9318,40 @@ impl App {
                 .file_name()
                 .map(|n| n.to_string_lossy().into_owned())
                 .unwrap_or_default();
+            let only_log = std::mem::take(&mut self.vexp_share_log);
             match std::fs::read(path) {
                 Ok(bytes) => {
-                    let item = znimok_share::Item {
-                        title: path
-                            .file_stem()
-                            .map(|n| n.to_string_lossy().into_owned())
-                            .unwrap_or_default(),
+                    let title = path
+                        .file_stem()
+                        .map(|n| n.to_string_lossy().into_owned())
+                        .unwrap_or_default();
+                    let mut item = znimok_share::Item {
+                        title: title.clone(),
                         file_name,
                         mime: crate::integrations::mime_of(&ext).into(),
                         text: String::new(),
                         kind: if p.kind == REPORT { "report" } else { "video" }.into(),
+                    };
+                    // Logs only (ZK-275): the report's own log.json — masked and on the cut
+                    // time line just as in the report.
+                    let bytes = if only_log {
+                        let log = znimok_report::zip::read(&bytes).ok().and_then(|files| {
+                            files
+                                .into_iter()
+                                .find(|(n, _)| n == "log.json")
+                                .map(|f| f.1)
+                        });
+                        let _ = std::fs::remove_file(path);
+                        let Some(log) = log else {
+                            self.toast(ui, self.tr.tr("share-queue-error"));
+                            return;
+                        };
+                        item.file_name = format!("{title}.log.json");
+                        item.mime = "application/json".into();
+                        item.kind = "log".into();
+                        log
+                    } else {
+                        bytes
                     };
                     let _ = std::fs::remove_file(path);
                     if self.vexp_open {
