@@ -59,7 +59,9 @@ pub const SIGN_IN_PATH: &str = "/callback";
 pub const SIGN_IN_RELAY: &str = "https://v-plum.github.io/znimok/oauth/slack.html";
 /// User scopes: a desktop sign-in with PKCE may not ask for a bot, so Znimok posts as the person —
 /// files into a channel, the channels to choose from.
-pub const USER_SCOPES: &str = "files:write,chat:write,channels:read,groups:read";
+/// The conversations too (ZK-289): one-to-one and group messages, and the people's names.
+pub const USER_SCOPES: &str =
+    "files:write,chat:write,channels:read,groups:read,im:read,mpim:read,users:read";
 /// What a stored token starts with when it is a sign-in's refresh token (else a pasted one).
 pub const SIGNED_IN: &str = "oauth:";
 
@@ -183,41 +185,25 @@ fn bearer(token: &str) -> String {
     format!("Bearer {token}")
 }
 
-/// The channels the bot can post to (ZK-278): the public ones and the private ones it is in,
-/// `(id, #name)`, by name. Needs `channels:read` / `groups:read` (the app made from the manifest
-/// has them; an older app says so).
-pub fn channels(t: &dyn Transport, token: &str) -> Result<Vec<(String, String)>, ShareError> {
-    let a = bearer(token);
+/// One paged Slack list (`conversations.list`, `users.list`): the items under `key`.
+fn paged(t: &dyn Transport, a: &str, url: &str, key: &str) -> Result<Vec<Value>, ShareError> {
     let mut out = Vec::new();
     let mut cursor = String::new();
     for _ in 0..10 {
-        let mut url = format!(
-            "{API}/conversations.list?types=public_channel,private_channel&exclude_archived=true&limit=200"
-        );
+        let mut u = url.to_string();
         if !cursor.is_empty() {
-            url.push_str(&format!("&cursor={}", percent(&cursor)));
+            u.push_str(&format!("&cursor={}", percent(&cursor)));
         }
         let r = t.request(
             "GET",
-            &url,
-            &[("Authorization", &a)],
+            &u,
+            &[("Authorization", a)],
             None,
             timeout_for(0),
             MAX_ANSWER,
         )?;
-        let v = match answer(&r) {
-            Err(ShareError::Fail(m)) if m.contains("missing_scope") => {
-                return Err(ShareError::Fail(
-                    "Slack: the app may not list channels — make it again with «Create the Slack app» or type the channel's ID".into(),
-                ));
-            }
-            other => other?,
-        };
-        for c in v["channels"].as_array().into_iter().flatten() {
-            if let (Some(id), Some(name)) = (c["id"].as_str(), c["name"].as_str()) {
-                out.push((id.to_string(), format!("#{name}")));
-            }
-        }
+        let v = answer(&r)?;
+        out.extend(v[key].as_array().into_iter().flatten().cloned());
         cursor = v["response_metadata"]["next_cursor"]
             .as_str()
             .unwrap_or("")
@@ -226,7 +212,97 @@ pub fn channels(t: &dyn Transport, token: &str) -> Result<Vec<(String, String)>,
             break;
         }
     }
+    Ok(out)
+}
+
+fn missing_scope(e: &ShareError) -> bool {
+    matches!(e, ShareError::Fail(m) if m.contains("missing_scope"))
+}
+
+/// `mpdm-anna--bohdan--plum-1` → `anna, bohdan, plum`.
+fn group_name(raw: &str) -> String {
+    let s = raw.trim_start_matches("mpdm-");
+    let s = s
+        .rsplit_once('-')
+        .filter(|(_, n)| n.chars().all(|c| c.is_ascii_digit()))
+        .map_or(s, |(a, _)| a);
+    s.split("--").collect::<Vec<_>>().join(", ")
+}
+
+/// Where the person can post (ZK-278, ZK-289): the channels (public, and private ones they are
+/// in) by name, then the one-to-one and group conversations with the people's names. An older
+/// sign-in without im:read / mpim:read / users:read still lists the channels.
+pub fn channels(t: &dyn Transport, token: &str) -> Result<Vec<(String, String)>, ShareError> {
+    let a = bearer(token);
+    let list = |types: &str| {
+        paged(
+            t,
+            &a,
+            &format!("{API}/conversations.list?types={types}&exclude_archived=true&limit=200"),
+            "channels",
+        )
+    };
+    let chans = list("public_channel,private_channel").map_err(|e| {
+        if missing_scope(&e) {
+            ShareError::Fail(
+                "Slack: the app may not list channels — make it again with «Create the Slack app» or type the channel's ID".into(),
+            )
+        } else {
+            e
+        }
+    })?;
+    let mut out: Vec<(String, String)> = chans
+        .iter()
+        .filter_map(|c| {
+            Some((
+                c["id"].as_str()?.to_string(),
+                format!("#{}", c["name"].as_str()?),
+            ))
+        })
+        .collect();
     out.sort_by_key(|p| p.1.to_lowercase());
+    // The conversations are extra: without them (an older sign-in, a hiccup) the channels stay.
+    let Ok(talks) = list("im,mpim") else {
+        return Ok(out);
+    };
+    // The people's names for the one-to-one ones; without users:read their ids.
+    let names: std::collections::HashMap<String, String> =
+        if talks.iter().any(|c| c["is_im"] == true) {
+            match paged(t, &a, &format!("{API}/users.list?limit=200"), "members") {
+                Ok(users) => users
+                    .iter()
+                    .filter_map(|u| {
+                        let id = u["id"].as_str()?.to_string();
+                        let p = &u["profile"];
+                        let name = [&p["display_name"], &p["real_name"], &u["name"]]
+                            .into_iter()
+                            .filter_map(|v| v.as_str())
+                            .find(|s| !s.trim().is_empty())?
+                            .to_string();
+                        Some((id, name))
+                    })
+                    .collect(),
+                Err(_) => Default::default(),
+            }
+        } else {
+            Default::default()
+        };
+    let mut more: Vec<(String, String)> = talks
+        .iter()
+        .filter(|c| c["is_user_deleted"] != true)
+        .filter_map(|c| {
+            let id = c["id"].as_str()?.to_string();
+            let name = if c["is_im"] == true {
+                let user = c["user"].as_str().unwrap_or("?");
+                format!("@{}", names.get(user).map_or(user, String::as_str))
+            } else {
+                group_name(c["name"].as_str().unwrap_or(""))
+            };
+            Some((id, name))
+        })
+        .collect();
+    more.sort_by_key(|p| p.1.to_lowercase());
+    out.extend(more);
     Ok(out)
 }
 
@@ -398,6 +474,43 @@ mod tests {
                 .to_string()
                 .contains("Create the Slack app")
         );
+    }
+
+    #[test]
+    fn conversations_after_the_channels_with_names() {
+        let f = Fake::new(&[
+            (
+                200,
+                r#"{"ok":true,"channels":[{"id":"C1","name":"general"}]}"#,
+            ),
+            (
+                200,
+                r#"{"ok":true,"channels":[{"id":"D1","is_im":true,"user":"U2"},{"id":"G1","is_mpim":true,"name":"mpdm-anna--plum-1"},{"id":"D9","is_im":true,"user":"U9","is_user_deleted":true}]}"#,
+            ),
+            (
+                200,
+                r#"{"ok":true,"members":[{"id":"U2","name":"b","profile":{"display_name":"","real_name":"Bohdan"}}]}"#,
+            ),
+        ]);
+        let c = channels(&f, "xoxp").unwrap();
+        assert_eq!(
+            c,
+            [
+                ("C1".to_string(), "#general".to_string()),
+                ("D1".into(), "@Bohdan".into()),
+                ("G1".into(), "anna, plum".into()),
+            ]
+        );
+        assert!(f.seen()[1].url.contains("types=im,mpim"));
+        // An older sign-in without the scopes: the channels all the same.
+        let f = Fake::new(&[
+            (
+                200,
+                r#"{"ok":true,"channels":[{"id":"C1","name":"general"}]}"#,
+            ),
+            (200, r#"{"ok":false,"error":"missing_scope"}"#),
+        ]);
+        assert_eq!(channels(&f, "xoxp").unwrap().len(), 1);
     }
 
     #[test]
