@@ -33,6 +33,21 @@ fn answer(r: &znimok_models::http::Response) -> Result<Value, ShareError> {
     })
 }
 
+/// «Create the Slack app» (ZK-272): Slack's page of a new app from a manifest, everything filled
+/// in — the name, the bot, the two scopes. The person picks the workspace and presses Create.
+pub fn app_url() -> String {
+    let manifest = json!({
+        "display_information": {"name": "Znimok", "description": "Screenshots and recordings from Znimok"},
+        "features": {"bot_user": {"display_name": "Znimok", "always_online": false}},
+        "oauth_config": {"scopes": {"bot": ["files:write", "chat:write"]}},
+        "settings": {"org_deploy_enabled": false, "socket_mode_enabled": false, "token_rotation_enabled": false}
+    });
+    format!(
+        "https://api.slack.com/apps?new_app=1&manifest_json={}",
+        percent(&manifest.to_string())
+    )
+}
+
 fn bearer(token: &str) -> String {
     format!("Bearer {token}")
 }
@@ -167,6 +182,14 @@ mod tests {
         let v: Value = serde_json::from_slice(&seen[2].body).unwrap();
         assert_eq!(v["channel_id"], "C123");
         assert_eq!(v["files"][0]["id"], "F1");
+    }
+
+    #[test]
+    fn the_app_from_a_manifest() {
+        let u = app_url();
+        assert!(u.starts_with("https://api.slack.com/apps?new_app=1&manifest_json=%7B"));
+        assert!(u.contains("files%3Awrite") && u.contains("chat%3Awrite"));
+        assert!(!u.contains(' ') && !u.contains('"'));
     }
 
     #[test]

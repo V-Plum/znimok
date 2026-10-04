@@ -6191,11 +6191,6 @@ int-default = В один клік
 # @max: 16
 int-default-ask = Питати
 
-# @where: Settings → Extensions and integrations: how to set up Telegram
-# @kind: body
-# @max: 200
-int-tg-how = Створіть бота в @BotFather, вставте сюди його токен, напишіть боту будь-що й натисніть «Знайти чат».
-
 # @where: Settings → Extensions and integrations: placeholder of a secret field that has a saved value
 # @kind: label
 # @max: 60
@@ -6236,11 +6231,6 @@ int-checking = Перевіряю…
 # @max: 80
 int-probe = Znimok: з'єднання працює ✓
 
-# @where: Settings → Extensions and integrations: how to set up Jira
-# @kind: body
-# @max: 240
-int-jira-how = Jira Cloud: ваш сайт, e-mail і API-токен (id.atlassian.com → Security → API tokens). Без задачі кожне надсилання створює нову в проєкті.
-
 # @where: Settings → Extensions and integrations: placeholder, the Jira site
 # @kind: label
 # @max: 40
@@ -6271,11 +6261,6 @@ int-jira-issue = Задача (необов'язково)
 # @max: 24
 int-jira-type = Тип нової задачі
 
-# @where: Settings → Extensions and integrations: how to set up Slack
-# @kind: body
-# @max: 260
-int-slack-how = Slack-застосунок із дозволами files:write і chat:write, встановлений у робочий простір і доданий до каналу: його токен бота (xoxb-…) та ID каналу (деталі каналу, унизу).
-
 # @where: Settings → Extensions and integrations: placeholder, the Slack bot token
 # @kind: label
 # @max: 24
@@ -6285,11 +6270,6 @@ int-slack-token = Токен бота (xoxb-…)
 # @kind: label
 # @max: 24
 int-slack-channel = ID каналу (C0…)
-
-# @where: Settings → Extensions and integrations: how to set up Redmine
-# @kind: body
-# @max: 240
-int-rm-how = REST API, увімкнений в адмініструванні Redmine, і ваш API-ключ (Мій обліковий запис → Ключ доступу до API). Без задачі кожне надсилання створює нову в проєкті.
 
 # @where: Settings → Extensions and integrations: placeholder, the Redmine address
 # @kind: label
@@ -6445,3 +6425,128 @@ share-sent-link = Надіслано в { $target } — посилання ск�
 # @kind: body
 # @max: 120
 int-google-pick = Надсилання йде на позначений акаунт — клацніть інший, щоб перемкнутися.
+
+# @where: Settings → Extensions and integrations: how to set up Telegram, step 1
+# @kind: body
+# @max: 200
+int-tg-step1 = Відкрийте @BotFather у Telegram (кнопка нижче) і надішліть йому /newbot.
+
+# @where: Settings → Extensions and integrations: how to set up Telegram, step 2
+# @kind: body
+# @max: 200
+int-tg-step2 = Дайте ботові будь-яку назву, а потім ім'я користувача, що закінчується на «bot», напр. my_team_znimok_bot.
+
+# @where: Settings → Extensions and integrations: how to set up Telegram, step 3
+# @kind: body
+# @max: 200
+int-tg-step3 = BotFather відповість токеном — довгим рядком на кшталт 123456789:AAH…. Скопіюйте його й вставте в поле нижче.
+
+# @where: Settings → Extensions and integrations: how to set up Telegram, step 4
+# @kind: body
+# @max: 200
+int-tg-step4 = Відкрийте свого нового бота й натисніть «Почати» (Start). Для групи чи каналу: додайте туди бота й напишіть будь-що.
+
+# @where: Settings → Extensions and integrations: how to set up Telegram, step 5
+# @kind: body
+# @max: 200
+int-tg-step5 = Натисніть «Знайти чат» — Znimok знайде його сам.
+
+# @where: Settings → Extensions and integrations: button, opens the page needed to set up Telegram
+# @kind: label
+# @max: 36
+int-tg-open = Відкрити @BotFather
+
+# @where: Settings → Extensions and integrations: how to set up Jira, step 1
+# @kind: body
+# @max: 200
+int-jira-step1 = Сайт — адреса, за якою ви відкриваєте Jira, напр. your-team.atlassian.net.
+
+# @where: Settings → Extensions and integrations: how to set up Jira, step 2
+# @kind: body
+# @max: 200
+int-jira-step2 = Пошта — та, з якою ви входите в Jira.
+
+# @where: Settings → Extensions and integrations: how to set up Jira, step 3
+# @kind: body
+# @max: 200
+int-jira-step3 = Відкрийте сторінку API-токенів (кнопка нижче), натисніть «Create API token», назвіть його Znimok, скопіюйте токен і вставте нижче.
+
+# @where: Settings → Extensions and integrations: how to set up Jira, step 4
+# @kind: body
+# @max: 200
+int-jira-step4 = Ключ проєкту — літери перед номером задачі: ZK у ZK-101. Задача необов'язкова — без неї кожне надсилання створює нову.
+
+# @where: Settings → Extensions and integrations: how to set up Jira, step 5
+# @kind: body
+# @max: 200
+int-jira-step5 = Натисніть «Перевірити».
+
+# @where: Settings → Extensions and integrations: button, opens the page needed to set up Jira
+# @kind: label
+# @max: 36
+int-jira-open = Відкрити сторінку API-токенів
+
+# @where: Settings → Extensions and integrations: how to set up Slack, step 1
+# @kind: body
+# @max: 200
+int-slack-step1 = Натисніть «Створити застосунок Slack» нижче: Slack відкриється з усім уже заповненим. Виберіть свій робочий простір, далі Next і Create.
+
+# @where: Settings → Extensions and integrations: how to set up Slack, step 2
+# @kind: body
+# @max: 200
+int-slack-step2 = На сторінці застосунку натисніть «Install to Workspace», потім «Allow».
+
+# @where: Settings → Extensions and integrations: how to set up Slack, step 3
+# @kind: body
+# @max: 200
+int-slack-step3 = Відкрийте «OAuth & Permissions», скопіюйте «Bot User OAuth Token» (xoxb-…) і вставте нижче.
+
+# @where: Settings → Extensions and integrations: how to set up Slack, step 4
+# @kind: body
+# @max: 200
+int-slack-step4 = У потрібному каналі Slack напишіть /invite @Znimok, щоб застосунок міг туди писати.
+
+# @where: Settings → Extensions and integrations: how to set up Slack, step 5
+# @kind: body
+# @max: 200
+int-slack-step5 = ID каналу: натисніть на назву каналу — він у самому низу вікна (C0…). Скопіюйте, вставте нижче й натисніть «Перевірити».
+
+# @where: Settings → Extensions and integrations: button, opens the page needed to set up Slack
+# @kind: label
+# @max: 36
+int-slack-open = Створити застосунок Slack
+
+# @where: Settings → Extensions and integrations: how to set up Redmine, step 1
+# @kind: body
+# @max: 200
+int-rm-step1 = Адреса — те, за чим ви відкриваєте Redmine, напр. https://redmine.example.com — впишіть її першою.
+
+# @where: Settings → Extensions and integrations: how to set up Redmine, step 2
+# @kind: body
+# @max: 200
+int-rm-step2 = Натисніть «Відкрити Мій обліковий запис» нижче: праворуч знайдіть «Ключ доступу до API» → «Показати», скопіюйте ключ і вставте нижче.
+
+# @where: Settings → Extensions and integrations: how to set up Redmine, step 3
+# @kind: body
+# @max: 200
+int-rm-step3 = Такого розділу немає? Попросіть адміністратора Redmine увімкнути REST API (Адміністрування → Налаштування → API).
+
+# @where: Settings → Extensions and integrations: how to set up Redmine, step 4
+# @kind: body
+# @max: 200
+int-rm-step4 = Ідентифікатор проєкту — в його адресі: …/projects/ідентифікатор. Номер задачі необов'язковий. Потім «Перевірити».
+
+# @where: Settings → Extensions and integrations: button, opens the page needed to set up Redmine
+# @kind: label
+# @max: 36
+int-rm-open = Відкрити Мій обліковий запис
+
+# @where: Settings → Extensions and integrations: button, show the steps of setting up a target again
+# @kind: label
+# @max: 30
+int-help-show = Як налаштувати
+
+# @where: Settings → Extensions and integrations: button, hide the steps of setting up a target
+# @kind: label
+# @max: 30
+int-help-hide = Сховати кроки

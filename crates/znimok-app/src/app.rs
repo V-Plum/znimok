@@ -1681,6 +1681,32 @@ impl App {
             } else {
                 "https://marketplace.logi.com/".to_string()
             }),
+            // The pages the steps of setting up a target point at (ZK-272).
+            "open" => {
+                let url = match target {
+                    "botfather" => "https://t.me/BotFather".to_string(),
+                    "atlassian-tokens" => {
+                        "https://id.atlassian.com/manage-profile/security/api-tokens".to_string()
+                    }
+                    "slack-app" => znimok_share::slack::app_url(),
+                    "redmine-key" => {
+                        let u = self.prefs().integrations.redmine.url;
+                        let u = u.trim().trim_end_matches('/');
+                        if u.is_empty() {
+                            self.toast(ui, self.tr.tr("int-rm-step1"));
+                            return;
+                        }
+                        if u.starts_with("http://") || u.starts_with("https://") {
+                            format!("{u}/my/account")
+                        } else {
+                            format!("https://{u}/my/account")
+                        }
+                    }
+                    _ => return,
+                };
+                crate::codes::open_url(&url);
+                return;
+            }
             "default" => {
                 let t = target.to_string();
                 self.save_prefs(ui, |p| p.integrations.default_target = t);

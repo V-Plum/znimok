@@ -1026,6 +1026,26 @@ component HoldButton inherits Rectangle {
 }
 
 // A switch with its caption on the left.
+// Numbered steps of setting something up (ZK-272): plain words, one line each.
+component Steps inherits VerticalLayout {
+    in property <[string]> steps;
+    spacing: 6px;
+    for s[i] in root.steps: HorizontalLayout {
+        spacing: 8px;
+        VerticalLayout {
+            alignment: start;
+            Rectangle {
+                width: 18px;
+                height: 18px;
+                border-radius: 9px;
+                background: Theme.elevated;
+                Text { text: i + 1; color: Theme.text2; font-size: 10px; font-weight: 600; }
+            }
+        }
+        Text { text: s; color: Theme.text2; font-size: 12px; wrap: word-wrap; horizontal-stretch: 1; }
+    }
+}
+
 component SwitchRow inherits HorizontalLayout {
     in property <string> text;
     in-out property <bool> checked;
@@ -2276,6 +2296,8 @@ export component AppWindow inherits Window {
     in property <string> int-jira-status;
     in property <bool> int-jira-busy;
     in property <bool> int-google-available;
+    // Which target's steps are shown although it is set up (ZK-272).
+    property <string> int-help;
     in property <bool> int-google-enabled;
     in property <bool> int-google-link;
     in property <[IntGoogleAccount]> int-google-accounts;
@@ -3081,7 +3103,13 @@ export component AppWindow inherits Window {
                                 SwitchRow { text: "Telegram"; checked: root.int-tg-enabled; toggled => { root.setting("int-tg-enabled", self.checked ? 1 : 0); } }
                                 if root.int-tg-enabled: VerticalLayout {
                                     spacing: 8px;
-                                    Text { text: @tr("int-tg-how" => "Make a bot with @BotFather, paste its token here, write anything to the bot, then «Find the chat»."); color: Theme.text3; font-size: 11px; wrap: word-wrap; }
+                                    if (!root.int-tg-token-set || root.int-help == "telegram"): Steps { steps: [@tr("int-tg-step1" => "Open @BotFather in Telegram (the button below) and send it /newbot."), @tr("int-tg-step2" => "Give the bot any name, then a username that ends in «bot», e.g. my_team_znimok_bot."), @tr("int-tg-step3" => "BotFather answers with a token — a long line like 123456789:AAH…. Copy it and paste it in the field below."), @tr("int-tg-step4" => "Open your new bot and press Start. For a group or a channel: add the bot there and write any message."), @tr("int-tg-step5" => "Press «Find the chat» — Znimok finds it itself.")]; }
+                                    HorizontalLayout {
+                                        alignment: start;
+                                        spacing: 8px;
+                                        if (!root.int-tg-token-set || root.int-help == "telegram"): TextButton { text: @tr("int-tg-open" => "Open @BotFather"); clicked => { root.int-action("open", "botfather"); } }
+                                        if root.int-tg-token-set: TextButton { text: root.int-help == "telegram" ? @tr("int-help-hide" => "Hide the steps") : @tr("int-help-show" => "How to set it up"); clicked => { root.int-help = root.int-help == "telegram" ? "" : "telegram"; } }
+                                    }
                                     LineEdit { input-type: password; placeholder-text: root.int-tg-token-set ? @tr("int-secret-saved" => "Saved — type a new one to replace it") : @tr("int-tg-token" => "Bot token"); edited(t) => { root.setting-text("int-tg-token", t); } }
                                     HorizontalLayout {
                                         spacing: 8px;
@@ -3100,7 +3128,13 @@ export component AppWindow inherits Window {
                                 SwitchRow { text: "Jira"; checked: root.int-jira-enabled; toggled => { root.setting("int-jira-enabled", self.checked ? 1 : 0); } }
                                 if root.int-jira-enabled: VerticalLayout {
                                     spacing: 8px;
-                                    Text { text: @tr("int-jira-how" => "Jira Cloud: your site, your e-mail and an API token (id.atlassian.com → Security → API tokens). Without an issue, each sending makes a new one in the project."); color: Theme.text3; font-size: 11px; wrap: word-wrap; }
+                                    if (!root.int-jira-token-set || root.int-help == "jira"): Steps { steps: [@tr("int-jira-step1" => "The site is the address you open Jira at, e.g. your-team.atlassian.net."), @tr("int-jira-step2" => "The e-mail is the one you sign in to Jira with."), @tr("int-jira-step3" => "Open the API tokens page (the button below), press «Create API token», name it Znimok, copy the token and paste it below."), @tr("int-jira-step4" => "The project key is the letters before an issue's number: ZK in ZK-101. An issue is optional — without it each sending makes a new one."), @tr("int-jira-step5" => "Press «Check».")]; }
+                                    HorizontalLayout {
+                                        alignment: start;
+                                        spacing: 8px;
+                                        if (!root.int-jira-token-set || root.int-help == "jira"): TextButton { text: @tr("int-jira-open" => "Open the API tokens page"); clicked => { root.int-action("open", "atlassian-tokens"); } }
+                                        if root.int-jira-token-set: TextButton { text: root.int-help == "jira" ? @tr("int-help-hide" => "Hide the steps") : @tr("int-help-show" => "How to set it up"); clicked => { root.int-help = root.int-help == "jira" ? "" : "jira"; } }
+                                    }
                                     LineEdit { text: root.int-jira-site; placeholder-text: @tr("int-jira-site" => "Site: your-team.atlassian.net"); edited(t) => { root.setting-text("int-jira-site", t); } }
                                     LineEdit { text: root.int-jira-email; placeholder-text: @tr("int-jira-email" => "E-mail"); edited(t) => { root.setting-text("int-jira-email", t); } }
                                     LineEdit { input-type: password; placeholder-text: root.int-jira-token-set ? @tr("int-secret-saved" => "Saved — type a new one to replace it") : @tr("int-jira-token" => "API token"); edited(t) => { root.setting-text("int-jira-token", t); } }
@@ -3121,7 +3155,13 @@ export component AppWindow inherits Window {
                                 SwitchRow { text: "Slack"; checked: root.int-slack-enabled; toggled => { root.setting("int-slack-enabled", self.checked ? 1 : 0); } }
                                 if root.int-slack-enabled: VerticalLayout {
                                     spacing: 8px;
-                                    Text { text: @tr("int-slack-how" => "A Slack app with the files:write and chat:write scopes, installed to the workspace and added to the channel: its bot token (xoxb-…) and the channel's ID (the channel's details, at the bottom)."); color: Theme.text3; font-size: 11px; wrap: word-wrap; }
+                                    if (!root.int-slack-token-set || root.int-help == "slack"): Steps { steps: [@tr("int-slack-step1" => "Press «Create the Slack app» below: Slack opens with everything filled in. Choose your workspace, then Next and Create."), @tr("int-slack-step2" => "On the app's page press «Install to Workspace», then «Allow»."), @tr("int-slack-step3" => "Open «OAuth & Permissions», copy the «Bot User OAuth Token» (xoxb-…) and paste it below."), @tr("int-slack-step4" => "In the Slack channel write /invite @Znimok so the app may post there."), @tr("int-slack-step5" => "The channel's ID: click the channel's name — it is at the very bottom of the window (C0…). Copy it, paste it below and press «Check».")]; }
+                                    HorizontalLayout {
+                                        alignment: start;
+                                        spacing: 8px;
+                                        if (!root.int-slack-token-set || root.int-help == "slack"): TextButton { text: @tr("int-slack-open" => "Create the Slack app"); clicked => { root.int-action("open", "slack-app"); } }
+                                        if root.int-slack-token-set: TextButton { text: root.int-help == "slack" ? @tr("int-help-hide" => "Hide the steps") : @tr("int-help-show" => "How to set it up"); clicked => { root.int-help = root.int-help == "slack" ? "" : "slack"; } }
+                                    }
                                     LineEdit { input-type: password; placeholder-text: root.int-slack-token-set ? @tr("int-secret-saved" => "Saved — type a new one to replace it") : @tr("int-slack-token" => "Bot token (xoxb-…)"); edited(t) => { root.setting-text("int-slack-token", t); } }
                                     LineEdit { text: root.int-slack-channel; placeholder-text: @tr("int-slack-channel" => "Channel ID (C0…)"); edited(t) => { root.setting-text("int-slack-channel", t); } }
                                     HorizontalLayout {
@@ -3135,7 +3175,13 @@ export component AppWindow inherits Window {
                                 SwitchRow { text: "Redmine"; checked: root.int-rm-enabled; toggled => { root.setting("int-rm-enabled", self.checked ? 1 : 0); } }
                                 if root.int-rm-enabled: VerticalLayout {
                                     spacing: 8px;
-                                    Text { text: @tr("int-rm-how" => "The REST API switched on in Redmine's administration, and your API key (My account → API access key). Without an issue, each sending makes a new one in the project."); color: Theme.text3; font-size: 11px; wrap: word-wrap; }
+                                    if (!root.int-rm-key-set || root.int-help == "redmine"): Steps { steps: [@tr("int-rm-step1" => "The address is what you open Redmine at, e.g. https://redmine.example.com — type it first."), @tr("int-rm-step2" => "Press «Open My account» below: on the right find «API access key» → «Show», copy the key and paste it below."), @tr("int-rm-step3" => "No such section? Ask your Redmine's administrator to switch on the REST API (Administration → Settings → API)."), @tr("int-rm-step4" => "The project's identifier is in its address: …/projects/identifier. An issue number is optional. Then «Check».")]; }
+                                    HorizontalLayout {
+                                        alignment: start;
+                                        spacing: 8px;
+                                        if (!root.int-rm-key-set || root.int-help == "redmine"): TextButton { text: @tr("int-rm-open" => "Open My account"); clicked => { root.int-action("open", "redmine-key"); } }
+                                        if root.int-rm-key-set: TextButton { text: root.int-help == "redmine" ? @tr("int-help-hide" => "Hide the steps") : @tr("int-help-show" => "How to set it up"); clicked => { root.int-help = root.int-help == "redmine" ? "" : "redmine"; } }
+                                    }
                                     LineEdit { text: root.int-rm-url; placeholder-text: @tr("int-rm-url" => "Address: https://redmine.example.com"); edited(t) => { root.setting-text("int-rm-url", t); } }
                                     LineEdit { input-type: password; placeholder-text: root.int-rm-key-set ? @tr("int-secret-saved" => "Saved — type a new one to replace it") : @tr("int-rm-key" => "API key"); edited(t) => { root.setting-text("int-rm-key", t); } }
                                     HorizontalLayout {
