@@ -71,7 +71,7 @@ export struct DevChip { label: string, count: int }
 export struct DevRow { time: string, label: string, text: string, src: string, cls: int }
 export struct DevTiming { label: string, a: float, w: float, ms: string }
 // Sharing targets (ZK-101): a webhook on the integrations page, and the targets «Send to» offers.
-export struct IntWebhook { id: string, enabled: bool, name: string, url: string, header: string, secret-set: bool, status: string, busy: bool }
+export struct IntWebhook { id: string, enabled: bool, name: string, url: string, header: string, secret-set: bool, status: string, busy: bool, content: string }
 export struct IntTarget { key: string, name: string }
 export struct IntGoogleAccount { id: string, email: string, active: bool }
 
@@ -3221,6 +3221,16 @@ export component AppWindow inherits Window {
                                         LineEdit { horizontal-stretch: 1; text: w.header; placeholder-text: @tr("int-webhook-header" => "Header, e.g. Authorization"); edited(t) => { root.setting-text("int-wh-header:" + w.id, t); } }
                                         LineEdit { horizontal-stretch: 2; input-type: password; placeholder-text: w.secret-set ? @tr("int-secret-saved" => "Saved — type a new one to replace it") : @tr("int-webhook-value" => "Its value, e.g. Bearer …"); edited(t) => { root.setting-text("int-wh-value:" + w.id, t); } }
                                     }
+                                    // What «Share» sends here (ZK-275).
+                                    Text { text: @tr("int-webhook-what" => "What to send"); color: Theme.text2; font-size: 12px; }
+                                    HorizontalLayout {
+                                        alignment: start;
+                                        spacing: 4px;
+                                        SegOption { text: @tr("int-webhook-media" => "Video or screenshot"); on: w.content != "all" && w.content != "logs"; clicked => { root.setting-text("int-wh-content:" + w.id, ""); } }
+                                        SegOption { text: @tr("int-webhook-all" => "The whole file"); on: w.content == "all"; clicked => { root.setting-text("int-wh-content:" + w.id, "all"); } }
+                                        SegOption { text: @tr("int-webhook-logs" => "Logs only"); on: w.content == "logs"; clicked => { root.setting-text("int-wh-content:" + w.id, "logs"); } }
+                                    }
+                                    Text { text: @tr("int-webhook-what-hint" => "The whole file: a recording as a report package (video, logs, details), a screenshot as a Znimok document. Logs only: the browser's console, network and dataLayer as JSON (a screenshot goes as a picture)."); color: Theme.text3; font-size: 11px; wrap: word-wrap; }
                                     HorizontalLayout {
                                         spacing: 12px;
                                         Text { text: w.status; color: Theme.text2; font-size: 11px; wrap: word-wrap; horizontal-stretch: 1; vertical-alignment: center; }

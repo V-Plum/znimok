@@ -6565,3 +6565,28 @@ doc-share-none = Підключіть Google Drive, Telegram, Slack чи Jira о
 # @kind: label
 # @max: 40
 doc-share-connect = Підключити…
+
+# @where: Settings → Extensions and integrations: a webhook, what «Share» sends to it
+# @kind: label
+# @max: 30
+int-webhook-what = Що надсилати
+
+# @where: Settings → Extensions and integrations: a webhook, sends the video (MP4) or the screenshot (PNG)
+# @kind: label
+# @max: 24
+int-webhook-media = Відео чи знімок
+
+# @where: Settings → Extensions and integrations: a webhook, sends the whole file: a recording's report package (.zreport), a screenshot's document (.znimok)
+# @kind: label
+# @max: 24
+int-webhook-all = Увесь файл
+
+# @where: Settings → Extensions and integrations: a webhook, sends only a recording's logs (JSON); a screenshot goes as a picture
+# @kind: label
+# @max: 24
+int-webhook-logs = Лише логи
+
+# @where: Settings → Extensions and integrations: a webhook: what the three choices mean
+# @kind: body
+# @max: 220
+int-webhook-what-hint = Увесь файл: запис — пакетом звіту (відео, логи, подробиці), знімок — документом Znimok. Лише логи: консоль браузера, мережа й dataLayer як JSON (знімок іде картинкою).

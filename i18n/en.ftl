@@ -6517,3 +6517,28 @@ doc-share-none = Connect Google Drive, Telegram, Slack or Jira once — and send
 # @kind: label
 # @max: 40
 doc-share-connect = Connect…
+
+# @where: Settings → Extensions and integrations: a webhook, what «Share» sends to it
+# @kind: label
+# @max: 30
+int-webhook-what = What to send
+
+# @where: Settings → Extensions and integrations: a webhook, sends the video (MP4) or the screenshot (PNG)
+# @kind: label
+# @max: 24
+int-webhook-media = Video or screenshot
+
+# @where: Settings → Extensions and integrations: a webhook, sends the whole file: a recording's report package (.zreport), a screenshot's document (.znimok)
+# @kind: label
+# @max: 24
+int-webhook-all = The whole file
+
+# @where: Settings → Extensions and integrations: a webhook, sends only a recording's logs (JSON); a screenshot goes as a picture
+# @kind: label
+# @max: 24
+int-webhook-logs = Logs only
+
+# @where: Settings → Extensions and integrations: a webhook: what the three choices mean
+# @kind: body
+# @max: 220
+int-webhook-what-hint = The whole file: a recording as a report package (video, logs, details), a screenshot as a Znimok document. Logs only: the browser's console, network and dataLayer as JSON (a screenshot goes as a picture).
