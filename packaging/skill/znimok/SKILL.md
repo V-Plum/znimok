@@ -8,7 +8,8 @@ description: Take and annotate screenshots with Znimok (MCP server `znimok mcp`)
 Znimok runs on the user's computer. Its MCP tools, one per job: reads — `list_targets`,
 `library_search`, `library_get`, `list_marks`, `video_info`, `video_frames`, `devlog`, `ocr`, `read_codes`,
 `record_status`, `app_state`, `share_targets`; writes — `capture`, `record`, `marks`, `transform`, `annotate`,
-`redact_pii`, `export`, `set_meta`, `library_edit`, `hand_over`, `share` (to the person's connected
+`redact_pii`, `export`, `set_meta`, `library_edit`, `hand_over`, `settings` (a white list: recording
+fps and quality, the DevTools log and its hidden keys, name prefixes, sound), `share` (to the person's connected
 services: Google Drive, Gmail, Telegram, Jira, Slack, Redmine — its own permission); `library_delete` alone deletes for
 good. Full reference: `docs/AGENTS.md` in the Znimok repository.
 
@@ -28,7 +29,9 @@ good. Full reference: `docs/AGENTS.md` in the Znimok repository.
    into a document. Check `found`; mention what was covered.
 3. **Mark up with intent.** `marks` adds frames, arrows, text, counters, hidden areas and
    highlights from plain arguments (screenshot pixels), changes and removes them by id
-   (`list_marks`); `transform` crops, rotates, resizes and tones the picture. Use `ocr` line
+   (`list_marks`); `transform` crops, rotates, resizes and tones the picture — on a recording
+   it also cuts, trims and mutes (`video`, times in ms as recorded) and `resize` is the size on
+   export; marks on a recording take `from_ms` / `to_ms`. Use `ocr` line
    boxes (`find` for one word) to place marks precisely next to the text they point at. Keep
    labels short. `annotate` takes the editor's raw document commands when the plain tools do
    not reach.

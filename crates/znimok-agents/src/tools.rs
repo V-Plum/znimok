@@ -24,6 +24,9 @@ pub struct Agent {
     pub enabled: bool,
     /// Where `export` writes when no path is given.
     pub export_dir: PathBuf,
+    /// The person's `settings.json` (ZK-239: the white-listed ones are read and changed there
+    /// when the app is not running).
+    pub settings_file: PathBuf,
 }
 
 /// The result of one tool call, in MCP terms.
@@ -307,6 +310,8 @@ fn inner() -> impl Iterator<Item = &'static Tool> {
         .chain(crate::edit::TOOLS.iter())
         .chain(crate::libtools::TOOLS.iter())
         .chain(crate::vidtools::TOOLS.iter())
+        .chain(crate::videdit::TOOLS.iter())
+        .chain(crate::settools::TOOLS.iter())
         .chain(crate::rectools::TOOLS.iter())
         .chain(crate::apptools::TOOLS.iter())
 }
@@ -545,6 +550,11 @@ impl Agent {
             n += 1;
         }
         Ok(out)
+    }
+
+    /// The person's settings as saved.
+    pub(crate) fn settings(&self) -> znimok_settings::Settings {
+        znimok_settings::Store::open(&self.settings_file).get()
     }
 
     pub(crate) fn doc(&self, args: &Value) -> Result<(Document, PathBuf), String> {
@@ -903,6 +913,8 @@ impl Agent {
             _ => crate::edit::run(self, name, args)
                 .or_else(|| crate::libtools::run(self, client, name, args))
                 .or_else(|| crate::vidtools::run(self, name, args))
+                .or_else(|| crate::videdit::run(self, name, args))
+                .or_else(|| crate::settools::run(self, client, name, args))
                 .or_else(|| crate::rectools::run(self, client, name, args))
                 .or_else(|| crate::apptools::run(self, name, args))
                 .unwrap_or_else(|| Err(format!("unknown tool «{name}»"))),
@@ -943,6 +955,15 @@ impl Agent {
             let (events, _) = crate::vidtools::events(&part);
             return Ok(json!({"uri": uri, "mimeType": "application/json",
                              "text": serde_json::to_string(&events).unwrap_or_default()}));
+        }
+        // A frame of a recording (ZK-239): znimok://library/<id>/frame/<n>.
+        if let Some((id, n)) = id.split_once("/frame/") {
+            let n: i64 = n.parse().map_err(|_| "a frame number, e.g. …/frame/0")?;
+            let path = self.lib.resolve(id).ok_or("unknown resource")?;
+            let png = crate::vexport::frame_png(&path, n)?;
+            use base64::Engine;
+            return Ok(json!({"uri": uri, "mimeType": "image/png",
+                             "blob": base64::engine::general_purpose::STANDARD.encode(png)}));
         }
         let path = self.lib.resolve(id).ok_or("unknown resource")?;
         let doc = library::load(&path)?;

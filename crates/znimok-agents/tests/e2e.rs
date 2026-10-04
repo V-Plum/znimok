@@ -56,6 +56,7 @@ impl Run {
             }),
             enabled: true,
             export_dir: dir.join("exports"),
+            settings_file: dir.join("settings.json"),
         };
         Self {
             agent,

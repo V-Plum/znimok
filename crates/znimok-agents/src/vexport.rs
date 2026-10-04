@@ -197,6 +197,21 @@ fn znimok_export_image_format(f: &str) -> Option<crate::library::ExportFormat> {
 }
 
 /// `video_frames`: frames of a recording to look at, with the marks of their moment.
+/// One frame of a recording as a PNG, full size, with the marks of its moment — the resource
+/// `znimok://library/<id>/frame/<n>` (ZK-239); `n` counts frames as recorded.
+pub(crate) fn frame_png(path: &Path, n: i64) -> Result<Vec<u8>, String> {
+    let (doc, part) = open(path)?;
+    let frames_in = i64::from(part.video.info.frames);
+    if n < 0 || n >= frames_in {
+        return Err(format!("the recording has frames 0…{}", frames_in - 1));
+    }
+    let fps = (f64::from(part.video.info.fps_milli) / 1000.0).max(1.0);
+    let ms = (n as f64 * 1000.0 / fps).round() as i64;
+    let mut frames = znimok_play::Frames::open(gpu()?, &source(&part))?;
+    let (_, r) = frame_at(&mut frames, &doc, &part, ms, true)?;
+    crate::library::encode_png(&r)
+}
+
 pub(crate) fn frames(agent: &Agent, args: &Value) -> Result<Output, String> {
     let d = arg_str(args, "document").ok_or("«document» is required")?;
     let path: PathBuf = agent
