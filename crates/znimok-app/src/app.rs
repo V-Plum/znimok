@@ -1026,6 +1026,7 @@ impl App {
                                 Scope::Settings => "agents-scope-settings",
                                 Scope::Record => "agents-scope-record",
                                 Scope::RecordAudio => "agents-scope-sound",
+                                Scope::Share => "agents-scope-share",
                             })
                         })
                         .collect::<Vec<_>>()

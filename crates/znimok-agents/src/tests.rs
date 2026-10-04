@@ -697,8 +697,8 @@ fn editing_tools_over_plain_arguments() {
     for n in ["list_marks", "marks", "transform"] {
         assert!(names.iter().any(|x| x == n), "{n} is listed");
     }
-    // The published list is the facade's: one tool per job, 21 of them, the finer ones hidden.
-    assert_eq!(names.len(), 22, "{names:?}");
+    // The published list is the facade's: one tool per job, 24 of them, the finer ones hidden.
+    assert_eq!(names.len(), 24, "{names:?}");
     for n in [
         "add_marks",
         "crop",
@@ -1356,6 +1356,84 @@ fn one_question_covers_every_scope_but_sound() {
             Some("record_audio")
         );
     }
+}
+
+/// ZK-274: sending out is never part of «everything» — it asks on its own — and the file the
+/// app gets is made here, as `what` says.
+#[test]
+fn share_asks_on_its_own_and_hands_the_file_over() {
+    use std::sync::{Arc, Mutex};
+    let mut e = env("share274", true);
+    let cfg = znimok_ipc::Config {
+        suffix: Some(format!("sh{}", std::process::id())),
+        dir: Some(std::env::temp_dir().join(format!("zks{}", std::process::id()))),
+        ..Default::default()
+    };
+    e.agent.gui = Gui::with_config(cfg.clone());
+    let asked: Arc<Mutex<Vec<String>>> = Default::default();
+    let sent: Arc<Mutex<Vec<Value>>> = Default::default();
+    let (asked2, sent2) = (asked.clone(), sent.clone());
+    let _s = znimok_ipc::Server::start(cfg, move |m: &str, p: Value| match m {
+        "agents.ask" => {
+            asked2
+                .lock()
+                .unwrap()
+                .push(p["scope"].as_str().unwrap_or("").to_string());
+            Ok(json!({"grant": "session", "all": true}))
+        }
+        "agents.share" => {
+            let mut p = p.clone();
+            // The file is there while the app reads it.
+            p["exists"] = json!(std::path::Path::new(p["path"].as_str().unwrap_or("")).exists());
+            sent2.lock().unwrap().push(p);
+            Ok(json!({"queued": true, "target": "Slack"}))
+        }
+        "agents.activity" => Ok(Value::Null),
+        _ => Err(znimok_ipc::RpcError::method_not_found(m)),
+    })
+    .unwrap();
+    let shot = e.agent.call("T", "capture", &json!({"target": "screen"}));
+    assert!(!shot.is_error, "{:?}", shot.content);
+    // «This session» for everything did not include sending out.
+    assert_eq!(
+        e.agent.perms.check("T", Scope::Share),
+        crate::permissions::Decision::Ask
+    );
+    let id = shot.structured.as_ref().unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let r = e.agent.call(
+        "T",
+        "share",
+        &json!({"document": id, "target": "slack", "place": "C1", "text": "see"}),
+    );
+    assert!(!r.is_error, "{:?}", r.content);
+    assert_eq!(
+        asked.lock().unwrap().last().map(String::as_str),
+        Some("share")
+    );
+    let sent = sent.lock().unwrap();
+    let p = &sent[0];
+    assert_eq!(
+        (p["op"].as_str(), p["target"].as_str(), p["place"].as_str()),
+        (Some("send"), Some("slack"), Some("C1"))
+    );
+    assert_eq!(
+        (p["mime"].as_str(), p["kind"].as_str()),
+        (Some("image/png"), Some("screenshot"))
+    );
+    assert!(p["file_name"].as_str().unwrap().ends_with(".png"));
+    assert_eq!(p["exists"], true);
+    // Made for the sending, then gone.
+    assert!(!std::path::Path::new(p["path"].as_str().unwrap()).exists());
+    // A screenshot is not a video.
+    let bad = e.agent.call(
+        "T",
+        "share",
+        &json!({"document": id, "target": "slack", "what": "video"}),
+    );
+    assert!(bad.is_error);
 }
 
 /// ZK-243 on a real recording (`ZNIMOK_TEST_RECORDING` = a `.znimok` video with a real MP4;

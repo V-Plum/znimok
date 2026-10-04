@@ -29,7 +29,8 @@ library_search finds documents (kind, tags, pinned, with a browser log); library
 trashes and restores; library_delete deletes for good (the person confirms every time). record starts, \
 pauses and stops a screen recording (sound only with the person's separate permission); video_info and \
 devlog read a recording and its DevTools log, video_frames shows its frames. export writes a picture, or a recording as mp4, gif or a report; hand_over opens a document in \
-the editor or puts it on the clipboard. Reads ask nothing once allowed; the person approves a client's \
+the editor or puts it on the clipboard; share_targets lists the person's connected services and share \
+sends a document there (its own permission, asked on its own). Reads ask nothing once allowed; the person approves a client's \
 access the first time (per scope, or everything at once).";
 
 fn server_info() -> Value {
