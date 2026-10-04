@@ -5275,6 +5275,16 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
             version.contains(env!("CARGO_PKG_VERSION")) && build.contains(std::env::consts::ARCH),
             format!("{version} · {build}"),
         );
+        // ZK-284: the GPU that draws, for bug reports (when Znimok made the device itself).
+        let gpu = ui.get_pref_gpu();
+        r.check(
+            "about: the GPU is shown when known",
+            match crate::GPU_ADAPTER.get() {
+                Some(name) => gpu.contains(name.as_str()),
+                None => gpu.is_empty(),
+            },
+            gpu.to_string(),
+        );
         ui.invoke_setting("close".into(), 0);
     }));
 

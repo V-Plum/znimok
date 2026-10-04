@@ -12,6 +12,7 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
+tracing = "0.1"
 znimok-core = { path = "../znimok-core" }
 znimok-format = { path = "../znimok-format" }
 znimok-video = { path = "../znimok-video" }

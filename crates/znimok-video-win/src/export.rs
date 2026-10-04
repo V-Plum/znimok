@@ -155,7 +155,7 @@ impl Mp4Writer {
         match Self::open_with(path, cfg, true) {
             Ok(w) => Ok(w),
             Err(e) => {
-                eprintln!("export: hardware encoder: {e}; the software one");
+                tracing::warn!("export: hardware encoder: {e}; the software one");
                 let _ = std::fs::remove_file(path);
                 Self::open_with(path, cfg, false)
             }
@@ -302,7 +302,7 @@ impl AudioTrackReader {
                 let rate = cur.GetUINT32(&MF_MT_AUDIO_SAMPLES_PER_SECOND).unwrap_or(0);
                 let channels = cur.GetUINT32(&MF_MT_AUDIO_NUM_CHANNELS).unwrap_or(0);
                 if rate != RATE || !(1..=2).contains(&channels) {
-                    eprintln!("export: audio stream {i} is {rate} Hz × {channels} — left out");
+                    tracing::warn!("export: audio stream {i} is {rate} Hz × {channels} — left out");
                     continue;
                 }
                 out.push(AudioTrackReader {
