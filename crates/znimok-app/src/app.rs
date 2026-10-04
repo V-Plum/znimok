@@ -2041,7 +2041,7 @@ impl App {
             Ok(p) => p,
             Err(e) => {
                 self.int_state
-                    .insert("google".into(), (format!("✗ {e}"), false));
+                    .insert("google".into(), (format!("× {e}"), false));
                 return;
             }
         };
@@ -2083,7 +2083,7 @@ impl App {
         let pending = match znimok_share::slack::sign_in(cid) {
             Ok(p) => p,
             Err(e) => {
-                self.int_state.insert(key, (format!("✗ {e}"), false));
+                self.int_state.insert(key, (format!("× {e}"), false));
                 self.settings_sync(ui);
                 return;
             }
@@ -2128,7 +2128,7 @@ impl App {
         let pending = match znimok_share::jira::sign_in(&client) {
             Ok(p) => p,
             Err(e) => {
-                self.int_state.insert(key, (format!("✗ {e}"), false));
+                self.int_state.insert(key, (format!("× {e}"), false));
                 self.settings_sync(ui);
                 return;
             }
@@ -2200,12 +2200,12 @@ impl App {
                                 self.tr.tr_args("int-signed-in", &args(&[("name", shown)]))
                             )
                         }
-                        Err(e) => format!("✗ {e}"),
+                        Err(e) => format!("× {e}"),
                     }
                 }
-                None => "✗ Atlassian: no Jira site".to_string(),
+                None => "× Atlassian: no Jira site".to_string(),
             },
-            Err(e) => format!("✗ {e}"),
+            Err(e) => format!("× {e}"),
         };
         self.int_state.insert(key.to_string(), (words, false));
         self.settings_sync(ui);
@@ -2236,10 +2236,10 @@ impl App {
                             self.tr.tr_args("int-signed-in", &args(&[("name", s.team)]))
                         )
                     }
-                    Err(e) => format!("✗ {e}"),
+                    Err(e) => format!("× {e}"),
                 }
             }
-            (Err(e), _) => format!("✗ {e}"),
+            (Err(e), _) => format!("× {e}"),
             (_, None) => return,
         };
         self.int_state.insert(key.to_string(), (words, false));
@@ -2276,10 +2276,10 @@ impl App {
                 if drive {
                     format!("✓ {shown}")
                 } else {
-                    format!("✗ {}", self.tr.tr("int-google-no-drive"))
+                    format!("× {}", self.tr.tr("int-google-no-drive"))
                 }
             }
-            Err(e) => format!("✗ {e}"),
+            Err(e) => format!("× {e}"),
         };
         self.int_state.insert("google".into(), (words, false));
         self.settings_sync(ui);
@@ -2342,7 +2342,7 @@ impl App {
                     w
                 }
             },
-            Err(e) => format!("✗ {e}"),
+            Err(e) => format!("× {e}"),
         };
         self.int_state.insert(key.to_string(), (words, false));
         self.settings_sync(ui);

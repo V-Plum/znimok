@@ -164,7 +164,7 @@ mod tests {
         assert!(plausible("Version 2.0 (build 17)"));
         assert!(!plausible("| | : й E -"));
         assert!(!plausible("-"));
-        assert!(!plausible("✓ ✗ ? ! ★"));
+        assert!(!plausible("✓ × ? ! ★"));
     }
 
     #[test]

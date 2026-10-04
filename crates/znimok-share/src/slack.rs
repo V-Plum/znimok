@@ -71,6 +71,15 @@ pub fn client_id() -> Option<&'static str> {
         .filter(|s| !s.is_empty())
 }
 
+/// The app's secret (`ZNIMOK_SLACK_CLIENT_SECRET`, ZK-288): a sign-in through the site's https
+/// page is a web sign-in to Slack, and the refresh of its turned-over token wants the secret —
+/// only a desktop sign-in (localhost) refreshes without it.
+pub fn client_secret() -> Option<&'static str> {
+    option_env!("ZNIMOK_SLACK_CLIENT_SECRET")
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+}
+
 /// Starts «Sign in to Slack»: the address to open, and the port waiting for the answer.
 pub fn sign_in(client_id: &str) -> std::io::Result<znimok_google::Pending> {
     znimok_google::begin_via(
@@ -147,17 +156,18 @@ pub fn exchange(
 pub fn refresh(
     t: &dyn Transport,
     client_id: &str,
+    secret: Option<&str>,
     refresh_token: &str,
 ) -> Result<(String, String), ShareError> {
-    let v = form_call(
-        t,
-        &[
-            ("client_id", client_id),
-            ("grant_type", "refresh_token"),
-            ("refresh_token", refresh_token),
-        ],
-    )
-    .map_err(|e| match e {
+    let mut pairs = vec![
+        ("client_id", client_id),
+        ("grant_type", "refresh_token"),
+        ("refresh_token", refresh_token),
+    ];
+    if let Some(s) = secret {
+        pairs.push(("client_secret", s));
+    }
+    let v = form_call(t, &pairs).map_err(|e| match e {
         ShareError::Fail(m) => ShareError::Fail(format!("{m} — sign in to Slack again")),
         again => again,
     })?;
@@ -442,11 +452,15 @@ mod tests {
             r#"{"ok":true,"access_token":"xoxe.xoxp-2","refresh_token":"xoxe-1-r2","token_type":"user"}"#,
         )]);
         assert_eq!(
-            refresh(&f, "123.456", "xoxe-1-r1").unwrap(),
+            refresh(&f, "123.456", None, "xoxe-1-r1").unwrap(),
             ("xoxe.xoxp-2".into(), "xoxe-1-r2".into())
         );
         let f = Fake::new(&[(200, r#"{"ok":false,"error":"invalid_refresh_token"}"#)]);
-        let e = refresh(&f, "123.456", "x").unwrap_err();
+        let e = refresh(&f, "123.456", None, "x").unwrap_err();
+        // A web sign-in's refresh carries the secret (ZK-288).
+        let f = Fake::new(&[(200, r#"{"ok":true,"access_token":"a","refresh_token":"r"}"#)]);
+        refresh(&f, "123.456", Some("sec"), "x").unwrap();
+        assert!(f.seen()[0].body_text().contains("client_secret=sec"));
         assert!(
             !e.retry() && e.to_string().contains("sign in to Slack again"),
             "{e}"
