@@ -49,6 +49,9 @@ python tools/verify_release.py v0.1.0      # downloads the draft (gh), checks su
 - [ ] macOS: unzip, right-click → Open (ad-hoc signed), take a screenshot (Screen Recording
       prompt), `Znimok.app/Contents/MacOS/znimok --version`.
 - [ ] Claude Desktop: install the `.mcpb`, `znimok agents enable`, ask for a screenshot.
+- [ ] Self-test of the draft's Windows build (CI does not run it, ZK-285), with a library of its
+      own so the real one is untouched: `ZNIMOK_SELFTEST=<dir> ZNIMOK_LIBRARY=<empty dir>
+      znimok-app.exe <a picture>` — «N checks, 0 failed».
 
 Then publish the draft as a regular release, never a pre-release: the app's updater follows
 `releases/latest`, which skips drafts and pre-releases (ZK-209). That the version is a preview

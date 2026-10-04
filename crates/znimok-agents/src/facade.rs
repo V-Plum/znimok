@@ -4,9 +4,9 @@
 //! published.
 //!
 //! Reads: `list_targets`, `library_search`, `library_get`, `list_marks`, `video_info`, `devlog`,
-//! `video_frames`, `ocr`, `read_codes`, `record_status`, `app_state`. Writes: `capture`, `record`, `marks`,
-//! `transform`, `annotate`, `redact_pii`, `export`, `set_meta`, `library_edit`, `hand_over`;
-//! `library_delete` alone is destructive.
+//! `video_frames`, `ocr`, `read_codes`, `record_status`, `app_state`, `share_targets`. Writes:
+//! `capture`, `record`, `marks`, `transform`, `annotate`, `redact_pii`, `export`, `set_meta`,
+//! `library_edit`, `hand_over`, `share`; `library_delete` alone is destructive.
 
 use crate::permissions::Scope;
 use crate::tools::{Agent, Output, Tool, arg_str, doc_arg, obj};
@@ -199,6 +199,38 @@ pub(crate) const TOOLS: &[Tool] = &[
             with_doc(props, &[])
         },
     },
+    Tool {
+        name: "share_targets",
+        title: "Where documents can be sent",
+        description: "The person's connected services (ZK-274): each target's key and name (Google Drive, Gmail, Telegram, Jira, Slack, Redmine, webhooks — a service can have several accounts) and whether it needs a place. With target: that target's places (Slack channels, Jira or Redmine projects, Telegram chats), fetched from the service. No tokens are ever shown. Znimok must be running.",
+        scope: Some(Scope::Share),
+        read_only: true,
+        schema: || {
+            obj(
+                json!({"target": {"type": "string", "description": "A target's key from this list: its places"}}),
+                &[],
+            )
+        },
+    },
+    Tool {
+        name: "share",
+        title: "Send a document to a connected service",
+        description: "Sends a library document to one of the person's targets (key from share_targets): what = image (a screenshot as PNG, the default) or document (the Znimok file); for a recording video (MP4, the default), report (one HTML page with the video and its log), document, or logs (the log alone, JSON). place: a channel, project, issue (ZK-101) or chat — the last one used when left out. text goes with it as a comment. Sending out is its own permission, asked every time unless the person allowed it for longer; the person sees it in the app, and Znimok sends it itself through its queue (tries again when the network is away). Znimok must be running.",
+        scope: Some(Scope::Share),
+        read_only: false,
+        schema: || {
+            with_doc(
+                json!({
+                    "target": {"type": "string", "description": "A target's key from share_targets"},
+                    "what": {"type": "string", "enum": ["image", "document", "video", "report", "logs"]},
+                    "place": {"type": "string", "description": "Where in the target: a channel ID, a project key, an issue, a chat"},
+                    "text": {"type": "string", "description": "A comment that goes with it"},
+                    "hide": {"type": "boolean", "description": "report / logs: hide sensitive values (true), when the settings leave it to the export"}
+                }),
+                &["target"],
+            )
+        },
+    },
 ];
 
 /// The names a client sees: these, plus the inner ones kept as they are.
@@ -313,6 +345,8 @@ pub(crate) fn run(
             }
         }
         "video_frames" => crate::vexport::frames(agent, args),
+        "share_targets" => crate::sharetools::targets(agent, args),
+        "share" => crate::sharetools::send(agent, client, args),
         "ocr" => match a.get("find").and_then(Value::as_str).map(str::to_string) {
             Some(text) => {
                 a["text"] = json!(text);

@@ -30,17 +30,26 @@ pub enum Scope {
     Record,
     /// The computer's sound and the microphone in a recording: asked for on its own.
     RecordAudio,
+    /// Sending documents out to the person's connected services (ZK-274): asked for on its own.
+    Share,
 }
 
 impl Scope {
-    pub const ALL: [Scope; 6] = [
+    pub const ALL: [Scope; 7] = [
         Scope::Capture,
         Scope::LibraryRead,
         Scope::LibraryWrite,
         Scope::Settings,
         Scope::Record,
         Scope::RecordAudio,
+        Scope::Share,
     ];
+
+    /// Never given by «this session» / «always» for everything (ZK-251): what leaves the
+    /// computer or listens is its own question.
+    pub fn asked_alone(self) -> bool {
+        matches!(self, Scope::RecordAudio | Scope::Share)
+    }
 
     pub fn name(self) -> &'static str {
         match self {
@@ -50,6 +59,7 @@ impl Scope {
             Self::Settings => "settings",
             Self::Record => "record",
             Self::RecordAudio => "record_audio",
+            Self::Share => "share",
         }
     }
 

@@ -1026,6 +1026,7 @@ impl App {
                                 Scope::Settings => "agents-scope-settings",
                                 Scope::Record => "agents-scope-record",
                                 Scope::RecordAudio => "agents-scope-sound",
+                                Scope::Share => "agents-scope-share",
                             })
                         })
                         .collect::<Vec<_>>()
@@ -1592,6 +1593,70 @@ impl App {
             })
             .collect();
         ui.set_int_webhooks(std::rc::Rc::new(slint::VecModel::from(hooks)).into());
+        // Each service's accounts (ZK-280): the first one first.
+        let row = |id: znimok_share::TargetId, name: &str, f: [&str; 5]| {
+            let (s, b) = st(&id.key());
+            crate::IntAccount {
+                id: id.account().into(),
+                name: name.into(),
+                token_set: znimok_share::token(&v, &id).is_ok(),
+                a: f[0].into(),
+                b: f[1].into(),
+                c: f[2].into(),
+                d: f[3].into(),
+                e: f[4].into(),
+                status: s.into(),
+                busy: b,
+            }
+        };
+        let list = |rows: Vec<crate::IntAccount>| -> slint::ModelRc<crate::IntAccount> {
+            std::rc::Rc::new(slint::VecModel::from(rows)).into()
+        };
+        use znimok_share::TargetId as Id;
+        ui.set_int_tg_accounts(list(
+            i.telegram_accounts()
+                .map(|t| {
+                    row(
+                        Id::Telegram(t.id.clone()),
+                        &t.name,
+                        [&t.chat_id, &t.chat_title, "", "", ""],
+                    )
+                })
+                .collect(),
+        ));
+        ui.set_int_jira_accounts(list(
+            i.jira_accounts()
+                .map(|j| {
+                    row(
+                        Id::Jira(j.id.clone()),
+                        &j.name,
+                        [&j.site, &j.email, &j.project, &j.issue, &j.issue_type],
+                    )
+                })
+                .collect(),
+        ));
+        ui.set_int_slack_accounts(list(
+            i.slack_accounts()
+                .map(|a| {
+                    row(
+                        Id::Slack(a.id.clone()),
+                        &a.name,
+                        [&a.channel, "", "", "", ""],
+                    )
+                })
+                .collect(),
+        ));
+        ui.set_int_rm_accounts(list(
+            i.redmine_accounts()
+                .map(|r| {
+                    row(
+                        Id::Redmine(r.id.clone()),
+                        &r.name,
+                        [&r.url, &r.project, &r.issue, "", ""],
+                    )
+                })
+                .collect(),
+        ));
         set_int_targets(ui, i);
         ui.set_int_default(i.default_target.clone().into());
     }
@@ -1600,6 +1665,12 @@ impl App {
     fn int_text(&mut self, ui: &AppWindow, key: &str, text: &str) {
         use znimok_settings::{Secret, Vault};
         let t = text.trim().to_string();
+        // A service account's field (ZK-280): `int-acc:<service>:<field>:<id>`.
+        if let Some(rest) = key.strip_prefix("int-acc:") {
+            self.int_account_text(ui, rest, t);
+            self.settings_sync(ui);
+            return;
+        }
         let secret = |s: Secret, t: &str| {
             let v = Vault::default();
             if t.is_empty() {
@@ -1676,6 +1747,83 @@ impl App {
         self.settings_sync(ui);
     }
 
+    /// One field of a service account (ZK-280): its token into the OS store, the rest into the
+    /// settings.
+    fn int_account_text(&mut self, ui: &AppWindow, rest: &str, t: String) {
+        let mut parts = rest.splitn(3, ':');
+        let (Some(service), Some(field), Some(acc)) = (parts.next(), parts.next(), parts.next())
+        else {
+            return;
+        };
+        let (service, field, acc) = (service.to_string(), field.to_string(), acc.to_string());
+        if field == "token" {
+            let Some(id) = znimok_share::TargetId::parse(&if acc.is_empty() {
+                service.clone()
+            } else {
+                format!("{service}:{acc}")
+            }) else {
+                return;
+            };
+            if let Err(e) = set_account_token(&id, &t) {
+                self.toast(ui, e.to_string());
+            }
+            return;
+        }
+        self.save_prefs(ui, move |p| {
+            let i = &mut p.integrations;
+            match service.as_str() {
+                "telegram" => {
+                    if let Some(a) = i.telegram_account_mut(&acc) {
+                        match field.as_str() {
+                            "name" => a.name = t,
+                            "chat" => {
+                                if a.chat_id != t {
+                                    a.chat_title.clear();
+                                }
+                                a.chat_id = t;
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+                "jira" => {
+                    if let Some(a) = i.jira_account_mut(&acc) {
+                        match field.as_str() {
+                            "name" => a.name = t,
+                            "site" => a.site = t,
+                            "email" => a.email = t,
+                            "project" => a.project = t.to_uppercase(),
+                            "issue" => a.issue = t.to_uppercase(),
+                            "type" => a.issue_type = t,
+                            _ => {}
+                        }
+                    }
+                }
+                "slack" => {
+                    if let Some(a) = i.slack_account_mut(&acc) {
+                        match field.as_str() {
+                            "name" => a.name = t,
+                            "channel" => a.channel = t,
+                            _ => {}
+                        }
+                    }
+                }
+                "redmine" => {
+                    if let Some(a) = i.redmine_account_mut(&acc) {
+                        match field.as_str() {
+                            "name" => a.name = t,
+                            "url" => a.url = t,
+                            "project" => a.project = t,
+                            "issue" => a.issue = t,
+                            _ => {}
+                        }
+                    }
+                }
+                _ => {}
+            }
+        });
+    }
+
     /// A button of the integrations page.
     pub fn int_action(&mut self, ui: &AppWindow, what: &str, target: &str) {
         match what {
@@ -1716,6 +1864,66 @@ impl App {
             "default" => {
                 let t = target.to_string();
                 self.save_prefs(ui, |p| p.integrations.default_target = t);
+            }
+            // One more account of a service (ZK-280).
+            "add-account" => {
+                let id = crate::integrations::new_webhook_id();
+                let service = target.to_string();
+                self.save_prefs(ui, move |p| {
+                    let i = &mut p.integrations;
+                    match service.as_str() {
+                        "telegram" => i.telegram_more.push(znimok_settings::TelegramTarget {
+                            id,
+                            ..Default::default()
+                        }),
+                        "jira" => i.jira_more.push(znimok_settings::JiraTarget {
+                            id,
+                            ..Default::default()
+                        }),
+                        "slack" => i.slack_more.push(znimok_settings::SlackTarget {
+                            id,
+                            ..Default::default()
+                        }),
+                        "redmine" => i.redmine_more.push(znimok_settings::RedmineTarget {
+                            id,
+                            ..Default::default()
+                        }),
+                        _ => {}
+                    }
+                });
+            }
+            // An account goes, with its token and what «Share» remembered for it.
+            "remove-account" => {
+                let Some(id) = znimok_share::TargetId::parse(target) else {
+                    return;
+                };
+                if id.account().is_empty() {
+                    return;
+                }
+                let _ = set_account_token(&id, "");
+                let (key, acc) = (id.key(), id.account().to_string());
+                self.int_state.remove(&key);
+                self.save_prefs(ui, move |p| {
+                    let i = &mut p.integrations;
+                    match id {
+                        znimok_share::TargetId::Telegram(_) => {
+                            i.telegram_more.retain(|a| a.id != acc)
+                        }
+                        znimok_share::TargetId::Jira(_) => i.jira_more.retain(|a| a.id != acc),
+                        znimok_share::TargetId::Slack(_) => i.slack_more.retain(|a| a.id != acc),
+                        znimok_share::TargetId::Redmine(_) => {
+                            i.redmine_more.retain(|a| a.id != acc)
+                        }
+                        _ => {}
+                    }
+                    i.share_memory.remove(&key);
+                    if i.default_target == key {
+                        i.default_target.clear();
+                    }
+                    if i.share_last == key {
+                        i.share_last.clear();
+                    }
+                });
             }
             "add-webhook" => self.save_prefs(ui, |p| {
                 p.integrations
@@ -1775,15 +1983,9 @@ impl App {
                     let t = znimok_models::http::system();
                     let vault = znimok_settings::Vault::default();
                     let r = if find {
-                        match vault.get(znimok_settings::Secret::TelegramBotToken) {
-                            Ok(Some(token)) => {
-                                znimok_share::telegram::find_chats(t.as_ref(), token.trim())
-                                    .map(Found::Chats)
-                            }
-                            _ => Err(znimok_share::ShareError::Fail(
-                                "Telegram: no token in the settings".into(),
-                            )),
-                        }
+                        znimok_share::token(&vault, &id).and_then(|token| {
+                            znimok_share::telegram::find_chats(t.as_ref(), &token).map(Found::Chats)
+                        })
                     } else {
                         znimok_share::check(t.as_ref(), &vault, &cfg, &id, &probe).map(Found::Check)
                     };
@@ -1912,9 +2114,17 @@ impl App {
                 Some((id, name)) => {
                     let (id, name) = (id.clone(), name.clone());
                     let others = chats.len() - 1;
-                    self.save_prefs(ui, |p| {
-                        p.integrations.telegram.chat_id = id;
-                        p.integrations.telegram.chat_title = name.clone();
+                    // The account the search was for (ZK-280).
+                    let acc = match znimok_share::TargetId::parse(key) {
+                        Some(znimok_share::TargetId::Telegram(a)) => a,
+                        _ => String::new(),
+                    };
+                    let shown = name.clone();
+                    self.save_prefs(ui, move |p| {
+                        if let Some(t) = p.integrations.telegram_account_mut(&acc) {
+                            t.chat_id = id;
+                            t.chat_title = shown;
+                        }
                     });
                     let mut w = format!("✓ {name}");
                     if others > 0 {
@@ -1936,8 +2146,28 @@ impl App {
         let name = crate::integrations::target_name(&i, target);
         // Drive (ZK-260): the link goes to the clipboard, ready to paste.
         let key = match &ev {
+            // Gmail (ZK-262): the letter with the link opens; the person adds who it goes to.
             znimok_share::queue::Event::Sent { job, sent }
-                if job.target == znimok_share::TargetId::Google
+                if matches!(job.target, znimok_share::TargetId::Gmail(_)) && sent.url.is_some() =>
+            {
+                let email = i
+                    .google
+                    .accounts
+                    .iter()
+                    .find(|a| a.id == job.target.account())
+                    .map(|a| a.email.clone())
+                    .unwrap_or_default();
+                let link = sent.url.clone().unwrap_or_default();
+                crate::codes::open_url(&znimok_share::gmail_compose_url(
+                    &email,
+                    &job.item.title,
+                    &job.item.text,
+                    &link,
+                ));
+                "share-gmail-opened"
+            }
+            znimok_share::queue::Event::Sent { job, sent }
+                if matches!(job.target, znimok_share::TargetId::Google(_))
                     && sent.url.as_deref().is_some_and(crate::text::copy) =>
             {
                 "share-sent-link"
@@ -12976,6 +13206,31 @@ fn set_list(
         })
         .collect();
     set(ui, std::rc::Rc::new(slint::VecModel::from(rows)).into());
+}
+
+/// A service account's token into the OS store (empty = deleted): the first account keeps its
+/// own secret, the others one named after them (ZK-280).
+fn set_account_token(
+    id: &znimok_share::TargetId,
+    t: &str,
+) -> Result<(), znimok_settings::SecretError> {
+    use znimok_settings::Secret;
+    let v = znimok_settings::Vault::default();
+    let legacy = match id {
+        znimok_share::TargetId::Telegram(_) => Secret::TelegramBotToken,
+        znimok_share::TargetId::Jira(_) => Secret::JiraApiToken,
+        znimok_share::TargetId::Slack(_) => Secret::SlackBotToken,
+        znimok_share::TargetId::Redmine(_) => Secret::RedmineApiKey,
+        _ => return Ok(()),
+    };
+    match (id.account(), t.is_empty()) {
+        ("", true) => v.delete(legacy).map(|_| ()),
+        ("", false) => v.set(legacy, t),
+        (a, true) => v
+            .delete_named(&znimok_share::account_secret_name(id.service(), a))
+            .map(|_| ()),
+        (a, false) => v.set_named(&znimok_share::account_secret_name(id.service(), a), t),
+    }
 }
 
 #[cfg(test)]

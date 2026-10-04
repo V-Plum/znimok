@@ -74,6 +74,9 @@ export struct DevTiming { label: string, a: float, w: float, ms: string }
 export struct IntWebhook { id: string, enabled: bool, name: string, url: string, header: string, secret-set: bool, status: string, busy: bool, content: string }
 export struct IntTarget { key: string, name: string }
 export struct IntGoogleAccount { id: string, email: string, active: bool }
+// A service account (ZK-280); `a`…`e` are the service's fields (Telegram: chat, its title; Jira:
+// site, e-mail, project, issue, type; Slack: channel; Redmine: address, project, issue).
+export struct IntAccount { id: string, name: string, token-set: bool, a: string, b: string, c: string, d: string, e: string, status: string, busy: bool }
 
 // A group title in the library grid (ZK-177): titles and card rows above it.
 export struct LibHeader {
@@ -2296,6 +2299,10 @@ export component AppWindow inherits Window {
     in property <string> int-jira-status;
     in property <bool> int-jira-busy;
     in property <bool> int-google-available;
+    in property <[IntAccount]> int-tg-accounts;
+    in property <[IntAccount]> int-jira-accounts;
+    in property <[IntAccount]> int-slack-accounts;
+    in property <[IntAccount]> int-rm-accounts;
     // For the UI tests (ZK-277): the settings page scrolled to its end.
     public function settings-scroll-end() { set-sv.content-y = min(0px, set-sv.visible-height - set-sv.content-height); }
     // Which target's steps are shown although it is set up (ZK-272).
@@ -3132,18 +3139,28 @@ export component AppWindow inherits Window {
                                         if (!root.int-tg-token-set || root.int-help == "telegram"): TextButton { text: @tr("int-tg-open" => "Open @BotFather"); clicked => { root.int-action("open", "botfather"); } }
                                         if root.int-tg-token-set: TextButton { text: root.int-help == "telegram" ? @tr("int-help-hide" => "Hide the steps") : @tr("int-help-show" => "How to set it up"); clicked => { root.int-help = root.int-help == "telegram" ? "" : "telegram"; } }
                                     }
-                                    LineEdit { input-type: password; placeholder-text: root.int-tg-token-set ? @tr("int-secret-saved" => "Saved — type a new one to replace it") : @tr("int-tg-token" => "Bot token"); edited(t) => { root.setting-text("int-tg-token", t); } }
-                                    HorizontalLayout {
+                                    for acc[i] in root.int-tg-accounts: VerticalLayout {
                                         spacing: 8px;
-                                        LineEdit { horizontal-stretch: 1; text: root.int-tg-chat; placeholder-text: @tr("int-tg-chat" => "Chat by default (optional)"); edited(t) => { root.setting-text("int-tg-chat", t); } }
-                                        TextButton { text: @tr("int-tg-find" => "Find the chat"); enabled: !root.int-tg-busy; clicked => { root.int-action("find-chat", "telegram"); } }
+                                        if i > 0: Rectangle { height: 1px; background: Theme.line; }
+                                        if root.int-tg-accounts.length > 1: HorizontalLayout {
+                                            spacing: 8px;
+                                            LineEdit { horizontal-stretch: 1; text: acc.name; placeholder-text: @tr("int-account-name" => "Name in «Share», e.g. «Client A»"); edited(t) => { root.setting-text("int-acc:telegram:name:" + acc.id, t); } }
+                                            if i > 0: TextButton { text: @tr("int-account-remove" => "Remove"); clicked => { root.int-action("remove-account", "telegram:" + acc.id); } }
+                                        }
+                                        LineEdit { input-type: password; placeholder-text: acc.token-set ? @tr("int-secret-saved" => "Saved — type a new one to replace it") : @tr("int-tg-token" => "Bot token"); edited(t) => { root.setting-text("int-acc:telegram:token:" + acc.id, t); } }
+                                        HorizontalLayout {
+                                            spacing: 8px;
+                                            LineEdit { horizontal-stretch: 1; text: acc.a; placeholder-text: @tr("int-tg-chat" => "Chat by default (optional)"); edited(t) => { root.setting-text("int-acc:telegram:chat:" + acc.id, t); } }
+                                            TextButton { text: @tr("int-tg-find" => "Find the chat"); enabled: !acc.busy; clicked => { root.int-action("find-chat", (acc.id == "" ? "telegram" : "telegram:" + acc.id)); } }
+                                        }
+                                        if acc.b != "": Text { text: acc.b; color: Theme.text2; font-size: 11px; }
+                                        HorizontalLayout {
+                                            spacing: 12px;
+                                            Text { text: acc.status; color: Theme.text2; font-size: 11px; wrap: word-wrap; horizontal-stretch: 1; vertical-alignment: center; }
+                                            TextButton { text: @tr("int-check" => "Check"); enabled: !acc.busy; clicked => { root.int-action("check", (acc.id == "" ? "telegram" : "telegram:" + acc.id)); } }
+                                        }
                                     }
-                                    if root.int-tg-chat-title != "": Text { text: root.int-tg-chat-title; color: Theme.text2; font-size: 11px; }
-                                    HorizontalLayout {
-                                        spacing: 12px;
-                                        Text { text: root.int-tg-status; color: Theme.text2; font-size: 11px; wrap: word-wrap; horizontal-stretch: 1; vertical-alignment: center; }
-                                        TextButton { text: @tr("int-check" => "Check"); enabled: !root.int-tg-busy; clicked => { root.int-action("check", "telegram"); } }
-                                    }
+                                    HorizontalLayout { alignment: start; TextButton { text: @tr("int-account-add" => "Add an account"); clicked => { root.int-action("add-account", "telegram"); } } }
                                 }
                                 // Jira
                                 Rectangle { height: 1px; background: Theme.line; }
@@ -3157,20 +3174,30 @@ export component AppWindow inherits Window {
                                         if (!root.int-jira-token-set || root.int-help == "jira"): TextButton { text: @tr("int-jira-open" => "Open the API tokens page"); clicked => { root.int-action("open", "atlassian-tokens"); } }
                                         if root.int-jira-token-set: TextButton { text: root.int-help == "jira" ? @tr("int-help-hide" => "Hide the steps") : @tr("int-help-show" => "How to set it up"); clicked => { root.int-help = root.int-help == "jira" ? "" : "jira"; } }
                                     }
-                                    LineEdit { text: root.int-jira-site; placeholder-text: @tr("int-jira-site" => "Site: your-team.atlassian.net"); edited(t) => { root.setting-text("int-jira-site", t); } }
-                                    LineEdit { text: root.int-jira-email; placeholder-text: @tr("int-jira-email" => "E-mail"); edited(t) => { root.setting-text("int-jira-email", t); } }
-                                    LineEdit { input-type: password; placeholder-text: root.int-jira-token-set ? @tr("int-secret-saved" => "Saved — type a new one to replace it") : @tr("int-jira-token" => "API token"); edited(t) => { root.setting-text("int-jira-token", t); } }
-                                    HorizontalLayout {
+                                    for acc[i] in root.int-jira-accounts: VerticalLayout {
                                         spacing: 8px;
-                                        LineEdit { horizontal-stretch: 1; text: root.int-jira-project; placeholder-text: @tr("int-jira-project" => "Project by default (optional)"); edited(t) => { root.setting-text("int-jira-project", t); } }
-                                        LineEdit { horizontal-stretch: 1; text: root.int-jira-issue; placeholder-text: @tr("int-jira-issue" => "Issue (optional)"); edited(t) => { root.setting-text("int-jira-issue", t); } }
-                                        LineEdit { horizontal-stretch: 1; text: root.int-jira-type; placeholder-text: @tr("int-jira-type" => "Type of a new issue"); edited(t) => { root.setting-text("int-jira-type", t); } }
+                                        if i > 0: Rectangle { height: 1px; background: Theme.line; }
+                                        if root.int-jira-accounts.length > 1: HorizontalLayout {
+                                            spacing: 8px;
+                                            LineEdit { horizontal-stretch: 1; text: acc.name; placeholder-text: @tr("int-account-name" => "Name in «Share», e.g. «Client A»"); edited(t) => { root.setting-text("int-acc:jira:name:" + acc.id, t); } }
+                                            if i > 0: TextButton { text: @tr("int-account-remove" => "Remove"); clicked => { root.int-action("remove-account", "jira:" + acc.id); } }
+                                        }
+                                        LineEdit { text: acc.a; placeholder-text: @tr("int-jira-site" => "Site: your-team.atlassian.net"); edited(t) => { root.setting-text("int-acc:jira:site:" + acc.id, t); } }
+                                        LineEdit { text: acc.b; placeholder-text: @tr("int-jira-email" => "E-mail"); edited(t) => { root.setting-text("int-acc:jira:email:" + acc.id, t); } }
+                                        LineEdit { input-type: password; placeholder-text: acc.token-set ? @tr("int-secret-saved" => "Saved — type a new one to replace it") : @tr("int-jira-token" => "API token"); edited(t) => { root.setting-text("int-acc:jira:token:" + acc.id, t); } }
+                                        HorizontalLayout {
+                                            spacing: 8px;
+                                            LineEdit { horizontal-stretch: 1; text: acc.c; placeholder-text: @tr("int-jira-project" => "Project by default (optional)"); edited(t) => { root.setting-text("int-acc:jira:project:" + acc.id, t); } }
+                                            LineEdit { horizontal-stretch: 1; text: acc.d; placeholder-text: @tr("int-jira-issue" => "Issue (optional)"); edited(t) => { root.setting-text("int-acc:jira:issue:" + acc.id, t); } }
+                                            LineEdit { horizontal-stretch: 1; text: acc.e; placeholder-text: @tr("int-jira-type" => "Type of a new issue"); edited(t) => { root.setting-text("int-acc:jira:type:" + acc.id, t); } }
+                                        }
+                                        HorizontalLayout {
+                                            spacing: 12px;
+                                            Text { text: acc.status; color: Theme.text2; font-size: 11px; wrap: word-wrap; horizontal-stretch: 1; vertical-alignment: center; }
+                                            TextButton { text: @tr("int-check" => "Check"); enabled: !acc.busy; clicked => { root.int-action("check", (acc.id == "" ? "jira" : "jira:" + acc.id)); } }
+                                        }
                                     }
-                                    HorizontalLayout {
-                                        spacing: 12px;
-                                        Text { text: root.int-jira-status; color: Theme.text2; font-size: 11px; wrap: word-wrap; horizontal-stretch: 1; vertical-alignment: center; }
-                                        TextButton { text: @tr("int-check" => "Check"); enabled: !root.int-jira-busy; clicked => { root.int-action("check", "jira"); } }
-                                    }
+                                    HorizontalLayout { alignment: start; TextButton { text: @tr("int-account-add" => "Add an account"); clicked => { root.int-action("add-account", "jira"); } } }
                                 }
                                 // Slack
                                 Rectangle { height: 1px; background: Theme.line; }
@@ -3184,13 +3211,23 @@ export component AppWindow inherits Window {
                                         if (!root.int-slack-token-set || root.int-help == "slack"): TextButton { text: @tr("int-slack-open" => "Create the Slack app"); clicked => { root.int-action("open", "slack-app"); } }
                                         if root.int-slack-token-set: TextButton { text: root.int-help == "slack" ? @tr("int-help-hide" => "Hide the steps") : @tr("int-help-show" => "How to set it up"); clicked => { root.int-help = root.int-help == "slack" ? "" : "slack"; } }
                                     }
-                                    LineEdit { input-type: password; placeholder-text: root.int-slack-token-set ? @tr("int-secret-saved" => "Saved — type a new one to replace it") : @tr("int-slack-token" => "Bot token (xoxb-…)"); edited(t) => { root.setting-text("int-slack-token", t); } }
-                                    LineEdit { text: root.int-slack-channel; placeholder-text: @tr("int-slack-channel" => "Channel by default (optional)"); edited(t) => { root.setting-text("int-slack-channel", t); } }
-                                    HorizontalLayout {
-                                        spacing: 12px;
-                                        Text { text: root.int-slack-status; color: Theme.text2; font-size: 11px; wrap: word-wrap; horizontal-stretch: 1; vertical-alignment: center; }
-                                        TextButton { text: @tr("int-check" => "Check"); enabled: !root.int-slack-busy; clicked => { root.int-action("check", "slack"); } }
+                                    for acc[i] in root.int-slack-accounts: VerticalLayout {
+                                        spacing: 8px;
+                                        if i > 0: Rectangle { height: 1px; background: Theme.line; }
+                                        if root.int-slack-accounts.length > 1: HorizontalLayout {
+                                            spacing: 8px;
+                                            LineEdit { horizontal-stretch: 1; text: acc.name; placeholder-text: @tr("int-account-name" => "Name in «Share», e.g. «Client A»"); edited(t) => { root.setting-text("int-acc:slack:name:" + acc.id, t); } }
+                                            if i > 0: TextButton { text: @tr("int-account-remove" => "Remove"); clicked => { root.int-action("remove-account", "slack:" + acc.id); } }
+                                        }
+                                        LineEdit { input-type: password; placeholder-text: acc.token-set ? @tr("int-secret-saved" => "Saved — type a new one to replace it") : @tr("int-slack-token" => "Bot token (xoxb-…)"); edited(t) => { root.setting-text("int-acc:slack:token:" + acc.id, t); } }
+                                        LineEdit { text: acc.a; placeholder-text: @tr("int-slack-channel" => "Channel by default (optional)"); edited(t) => { root.setting-text("int-acc:slack:channel:" + acc.id, t); } }
+                                        HorizontalLayout {
+                                            spacing: 12px;
+                                            Text { text: acc.status; color: Theme.text2; font-size: 11px; wrap: word-wrap; horizontal-stretch: 1; vertical-alignment: center; }
+                                            TextButton { text: @tr("int-check" => "Check"); enabled: !acc.busy; clicked => { root.int-action("check", (acc.id == "" ? "slack" : "slack:" + acc.id)); } }
+                                        }
                                     }
+                                    HorizontalLayout { alignment: start; TextButton { text: @tr("int-account-add" => "Add an account"); clicked => { root.int-action("add-account", "slack"); } } }
                                 }
                                 // Redmine
                                 Rectangle { height: 1px; background: Theme.line; }
@@ -3204,18 +3241,28 @@ export component AppWindow inherits Window {
                                         if (!root.int-rm-key-set || root.int-help == "redmine"): TextButton { text: @tr("int-rm-open" => "Open My account"); clicked => { root.int-action("open", "redmine-key"); } }
                                         if root.int-rm-key-set: TextButton { text: root.int-help == "redmine" ? @tr("int-help-hide" => "Hide the steps") : @tr("int-help-show" => "How to set it up"); clicked => { root.int-help = root.int-help == "redmine" ? "" : "redmine"; } }
                                     }
-                                    LineEdit { text: root.int-rm-url; placeholder-text: @tr("int-rm-url" => "Address: https://redmine.example.com"); edited(t) => { root.setting-text("int-rm-url", t); } }
-                                    LineEdit { input-type: password; placeholder-text: root.int-rm-key-set ? @tr("int-secret-saved" => "Saved — type a new one to replace it") : @tr("int-rm-key" => "API key"); edited(t) => { root.setting-text("int-rm-key", t); } }
-                                    HorizontalLayout {
+                                    for acc[i] in root.int-rm-accounts: VerticalLayout {
                                         spacing: 8px;
-                                        LineEdit { horizontal-stretch: 1; text: root.int-rm-project; placeholder-text: @tr("int-rm-project" => "Project by default (optional)"); edited(t) => { root.setting-text("int-rm-project", t); } }
-                                        LineEdit { horizontal-stretch: 1; text: root.int-rm-issue; placeholder-text: @tr("int-rm-issue" => "Issue number (optional)"); edited(t) => { root.setting-text("int-rm-issue", t); } }
+                                        if i > 0: Rectangle { height: 1px; background: Theme.line; }
+                                        if root.int-rm-accounts.length > 1: HorizontalLayout {
+                                            spacing: 8px;
+                                            LineEdit { horizontal-stretch: 1; text: acc.name; placeholder-text: @tr("int-account-name" => "Name in «Share», e.g. «Client A»"); edited(t) => { root.setting-text("int-acc:redmine:name:" + acc.id, t); } }
+                                            if i > 0: TextButton { text: @tr("int-account-remove" => "Remove"); clicked => { root.int-action("remove-account", "redmine:" + acc.id); } }
+                                        }
+                                        LineEdit { text: acc.a; placeholder-text: @tr("int-rm-url" => "Address: https://redmine.example.com"); edited(t) => { root.setting-text("int-acc:redmine:url:" + acc.id, t); } }
+                                        LineEdit { input-type: password; placeholder-text: acc.token-set ? @tr("int-secret-saved" => "Saved — type a new one to replace it") : @tr("int-rm-key" => "API key"); edited(t) => { root.setting-text("int-acc:redmine:token:" + acc.id, t); } }
+                                        HorizontalLayout {
+                                            spacing: 8px;
+                                            LineEdit { horizontal-stretch: 1; text: acc.b; placeholder-text: @tr("int-rm-project" => "Project by default (optional)"); edited(t) => { root.setting-text("int-acc:redmine:project:" + acc.id, t); } }
+                                            LineEdit { horizontal-stretch: 1; text: acc.c; placeholder-text: @tr("int-rm-issue" => "Issue number (optional)"); edited(t) => { root.setting-text("int-acc:redmine:issue:" + acc.id, t); } }
+                                        }
+                                        HorizontalLayout {
+                                            spacing: 12px;
+                                            Text { text: acc.status; color: Theme.text2; font-size: 11px; wrap: word-wrap; horizontal-stretch: 1; vertical-alignment: center; }
+                                            TextButton { text: @tr("int-check" => "Check"); enabled: !acc.busy; clicked => { root.int-action("check", (acc.id == "" ? "redmine" : "redmine:" + acc.id)); } }
+                                        }
                                     }
-                                    HorizontalLayout {
-                                        spacing: 12px;
-                                        Text { text: root.int-rm-status; color: Theme.text2; font-size: 11px; wrap: word-wrap; horizontal-stretch: 1; vertical-alignment: center; }
-                                        TextButton { text: @tr("int-check" => "Check"); enabled: !root.int-rm-busy; clicked => { root.int-action("check", "redmine"); } }
-                                    }
+                                    HorizontalLayout { alignment: start; TextButton { text: @tr("int-account-add" => "Add an account"); clicked => { root.int-action("add-account", "redmine"); } } }
                                 }
                                 // Webhooks
                                 Rectangle { height: 1px; background: Theme.line; }

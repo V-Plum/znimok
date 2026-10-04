@@ -29,7 +29,8 @@ command-line tool from the app bundle.
 ## Permissions
 
 The first time a client uses a scope, Znimok asks the person — **this time / this session /
-always** — and offers to allow everything at once (every scope but the sound of a recording).
+always** — and offers to allow everything at once (every scope but the sound of a recording and
+sending out, which are asked for on their own).
 Scopes:
 
 | Scope | Tools |
@@ -39,6 +40,7 @@ Scopes:
 | `library_write` | `marks`, `transform`, `annotate`, `redact_pii`, `set_meta`, `library_edit`, `library_delete` (asks every time) |
 | `record` | `record` |
 | `record_audio` | `record` with `sound` other than `none` (asked on top of `record`) |
+| `share` | `share_targets`, `share` — sending documents out to the person's connected services; never part of «everything» |
 
 `record_status` and `app_state` need no permission. If Znimok is not running, nobody can be asked
 and the call is refused with a hint; the person can allow a client ahead of time:
@@ -54,9 +56,9 @@ The client name is what the client reports about itself; Znimok shows it as such
 
 **Fewer questions on the client's side.** Every tool carries the MCP annotations (`readOnlyHint`,
 `destructiveHint`, `idempotentHint`, `openWorldHint: false` — everything is local), and there are
-22 tools, one per job, reads apart from writes. In Claude Desktop's connector settings a good
+24 tools, one per job, reads apart from writes. In Claude Desktop's connector settings a good
 start is: reads (`list_targets`, `library_search`, `library_get`, `list_marks`, `video_info`,
-`video_frames`, `devlog`, `ocr`, `read_codes`, `record_status`, `app_state`) — *Always allow*; writes — *Needs
+`video_frames`, `devlog`, `ocr`, `read_codes`, `record_status`, `app_state`, `share_targets`) — *Always allow*; writes — *Needs
 approval*; `library_delete` — approval every time.
 
 ## Tools
@@ -87,6 +89,8 @@ characters do), or a path to a `.znimok` file. Every write returns the resulting
 | `export` | `document`, `format`; a screenshot: png / jpeg / webp / html; a recording: mp4 (`sound?`), gif (`gif_width?`, `gif_fps?`), html, report, zreport (`language?` uk / en, `hide?`), or png / jpeg / webp of the frame at `at_ms`; `path?` | the file's path (never over a file); a recording's html is the report page when it has the DevTools log |
 | `video_frames` | `document` (a recording), `at_ms?` [times, ≤ 8] or `count?` (4) | the frames as pictures with the marks of their moment, and their times |
 | `hand_over` | `document`, `to` editor / clipboard | opens the document in Znimok's editor, or copies the picture |
+| `share_targets` | `target?` | the connected services: key, name (a service can have several accounts), whether it needs a place, the place used last; with `target` — its places (Slack channels, Jira / Redmine projects, Telegram chats). No tokens |
+| `share` | `document`, `target` (a key from `share_targets`), `what?` image / document for a screenshot, video / report / document / logs for a recording, `place?` (a channel, project, issue or chat; the last one when left out), `text?`, `hide?` | queued: Znimok sends it itself (and tries again when the network is away); the person sees it |
 | `app_state` | — | whether Znimok runs; the page, the document, the tool, a recording, an agent at work |
 
 ### Marks in plain words

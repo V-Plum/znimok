@@ -26,6 +26,7 @@ pub mod mcp;
 pub mod permissions;
 pub mod prompts;
 mod rectools;
+mod sharetools;
 pub mod tools;
 mod vexport;
 mod vidtools;
