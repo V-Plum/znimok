@@ -771,7 +771,11 @@ impl App {
     }
 
     /// Changes the settings file (a failure to write is shown, the app keeps the value).
-    fn save_prefs(&mut self, ui: &AppWindow, f: impl FnOnce(&mut znimok_settings::Settings)) {
+    pub(crate) fn save_prefs(
+        &mut self,
+        ui: &AppWindow,
+        f: impl FnOnce(&mut znimok_settings::Settings),
+    ) {
         let Some(store) = self.store.as_ref() else {
             return;
         };

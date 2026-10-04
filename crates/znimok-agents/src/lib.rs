@@ -26,9 +26,11 @@ pub mod mcp;
 pub mod permissions;
 pub mod prompts;
 mod rectools;
+pub mod settools;
 mod sharetools;
 pub mod tools;
 mod vexport;
+mod videdit;
 mod vidtools;
 
 use std::path::PathBuf;
@@ -51,6 +53,10 @@ pub fn agent() -> tools::Agent {
         capture: backend::capturer(),
         enabled,
         export_dir: data.join("Exports"),
+        settings_file: dirs
+            .as_ref()
+            .map(|d| d.settings_file())
+            .unwrap_or_else(|| data.join("settings.json")),
     }
 }
 

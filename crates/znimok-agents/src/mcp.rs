@@ -23,7 +23,9 @@ const META_SERVER: &str = "io.modelcontextprotocol/serverInfo";
 const INSTRUCTIONS: &str = "Znimok takes screenshots and screen recordings, edits them and keeps them in a local library. \
 list_targets shows the displays and windows; capture takes a screenshot of a screen, a window, the \
 window in front or a region (a new library document, its id comes back). marks adds, changes and \
-removes marks (list_marks gives the ids); transform crops, rotates, resizes and tones; set_meta names \
+removes marks (list_marks gives the ids; on a recording they take from_ms / to_ms); transform crops, \
+rotates, resizes and tones, and on a recording cuts, trims and mutes (video) — resize is its size on \
+export; set_meta names \
 and tags; redact_pii hides secrets; ocr reads text (find looks a word up); read_codes reads codes. \
 library_search finds documents (kind, tags, pinned, with a browser log); library_edit imports, copies, \
 trashes and restores; library_delete deletes for good (the person confirms every time). record starts, \
@@ -218,7 +220,16 @@ impl<'a> Server<'a> {
             "resources/templates/list" => self.ok(
                 id,
                 modern,
-                cacheable(json!({"resourceTemplates": []}), modern),
+                // A frame of a recording (ZK-239), any of them: not listed one by one.
+                cacheable(
+                    json!({"resourceTemplates": [{
+                        "uriTemplate": "znimok://library/{document}/frame/{n}",
+                        "name": "A frame of a recording",
+                        "description": "Frame n (0-based, as recorded; video_info gives the fps) of a library recording, full size, with the marks of its moment",
+                        "mimeType": "image/png"
+                    }]}),
+                    modern,
+                ),
             ),
             "resources/read" => {
                 let uri = params["uri"].as_str().unwrap_or("");
