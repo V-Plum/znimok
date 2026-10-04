@@ -55,6 +55,7 @@ fn main() {
                 title: "Znimok · ZK-101".into(),
                 text: "Тестовий файл з інтеграції Telegram".into(),
                 kind: "screenshot".into(),
+                place: String::new(),
             };
             println!(
                 "{:?}",

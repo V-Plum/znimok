@@ -2001,6 +2001,7 @@ impl App {
                         title: name,
                         text: String::new(),
                         kind: "document".into(),
+                        place: String::new(),
                     };
                     self.share_bytes(ui, target, item, &bytes);
                 }
@@ -2036,6 +2037,7 @@ impl App {
                 .map(|s| s.ed.doc.meta.description.clone())
                 .unwrap_or_default(),
             kind: "screenshot".into(),
+            place: String::new(),
         };
         self.share_bytes(ui, target, item, &bytes);
     }
@@ -2081,6 +2083,7 @@ impl App {
                 .map(|s| s.ed.doc.meta.description.clone())
                 .unwrap_or_default(),
             kind: "screenshot".into(),
+            place: String::new(),
         };
         self.export_close(ui);
         self.share_bytes(ui, target, item, &bytes);
@@ -9331,6 +9334,7 @@ impl App {
                         mime: crate::integrations::mime_of(&ext).into(),
                         text: String::new(),
                         kind: if p.kind == REPORT { "report" } else { "video" }.into(),
+                        place: String::new(),
                     };
                     // Logs only (ZK-275): the report's own log.json — masked and on the cut
                     // time line just as in the report.

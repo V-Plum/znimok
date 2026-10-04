@@ -38,6 +38,70 @@ pub struct Item {
     /// `screenshot`, `video`, `report`, `document` (a `.znimok`), `log` (JSON) — for a webhook's
     /// receiver.
     pub kind: String,
+    /// Where in the target, chosen when sharing (ZK-278): a Slack channel's ID, a Jira project
+    /// (`ZK`) or issue (`ZK-101`), a Redmine project or issue (`#42`), a Telegram chat. Empty =
+    /// the one in the settings.
+    #[serde(default)]
+    pub place: String,
+}
+
+/// A place in a target to send to (ZK-278): what goes into [`Item::place`], and its name.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Place {
+    pub id: String,
+    pub name: String,
+}
+
+/// The places of a target the person can pick from when sharing: the Slack channels the token
+/// sees, the Jira or Redmine projects, the Telegram chats that wrote to the bot (and the one in
+/// the settings). Google Drive and webhooks have none.
+pub fn places(
+    t: &dyn Transport,
+    vault: &Vault,
+    cfg: &Integrations,
+    id: &TargetId,
+) -> Result<Vec<Place>, ShareError> {
+    use znimok_settings::Secret;
+    let pairs = match id {
+        TargetId::Telegram => {
+            let token = secret(vault, Secret::TelegramBotToken, "Telegram")?;
+            let mut out = telegram::find_chats(t, &token)?;
+            let known = cfg.telegram.chat_id.trim();
+            if !known.is_empty() && !out.iter().any(|(i, _)| i == known) {
+                let name = if cfg.telegram.chat_title.is_empty() {
+                    known.to_string()
+                } else {
+                    cfg.telegram.chat_title.clone()
+                };
+                out.push((known.to_string(), name));
+            }
+            out
+        }
+        TargetId::Slack => {
+            let token = secret(vault, Secret::SlackBotToken, "Slack")?;
+            slack::channels(t, &token)?
+        }
+        TargetId::Jira => {
+            let token = secret(vault, Secret::JiraApiToken, "Jira")?;
+            jira::projects(t, &cfg.jira, &token)?
+        }
+        TargetId::Redmine => {
+            let key = secret(vault, Secret::RedmineApiKey, "Redmine")?;
+            redmine::projects(t, &cfg.redmine, &key)?
+        }
+        TargetId::Google | TargetId::Webhook(_) => Vec::new(),
+    };
+    Ok(pairs
+        .into_iter()
+        .map(|(id, name)| Place { id, name })
+        .collect())
+}
+
+/// `ZK-101` is an issue, `ZK` a project.
+fn jira_issue_key(s: &str) -> bool {
+    s.split_once('-').is_some_and(|(p, n)| {
+        !p.is_empty() && !n.is_empty() && n.chars().all(|c| c.is_ascii_digit())
+    })
 }
 
 /// Which target: the keys of [`Integrations::default_target`].
@@ -99,13 +163,10 @@ pub fn ready(cfg: &Integrations) -> Vec<(TargetId, String)> {
         } else {
             j.issue.trim().to_string()
         };
-        out.push((TargetId::Jira, format!("Jira · {what}")));
+        out.push((TargetId::Jira, named("Jira", &what)));
     }
     if cfg.slack.enabled && !cfg.slack.channel.trim().is_empty() {
-        out.push((
-            TargetId::Slack,
-            format!("Slack · {}", cfg.slack.channel.trim()),
-        ));
+        out.push((TargetId::Slack, named("Slack", cfg.slack.channel.trim())));
     }
     if cfg.redmine.enabled && !cfg.redmine.url.trim().is_empty() {
         let r = &cfg.redmine;
@@ -127,6 +188,15 @@ pub fn ready(cfg: &Integrations) -> Vec<(TargetId, String)> {
         }
     }
     out
+}
+
+/// «Slack · C0123», or «Slack» when the place is chosen when sharing.
+fn named(service: &str, place: &str) -> String {
+    if place.is_empty() {
+        service.to_string()
+    } else {
+        format!("{service} · {place}")
+    }
 }
 
 /// What a sending gave: where to look at it, when the service says.
@@ -193,6 +263,15 @@ fn secret(v: &Vault, s: znimok_settings::Secret, what: &str) -> Result<String, S
             "{what}: no token in the settings"
         ))),
         Err(e) => Err(ShareError::Fail(format!("{what}: {e}"))),
+    }
+}
+
+/// The place chosen when sharing, else the one in the settings.
+fn or<'a>(chosen: &'a str, settings: &'a str) -> &'a str {
+    if chosen.trim().is_empty() {
+        settings
+    } else {
+        chosen.trim()
     }
 }
 
@@ -284,19 +363,41 @@ pub fn send(
         }
         TargetId::Telegram => {
             let token = secret(vault, Secret::TelegramBotToken, "Telegram")?;
-            telegram::send(t, &token, &cfg.telegram.chat_id, item, bytes)
+            telegram::send(
+                t,
+                &token,
+                or(&item.place, &cfg.telegram.chat_id),
+                item,
+                bytes,
+            )
         }
         TargetId::Jira => {
             let token = secret(vault, Secret::JiraApiToken, "Jira")?;
-            jira::send(t, &cfg.jira, &token, item, bytes)
+            let mut j = cfg.jira.clone();
+            let place = item.place.trim();
+            if jira_issue_key(place) {
+                j.issue = place.to_uppercase();
+            } else if !place.is_empty() {
+                j.project = place.to_uppercase();
+                j.issue.clear();
+            }
+            jira::send(t, &j, &token, item, bytes)
         }
         TargetId::Slack => {
             let token = secret(vault, Secret::SlackBotToken, "Slack")?;
-            slack::send(t, &token, &cfg.slack.channel, item, bytes)
+            slack::send(t, &token, or(&item.place, &cfg.slack.channel), item, bytes)
         }
         TargetId::Redmine => {
             let key = secret(vault, Secret::RedmineApiKey, "Redmine")?;
-            redmine::send(t, &cfg.redmine, &key, item, bytes)
+            let mut r = cfg.redmine.clone();
+            let place = item.place.trim();
+            if let Some(n) = place.strip_prefix('#') {
+                r.issue = n.to_string();
+            } else if !place.is_empty() {
+                r.project = place.to_string();
+                r.issue.clear();
+            }
+            redmine::send(t, &r, &key, item, bytes)
         }
         TargetId::Webhook(wid) => {
             let w = cfg
@@ -483,6 +584,32 @@ mod tests {
         assert_eq!(ready(&cfg)[0].1, "Google Drive · b@x.org");
         cfg.google.active = "gone".into();
         assert_eq!(ready(&cfg)[0].1, "Google Drive · a@x.org");
+    }
+
+    #[test]
+    fn the_place_chosen_when_sharing_wins() {
+        assert!(jira_issue_key("ZK-101") && !jira_issue_key("ZK") && !jira_issue_key("A-B"));
+        // Slack: the chosen channel instead of the settings' one.
+        let f = fake::Fake::new(&[
+            (
+                200,
+                r#"{"ok":true,"upload_url":"https://u/1","file_id":"F1"}"#,
+            ),
+            (200, "OK"),
+            (200, r#"{"ok":true,"files":[{"permalink":"p"}]}"#),
+        ]);
+        let mut cfg = Integrations::default();
+        cfg.slack.channel = "CSETTINGS".into();
+        let item = Item {
+            file_name: "a.png".into(),
+            mime: "image/png".into(),
+            place: "CCHOSEN".into(),
+            ..Default::default()
+        };
+        slack::send(&f, "xoxb", or(&item.place, &cfg.slack.channel), &item, b"x").unwrap();
+        let v: serde_json::Value = serde_json::from_slice(&f.seen()[2].body).unwrap();
+        assert_eq!(v["channel_id"], "CCHOSEN");
+        assert_eq!(or("", "CSETTINGS"), "CSETTINGS");
     }
 
     #[test]

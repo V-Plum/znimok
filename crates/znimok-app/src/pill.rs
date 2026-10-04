@@ -310,6 +310,7 @@ fn wire(ui: &Pill) {
                     title: name.clone(),
                     text: String::new(),
                     kind: "screenshot".into(),
+                    place: String::new(),
                 };
                 app.share_bytes(ui, &key, item, &b);
             }

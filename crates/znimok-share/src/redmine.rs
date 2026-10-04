@@ -31,6 +31,39 @@ fn fail(r: &znimok_models::http::Response) -> ShareError {
     }
 }
 
+/// The projects the key may see (ZK-278): `(identifier, name)`, by name.
+pub fn projects(
+    t: &dyn Transport,
+    cfg: &RedmineTarget,
+    key: &str,
+) -> Result<Vec<(String, String)>, ShareError> {
+    let r = t.request(
+        "GET",
+        &format!("{}/projects.json?limit=100", base(cfg)),
+        &[("X-Redmine-API-Key", key), ("Accept", "application/json")],
+        None,
+        timeout_for(0),
+        MAX_ANSWER,
+    )?;
+    if r.status != 200 {
+        return Err(fail(&r));
+    }
+    let v: Value = serde_json::from_slice(&r.body).unwrap_or(Value::Null);
+    let mut out: Vec<(String, String)> = v["projects"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|p| {
+            Some((
+                p["identifier"].as_str()?.to_string(),
+                p["name"].as_str().unwrap_or("").to_string(),
+            ))
+        })
+        .collect();
+    out.sort_by_key(|p| p.1.to_lowercase());
+    Ok(out)
+}
+
 pub fn check(t: &dyn Transport, cfg: &RedmineTarget, key: &str) -> Result<String, ShareError> {
     let r = t.request(
         "GET",
@@ -185,5 +218,23 @@ mod tests {
         assert_eq!(s.url.as_deref(), Some("https://rm.example.com/issues/9"));
         let v: Value = serde_json::from_slice(&f.seen()[1].body).unwrap();
         assert_eq!(v["issue"]["project_id"], "web");
+    }
+
+    #[test]
+    fn the_projects_by_name() {
+        let f = crate::fake::Fake::new(&[(
+            200,
+            r#"{"projects":[{"identifier":"web","name":"Website"},{"identifier":"app","name":"App"}]}"#,
+        )]);
+        let cfg = RedmineTarget {
+            url: "https://rm.example.com/".into(),
+            ..Default::default()
+        };
+        let p = projects(&f, &cfg, "k").unwrap();
+        assert_eq!(p[0], ("app".to_string(), "App".to_string()));
+        assert_eq!(
+            f.seen()[0].url,
+            "https://rm.example.com/projects.json?limit=100"
+        );
     }
 }

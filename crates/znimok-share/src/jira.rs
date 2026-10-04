@@ -70,6 +70,36 @@ fn adf(text: &str) -> Value {
     json!({"type": "doc", "version": 1, "content": paragraphs})
 }
 
+/// The projects the person may see (ZK-278), the ones worked on lately first: `(KEY, KEY · Name)`.
+pub fn projects(
+    t: &dyn Transport,
+    cfg: &JiraTarget,
+    token: &str,
+) -> Result<Vec<(String, String)>, ShareError> {
+    let v = json_call(
+        t,
+        "GET",
+        &format!(
+            "{}/rest/api/3/project/search?maxResults=100&orderBy=-lastIssueUpdatedTime",
+            base_url(&cfg.site)
+        ),
+        &auth(cfg, token),
+        None,
+    )?;
+    Ok(v["values"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|p| {
+            let key = p["key"].as_str()?;
+            Some((
+                key.to_string(),
+                format!("{key} · {}", p["name"].as_str().unwrap_or("")),
+            ))
+        })
+        .collect())
+}
+
 /// Who the token is, and that the project (and the issue) are there.
 pub fn check(t: &dyn Transport, cfg: &JiraTarget, token: &str) -> Result<String, ShareError> {
     let base = base_url(&cfg.site);
@@ -204,6 +234,7 @@ mod tests {
             title: "Кнопка не працює".into(),
             text: "кроки:\n1. натиснути".into(),
             kind: "report".into(),
+            place: String::new(),
         }
     }
 
@@ -262,6 +293,27 @@ mod tests {
         assert_eq!(
             base_url("https://x.atlassian.net/"),
             "https://x.atlassian.net"
+        );
+    }
+
+    #[test]
+    fn the_projects_lately_worked_on_first() {
+        let f = crate::fake::Fake::new(&[(
+            200,
+            r#"{"values":[{"key":"ZK","name":"Znimok"},{"key":"AH","name":"Home"}]}"#,
+        )]);
+        let cfg = JiraTarget {
+            site: "x.atlassian.net".into(),
+            email: "a@b.c".into(),
+            ..Default::default()
+        };
+        let p = projects(&f, &cfg, "tok").unwrap();
+        assert_eq!(p[0], ("ZK".to_string(), "ZK · Znimok".to_string()));
+        assert_eq!(p.len(), 2);
+        assert!(
+            f.seen()[0]
+                .url
+                .starts_with("https://x.atlassian.net/rest/api/3/project/search?")
         );
     }
 }

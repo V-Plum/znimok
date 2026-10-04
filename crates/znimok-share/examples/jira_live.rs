@@ -42,6 +42,7 @@ fn main() {
         title: "Znimok · перевірка інтеграції Jira (ZK-101)".into(),
         text: "Тестовий файл із Znimok.\nДругий рядок опису.".into(),
         kind: "screenshot".into(),
+        place: String::new(),
     };
     println!(
         "send: {:?}",
