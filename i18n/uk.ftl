@@ -6695,3 +6695,18 @@ int-account-remove = Прибрати
 # @kind: body
 # @max: 90
 share-gmail-opened = Лист відкрито в Gmail — допишіть, кому
+
+# @where: Settings → Agents: a permission in a client's list
+# @kind: label
+# @max: 24
+agents-scope-share = надсилання назовні
+
+# @where: The permission question: what an agent asks for — sending to the connected services
+# @kind: body
+# @max: 120
+agents-ask-share = надсилати документи у ваші підключені сервіси (Google Drive, Gmail, Telegram, Jira, Slack, Redmine, вебхуки)
+
+# @where: Toast: an agent sent a document; $client the agent, $target where
+# @kind: body
+# @max: 90
+share-agent-queued = { $client } надсилає в { $target }…

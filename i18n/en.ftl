@@ -6647,3 +6647,18 @@ int-account-remove = Remove
 # @kind: body
 # @max: 90
 share-gmail-opened = The letter is open in Gmail — add who it goes to
+
+# @where: Settings → Agents: a permission in a client's list
+# @kind: label
+# @max: 24
+agents-scope-share = sending out
+
+# @where: The permission question: what an agent asks for — sending to the connected services
+# @kind: body
+# @max: 120
+agents-ask-share = send documents to your connected services (Google Drive, Gmail, Telegram, Jira, Slack, Redmine, webhooks)
+
+# @where: Toast: an agent sent a document; $client the agent, $target where
+# @kind: body
+# @max: 90
+share-agent-queued = { $client } sends to { $target }…

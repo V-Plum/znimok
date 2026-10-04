@@ -81,6 +81,23 @@ with `agents.ask` before it calls this.
 `open` shows the document in the editor and brings the window forward; `copy` puts its picture
 with the marks on the clipboard. Refused while MCP is switched off.
 
+## `agents.share` — a document to a connected service (ZK-274)
+
+```json
+{"method": "agents.share", "params": {"op": "targets"}}
+→ {"result": {"targets": [{"key": "slack:c2", "name": "Slack · Client B", "needs_place": true, "last_place": "C0123"}]}}
+{"method": "agents.share", "params": {"op": "places", "target": "slack:c2"}}
+→ {"result": {"places": [{"id": "C0123", "name": "#design"}]}}
+{"method": "agents.share", "params": {"op": "send", "client": "Claude Code", "target": "slack:c2", "place": "C0123",
+  "text": "…", "title": "…", "kind": "screenshot", "mime": "image/png", "file_name": "….png", "path": "…/x.png"}}
+→ {"result": {"queued": true, "target": "Slack · Client B"}}
+```
+
+The MCP server makes the file (the same export as `export`) and the app puts it in its sending
+queue — the tokens never leave the app. Only targets that are switched on and filled in; a target
+that needs a place gets one or uses the last. The person sees a toast. Refused while MCP is
+switched off. The MCP server asks for the `share` permission first — never part of «everything».
+
 ## `agents.activity` — the indicator (ZK-69)
 
 ```json

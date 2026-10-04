@@ -442,11 +442,11 @@ impl Agent {
             Decision::Ask => match self.gui.ask_all(client, scope, tool) {
                 Some((g, all)) => {
                     // «This session» / «always» for everything (ZK-251), but never the sound of a
-                    // recording — that stays its own question.
+                    // recording or sending out (ZK-274) — those stay their own questions.
                     let scopes: Vec<Scope> = if all {
                         Scope::ALL
                             .into_iter()
-                            .filter(|s| *s != Scope::RecordAudio)
+                            .filter(|s| !s.asked_alone())
                             .collect()
                     } else {
                         vec![scope]
