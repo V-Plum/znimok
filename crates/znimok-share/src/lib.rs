@@ -472,7 +472,7 @@ fn slack_token(t: &dyn Transport, vault: &Vault, id: &TargetId) -> Result<String
     let cid = slack::client_id().ok_or_else(|| {
         ShareError::Fail("Slack: signing in is not available in this build".into())
     })?;
-    let (access, next) = slack::refresh(t, cid, rt)?;
+    let (access, next) = slack::refresh(t, cid, slack::client_secret(), rt)?;
     if next != rt {
         set_token(vault, id, &format!("{}{next}", slack::SIGNED_IN)).map_err(ShareError::Fail)?;
     }
