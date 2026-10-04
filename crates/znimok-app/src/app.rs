@@ -12522,6 +12522,18 @@ enum Found {
     Chats(Vec<(String, String)>),
 }
 
+/// The targets of «Send to» and «Share», ready to send (ZK-101, ZK-271).
+fn set_int_targets(ui: &AppWindow, i: &znimok_settings::Integrations) {
+    let targets: Vec<crate::IntTarget> = znimok_share::ready(i)
+        .into_iter()
+        .map(|(id, name)| crate::IntTarget {
+            key: id.key().into(),
+            name: name.into(),
+        })
+        .collect();
+    ui.set_int_targets(std::rc::Rc::new(slint::VecModel::from(targets)).into());
+}
+
 #[cfg(test)]
 mod wave_tests {
     use super::wave_pixels;
@@ -12551,16 +12563,4 @@ mod wave_tests {
         let none = wave_pixels(&[], 0.0, 0.1, 0.01, (w, h), 1.0, [1, 2, 3, 255]);
         assert!((0..w).all(|x| none[((10 * w + x) * 4 + 3) as usize] != 0));
     }
-}
-
-/// The targets of «Send to» and «Share», ready to send (ZK-101, ZK-271).
-fn set_int_targets(ui: &AppWindow, i: &znimok_settings::Integrations) {
-    let targets: Vec<crate::IntTarget> = znimok_share::ready(i)
-        .into_iter()
-        .map(|(id, name)| crate::IntTarget {
-            key: id.key().into(),
-            name: name.into(),
-        })
-        .collect();
-    ui.set_int_targets(std::rc::Rc::new(slint::VecModel::from(targets)).into());
 }
