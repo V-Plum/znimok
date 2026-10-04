@@ -28,7 +28,9 @@ good. Full reference: `docs/AGENTS.md` in the Znimok repository.
    into a document. Check `found`; mention what was covered.
 3. **Mark up with intent.** `marks` adds frames, arrows, text, counters, hidden areas and
    highlights from plain arguments (screenshot pixels), changes and removes them by id
-   (`list_marks`); `transform` crops, rotates, resizes and tones the picture. Use `ocr` line
+   (`list_marks`); `transform` crops, rotates, resizes and tones the picture — on a recording
+   it also cuts, trims and mutes (`video`, times in ms as recorded) and `resize` is the size on
+   export; marks on a recording take `from_ms` / `to_ms`. Use `ocr` line
    boxes (`find` for one word) to place marks precisely next to the text they point at. Keep
    labels short. `annotate` takes the editor's raw document commands when the plain tools do
    not reach.

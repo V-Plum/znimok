@@ -41,7 +41,9 @@ fn mark_schema() -> Value {
             "strength": {"type": "integer", "minimum": 1, "maximum": 100, "description": "hide: how strongly (50)"},
             "shape": {"type": "string", "enum": ["circle", "rounded_box", "pin"], "description": "counter"},
             "stamp": {"type": "integer", "minimum": 0, "description": "stamp: 0–5 are the vector stamps, 100+ emoji"},
-            "name": {"type": "string", "description": "A name for the layers list"}
+            "name": {"type": "string", "description": "A name for the layers list"},
+            "from_ms": {"type": "integer", "minimum": 0, "description": "Recording only: when the mark appears, ms as recorded (the whole recording without times)"},
+            "to_ms": {"type": "integer", "minimum": 1, "description": "Recording only: when it goes (not included)"}
         },
         "required": ["kind"]
     })
@@ -92,7 +94,10 @@ pub(crate) const TOOLS: &[Tool] = &[
                     "size": {"type": "integer", "minimum": 6},
                     "bold": {"type": "boolean"}, "italic": {"type": "boolean"},
                     "hidden": {"type": "boolean"},
-                    "name": {"type": "string"}
+                    "name": {"type": "string"},
+                    "from_ms": {"type": "integer", "minimum": 0, "description": "Recording only: when the marks appear, ms as recorded"},
+                    "to_ms": {"type": "integer", "minimum": 1, "description": "Recording only: when they go (not included)"},
+                    "always": {"type": "boolean", "description": "Recording only: true shows the marks the whole time"}
                 }),
                 &["document", "ids"],
             )
@@ -466,6 +471,17 @@ pub(crate) fn apply(
     args: &Value,
     cmds: impl FnOnce(&Document) -> Result<Vec<Command>, String>,
 ) -> Result<Output, String> {
+    apply_timed(agent, args, cmds, |_| Vec::new())
+}
+
+/// [`apply`], then the times of marks on a recording (ZK-239): `times` gets the ids of the
+/// marks just made and answers which marks take which time arguments.
+fn apply_timed(
+    agent: &Agent,
+    args: &Value,
+    cmds: impl FnOnce(&Document) -> Result<Vec<Command>, String>,
+    times: impl FnOnce(&[ObjectId]) -> Vec<(ObjectId, Value)>,
+) -> Result<Output, String> {
     let (doc, path) = agent.doc(args)?;
     let cmds = cmds(&doc)?;
     let mut ed = Editor::new(doc);
@@ -474,6 +490,7 @@ pub(crate) fn apply(
         let a = ed.apply(c).map_err(|e| e.to_string())?;
         created.extend(a.created);
     }
+    crate::videdit::set_times(&mut ed, &path, &times(&created))?;
     library::save(&path, &ed.doc)?;
     let mut s = summary(&ed.doc, &path);
     if !created.is_empty() {
@@ -497,104 +514,131 @@ pub(crate) fn run(agent: &Agent, name: &str, args: &Value) -> Option<Result<Outp
             s["marks"] = json!(doc.objects.iter().map(mark_json).collect::<Vec<_>>());
             Output::ok(s, vec![])
         }),
-        "add_marks" => apply(agent, args, |_| {
-            let marks = args["marks"].as_array().ok_or("«marks» must be an array")?;
-            marks
-                .iter()
-                .enumerate()
-                .map(|(i, m)| {
-                    mark(m)
-                        .map(|object| Command::AddObject {
-                            object,
-                            select: false,
-                            merge: None,
-                        })
-                        .map_err(|e| format!("mark {i}: {e}"))
-                })
-                .collect()
-        }),
-        "update_marks" => apply(agent, args, |doc| {
-            let ids = ids(args)?;
-            known(doc, &ids)?;
-            let mut out = Vec::new();
-            let (dx, dy) = (
-                opt_int(args, "dx")?.unwrap_or(0),
-                opt_int(args, "dy")?.unwrap_or(0),
-            );
-            if dx != 0 || dy != 0 {
-                out.push(Command::MoveObjects {
-                    ids: ids.clone(),
-                    dx,
-                    dy,
-                    merge: None,
-                });
-            }
-            // A new box: each side given replaces that side of every listed mark.
-            let side = |k: &str| opt_int(args, k);
-            let (x, y, w, h) = (side("x")?, side("y")?, side("width")?, side("height")?);
-            if x.is_some() || y.is_some() || w.is_some() || h.is_some() {
-                for id in &ids {
-                    let r = doc.get(*id).map(|o| o.rect).unwrap_or_default();
-                    out.push(Command::UpdateObjects {
-                        ids: vec![*id],
-                        patch: ObjectPatch {
-                            rect: Some(IRect::new(
-                                x.unwrap_or(r.x),
-                                y.unwrap_or(r.y),
-                                w.unwrap_or(r.w),
-                                h.unwrap_or(r.h),
-                            )),
-                            ..Default::default()
-                        },
+        "add_marks" => apply_timed(
+            agent,
+            args,
+            |_| {
+                let marks = args["marks"].as_array().ok_or("«marks» must be an array")?;
+                marks
+                    .iter()
+                    .enumerate()
+                    .map(|(i, m)| {
+                        mark(m)
+                            .map(|object| Command::AddObject {
+                                object,
+                                select: false,
+                                merge: None,
+                            })
+                            .map_err(|e| format!("mark {i}: {e}"))
+                    })
+                    .collect()
+            },
+            // One new mark per mark given, in order: each takes its own from_ms / to_ms.
+            |created| {
+                created
+                    .iter()
+                    .copied()
+                    .zip(args["marks"].as_array().into_iter().flatten().cloned())
+                    .collect()
+            },
+        ),
+        "update_marks" => apply_timed(
+            agent,
+            args,
+            |doc| {
+                let ids = ids(args)?;
+                known(doc, &ids)?;
+                let timed = !args["from_ms"].is_null()
+                    || !args["to_ms"].is_null()
+                    || args["always"].as_bool().is_some();
+                let mut out = Vec::new();
+                let (dx, dy) = (
+                    opt_int(args, "dx")?.unwrap_or(0),
+                    opt_int(args, "dy")?.unwrap_or(0),
+                );
+                if dx != 0 || dy != 0 {
+                    out.push(Command::MoveObjects {
+                        ids: ids.clone(),
+                        dx,
+                        dy,
                         merge: None,
                     });
                 }
-            }
-            let mut patch = ObjectPatch::default();
-            let mut style = znimok_core::command::StylePatch::default();
-            let mut styled = false;
-            if let Some(c) = colour(args, "color")? {
-                style.color = Some(c);
-                styled = true;
-            }
-            if arg_str(args, "fill").is_some_and(|f| f.eq_ignore_ascii_case("none")) {
-                style.color2 = Some(None);
-                styled = true;
-            } else if let Some(c) = colour(args, "fill")? {
-                style.color2 = Some(Some(c));
-                styled = true;
-            }
-            if let Some(t) = opt_int(args, "line_width")? {
-                style.thick = Some(t.clamp(1, 400));
-                styled = true;
-            }
-            if let Some(a) = opt_int(args, "opacity")? {
-                style.alpha = Some(a.clamp(10, 100) as u8);
-                styled = true;
-            }
-            if styled {
-                patch.style = Some(style);
-            }
-            patch.text = arg_str(args, "text").map(str::to_string);
-            patch.size = opt_int(args, "size")?.map(|s| s.clamp(6, 400));
-            patch.bold = args["bold"].as_bool();
-            patch.italic = args["italic"].as_bool();
-            patch.hidden = args["hidden"].as_bool();
-            if let Some(n) = arg_str(args, "name") {
-                patch.name = Some(Some(n.to_string()));
-            }
-            if patch != ObjectPatch::default() {
-                out.push(Command::UpdateObjects {
-                    ids,
-                    patch,
-                    merge: None,
-                });
-            }
-            if out.is_empty() {
-                return Err("nothing to change: give dx / dy, a box, a colour, text…".into());
-            }
-            Ok(out)
-        }),
+                // A new box: each side given replaces that side of every listed mark.
+                let side = |k: &str| opt_int(args, k);
+                let (x, y, w, h) = (side("x")?, side("y")?, side("width")?, side("height")?);
+                if x.is_some() || y.is_some() || w.is_some() || h.is_some() {
+                    for id in &ids {
+                        let r = doc.get(*id).map(|o| o.rect).unwrap_or_default();
+                        out.push(Command::UpdateObjects {
+                            ids: vec![*id],
+                            patch: ObjectPatch {
+                                rect: Some(IRect::new(
+                                    x.unwrap_or(r.x),
+                                    y.unwrap_or(r.y),
+                                    w.unwrap_or(r.w),
+                                    h.unwrap_or(r.h),
+                                )),
+                                ..Default::default()
+                            },
+                            merge: None,
+                        });
+                    }
+                }
+                let mut patch = ObjectPatch::default();
+                let mut style = znimok_core::command::StylePatch::default();
+                let mut styled = false;
+                if let Some(c) = colour(args, "color")? {
+                    style.color = Some(c);
+                    styled = true;
+                }
+                if arg_str(args, "fill").is_some_and(|f| f.eq_ignore_ascii_case("none")) {
+                    style.color2 = Some(None);
+                    styled = true;
+                } else if let Some(c) = colour(args, "fill")? {
+                    style.color2 = Some(Some(c));
+                    styled = true;
+                }
+                if let Some(t) = opt_int(args, "line_width")? {
+                    style.thick = Some(t.clamp(1, 400));
+                    styled = true;
+                }
+                if let Some(a) = opt_int(args, "opacity")? {
+                    style.alpha = Some(a.clamp(10, 100) as u8);
+                    styled = true;
+                }
+                if styled {
+                    patch.style = Some(style);
+                }
+                patch.text = arg_str(args, "text").map(str::to_string);
+                patch.size = opt_int(args, "size")?.map(|s| s.clamp(6, 400));
+                patch.bold = args["bold"].as_bool();
+                patch.italic = args["italic"].as_bool();
+                patch.hidden = args["hidden"].as_bool();
+                if let Some(n) = arg_str(args, "name") {
+                    patch.name = Some(Some(n.to_string()));
+                }
+                if patch != ObjectPatch::default() {
+                    out.push(Command::UpdateObjects {
+                        ids,
+                        patch,
+                        merge: None,
+                    });
+                }
+                if out.is_empty() && !timed {
+                    return Err("nothing to change: give dx / dy, a box, a colour, text…".into());
+                }
+                Ok(out)
+            },
+            |_| {
+                // The times apply to every listed mark (ids were checked above).
+                ids(args)
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(|id| (id, args.clone()))
+                    .collect()
+            },
+        ),
         "delete_marks" => apply(agent, args, |doc| {
             let ids = if args["all"].as_bool().unwrap_or(false) {
                 doc.objects.iter().map(|o| o.id).collect()

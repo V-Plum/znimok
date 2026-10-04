@@ -307,6 +307,7 @@ fn inner() -> impl Iterator<Item = &'static Tool> {
         .chain(crate::edit::TOOLS.iter())
         .chain(crate::libtools::TOOLS.iter())
         .chain(crate::vidtools::TOOLS.iter())
+        .chain(crate::videdit::TOOLS.iter())
         .chain(crate::rectools::TOOLS.iter())
         .chain(crate::apptools::TOOLS.iter())
 }
@@ -903,6 +904,7 @@ impl Agent {
             _ => crate::edit::run(self, name, args)
                 .or_else(|| crate::libtools::run(self, client, name, args))
                 .or_else(|| crate::vidtools::run(self, name, args))
+                .or_else(|| crate::videdit::run(self, name, args))
                 .or_else(|| crate::rectools::run(self, client, name, args))
                 .or_else(|| crate::apptools::run(self, name, args))
                 .unwrap_or_else(|| Err(format!("unknown tool «{name}»"))),

@@ -29,6 +29,7 @@ mod rectools;
 mod sharetools;
 pub mod tools;
 mod vexport;
+mod videdit;
 mod vidtools;
 
 use std::path::PathBuf;

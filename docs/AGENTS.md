@@ -78,8 +78,8 @@ characters do), or a path to a `.znimok` file. Every write returns the resulting
 | `library_delete` | `document` | deletes for good; the person confirms in the Znimok window every time |
 | `set_meta` | `document`, `name?`, `description?`, `tags?` / `add_tags?` / `remove_tags?`, `author?`, `copyright?`, `pinned?` | the document |
 | `list_marks` | `document` | every mark: id, kind, box, text, colour… |
-| `marks` | `document`, `delete?` {ids / all}, `update?` [{ids, dx, dy, x, y, width, height, text, color…}], `add?` [marks in plain words: rect, ellipse, arrow, line, pen, text, counter, hide, highlighter, stamp] — in that order | the picture |
-| `transform` | `document`, `crop?` {x, y, width, height / reset}, `rotate?` {turn right / left / half, mirror}, `resize?` {width / height / percent / canvas}, `tone?` {exposure, gamma, contrast / reset} — in that order | the picture |
+| `marks` | `document`, `delete?` {ids / all}, `update?` [{ids, dx, dy, x, y, width, height, text, color…, on a recording `from_ms` / `to_ms` / `always`}], `add?` [marks in plain words: rect, ellipse, arrow, line, pen, text, counter, hide, highlighter, stamp; on a recording each may take `from_ms` / `to_ms`] — in that order | the picture |
+| `transform` | `document`, `crop?` {x, y, width, height / reset}, `rotate?` {turn right / left / half, mirror}, `resize?` {width / height / percent / canvas}, `tone?` {exposure, gamma, contrast / reset} — in that order. A recording: crop and tone as for a picture, `resize` is its size on export, `rotate` is refused; `video?` {`restore` [{from_ms, to_ms}] / `restore_all`, `cut` [{from_ms, to_ms}], `trim` {from_ms, to_ms / reset}, `mute` [{track, muted}]} (ZK-239) | the picture; a recording also `video` (kept, cuts, trim, size, tracks) |
 | `annotate` | `document`, `commands` (the editor's document commands as JSON) | the picture |
 | `redact_pii` | `document`, `apply?` (true), `kinds?` | what was (or would be) hidden |
 | `ocr` | `document`, `languages?`, `find?` | the text with the box of every line; with `find` — only the lines that contain it |
@@ -92,6 +92,21 @@ characters do), or a path to a `.znimok` file. Every write returns the resulting
 | `share_targets` | `target?` | the connected services: key, name (a service can have several accounts), whether it needs a place, the place used last; with `target` — its places (Slack channels, Jira / Redmine projects, Telegram chats). No tokens |
 | `share` | `document`, `target` (a key from `share_targets`), `what?` image / document for a screenshot, video / report / document / logs for a recording, `place?` (a channel, project, issue or chat; the last one when left out), `text?`, `hide?` | queued: Znimok sends it itself (and tries again when the network is away); the person sees it |
 | `app_state` | — | whether Znimok runs; the page, the document, the tool, a recording, an agent at work |
+
+### Editing a recording (ZK-239)
+
+Times are ms of the recording as recorded — what `video_info` and `devlog` give. The video stream
+in the file is never rewritten: cuts, trim, muted tracks and the size on export are edits that an
+`export` applies (and the person sees in the editor, with undo). Speed is not something Znimok
+changes yet.
+
+```json
+{"document": "…", "video": {"cut": [{"from_ms": 4200, "to_ms": 9800}], "trim": {"from_ms": 600},
+ "mute": [{"track": 1, "muted": true}]}, "resize": {"width": 1280}}
+```
+
+A mark on a recording shows the whole time unless it has `from_ms` / `to_ms`; `update` with
+`always: true` shows it the whole time again.
 
 ### Marks in plain words
 

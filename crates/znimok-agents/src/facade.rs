@@ -112,17 +112,23 @@ pub(crate) const TOOLS: &[Tool] = &[
     },
     Tool {
         name: "transform",
-        title: "Crop, rotate, resize, tone",
-        description: "Changes the picture itself, in this order: crop (or reset), rotate (turn right / left / half, mirror), resize (width / height / percent, or the canvas), tone (exposure, gamma, contrast, or reset). Marks follow. Each part is one step of undo.",
+        title: "Crop, rotate, resize, tone; edit a recording",
+        description: "Changes the picture itself, in this order: crop (or reset), rotate (turn right / left / half, mirror), resize (width / height / percent, or the canvas), tone (exposure, gamma, contrast, or reset). Marks follow. Each part is one step of undo. A recording: crop and tone as for a picture, resize sets its size on export, rotate is refused; video changes what it keeps — restore / cut stretches, trim its start and end — and mutes or unmutes its sound tracks (times in ms as recorded, as video_info gives them). The video file stays as it is; an export applies all of this.",
         scope: Some(Scope::LibraryWrite),
         read_only: false,
         schema: || {
+            // The recording's part: video_edit without its size (resize gives that).
+            let (mut video, _) = inner(crate::videdit::TOOLS, "video_edit");
+            if let Some(o) = video.as_object_mut() {
+                o.remove("size");
+            }
             with_doc(
                 json!({
                     "crop": part(crate::edit::TOOLS, "crop", "The frame to keep, in pixels of the picture"),
                     "rotate": part(crate::edit::TOOLS, "rotate", "A turn and / or a mirror"),
                     "resize": part(crate::edit::TOOLS, "resize", "A new size, or a new canvas"),
                     "tone": part(crate::edit::TOOLS, "tone", "Exposure, gamma, contrast"),
+                    "video": {"type": "object", "description": "A recording: what it keeps and its sound", "properties": video, "additionalProperties": false},
                 }),
                 &[],
             )
@@ -302,15 +308,58 @@ pub(crate) fn run(
         })(),
         "transform" => (|| {
             let doc = args["document"].clone();
+            let given = |k: &str| args.get(k).filter(|p| p.is_object());
+            // A recording (ZK-239): its size on export and its cuts are the video part's and the
+            // timeline's, not the poster's pixels.
+            let recording = agent
+                .doc(args)
+                .is_ok_and(|(_, p)| crate::videdit::open(&p).is_ok());
+            if recording {
+                if given("rotate").is_some() {
+                    return Err("a recording cannot be turned or mirrored; crop, resize (its size on export), tone and video can".into());
+                }
+                if given("resize").is_some_and(|r| r.get("canvas").is_some()) {
+                    return Err("a recording has no canvas to grow: crop sets its frame, resize its size on export".into());
+                }
+            } else if given("video").is_some() {
+                return Err("«video» is for recordings; this document is a screenshot".into());
+            }
             let mut last = None;
-            for step in ["crop", "rotate", "resize", "tone"] {
+            let steps: &[&str] = if recording {
+                &["crop", "tone"]
+            } else {
+                &["crop", "rotate", "resize", "tone"]
+            };
+            if recording && (given("video").is_some() || given("resize").is_some()) {
+                let mut v = given("video").cloned().unwrap_or_else(|| json!({}));
+                if let Some(r) = given("resize") {
+                    v["size"] = r.clone();
+                }
+                v["document"] = doc.clone();
+                // Crop first: the size on export follows the frame's proportions.
+                if let Some(p) = given("crop") {
+                    let mut p = p.clone();
+                    p["document"] = doc.clone();
+                    inner("crop", p)?;
+                }
+                if let Some(p) = given("tone") {
+                    let mut p = p.clone();
+                    p["document"] = doc.clone();
+                    inner("tone", p)?;
+                }
+                return inner("video_edit", v);
+            }
+            for step in steps {
                 if let Some(p) = args.get(step).filter(|p| p.is_object()) {
                     let mut p = p.clone();
                     p["document"] = doc.clone();
                     last = Some(inner(step, p)?);
                 }
             }
-            last.ok_or_else(|| "nothing to do: give crop, rotate, resize or tone".to_string())
+            last.ok_or_else(|| {
+                "nothing to do: give crop, rotate, resize, tone (or video for a recording)"
+                    .to_string()
+            })
         })(),
         "library_edit" => match arg_str(args, "action") {
             Some(act @ ("import" | "duplicate" | "trash" | "restore")) => {
