@@ -1,0 +1,19 @@
+[package]
+name = "znimok-google"
+description = "Google for Znimok (ZK-259): sign-in as a desktop app — OAuth 2.0 with PKCE and a loopback redirect in the system browser, only the drive.file scope — the token exchange and refresh; the HTTP goes through the caller's transport"
+version.workspace = true
+edition.workspace = true
+license-file.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+znimok-update = { path = "../znimok-update" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+base64 = "0.23"
+uuid = { version = "1", features = ["v4"] }

@@ -1509,6 +1509,24 @@ impl App {
         let st = |k: &str| self.int_state.get(k).cloned().unwrap_or_default();
         ui.set_int_chrome_on(crate::devlog::hub().hosts() > 0);
         ui.set_int_logi_on(crate::commands::poller_connected());
+        let (s, b) = st("google");
+        let g = &i.google;
+        ui.set_int_google_available(znimok_share::google::client().is_some());
+        ui.set_int_google_enabled(g.enabled);
+        ui.set_int_google_link(g.link_anyone);
+        let current = g.current().map(|a| a.id.clone()).unwrap_or_default();
+        let accounts: Vec<crate::IntGoogleAccount> = g
+            .accounts
+            .iter()
+            .map(|a| crate::IntGoogleAccount {
+                id: a.id.clone().into(),
+                email: a.email.clone().into(),
+                active: a.id == current,
+            })
+            .collect();
+        ui.set_int_google_accounts(std::rc::Rc::new(slint::VecModel::from(accounts)).into());
+        ui.set_int_google_status(s.into());
+        ui.set_int_google_busy(b);
         let (s, b) = st("telegram");
         ui.set_int_tg_enabled(i.telegram.enabled);
         ui.set_int_tg_token_set(has(Secret::TelegramBotToken));
@@ -1687,6 +1705,13 @@ impl App {
                     }
                 });
             }
+            "google-sign-in" => self.google_sign_in(),
+            "google-use" => {
+                let id = target.to_string();
+                self.int_state.remove("google");
+                self.save_prefs(ui, |p| p.integrations.google.active = id);
+            }
+            "google-sign-out" => self.google_sign_out(ui, target),
             "send" => {
                 if self.vexp_open {
                     self.share_video(ui, target);
@@ -1735,6 +1760,112 @@ impl App {
         self.settings_sync(ui);
     }
 
+    /// «Sign in with Google» / «Add an account» (ZK-259): Google's page in the browser, the
+    /// answer on a loopback port, the code exchanged on a worker thread.
+    fn google_sign_in(&mut self) {
+        let Some(client) = znimok_share::google::client() else {
+            return;
+        };
+        if self.int_state.get("google").is_some_and(|s| s.1) {
+            return;
+        }
+        let pending = match znimok_google::start(&client) {
+            Ok(p) => p,
+            Err(e) => {
+                self.int_state
+                    .insert("google".into(), (format!("✗ {e}"), false));
+                return;
+            }
+        };
+        crate::codes::open_url(&pending.url);
+        let waiting = self.tr.tr("int-google-waiting");
+        self.int_state.insert("google".into(), (waiting, true));
+        let words = znimok_google::Words {
+            done_title: self.tr.tr("int-google-done-title"),
+            done_text: self.tr.tr("int-google-done-text"),
+            failed_title: self.tr.tr("int-google-failed-title"),
+        };
+        let me = self.me();
+        std::thread::spawn(move || {
+            let r = pending
+                .wait(std::time::Duration::from_secs(300), &words)
+                .and_then(|code| {
+                    let t = znimok_models::http::system();
+                    znimok_google::exchange(&znimok_share::google::Form(t.as_ref()), &client, &code)
+                });
+            let _ =
+                slint::invoke_from_event_loop(move || me.with(|a, ui| a.google_signed_in(ui, r)));
+        });
+    }
+
+    /// The sign-in finished: the account joins the list (the same one again replaces itself) and
+    /// becomes the one sending goes to; its refresh token goes to the OS store.
+    fn google_signed_in(&mut self, ui: &AppWindow, r: Result<znimok_google::Tokens, String>) {
+        let saved = r.and_then(|t| {
+            let id = t.subject().ok_or("Google gave no account id")?;
+            let refresh = t
+                .refresh_token
+                .clone()
+                .ok_or("Google gave no refresh token")?;
+            znimok_settings::Vault::default()
+                .set_named(&znimok_share::google::secret_name(&id), &refresh)
+                .map_err(|e| e.to_string())?;
+            Ok((id, t.email().unwrap_or_default(), t.can_drive()))
+        });
+        let words = match saved {
+            Ok((id, email, drive)) => {
+                let shown = email.clone();
+                self.save_prefs(ui, move |p| {
+                    let g = &mut p.integrations.google;
+                    g.accounts.retain(|a| a.id != id);
+                    g.accounts.push(znimok_settings::GoogleAccount {
+                        id: id.clone(),
+                        email,
+                    });
+                    g.active = id;
+                    g.enabled = true;
+                });
+                if drive {
+                    format!("✓ {shown}")
+                } else {
+                    format!("✗ {}", self.tr.tr("int-google-no-drive"))
+                }
+            }
+            Err(e) => format!("✗ {e}"),
+        };
+        self.int_state.insert("google".into(), (words, false));
+        self.settings_sync(ui);
+    }
+
+    /// «Sign out» of one account: its token is revoked at Google (on a worker thread, best
+    /// effort) and leaves the OS store; the account leaves the list.
+    fn google_sign_out(&mut self, ui: &AppWindow, id: &str) {
+        let v = znimok_settings::Vault::default();
+        let name = znimok_share::google::secret_name(id);
+        if let Ok(Some(token)) = v.get_named(&name) {
+            std::thread::spawn(move || {
+                let t = znimok_models::http::system();
+                let _ =
+                    znimok_google::revoke(&znimok_share::google::Form(t.as_ref()), token.trim());
+            });
+        }
+        if let Err(e) = v.delete_named(&name) {
+            self.toast(ui, e.to_string());
+        }
+        let id = id.to_string();
+        self.int_state.remove("google");
+        self.save_prefs(ui, move |p| {
+            let g = &mut p.integrations.google;
+            g.accounts.retain(|a| a.id != id);
+            if g.active == id {
+                g.active.clear();
+            }
+            if g.accounts.is_empty() && p.integrations.default_target == "google" {
+                p.integrations.default_target.clear();
+            }
+        });
+    }
+
     /// A check or a search finished.
     fn int_done(&mut self, ui: &AppWindow, key: &str, r: Result<Found, znimok_share::ShareError>) {
         let words = match r {
@@ -1766,6 +1897,16 @@ impl App {
         let i = self.prefs().integrations;
         let (key, target, more) = crate::integrations::event_words(&ev);
         let name = crate::integrations::target_name(&i, target);
+        // Drive (ZK-260): the link goes to the clipboard, ready to paste.
+        let key = match &ev {
+            znimok_share::queue::Event::Sent { job, sent }
+                if job.target == znimok_share::TargetId::Google
+                    && sent.url.as_deref().is_some_and(crate::text::copy) =>
+            {
+                "share-sent-link"
+            }
+            _ => key,
+        };
         let mut msg = self.tr.tr_args(key, &args(&[("target", name)]));
         if let Some(m) = more.filter(|m| !m.is_empty()) {
             msg = format!("{msg} — {m}");
@@ -2093,6 +2234,8 @@ impl App {
             "rec-open-editor" => self.save_prefs(ui, |p| p.video.open_editor = on),
             "rec-devlog" => self.save_prefs(ui, |p| p.video.devtools_log = on),
             "rec-ext-control" => self.save_prefs(ui, |p| p.video.extension_control = on),
+            "int-google-enabled" => self.save_prefs(ui, |p| p.integrations.google.enabled = on),
+            "int-google-link" => self.save_prefs(ui, |p| p.integrations.google.link_anyone = on),
             "int-tg-enabled" => self.save_prefs(ui, |p| p.integrations.telegram.enabled = on),
             "int-jira-enabled" => self.save_prefs(ui, |p| p.integrations.jira.enabled = on),
             "int-slack-enabled" => self.save_prefs(ui, |p| p.integrations.slack.enabled = on),

@@ -6838,6 +6838,7 @@ dependencies = [
  "znimok-devtools",
  "znimok-export",
  "znimok-format",
+ "znimok-google",
  "znimok-gpu",
  "znimok-i18n",
  "znimok-ipc",
@@ -6947,6 +6948,17 @@ dependencies = [
  "uuid",
  "znimok-core",
  "znimok-render",
+]
+
+[[package]]
+name = "znimok-google"
+version = "0.0.15"
+dependencies = [
+ "base64",
+ "serde",
+ "serde_json",
+ "uuid",
+ "znimok-update",
 ]
 
 [[package]]
@@ -7180,6 +7192,7 @@ dependencies = [
  "base64",
  "serde",
  "serde_json",
+ "znimok-google",
  "znimok-models",
  "znimok-settings",
 ]

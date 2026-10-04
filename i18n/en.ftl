@@ -6337,3 +6337,63 @@ share-send-to = Send to
 # @kind: label
 # @max: 40
 share-send-to-one = Send to { $target }
+
+# @where: Settings → Extensions and integrations: how Google Drive works
+# @kind: body
+# @max: 260
+int-google-how = Sign in with your Google account in the browser. Znimok gets access only to the files it creates in your Drive (the «Znimok» folder) and to your e-mail address — nothing else in your Drive or mail.
+
+# @where: Settings → Extensions and integrations: button, sign out of this Google account
+# @kind: label
+# @max: 16
+int-google-sign-out = Sign out
+
+# @where: Settings → Extensions and integrations: switch, what is sent to Drive opens for anyone with the link
+# @kind: label
+# @max: 50
+int-google-link = Anyone with the link can view
+
+# @where: Settings → Extensions and integrations: button, the first Google sign-in
+# @kind: label
+# @max: 30
+int-google-sign-in = Sign in with Google
+
+# @where: Settings → Extensions and integrations: button, sign in to one more Google account
+# @kind: label
+# @max: 30
+int-google-add = Add an account
+
+# @where: Settings → Extensions and integrations: the browser shows Google's sign-in
+# @kind: body
+# @max: 60
+int-google-waiting = Finish signing in in the browser…
+
+# @where: Browser tab after the Google sign-in: title
+# @kind: label
+# @max: 50
+int-google-done-title = Znimok is signed in to Google
+
+# @where: Browser tab after the Google sign-in: text
+# @kind: body
+# @max: 80
+int-google-done-text = You can close this tab and go back to Znimok.
+
+# @where: Browser tab after a failed Google sign-in: title
+# @kind: label
+# @max: 50
+int-google-failed-title = Znimok is not signed in
+
+# @where: Settings → Extensions and integrations: signed in, but Drive was not ticked on Google's page
+# @kind: body
+# @max: 120
+int-google-no-drive = Google Drive was not allowed: sign in again and tick Google Drive
+
+# @where: Toast: a file was delivered and its link is on the clipboard; $target its name
+# @kind: body
+# @max: 90
+share-sent-link = Sent to { $target } — the link is copied
+
+# @where: Settings → Extensions and integrations: under several Google accounts
+# @kind: body
+# @max: 120
+int-google-pick = Sending goes to the marked account — click another one to switch.

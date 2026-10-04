@@ -51,14 +51,46 @@ impl Default for Settings {
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(default)]
 pub struct Integrations {
-    /// The target of «Send» in one click: `telegram`, `jira`, `slack`, `redmine`,
+    /// The target of «Send» in one click: `google`, `telegram`, `jira`, `slack`, `redmine`,
     /// `webhook:<id>`, or empty (the menu asks).
     pub default_target: String,
+    pub google: GoogleTarget,
     pub telegram: TelegramTarget,
     pub jira: JiraTarget,
     pub slack: SlackTarget,
     pub redmine: RedmineTarget,
     pub webhooks: Vec<WebhookTarget>,
+}
+
+/// Google Drive (ZK-259/260): the accounts signed in through the browser; each one's refresh
+/// token is a secret of its own (`share-google-<id>`).
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(default)]
+pub struct GoogleTarget {
+    pub enabled: bool,
+    pub accounts: Vec<GoogleAccount>,
+    /// The id of the account «Send to Google Drive» uses; empty or gone = the first.
+    pub active: String,
+    /// Anyone with the link can view what is sent; off = only the account.
+    pub link_anyone: bool,
+}
+
+impl GoogleTarget {
+    /// The account sending goes to.
+    pub fn current(&self) -> Option<&GoogleAccount> {
+        self.accounts
+            .iter()
+            .find(|a| a.id == self.active)
+            .or_else(|| self.accounts.first())
+    }
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(default)]
+pub struct GoogleAccount {
+    /// Google's stable id of the person (the OpenID `sub`).
+    pub id: String,
+    pub email: String,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]

@@ -11,7 +11,7 @@ use std::time::Duration;
 
 pub struct MacHttp;
 
-type Outcome = Result<(u16, Vec<u8>, Option<String>), HttpError>;
+type Outcome = Result<(u16, Vec<u8>, Option<String>, Option<String>), HttpError>;
 
 impl Transport for MacHttp {
     fn post_json(
@@ -96,6 +96,8 @@ fn request(
                             data.as_ref().map(|d| d.to_vec()).unwrap_or_default(),
                             h.valueForHTTPHeaderField(&NSString::from_str("retry-after"))
                                 .map(|s| s.to_string()),
+                            h.valueForHTTPHeaderField(&NSString::from_str("location"))
+                                .map(|s| s.to_string()),
                         )),
                     }
                 }
@@ -108,7 +110,7 @@ fn request(
     let task = unsafe { session.dataTaskWithRequest_completionHandler(&req, &block) };
     task.resume();
     match rx.recv_timeout(timeout + Duration::from_secs(5)) {
-        Ok(Ok((status, body, retry))) => {
+        Ok(Ok((status, body, retry, location))) => {
             if body.len() > max_bytes {
                 return Err(HttpError::Network(format!(
                     "{} bytes is more than {max_bytes}",
@@ -119,6 +121,7 @@ fn request(
                 status,
                 body,
                 retry_after: retry_after(retry),
+                location,
             })
         }
         Ok(Err(e)) => Err(e),

@@ -12,6 +12,7 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
+znimok-google = { path = "../znimok-google" }
 znimok-models = { path = "../znimok-models" }
 znimok-settings = { path = "../znimok-settings" }
 serde = { version = "1", features = ["derive"] }
