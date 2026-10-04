@@ -229,7 +229,8 @@ fn the_share_window_picks_a_service_and_a_place() {
 fn a_service_with_two_accounts() {
     let ui = window();
     // Tall enough for the whole page: what is scrolled away is not in the tree.
-    ui.window().set_size(slint::LogicalSize::new(1360.0, 2400.0));
+    ui.window()
+        .set_size(slint::LogicalSize::new(1360.0, 2400.0));
     ui.set_page(2);
     ui.set_settings_page(11);
     ui.set_int_slack_enabled(true);

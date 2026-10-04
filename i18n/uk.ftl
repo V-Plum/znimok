@@ -6690,3 +6690,8 @@ int-account-name = Назва в «Поширити», напр. «Клієнт 
 # @kind: label
 # @max: 16
 int-account-remove = Прибрати
+
+# @where: Toast: the file is in Drive and Gmail's new letter opened with its link; $target the account
+# @kind: body
+# @max: 90
+share-gmail-opened = Лист відкрито в Gmail — допишіть, кому

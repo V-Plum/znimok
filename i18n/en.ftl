@@ -6642,3 +6642,8 @@ int-account-name = Name in «Share», e.g. «Client A»
 # @kind: label
 # @max: 16
 int-account-remove = Remove
+
+# @where: Toast: the file is in Drive and Gmail's new letter opened with its link; $target the account
+# @kind: body
+# @max: 90
+share-gmail-opened = The letter is open in Gmail — add who it goes to

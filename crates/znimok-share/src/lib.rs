@@ -81,7 +81,7 @@ pub fn places(
         TargetId::Redmine(a) => {
             redmine::projects(t, account(cfg.redmine_account(a))?, &token(vault, id)?)?
         }
-        TargetId::Google(_) | TargetId::Webhook(_) => Vec::new(),
+        TargetId::Google(_) | TargetId::Gmail(_) | TargetId::Webhook(_) => Vec::new(),
     };
     Ok(pairs
         .into_iter()
@@ -106,6 +106,9 @@ fn jira_issue_key(s: &str) -> bool {
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum TargetId {
     Google(String),
+    /// Gmail (ZK-262): the file into the Google account's Drive, open to anyone with the link,
+    /// then Gmail's new letter with the link — no permission to the mail.
+    Gmail(String),
     Telegram(String),
     Jira(String),
     Slack(String),
@@ -118,6 +121,7 @@ impl TargetId {
     pub fn service(&self) -> &'static str {
         match self {
             Self::Google(_) => "google",
+            Self::Gmail(_) => "gmail",
             Self::Telegram(_) => "telegram",
             Self::Jira(_) => "jira",
             Self::Slack(_) => "slack",
@@ -130,6 +134,7 @@ impl TargetId {
     pub fn account(&self) -> &str {
         match self {
             Self::Google(a)
+            | Self::Gmail(a)
             | Self::Telegram(a)
             | Self::Jira(a)
             | Self::Slack(a)
@@ -151,6 +156,7 @@ impl TargetId {
         let a = account.to_string();
         Some(match service {
             "google" => Self::Google(a),
+            "gmail" => Self::Gmail(a),
             "telegram" => Self::Telegram(a),
             "jira" => Self::Jira(a),
             "slack" => Self::Slack(a),
@@ -223,6 +229,12 @@ pub fn ready(cfg: &Integrations) -> Vec<(TargetId, String)> {
             out.push((
                 TargetId::Google(a.id.clone()),
                 format!("Google Drive · {}", a.email),
+            ));
+        }
+        for a in &cfg.google.accounts {
+            out.push((
+                TargetId::Gmail(a.id.clone()),
+                format!("Gmail · {}", a.email),
             ));
         }
     }
@@ -488,6 +500,26 @@ fn google_access(
     google::access(t, &client, refresh.trim())
 }
 
+/// Gmail's new letter (ZK-262) from `email`'s account: the subject, the words and the link; the
+/// person adds who it goes to.
+pub fn gmail_compose_url(email: &str, subject: &str, text: &str, link: &str) -> String {
+    use multipart::percent;
+    let body = if text.trim().is_empty() {
+        link.to_string()
+    } else {
+        format!("{}\n\n{link}", text.trim())
+    };
+    let mut u = format!(
+        "https://mail.google.com/mail/?view=cm&fs=1&su={}&body={}",
+        percent(subject),
+        percent(&body)
+    );
+    if !email.is_empty() {
+        u.push_str(&format!("&authuser={}", percent(email)));
+    }
+    u
+}
+
 /// The name of a webhook's header value in the OS store.
 pub fn webhook_secret_name(id: &str) -> String {
     format!("share-webhook-{id}")
@@ -504,7 +536,9 @@ pub fn check(
     probe: &str,
 ) -> Result<String, ShareError> {
     match id {
-        TargetId::Google(sub) => google::check(t, &google_access(t, vault, cfg, sub)?),
+        TargetId::Google(sub) | TargetId::Gmail(sub) => {
+            google::check(t, &google_access(t, vault, cfg, sub)?)
+        }
         TargetId::Telegram(a) => {
             let chat = account(cfg.telegram_account(a))?.chat_id.clone();
             telegram::check(t, &token(vault, id)?, &chat, probe)
@@ -552,6 +586,11 @@ pub fn send(
         TargetId::Google(sub) => {
             let a = google_access(t, vault, cfg, sub)?;
             google::send(t, &a, cfg.google.link_anyone, item, bytes)
+        }
+        // The people the letter goes to must open the link.
+        TargetId::Gmail(sub) => {
+            let a = google_access(t, vault, cfg, sub)?;
+            google::send(t, &a, true, item, bytes)
         }
         TargetId::Telegram(a) => {
             let acc = account(cfg.telegram_account(a))?;
@@ -819,6 +858,28 @@ mod tests {
             TargetId::parse("slack:c2"),
             Some(TargetId::Slack("c2".into()))
         );
+    }
+
+    #[test]
+    fn gmail_next_to_drive_and_its_letter() {
+        let mut cfg = Integrations::default();
+        cfg.google.enabled = true;
+        cfg.google.accounts.push(znimok_settings::GoogleAccount {
+            id: "1".into(),
+            email: "a@x.org".into(),
+        });
+        let keys: Vec<String> = ready(&cfg).into_iter().map(|(id, _)| id.key()).collect();
+        assert_eq!(keys, ["google:1", "gmail:1"]);
+        assert!(!needs_place(&TargetId::Gmail("1".into())));
+        let u = gmail_compose_url(
+            "a@x.org",
+            "Знімок",
+            "див. кнопку",
+            "https://drive.google.com/file/d/F1/view",
+        );
+        assert!(u.starts_with("https://mail.google.com/mail/?view=cm&fs=1&su=%D0%97"));
+        assert!(u.contains("&body=%D0%B4") && u.contains("%0A%0Ahttps%3A%2F%2Fdrive.google.com"));
+        assert!(u.ends_with("&authuser=a%40x.org"));
     }
 
     #[test]
