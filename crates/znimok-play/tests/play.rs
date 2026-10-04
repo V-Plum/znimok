@@ -27,6 +27,15 @@ const W: u32 = 640;
 const H: u32 = 360;
 const SECONDS: f64 = 3.0;
 
+/// A test that cannot run on this machine says so and passes — except on CI, where
+/// `ZNIMOK_REQUIRE_GPU` is set: a runner that lost its GPU or encoder must not stay green (ZK-285).
+fn skipped(why: impl std::fmt::Display) {
+    if std::env::var_os("ZNIMOK_REQUIRE_GPU").is_some() {
+        panic!("ZNIMOK_REQUIRE_GPU is set, but: {why}");
+    }
+    eprintln!("skipped: {why}");
+}
+
 /// Records the synthetic source; None when this machine cannot.
 fn record(dir: &Path) -> Option<PathBuf> {
     record_clip(dir, W, H, FPS, SECONDS)
@@ -35,16 +44,8 @@ fn record(dir: &Path) -> Option<PathBuf> {
 /// Records the synthetic source at any size; None when this machine cannot.
 fn record_clip(dir: &Path, w: u32, h: u32, fps: u32, seconds: f64) -> Option<PathBuf> {
     znimok_video_win::mf::startup().unwrap();
-    let gpu = Rc::new(
-        RecGpu::new(None)
-            .map_err(|e| eprintln!("skipped: {e}"))
-            .ok()?,
-    );
-    let bridge = Rc::new(
-        Bridge::new(&gpu)
-            .map_err(|e| eprintln!("skipped: {e}"))
-            .ok()?,
-    );
+    let gpu = Rc::new(RecGpu::new(None).map_err(skipped).ok()?);
+    let bridge = Rc::new(Bridge::new(&gpu).map_err(skipped).ok()?);
     let pool = FramePool::new(gpu.clone(), bridge.clone(), w, h, PoolFormat::Bgra8).ok()?;
     let src = SyntheticSource::new(pool.clone(), w, h, 1.0).ok()?;
     let clock = ManualClock::new();
@@ -68,7 +69,7 @@ fn record_clip(dir: &Path, w: u32, h: u32, fps: u32, seconds: f64) -> Option<Pat
         },
         ctl.clone(),
     )
-    .map_err(|e| eprintln!("skipped (no encoder): {e}"))
+    .map_err(|e| skipped(format!("no encoder: {e}")))
     .ok()?;
     let start = clock.ticks();
     let f = clock.frequency();
@@ -214,7 +215,7 @@ fn plays_a_recording_on_the_gpu() {
     std::fs::create_dir_all(&dir).unwrap();
     let Some(mp4) = record(&dir) else { return };
     let Some(gpu) = device(true) else {
-        eprintln!("skipped: no wgpu device");
+        skipped("no wgpu device");
         return;
     };
     let frames = (SECONDS * f64::from(FPS)) as i64;
@@ -341,7 +342,7 @@ fn plays_through_the_upload_path() {
     std::fs::create_dir_all(&dir).unwrap();
     let Some(mp4) = record(&dir) else { return };
     let Some(gpu) = device(false) else {
-        eprintln!("skipped: no wgpu device");
+        skipped("no wgpu device");
         return;
     };
     let r = open(&gpu, Source::File(mp4), (SECONDS * f64::from(FPS)) as i64);

@@ -32,6 +32,15 @@ thread_local! {
 const W: u32 = 640;
 const H: u32 = 360;
 
+/// A test that cannot run on this machine says so and passes — except on CI, where
+/// `ZNIMOK_REQUIRE_GPU` is set: a runner that lost its GPU or encoder must not stay green (ZK-285).
+fn skipped(why: impl std::fmt::Display) {
+    if std::env::var_os("ZNIMOK_REQUIRE_GPU").is_some() {
+        panic!("ZNIMOK_REQUIRE_GPU is set, but: {why}");
+    }
+    eprintln!("skipped: {why}");
+}
+
 struct Rig {
     gpu: Rc<Gpu>,
     bridge: Rc<Bridge>,
@@ -49,14 +58,14 @@ fn rig(tag: &str) -> Option<Rig> {
     let gpu = match Gpu::new(None) {
         Ok(g) => Rc::new(g),
         Err(e) => {
-            eprintln!("пропущено: {e}");
+            skipped(e);
             return None;
         }
     };
     let bridge = match Bridge::new(&gpu) {
         Ok(b) => Rc::new(b),
         Err(e) => {
-            eprintln!("пропущено (немає D3D11 на адаптері wgpu): {e}");
+            skipped(format!("no D3D11 on the wgpu adapter: {e}"));
             return None;
         }
     };
@@ -120,7 +129,7 @@ fn record(
     let mut rec = match rec {
         Ok(r) => r,
         Err(e) => {
-            eprintln!("пропущено (немає кодувальника): {e}");
+            skipped(format!("no encoder: {e}"));
             return None;
         }
     };
@@ -301,7 +310,7 @@ fn an_audio_track_is_muxed() {
     let mut rec = match rec {
         Ok(r) => r,
         Err(e) => {
-            eprintln!("пропущено: {e}");
+            skipped(e);
             return;
         }
     };
