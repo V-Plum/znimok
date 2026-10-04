@@ -1732,6 +1732,9 @@ fn wire(ui: &AppWindow, app: &Shared) {
     on!(ui, app, on_int_action, |a, w, what, target| {
         a.int_action(&w, &what, &target);
     });
+    on!(ui, app, on_sh_set, |a, w, what, value| {
+        a.share_set(&w, &what, &value);
+    });
     {
         // Reported while laying out, possibly from inside the app's own code (as lib-layout).
         let (app, weak) = (app.clone(), ui.as_weak());

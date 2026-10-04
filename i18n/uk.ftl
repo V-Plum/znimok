@@ -6203,8 +6203,8 @@ int-tg-token = Токен бота
 
 # @where: Settings → Extensions and integrations: placeholder, the Telegram chat
 # @kind: label
-# @max: 30
-int-tg-chat = ID чату або @канал
+# @max: 44
+int-tg-chat = Чат за замовчуванням (необов'язково)
 
 # @where: Settings → Extensions and integrations: button, find the chat that wrote to the bot
 # @kind: label
@@ -6248,8 +6248,8 @@ int-jira-token = API-токен
 
 # @where: Settings → Extensions and integrations: placeholder, the project key
 # @kind: label
-# @max: 20
-int-jira-project = Ключ проєкту
+# @max: 44
+int-jira-project = Проєкт за замовчуванням (необов'язково)
 
 # @where: Settings → Extensions and integrations: placeholder, an issue to attach to
 # @kind: label
@@ -6268,8 +6268,8 @@ int-slack-token = Токен бота (xoxb-…)
 
 # @where: Settings → Extensions and integrations: placeholder, the channel ID
 # @kind: label
-# @max: 24
-int-slack-channel = ID каналу (C0…)
+# @max: 44
+int-slack-channel = Канал за замовчуванням (необов'язково)
 
 # @where: Settings → Extensions and integrations: placeholder, the Redmine address
 # @kind: label
@@ -6283,8 +6283,8 @@ int-rm-key = API-ключ
 
 # @where: Settings → Extensions and integrations: placeholder, the project identifier
 # @kind: label
-# @max: 24
-int-rm-project = Ідентифікатор проєкту
+# @max: 44
+int-rm-project = Проєкт за замовчуванням (необов'язково)
 
 # @where: Settings → Extensions and integrations: placeholder, an issue number
 # @kind: label
@@ -6590,3 +6590,78 @@ int-webhook-logs = Лише логи
 # @kind: body
 # @max: 220
 int-webhook-what-hint = Увесь файл: запис — пакетом звіту (відео, логи, подробиці), знімок — документом Znimok. Лише логи: консоль браузера, мережа й dataLayer як JSON (знімок іде картинкою).
+
+# @where: The «Share» window: the list of connected services
+# @kind: label
+# @max: 20
+share-where = Куди
+
+# @where: The «Share» window: the channel, project, issue or chat inside the service
+# @kind: label
+# @max: 24
+share-place = Куди саме
+
+# @where: The «Share» window: placeholder of the field that searches the places or takes one typed
+# @kind: label
+# @max: 60
+share-place-search = Пошук або вписати: канал, проєкт, задача, чат
+
+# @where: The «Share» window: a row that sends to what was typed; $place the typed text
+# @kind: label
+# @max: 50
+share-place-use = Використати «{ $place }»
+
+# @where: The «Share» window: the service's list is being fetched
+# @kind: label
+# @max: 40
+share-places-loading = Завантажую список…
+
+# @where: The «Share» window: nothing chosen where exactly
+# @kind: body
+# @max: 60
+share-place-needed = Виберіть або впишіть, куди саме
+
+# @where: The «Share» window: what is sent
+# @kind: label
+# @max: 20
+share-what = Що
+
+# @where: The «Share» window: a screenshot as a picture (PNG)
+# @kind: label
+# @max: 22
+share-what-image = Картинка
+
+# @where: The «Share» window: the Znimok document itself
+# @kind: label
+# @max: 22
+share-what-document = Документ Znimok
+
+# @where: The «Share» window: a recording as a video (MP4)
+# @kind: label
+# @max: 22
+share-what-video = Відео
+
+# @where: The «Share» window: a recording as a page with the video and its log
+# @kind: label
+# @max: 26
+share-what-report = Відео з логом (HTML)
+
+# @where: The «Share» window: only a recording's logs (JSON)
+# @kind: label
+# @max: 22
+share-what-logs = Лише логи
+
+# @where: The «Share» window: switch, hide the log's sensitive values
+# @kind: label
+# @max: 40
+share-hide = Приховати чутливе
+
+# @where: The «Share» window: placeholder of the comment that goes with the file
+# @kind: label
+# @max: 40
+share-comment = Коментар (необов'язково)
+
+# @where: The «Share» window: button, sends
+# @kind: label
+# @max: 16
+share-send = Надіслати
