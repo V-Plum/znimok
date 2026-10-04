@@ -122,3 +122,49 @@ fn every_reachable_button_has_a_label() {
         missing.join("\n")
     );
 }
+
+/// ZK-277: the settings page scrolls to its real end. Its preferred height counts a wrapped text
+/// as one line, so a long page (integrations switched on, several webhooks) was cut off at the
+/// bottom — the last webhook's «Check» could not be reached.
+#[test]
+fn the_integrations_page_scrolls_to_its_end() {
+    let ui = window();
+    ui.window().set_size(slint::LogicalSize::new(1000.0, 700.0));
+    ui.set_page(2);
+    ui.set_settings_page(11);
+    ui.set_int_tg_enabled(true);
+    ui.set_int_jira_enabled(true);
+    ui.set_int_slack_enabled(true);
+    ui.set_int_rm_enabled(true);
+    let hooks: Vec<crate::IntWebhook> = (0..3)
+        .map(|i| crate::IntWebhook {
+            id: format!("w{i}").into(),
+            enabled: true,
+            name: format!("Hook {i}").into(),
+            ..Default::default()
+        })
+        .collect();
+    ui.set_int_webhooks(std::rc::Rc::new(slint::VecModel::from(hooks)).into());
+    settle();
+    ui.invoke_settings_scroll_end();
+    settle();
+    // The last webhook's «Check» (the page's last button) is on screen, whole.
+    let bottom = ElementHandle::find_by_accessible_label(&ui, "Check")
+        .filter(reachable)
+        .map(|e| e.absolute_position().y + e.size().height)
+        .fold(0.0f32, f32::max);
+    assert!(bottom > 0.0, "no «Check» reachable at the end of the page");
+    assert!(
+        bottom <= 700.0,
+        "the last «Check» ends at {bottom}, below the window"
+    );
+    // And it is the last webhook's: its «What to send» is above it.
+    let last_what = ElementHandle::find_by_accessible_label(&ui, "What to send")
+        .filter(reachable)
+        .map(|e| e.absolute_position().y)
+        .fold(0.0f32, f32::max);
+    assert!(
+        last_what > 0.0 && last_what < bottom,
+        "what {last_what}, check {bottom}"
+    );
+}

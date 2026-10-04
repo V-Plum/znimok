@@ -2296,6 +2296,8 @@ export component AppWindow inherits Window {
     in property <string> int-jira-status;
     in property <bool> int-jira-busy;
     in property <bool> int-google-available;
+    // For the UI tests (ZK-277): the settings page scrolled to its end.
+    public function settings-scroll-end() { set-sv.viewport-y = min(0px, set-sv.visible-height - set-sv.viewport-height); }
     // Which target's steps are shown although it is set up (ZK-272).
     property <string> int-help;
     in property <bool> int-google-enabled;
@@ -2859,8 +2861,13 @@ export component AppWindow inherits Window {
                     // the page
                     set-sv := ScrollView {
                         horizontal-stretch: 1;
-                        VerticalLayout {
+                        // The column's real end (ZK-277): its preferred height counts a wrapped text
+                        // as one line, so a long page (integrations, several webhooks) was cut off.
+                        viewport-height: max(set-col.preferred-height, set-end.y + 28px);
+                        set-col := VerticalLayout {
                             x: 0;
+                            y: 0;
+                            height: self.preferred-height;
                             // A readable column: never wider than 680 px, never wider than the view.
                             width: min(set-sv.visible-width - 12px, 680px);
                             padding: 28px;
@@ -3056,7 +3063,6 @@ export component AppWindow inherits Window {
                                     spacing: 6px;
                                     Text { text: @tr("int-default" => "In one click"); color: Theme.text2; font-size: 12px; }
                                     HorizontalLayout {
-                                        alignment: start;
                                         spacing: 4px;
                                         SegOption { text: @tr("int-default-ask" => "Ask"); on: root.int-default == ""; clicked => { root.int-action("default", ""); } }
                                         for t in root.int-targets: SegOption { text: t.name; on: root.int-default == t.key; clicked => { root.int-action("default", t.key); } }
@@ -3224,7 +3230,6 @@ export component AppWindow inherits Window {
                                     // What «Share» sends here (ZK-275).
                                     Text { text: @tr("int-webhook-what" => "What to send"); color: Theme.text2; font-size: 12px; }
                                     HorizontalLayout {
-                                        alignment: start;
                                         spacing: 4px;
                                         SegOption { text: @tr("int-webhook-media" => "Video or screenshot"); on: w.content != "all" && w.content != "logs"; clicked => { root.setting-text("int-wh-content:" + w.id, ""); } }
                                         SegOption { text: @tr("int-webhook-all" => "The whole file"); on: w.content == "all"; clicked => { root.setting-text("int-wh-content:" + w.id, "all"); } }
@@ -3518,6 +3523,7 @@ export component AppWindow inherits Window {
                                 }
                                 HorizontalLayout { alignment: start; AboutSlint { height: 140px; } }
                             }
+                            set-end := Rectangle { height: 0px; }
                         }
                     }
                 }
@@ -5517,7 +5523,6 @@ export component AppWindow inherits Window {
                             spacing: 6px;
                             Text { text: @tr("share-send-to" => "Send to"); color: Theme.text3; font-size: 11px; font-weight: 600; letter-spacing: 0.4px; }
                             HorizontalLayout {
-                                alignment: start;
                                 spacing: 4px;
                                 for t in root.int-targets: SegOption { text: t.name; on: false; clicked => { root.int-action("send", t.key); } }
                             }
@@ -5614,7 +5619,6 @@ export component AppWindow inherits Window {
                             spacing: 6px;
                             Text { text: @tr("share-send-to" => "Send to"); color: Theme.text3; font-size: 11px; font-weight: 600; letter-spacing: 0.4px; }
                             HorizontalLayout {
-                                alignment: start;
                                 spacing: 4px;
                                 for t in root.int-targets: SegOption { text: t.name; on: false; clicked => { root.int-action("send", t.key); } }
                             }
