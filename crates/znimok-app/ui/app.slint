@@ -2302,6 +2302,8 @@ export component AppWindow inherits Window {
     in property <[IntAccount]> int-tg-accounts;
     in property <[IntAccount]> int-jira-accounts;
     in property <[IntAccount]> int-slack-accounts;
+    // «Sign in to Slack» is in this build (ZK-273).
+    in property <bool> int-slack-sign-in;
     in property <[IntAccount]> int-rm-accounts;
     // For the UI tests (ZK-277): the settings page scrolled to its end.
     public function settings-scroll-end() { set-sv.content-y = min(0px, set-sv.visible-height - set-sv.content-height); }
@@ -3203,13 +3205,14 @@ export component AppWindow inherits Window {
                                 SwitchRow { text: "Slack"; checked: root.int-slack-enabled; toggled => { root.setting("int-slack-enabled", self.checked ? 1 : 0); } }
                                 if root.int-slack-enabled: VerticalLayout {
                                     spacing: 8px;
-                                    if (!root.int-slack-token-set || root.int-help == "slack"): Steps { steps: [@tr("int-slack-step1" => "Press «Create the Slack app» below: Slack opens with everything filled in. Choose your workspace, then Next and Create."), @tr("int-slack-step2" => "On the app's page press «Install to Workspace», then «Allow»."), @tr("int-slack-step3" => "Open «OAuth & Permissions», copy the «Bot User OAuth Token» (xoxb-…) and paste it below."), @tr("int-slack-step4" => "In the Slack channel write /invite @Znimok so the app may post there."), @tr("int-slack-step5" => "The channel's ID: click the channel's name — it is at the very bottom of the window (C0…). Copy it, paste it below and press «Check».")]; }
+                                    if ((!root.int-slack-sign-in && !root.int-slack-token-set) || root.int-help == "slack"): Steps { steps: [@tr("int-slack-step1" => "Press «Create the Slack app» below: Slack opens with everything filled in. Choose your workspace, then Next and Create."), @tr("int-slack-step2" => "On the app's page press «Install to Workspace», then «Allow»."), @tr("int-slack-step3" => "Open «OAuth & Permissions», copy the «Bot User OAuth Token» (xoxb-…) and paste it below."), @tr("int-slack-step4" => "In the Slack channel write /invite @Znimok so the app may post there."), @tr("int-slack-step5" => "The channel's ID: click the channel's name — it is at the very bottom of the window (C0…). Copy it, paste it below and press «Check».")]; }
                                     HorizontalLayout {
                                         alignment: start;
                                         spacing: 8px;
-                                        if (!root.int-slack-token-set || root.int-help == "slack"): TextButton { text: @tr("int-slack-open" => "Create the Slack app"); clicked => { root.int-action("open", "slack-app"); } }
-                                        if root.int-slack-token-set: TextButton { text: root.int-help == "slack" ? @tr("int-help-hide" => "Hide the steps") : @tr("int-help-show" => "How to set it up"); clicked => { root.int-help = root.int-help == "slack" ? "" : "slack"; } }
+                                        if ((!root.int-slack-sign-in && !root.int-slack-token-set) || root.int-help == "slack"): TextButton { text: @tr("int-slack-open" => "Create the Slack app"); clicked => { root.int-action("open", "slack-app"); } }
+                                        if (root.int-slack-token-set || root.int-slack-sign-in): TextButton { text: root.int-help == "slack" ? @tr("int-help-hide" => "Hide the steps") : @tr("int-help-show" => "How to set it up"); clicked => { root.int-help = root.int-help == "slack" ? "" : "slack"; } }
                                     }
+                                    if root.int-slack-sign-in: Text { text: @tr("int-slack-sign-in-hint" => "The simplest: sign in to Slack in the browser — Znimok then posts as you, into the channels you choose when sharing. No tokens to look for."); color: Theme.text2; font-size: 12px; wrap: word-wrap; }
                                     for acc[i] in root.int-slack-accounts: VerticalLayout {
                                         spacing: 8px;
                                         if i > 0: Rectangle { height: 1px; background: Theme.line; }
@@ -3218,6 +3221,7 @@ export component AppWindow inherits Window {
                                             LineEdit { horizontal-stretch: 1; text: acc.name; placeholder-text: @tr("int-account-name" => "Name in «Share», e.g. «Client A»"); edited(t) => { root.setting-text("int-acc:slack:name:" + acc.id, t); } }
                                             if i > 0: TextButton { text: @tr("int-account-remove" => "Remove"); clicked => { root.int-action("remove-account", "slack:" + acc.id); } }
                                         }
+                                        if root.int-slack-sign-in: HorizontalLayout { alignment: start; TextButton { primary: !acc.token-set; text: @tr("int-slack-sign-in" => "Sign in to Slack"); enabled: !acc.busy; clicked => { root.int-action("slack-sign-in", acc.id); } } }
                                         LineEdit { input-type: password; placeholder-text: acc.token-set ? @tr("int-secret-saved" => "Saved — type a new one to replace it") : @tr("int-slack-token" => "Bot token (xoxb-…)"); edited(t) => { root.setting-text("int-acc:slack:token:" + acc.id, t); } }
                                         LineEdit { text: acc.a; placeholder-text: @tr("int-slack-channel" => "Channel by default (optional)"); edited(t) => { root.setting-text("int-acc:slack:channel:" + acc.id, t); } }
                                         HorizontalLayout {

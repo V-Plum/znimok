@@ -149,46 +149,81 @@ fn form(pairs: &[(&str, &str)]) -> String {
         .join("&")
 }
 
-/// A sign-in under way: the address to open in the browser, and the port that waits for Google.
+/// A sign-in under way: the address to open in the browser, and the port that waits for the
+/// answer.
 pub struct Pending {
     /// Open this in the system browser.
     pub url: String,
     pub redirect: String,
     verifier: String,
     state: String,
-    listener: TcpListener,
+    /// The path the answer comes to (`/` for Google, `/callback` for a fixed address).
+    path: String,
+    listeners: Vec<TcpListener>,
+}
+
+/// Starts a sign-in with any service that takes an OAuth code with PKCE (ZK-273: Slack, Atlassian):
+/// `auth_url` with `params` and the PKCE pair, a state, and the redirect. `port`: a fixed one (a
+/// service that wants the address registered exactly — `http://localhost:<port><path>`, listened
+/// to on 127.0.0.1 and ::1, as a browser may try either), or `None` for one of the system's
+/// choice on 127.0.0.1.
+pub fn begin(
+    auth_url: &str,
+    params: &[(&str, &str)],
+    port: Option<u16>,
+    path: &str,
+) -> std::io::Result<Pending> {
+    let (listeners, redirect) = match port {
+        Some(p) => {
+            let mut l = vec![TcpListener::bind(("127.0.0.1", p))?];
+            if let Ok(v6) = TcpListener::bind(("::1", p)) {
+                l.push(v6);
+            }
+            (l, format!("http://localhost:{p}{path}"))
+        }
+        None => {
+            let l = TcpListener::bind("127.0.0.1:0")?;
+            let redirect = format!("http://127.0.0.1:{}{path}", l.local_addr()?.port());
+            (vec![l], redirect)
+        }
+    };
+    let (verifier, challenge) = pkce();
+    let state = b64url(uuid::Uuid::new_v4().as_bytes());
+    let mut all: Vec<(&str, &str)> = params.to_vec();
+    all.extend([
+        ("redirect_uri", redirect.as_str()),
+        ("response_type", "code"),
+        ("code_challenge", challenge.as_str()),
+        ("code_challenge_method", "S256"),
+        ("state", state.as_str()),
+    ]);
+    let sep = if auth_url.contains('?') { '&' } else { '?' };
+    Ok(Pending {
+        url: format!("{auth_url}{sep}{}", form(&all)),
+        redirect,
+        verifier,
+        state,
+        path: path.to_string(),
+        listeners,
+    })
 }
 
 /// Starts a sign-in: a loopback port of the system's choice, a PKCE pair, a state.
 pub fn start(client: &Client) -> std::io::Result<Pending> {
-    let listener = TcpListener::bind("127.0.0.1:0")?;
-    let redirect = format!("http://127.0.0.1:{}/", listener.local_addr()?.port());
-    let (verifier, challenge) = pkce();
-    let state = b64url(uuid::Uuid::new_v4().as_bytes());
     let scope = SCOPES.join(" ");
-    let url = format!(
-        "{AUTH_URL}?{}",
-        form(&[
+    begin(
+        AUTH_URL,
+        &[
             ("client_id", &client.id),
-            ("redirect_uri", &redirect),
-            ("response_type", "code"),
             ("scope", &scope),
-            ("code_challenge", &challenge),
-            ("code_challenge_method", "S256"),
-            ("state", &state),
             // A refresh token, the question shown again after a sign-out, and the choice of the
             // account (several can be signed in, the owner's wish of 04.10).
             ("access_type", "offline"),
             ("prompt", "select_account consent"),
-        ])
-    );
-    Ok(Pending {
-        url,
-        redirect,
-        verifier,
-        state,
-        listener,
-    })
+        ],
+        None,
+        "/",
+    )
 }
 
 /// The page the browser shows when Google sends the person back.
@@ -219,25 +254,26 @@ impl Pending {
     /// Waits up to `limit` for Google to send the person back; the code, or why there is none
     /// (the person declined, the time ran out, a forged answer).
     pub fn wait(self, limit: Duration, words: &Words) -> Result<Code, String> {
-        self.listener
-            .set_nonblocking(true)
-            .map_err(|e| e.to_string())?;
+        for l in &self.listeners {
+            l.set_nonblocking(true).map_err(|e| e.to_string())?;
+        }
         let t0 = Instant::now();
         loop {
-            match self.listener.accept() {
-                Ok((stream, _)) => {
-                    if let Some(r) = self.answer(stream, words) {
-                        return r;
+            for l in &self.listeners {
+                match l.accept() {
+                    Ok((stream, _)) => {
+                        if let Some(r) = self.answer(stream, words) {
+                            return r;
+                        }
                     }
+                    Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {}
+                    Err(e) => return Err(e.to_string()),
                 }
-                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                    if t0.elapsed() > limit {
-                        return Err("the sign-in was not finished in time".into());
-                    }
-                    std::thread::sleep(Duration::from_millis(100));
-                }
-                Err(e) => return Err(e.to_string()),
             }
+            if t0.elapsed() > limit {
+                return Err("the sign-in was not finished in time".into());
+            }
+            std::thread::sleep(Duration::from_millis(100));
         }
     }
 
@@ -250,7 +286,7 @@ impl Pending {
         let mut line = String::new();
         reader.read_line(&mut line).ok()?;
         let target = line.split_whitespace().nth(1)?;
-        let query = target.strip_prefix("/?")?;
+        let query = target.strip_prefix(self.path.as_str())?.strip_prefix('?')?;
         let get = |k: &str| {
             query.split('&').find_map(|p| {
                 let (a, b) = p.split_once('=')?;
@@ -289,6 +325,23 @@ pub struct Code {
     pub code: String,
     verifier: String,
     redirect: String,
+}
+
+impl Code {
+    /// The PKCE verifier the exchange sends (another service's exchange, ZK-273).
+    pub fn verifier(&self) -> &str {
+        &self.verifier
+    }
+
+    /// The redirect the code came to; the exchange repeats it.
+    pub fn redirect(&self) -> &str {
+        &self.redirect
+    }
+}
+
+/// `application/x-www-form-urlencoded` of pairs (another service's exchange, ZK-273).
+pub fn form_body(pairs: &[(&str, &str)]) -> String {
+    form(pairs)
 }
 
 fn tokens(status: u16, body: &[u8]) -> Result<Tokens, String> {
@@ -408,6 +461,42 @@ mod tests {
     /// The whole sign-in round with Google's part played here: the address carries the
     /// challenge, the state and the scope; Google's answer gives the code; a forged state or a
     /// refusal is an error; the browser is told either way.
+    #[test]
+    fn a_fixed_address_for_another_service() {
+        // ZK-273: Slack and Atlassian want the address registered exactly.
+        let p = begin(
+            "https://slack.com/oauth/v2/authorize",
+            &[("client_id", "123.456"), ("user_scope", "files:write")],
+            Some(47_899),
+            "/callback",
+        )
+        .unwrap();
+        assert_eq!(p.redirect, "http://localhost:47899/callback");
+        assert!(p.url.starts_with("https://slack.com/oauth/v2/authorize?client_id=123.456&user_scope=files%3Awrite&redirect_uri=http%3A%2F%2Flocalhost%3A47899%2Fcallback"));
+        let state = p.url.split("state=").nth(1).unwrap().to_string();
+        let h = std::thread::spawn(move || {
+            // Over IPv6 when there is one, as a browser may go.
+            let mut s = TcpStream::connect("[::1]:47899")
+                .or_else(|_| TcpStream::connect("127.0.0.1:47899"))
+                .unwrap();
+            write!(
+                s,
+                "GET /callback?state={state}&code=xyz HTTP/1.1\r\nHost: x\r\n\r\n"
+            )
+            .unwrap();
+            let mut out = String::new();
+            let _ = std::io::Read::read_to_string(&mut s, &mut out);
+            out
+        });
+        let code = p.wait(Duration::from_secs(5), &words()).unwrap();
+        assert_eq!(
+            (code.code.as_str(), code.redirect()),
+            ("xyz", "http://localhost:47899/callback")
+        );
+        assert!(!code.verifier().is_empty());
+        assert!(h.join().unwrap().contains("200"));
+    }
+
     #[test]
     fn loopback_round() {
         let client = Client {

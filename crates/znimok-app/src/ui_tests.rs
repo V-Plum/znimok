@@ -248,6 +248,8 @@ fn a_service_with_two_accounts() {
         },
     ];
     ui.set_int_slack_accounts(std::rc::Rc::new(slint::VecModel::from(accounts)).into());
+    // ZK-273: a build that can sign in to Slack shows the button on each account.
+    ui.set_int_slack_sign_in(true);
     settle();
     let seen = Rc::new(RefCell::new(Vec::new()));
     {
@@ -268,7 +270,17 @@ fn a_service_with_two_accounts() {
     for c in &checks {
         c.mock_single_click(PointerEventButton::Left);
     }
+    for b in ElementHandle::find_by_accessible_label(&ui, "Sign in to Slack")
+        .filter(|e| reachable(e) && button(e))
+    {
+        b.mock_single_click(PointerEventButton::Left);
+    }
     let seen = seen.borrow().clone();
+    assert!(
+        seen.contains(&"slack-sign-in:".to_string())
+            && seen.contains(&"slack-sign-in:c2".to_string()),
+        "{seen:?}"
+    );
     assert!(
         seen.contains(&"remove-account:slack:c2".to_string()),
         "{seen:?}"

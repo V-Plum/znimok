@@ -30,6 +30,8 @@ env:
   # build has no Google.
   ZNIMOK_GOOGLE_CLIENT_ID: ${{ secrets.ZNIMOK_GOOGLE_CLIENT_ID }}
   ZNIMOK_GOOGLE_CLIENT_SECRET: ${{ secrets.ZNIMOK_GOOGLE_CLIENT_SECRET }}
+  # «Sign in to Slack» (ZK-273): Znimok's Slack app, PKCE — a public client, no secret.
+  ZNIMOK_SLACK_CLIENT_ID: ${{ secrets.ZNIMOK_SLACK_CLIENT_ID }}
 
 jobs:
   version:

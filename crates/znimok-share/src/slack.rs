@@ -48,6 +48,122 @@ pub fn app_url() -> String {
     )
 }
 
+// ------------------------------------------------------------------ signing in (ZK-273)
+
+/// The address Slack sends the person back to: registered in Znimok's Slack app exactly so.
+pub const SIGN_IN_PORT: u16 = 47821;
+pub const SIGN_IN_PATH: &str = "/callback";
+/// User scopes: a desktop sign-in with PKCE may not ask for a bot, so Znimok posts as the person —
+/// files into a channel, the channels to choose from.
+pub const USER_SCOPES: &str = "files:write,chat:write,channels:read,groups:read";
+/// What a stored token starts with when it is a sign-in's refresh token (else a pasted one).
+pub const SIGNED_IN: &str = "oauth:";
+
+/// The client id of Znimok's Slack app (PKCE, a public client: no secret), given at build time
+/// (`ZNIMOK_SLACK_CLIENT_ID`); a build without it has no «Sign in to Slack».
+pub fn client_id() -> Option<&'static str> {
+    option_env!("ZNIMOK_SLACK_CLIENT_ID")
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+}
+
+/// Starts «Sign in to Slack»: the address to open, and the port waiting for the answer.
+pub fn sign_in(client_id: &str) -> std::io::Result<znimok_google::Pending> {
+    znimok_google::begin(
+        "https://slack.com/oauth/v2/authorize",
+        &[("client_id", client_id), ("user_scope", USER_SCOPES)],
+        Some(SIGN_IN_PORT),
+        SIGN_IN_PATH,
+    )
+}
+
+/// A sign-in's result: the workspace's name and what to keep (the refresh token, marked).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Signed {
+    pub team: String,
+    pub keep: String,
+}
+
+fn form_call(t: &dyn Transport, pairs: &[(&str, &str)]) -> Result<Value, ShareError> {
+    let body = znimok_google::form_body(pairs);
+    let r = t.request(
+        "POST",
+        &format!("{API}/oauth.v2.access"),
+        &[],
+        Some((body.as_bytes(), "application/x-www-form-urlencoded")),
+        timeout_for(0),
+        MAX_ANSWER,
+    )?;
+    answer(&r)
+}
+
+/// The user's token in an answer: under `authed_user` at a sign-in, at the top at a refresh.
+fn user_tokens(v: &Value) -> (Option<String>, Option<String>) {
+    let u = if v["authed_user"]["access_token"].is_string() {
+        &v["authed_user"]
+    } else {
+        v
+    };
+    (
+        u["access_token"].as_str().map(str::to_string),
+        u["refresh_token"].as_str().map(str::to_string),
+    )
+}
+
+/// The code for the person's token (PKCE: no secret).
+pub fn exchange(
+    t: &dyn Transport,
+    client_id: &str,
+    code: &znimok_google::Code,
+) -> Result<Signed, ShareError> {
+    let v = form_call(
+        t,
+        &[
+            ("client_id", client_id),
+            ("code", &code.code),
+            ("code_verifier", code.verifier()),
+            ("redirect_uri", code.redirect()),
+        ],
+    )?;
+    let (access, refresh) = user_tokens(&v);
+    let keep = match (refresh, access) {
+        (Some(r), _) => format!("{SIGNED_IN}{r}"),
+        (None, Some(a)) => a,
+        (None, None) => return Err(ShareError::Fail("Slack gave no token".into())),
+    };
+    Ok(Signed {
+        team: v["team"]["name"].as_str().unwrap_or("Slack").to_string(),
+        keep,
+    })
+}
+
+/// A fresh token for a signed-in account, and the refresh token to keep instead of the old one
+/// (Slack turns it over at each refresh).
+pub fn refresh(
+    t: &dyn Transport,
+    client_id: &str,
+    refresh_token: &str,
+) -> Result<(String, String), ShareError> {
+    let v = form_call(
+        t,
+        &[
+            ("client_id", client_id),
+            ("grant_type", "refresh_token"),
+            ("refresh_token", refresh_token),
+        ],
+    )
+    .map_err(|e| match e {
+        ShareError::Fail(m) => ShareError::Fail(format!("{m} — sign in to Slack again")),
+        again => again,
+    })?;
+    match user_tokens(&v) {
+        (Some(a), r) => Ok((a, r.unwrap_or_else(|| refresh_token.to_string()))),
+        _ => Err(ShareError::Fail(
+            "Slack gave no token — sign in again".into(),
+        )),
+    }
+}
+
 fn bearer(token: &str) -> String {
     format!("Bearer {token}")
 }
@@ -266,6 +382,63 @@ mod tests {
                 .unwrap_err()
                 .to_string()
                 .contains("Create the Slack app")
+        );
+    }
+
+    #[test]
+    fn sign_in_exchange_and_refresh() {
+        let p = sign_in("123.456").unwrap();
+        assert_eq!(p.redirect, "http://localhost:47821/callback");
+        assert!(p.url.contains("user_scope=files%3Awrite%2Cchat%3Awrite"));
+        assert!(!p.url.contains("client_secret"));
+        drop(p);
+        let f = Fake::new(&[(
+            200,
+            r#"{"ok":true,"team":{"name":"Plum Co"},"authed_user":{"id":"U1","access_token":"xoxe.xoxp-1","refresh_token":"xoxe-1-r1","expires_in":43200}}"#,
+        )]);
+        // A code as the loopback gives it.
+        let p = sign_in("123.456").unwrap();
+        let state = p.url.split("state=").nth(1).unwrap().to_string();
+        let h = std::thread::spawn(move || {
+            use std::io::Write;
+            let mut s = std::net::TcpStream::connect("127.0.0.1:47821").unwrap();
+            write!(
+                s,
+                "GET /callback?state={state}&code=c1 HTTP/1.1\r\nHost: x\r\n\r\n"
+            )
+            .unwrap();
+        });
+        let words = znimok_google::Words {
+            done_title: "ok".into(),
+            done_text: "ok".into(),
+            failed_title: "no".into(),
+        };
+        let code = p.wait(std::time::Duration::from_secs(5), &words).unwrap();
+        h.join().unwrap();
+        let s = exchange(&f, "123.456", &code).unwrap();
+        assert_eq!(
+            s,
+            Signed {
+                team: "Plum Co".into(),
+                keep: "oauth:xoxe-1-r1".into()
+            }
+        );
+        let body = f.seen()[0].body_text();
+        assert!(body.contains("code_verifier=") && !body.contains("client_secret"));
+        // A refresh turns the refresh token over.
+        let f = Fake::new(&[(
+            200,
+            r#"{"ok":true,"access_token":"xoxe.xoxp-2","refresh_token":"xoxe-1-r2","token_type":"user"}"#,
+        )]);
+        assert_eq!(
+            refresh(&f, "123.456", "xoxe-1-r1").unwrap(),
+            ("xoxe.xoxp-2".into(), "xoxe-1-r2".into())
+        );
+        let f = Fake::new(&[(200, r#"{"ok":false,"error":"invalid_refresh_token"}"#)]);
+        let e = refresh(&f, "123.456", "x").unwrap_err();
+        assert!(
+            !e.retry() && e.to_string().contains("sign in to Slack again"),
+            "{e}"
         );
     }
 
