@@ -66,7 +66,7 @@ img { max-width: 100%; height: auto; display: block; }
 .brand:hover { text-decoration: none; }
 .brand img { width: 32px; height: 32px; }
 .wordmark { font: 700 20px/1 "Unbounded", "Onest", sans-serif; letter-spacing: -0.01em; }
-.top nav { display: flex; gap: 20px; font-size: 15px; }
+.top nav { display: flex; align-items: center; gap: 20px; font-size: 15px; }
 .top nav a { color: var(--text2); }
 .lang { border: 1px solid var(--line); border-radius: 8px; padding: 3px 10px; }
 
