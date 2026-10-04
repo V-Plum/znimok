@@ -6550,3 +6550,18 @@ int-help-show = Як налаштувати
 # @kind: label
 # @max: 30
 int-help-hide = Сховати кроки
+
+# @where: Editor's top bar: button next to «Copy», sends to a connected service
+# @kind: label
+# @max: 14
+doc-share = Поширити
+
+# @where: Editor: «Share» menu when nothing is connected yet
+# @kind: body
+# @max: 140
+doc-share-none = Підключіть Google Drive, Telegram, Slack чи Jira один раз — і надсилайте сюди в один клік.
+
+# @where: Editor: «Share» menu, opens Settings → Extensions and integrations
+# @kind: label
+# @max: 40
+doc-share-connect = Підключити…
