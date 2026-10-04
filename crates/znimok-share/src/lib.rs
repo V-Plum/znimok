@@ -77,7 +77,10 @@ pub fn places(
             out
         }
         TargetId::Slack(_) => slack::channels(t, &slack_token(t, vault, id)?)?,
-        TargetId::Jira(a) => jira::projects(t, account(cfg.jira_account(a))?, &token(vault, id)?)?,
+        TargetId::Jira(a) => {
+            let acc = account(cfg.jira_account(a))?;
+            jira::projects(t, acc, &jira_token(t, vault, id, acc)?)?
+        }
         TargetId::Redmine(a) => {
             redmine::projects(t, account(cfg.redmine_account(a))?, &token(vault, id)?)?
         }
@@ -476,6 +479,31 @@ fn slack_token(t: &dyn Transport, vault: &Vault, id: &TargetId) -> Result<String
     Ok(access)
 }
 
+/// Jira's token for a call: a pasted API token as it is; a signed-in account's refreshed into
+/// `bearer:<cloud id>:<access>` (ZK-273), the turned-over refresh token kept.
+fn jira_token(
+    t: &dyn Transport,
+    vault: &Vault,
+    id: &TargetId,
+    acc: &znimok_settings::JiraTarget,
+) -> Result<String, ShareError> {
+    let stored = token(vault, id)?;
+    let Some(rt) = stored.strip_prefix(slack::SIGNED_IN) else {
+        return Ok(stored);
+    };
+    let client = jira::client().ok_or_else(|| {
+        ShareError::Fail("Jira: signing in is not available in this build".into())
+    })?;
+    if acc.cloud_id.is_empty() {
+        return Err(ShareError::Fail("Jira: sign in to Atlassian again".into()));
+    }
+    let (access, next) = jira::refresh(t, &client, rt)?;
+    if next != rt {
+        set_token(vault, id, &format!("{}{next}", slack::SIGNED_IN)).map_err(ShareError::Fail)?;
+    }
+    Ok(format!("{}{}:{access}", jira::SIGNED_IN_CALL, acc.cloud_id))
+}
+
 /// The token (the key) of a target's account, from the OS store.
 pub fn token(vault: &Vault, id: &TargetId) -> Result<String, ShareError> {
     use znimok_settings::Secret;
@@ -582,7 +610,10 @@ pub fn check(
             let chat = account(cfg.telegram_account(a))?.chat_id.clone();
             telegram::check(t, &token(vault, id)?, &chat, probe)
         }
-        TargetId::Jira(a) => jira::check(t, account(cfg.jira_account(a))?, &token(vault, id)?),
+        TargetId::Jira(a) => {
+            let acc = account(cfg.jira_account(a))?;
+            jira::check(t, acc, &jira_token(t, vault, id, acc)?)
+        }
         TargetId::Slack(a) => {
             let channel = account(cfg.slack_account(a))?.channel.clone();
             slack::check(t, &slack_token(t, vault, id)?, &channel)
@@ -650,7 +681,8 @@ pub fn send(
                 j.project = place.to_uppercase();
                 j.issue.clear();
             }
-            jira::send(t, &j, &token(vault, id)?, item, bytes)
+            let tok = jira_token(t, vault, id, &j)?;
+            jira::send(t, &j, &tok, item, bytes)
         }
         TargetId::Slack(a) => {
             let acc = account(cfg.slack_account(a))?;

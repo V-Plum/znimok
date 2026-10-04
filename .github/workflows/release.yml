@@ -32,6 +32,9 @@ env:
   ZNIMOK_GOOGLE_CLIENT_SECRET: ${{ secrets.ZNIMOK_GOOGLE_CLIENT_SECRET }}
   # «Sign in to Slack» (ZK-273): Znimok's Slack app, PKCE — a public client, no secret.
   ZNIMOK_SLACK_CLIENT_ID: ${{ secrets.ZNIMOK_SLACK_CLIENT_ID }}
+  # «Sign in to Atlassian» (ZK-273): Znimok's OAuth 2.0 (3LO) app — Atlassian wants its secret.
+  ZNIMOK_ATLASSIAN_CLIENT_ID: ${{ secrets.ZNIMOK_ATLASSIAN_CLIENT_ID }}
+  ZNIMOK_ATLASSIAN_CLIENT_SECRET: ${{ secrets.ZNIMOK_ATLASSIAN_CLIENT_SECRET }}
 
 jobs:
   version:

@@ -1629,6 +1629,7 @@ impl App {
                 .collect(),
         ));
         ui.set_int_slack_sign_in(znimok_share::slack::client_id().is_some());
+        ui.set_int_jira_sign_in(znimok_share::jira::client().is_some());
         ui.set_int_slack_accounts(list(
             i.slack_accounts()
                 .map(|a| {
@@ -1941,6 +1942,7 @@ impl App {
             }
             "google-sign-in" => self.google_sign_in(),
             "slack-sign-in" => self.slack_sign_in(ui, target),
+            "jira-sign-in" => self.jira_sign_in(ui, target),
             "google-use" => {
                 let id = target.to_string();
                 self.int_state.remove("google");
@@ -2075,6 +2077,105 @@ impl App {
                 me.with(|a, ui| a.slack_signed_in(ui, &key, r))
             });
         });
+        self.settings_sync(ui);
+    }
+
+    /// «Sign in to Atlassian» for a Jira account (ZK-273): as Slack's, on the same address.
+    fn jira_sign_in(&mut self, ui: &AppWindow, acc: &str) {
+        let Some(client) = znimok_share::jira::client() else {
+            return;
+        };
+        let key = if acc.is_empty() {
+            "jira".to_string()
+        } else {
+            format!("jira:{acc}")
+        };
+        if self.int_state.get(&key).is_some_and(|s| s.1) {
+            return;
+        }
+        let pending = match znimok_share::jira::sign_in(&client) {
+            Ok(p) => p,
+            Err(e) => {
+                self.int_state.insert(key, (format!("✗ {e}"), false));
+                self.settings_sync(ui);
+                return;
+            }
+        };
+        crate::codes::open_url(&pending.url);
+        let waiting = self.tr.tr("int-google-waiting");
+        self.int_state.insert(key.clone(), (waiting, true));
+        let words = znimok_google::Words {
+            done_title: self.tr.tr("int-sign-in-done-title"),
+            done_text: self.tr.tr("int-google-done-text"),
+            failed_title: self.tr.tr("int-google-failed-title"),
+        };
+        let me = self.me();
+        std::thread::spawn(move || {
+            let r = pending
+                .wait(std::time::Duration::from_secs(300), &words)
+                .map_err(znimok_share::ShareError::Fail)
+                .and_then(|code| {
+                    let t = znimok_models::http::system();
+                    znimok_share::jira::exchange(t.as_ref(), &client, &code)
+                });
+            let _ = slint::invoke_from_event_loop(move || {
+                me.with(|a, ui| a.jira_signed_in(ui, &key, r))
+            });
+        });
+        self.settings_sync(ui);
+    }
+
+    /// Signed in to Atlassian: the site (the one typed, else the first), its cloud id and the
+    /// token kept for the account.
+    fn jira_signed_in(
+        &mut self,
+        ui: &AppWindow,
+        key: &str,
+        r: Result<znimok_share::jira::Signed, znimok_share::ShareError>,
+    ) {
+        let Some(id) = znimok_share::TargetId::parse(key) else {
+            return;
+        };
+        let acc = id.account().to_string();
+        let typed = self
+            .prefs()
+            .integrations
+            .jira_account(&acc)
+            .map(|a| a.site.clone())
+            .unwrap_or_default();
+        let words = match r {
+            Ok(s) => match znimok_share::jira::pick(&s.sites, &typed).cloned() {
+                Some(site) => {
+                    match znimok_share::set_token(&znimok_settings::Vault::default(), &id, &s.keep)
+                    {
+                        Ok(()) => {
+                            let shown = site.name.clone();
+                            self.save_prefs(ui, move |p| {
+                                if let Some(a) = p.integrations.jira_account_mut(&acc) {
+                                    a.site = site
+                                        .url
+                                        .trim_start_matches("https://")
+                                        .trim_end_matches('/')
+                                        .to_string();
+                                    a.cloud_id = site.cloud_id;
+                                    if a.name.trim().is_empty() {
+                                        a.name = site.name;
+                                    }
+                                }
+                            });
+                            format!(
+                                "✓ {}",
+                                self.tr.tr_args("int-signed-in", &args(&[("name", shown)]))
+                            )
+                        }
+                        Err(e) => format!("✗ {e}"),
+                    }
+                }
+                None => "✗ Atlassian: no Jira site".to_string(),
+            },
+            Err(e) => format!("✗ {e}"),
+        };
+        self.int_state.insert(key.to_string(), (words, false));
         self.settings_sync(ui);
     }
 

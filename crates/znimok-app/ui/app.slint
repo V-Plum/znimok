@@ -2304,6 +2304,7 @@ export component AppWindow inherits Window {
     in property <[IntAccount]> int-slack-accounts;
     // «Sign in to Slack» is in this build (ZK-273).
     in property <bool> int-slack-sign-in;
+    in property <bool> int-jira-sign-in;
     in property <[IntAccount]> int-rm-accounts;
     // For the UI tests (ZK-277): the settings page scrolled to its end.
     public function settings-scroll-end() { set-sv.content-y = min(0px, set-sv.visible-height - set-sv.content-height); }
@@ -3168,13 +3169,14 @@ export component AppWindow inherits Window {
                                 SwitchRow { text: "Jira"; checked: root.int-jira-enabled; toggled => { root.setting("int-jira-enabled", self.checked ? 1 : 0); } }
                                 if root.int-jira-enabled: VerticalLayout {
                                     spacing: 8px;
-                                    if (!root.int-jira-token-set || root.int-help == "jira"): Steps { steps: [@tr("int-jira-step1" => "The site is the address you open Jira at, e.g. your-team.atlassian.net."), @tr("int-jira-step2" => "The e-mail is the one you sign in to Jira with."), @tr("int-jira-step3" => "Open the API tokens page (the button below), press «Create API token», name it Znimok, copy the token and paste it below."), @tr("int-jira-step4" => "The project key is the letters before an issue's number: ZK in ZK-101. An issue is optional — without it each sending makes a new one."), @tr("int-jira-step5" => "Press «Check».")]; }
+                                    if ((!root.int-jira-sign-in && !root.int-jira-token-set) || root.int-help == "jira"): Steps { steps: [@tr("int-jira-step1" => "The site is the address you open Jira at, e.g. your-team.atlassian.net."), @tr("int-jira-step2" => "The e-mail is the one you sign in to Jira with."), @tr("int-jira-step3" => "Open the API tokens page (the button below), press «Create API token», name it Znimok, copy the token and paste it below."), @tr("int-jira-step4" => "The project key is the letters before an issue's number: ZK in ZK-101. An issue is optional — without it each sending makes a new one."), @tr("int-jira-step5" => "Press «Check».")]; }
                                     HorizontalLayout {
                                         alignment: start;
                                         spacing: 8px;
-                                        if (!root.int-jira-token-set || root.int-help == "jira"): TextButton { text: @tr("int-jira-open" => "Open the API tokens page"); clicked => { root.int-action("open", "atlassian-tokens"); } }
-                                        if root.int-jira-token-set: TextButton { text: root.int-help == "jira" ? @tr("int-help-hide" => "Hide the steps") : @tr("int-help-show" => "How to set it up"); clicked => { root.int-help = root.int-help == "jira" ? "" : "jira"; } }
+                                        if ((!root.int-jira-sign-in && !root.int-jira-token-set) || root.int-help == "jira"): TextButton { text: @tr("int-jira-open" => "Open the API tokens page"); clicked => { root.int-action("open", "atlassian-tokens"); } }
+                                        if (root.int-jira-token-set || root.int-jira-sign-in): TextButton { text: root.int-help == "jira" ? @tr("int-help-hide" => "Hide the steps") : @tr("int-help-show" => "How to set it up"); clicked => { root.int-help = root.int-help == "jira" ? "" : "jira"; } }
                                     }
+                                    if root.int-jira-sign-in: Text { text: @tr("int-jira-sign-in-hint" => "The simplest: sign in to Atlassian in the browser — no API token to make. With several sites, type the site first and Znimok takes that one."); color: Theme.text2; font-size: 12px; wrap: word-wrap; }
                                     for acc[i] in root.int-jira-accounts: VerticalLayout {
                                         spacing: 8px;
                                         if i > 0: Rectangle { height: 1px; background: Theme.line; }
@@ -3184,6 +3186,7 @@ export component AppWindow inherits Window {
                                             if i > 0: TextButton { text: @tr("int-account-remove" => "Remove"); clicked => { root.int-action("remove-account", "jira:" + acc.id); } }
                                         }
                                         LineEdit { text: acc.a; placeholder-text: @tr("int-jira-site" => "Site: your-team.atlassian.net"); edited(t) => { root.setting-text("int-acc:jira:site:" + acc.id, t); } }
+                                        if root.int-jira-sign-in: HorizontalLayout { alignment: start; TextButton { primary: !acc.token-set; text: @tr("int-jira-sign-in" => "Sign in to Atlassian"); enabled: !acc.busy; clicked => { root.int-action("jira-sign-in", acc.id); } } }
                                         LineEdit { text: acc.b; placeholder-text: @tr("int-jira-email" => "E-mail"); edited(t) => { root.setting-text("int-acc:jira:email:" + acc.id, t); } }
                                         LineEdit { input-type: password; placeholder-text: acc.token-set ? @tr("int-secret-saved" => "Saved — type a new one to replace it") : @tr("int-jira-token" => "API token"); edited(t) => { root.setting-text("int-acc:jira:token:" + acc.id, t); } }
                                         HorizontalLayout {

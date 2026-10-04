@@ -6730,3 +6730,13 @@ int-signed-in = Вхід виконано: { $name }
 # @kind: label
 # @max: 50
 int-sign-in-done-title = Znimok увійшов
+
+# @where: Settings → Extensions and integrations: button, sign in to Atlassian (Jira) in the browser
+# @kind: label
+# @max: 30
+int-jira-sign-in = Увійти в Atlassian
+
+# @where: Settings → Extensions and integrations: how signing in to Jira works
+# @kind: body
+# @max: 200
+int-jira-sign-in-hint = Найпростіше — увійти в Atlassian у браузері: API-токен створювати не треба. Якщо сайтів кілька, спершу впишіть сайт — Znimok візьме саме його.

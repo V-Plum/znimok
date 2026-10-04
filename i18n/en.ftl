@@ -6682,3 +6682,13 @@ int-signed-in = Signed in: { $name }
 # @kind: label
 # @max: 50
 int-sign-in-done-title = Znimok is signed in
+
+# @where: Settings → Extensions and integrations: button, sign in to Atlassian (Jira) in the browser
+# @kind: label
+# @max: 30
+int-jira-sign-in = Sign in to Atlassian
+
+# @where: Settings → Extensions and integrations: how signing in to Jira works
+# @kind: body
+# @max: 200
+int-jira-sign-in-hint = The simplest: sign in to Atlassian in the browser — no API token to make. With several sites, type the site first and Znimok takes that one.
