@@ -228,6 +228,9 @@ pub struct JiraTarget {
     pub issue: String,
     /// The type of a new issue.
     pub issue_type: String,
+    /// Signed in through Atlassian (ZK-273): the site's cloud id — calls go through
+    /// api.atlassian.com with a token instead of the site with the e-mail and an API token.
+    pub cloud_id: String,
 }
 
 impl Default for JiraTarget {
@@ -241,6 +244,7 @@ impl Default for JiraTarget {
             project: String::new(),
             issue: String::new(),
             issue_type: "Task".into(),
+            cloud_id: String::new(),
         }
     }
 }

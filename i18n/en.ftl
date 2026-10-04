@@ -6657,3 +6657,33 @@ agents-ask-share = send documents to your connected services (Google Drive, Gmai
 # @kind: body
 # @max: 90
 share-agent-queued = { $client } sends to { $target }…
+
+# @where: Settings → Extensions and integrations: button, sign in to a Slack workspace in the browser
+# @kind: label
+# @max: 30
+int-slack-sign-in = Sign in to Slack
+
+# @where: Settings → Extensions and integrations: how signing in to Slack works
+# @kind: body
+# @max: 200
+int-slack-sign-in-hint = The simplest: sign in to Slack in the browser — Znimok then posts as you, into the channels you choose when sharing. No tokens to look for.
+
+# @where: Settings → Extensions and integrations: an account signed in through the browser; $name the workspace or site
+# @kind: label
+# @max: 60
+int-signed-in = Signed in: { $name }
+
+# @where: Browser tab after signing in to a service: title
+# @kind: label
+# @max: 50
+int-sign-in-done-title = Znimok is signed in
+
+# @where: Settings → Extensions and integrations: button, sign in to Atlassian (Jira) in the browser
+# @kind: label
+# @max: 30
+int-jira-sign-in = Sign in to Atlassian
+
+# @where: Settings → Extensions and integrations: how signing in to Jira works
+# @kind: body
+# @max: 200
+int-jira-sign-in-hint = The simplest: sign in to Atlassian in the browser — no API token to make. With several sites, type the site first and Znimok takes that one.

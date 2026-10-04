@@ -6705,3 +6705,33 @@ agents-ask-share = надсилати документи у ваші підкл�
 # @kind: body
 # @max: 90
 share-agent-queued = { $client } надсилає в { $target }…
+
+# @where: Settings → Extensions and integrations: button, sign in to a Slack workspace in the browser
+# @kind: label
+# @max: 30
+int-slack-sign-in = Увійти в Slack
+
+# @where: Settings → Extensions and integrations: how signing in to Slack works
+# @kind: body
+# @max: 200
+int-slack-sign-in-hint = Найпростіше — увійти в Slack у браузері: Znimok надсилатиме від вашого імені в канали, які ви оберете під час поширення. Жодних токенів шукати не треба.
+
+# @where: Settings → Extensions and integrations: an account signed in through the browser; $name the workspace or site
+# @kind: label
+# @max: 60
+int-signed-in = Вхід виконано: { $name }
+
+# @where: Browser tab after signing in to a service: title
+# @kind: label
+# @max: 50
+int-sign-in-done-title = Znimok увійшов
+
+# @where: Settings → Extensions and integrations: button, sign in to Atlassian (Jira) in the browser
+# @kind: label
+# @max: 30
+int-jira-sign-in = Увійти в Atlassian
+
+# @where: Settings → Extensions and integrations: how signing in to Jira works
+# @kind: body
+# @max: 200
+int-jira-sign-in-hint = Найпростіше — увійти в Atlassian у браузері: API-токен створювати не треба. Якщо сайтів кілька, спершу впишіть сайт — Znimok візьме саме його.

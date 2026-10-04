@@ -21,6 +21,194 @@ pub fn base_url(site: &str) -> String {
     }
 }
 
+/// What `token` is when the account signed in through Atlassian (ZK-273): `bearer:<cloud id>:
+/// <access token>` — the calls then go to api.atlassian.com, not to the site.
+pub const SIGNED_IN_CALL: &str = "bearer:";
+
+/// Where the calls go and with what: the site with the e-mail and an API token, or Atlassian's
+/// API for a signed-in account.
+fn conn(cfg: &JiraTarget, token: &str) -> (String, String) {
+    if let Some((cloud, access)) = token
+        .strip_prefix(SIGNED_IN_CALL)
+        .and_then(|r| r.split_once(':'))
+    {
+        return (
+            format!("https://api.atlassian.com/ex/jira/{cloud}"),
+            format!("Bearer {access}"),
+        );
+    }
+    (base_url(&cfg.site), auth(cfg, token))
+}
+
+// ------------------------------------------------------------------ signing in (ZK-273)
+
+const AUTH_URL: &str = "https://auth.atlassian.com/authorize";
+const TOKEN_URL: &str = "https://auth.atlassian.com/oauth/token";
+const RESOURCES_URL: &str = "https://api.atlassian.com/oauth/token/accessible-resources";
+/// Reading and writing issues, who the person is, and staying signed in.
+pub const SCOPES: &str = "read:jira-work write:jira-work read:jira-user offline_access";
+
+/// Znimok's Atlassian app (OAuth 2.0 3LO), given at build time (`ZNIMOK_ATLASSIAN_CLIENT_ID`,
+/// `ZNIMOK_ATLASSIAN_CLIENT_SECRET` — Atlassian wants the secret even from a desktop app); a
+/// build without it has no «Sign in to Atlassian».
+pub fn client() -> Option<znimok_google::Client> {
+    let id = option_env!("ZNIMOK_ATLASSIAN_CLIENT_ID")?.trim();
+    let secret = option_env!("ZNIMOK_ATLASSIAN_CLIENT_SECRET")
+        .unwrap_or("")
+        .trim();
+    (!id.is_empty() && !secret.is_empty()).then(|| znimok_google::Client {
+        id: id.to_string(),
+        secret: secret.to_string(),
+    })
+}
+
+/// Starts «Sign in to Atlassian» on Znimok's registered address (Slack's, ZK-273).
+pub fn sign_in(client: &znimok_google::Client) -> std::io::Result<znimok_google::Pending> {
+    znimok_google::begin(
+        AUTH_URL,
+        &[
+            ("audience", "api.atlassian.com"),
+            ("client_id", &client.id),
+            ("scope", SCOPES),
+            ("prompt", "consent"),
+        ],
+        Some(crate::slack::SIGN_IN_PORT),
+        crate::slack::SIGN_IN_PATH,
+    )
+}
+
+/// A site the signed-in person may reach.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Site {
+    pub cloud_id: String,
+    /// `https://team.atlassian.net`
+    pub url: String,
+    pub name: String,
+}
+
+/// A sign-in's result: the sites, and what to keep (the refresh token, marked as Slack's are).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Signed {
+    pub sites: Vec<Site>,
+    pub keep: String,
+}
+
+fn token_call(t: &dyn Transport, body: &Value) -> Result<(String, Option<String>), ShareError> {
+    let b = body.to_string();
+    let r = t.request(
+        "POST",
+        TOKEN_URL,
+        &[("Accept", "application/json")],
+        Some((b.as_bytes(), "application/json")),
+        timeout_for(0),
+        MAX_ANSWER,
+    )?;
+    if r.status != 200 {
+        let v: Value = serde_json::from_slice(&r.body).unwrap_or(Value::Null);
+        let why = v["error_description"]
+            .as_str()
+            .or(v["error"].as_str())
+            .unwrap_or("")
+            .to_string();
+        return Err(if r.status >= 500 || r.status == 429 {
+            ShareError::Again(format!("Atlassian: HTTP {} {why}", r.status))
+        } else {
+            ShareError::Fail(format!("Atlassian: {why} — sign in again"))
+        });
+    }
+    let v: Value = serde_json::from_slice(&r.body).unwrap_or(Value::Null);
+    let access = v["access_token"]
+        .as_str()
+        .ok_or_else(|| ShareError::Fail("Atlassian gave no token".into()))?;
+    Ok((
+        access.to_string(),
+        v["refresh_token"].as_str().map(str::to_string),
+    ))
+}
+
+/// The code for tokens, and the sites they reach.
+pub fn exchange(
+    t: &dyn Transport,
+    client: &znimok_google::Client,
+    code: &znimok_google::Code,
+) -> Result<Signed, ShareError> {
+    let (access, refresh) = token_call(
+        t,
+        &json!({
+            "grant_type": "authorization_code",
+            "client_id": client.id,
+            "client_secret": client.secret,
+            "code": code.code,
+            "redirect_uri": code.redirect(),
+            "code_verifier": code.verifier(),
+        }),
+    )?;
+    let refresh =
+        refresh.ok_or_else(|| ShareError::Fail("Atlassian gave no refresh token".into()))?;
+    let v = json_call(t, "GET", RESOURCES_URL, &format!("Bearer {access}"), None)?;
+    let sites = v
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|s| {
+            s["scopes"].as_array().is_none_or(|a| {
+                a.iter()
+                    .any(|x| x.as_str().is_some_and(|x| x.contains("jira")))
+            })
+        })
+        .filter_map(|s| {
+            Some(Site {
+                cloud_id: s["id"].as_str()?.to_string(),
+                url: s["url"].as_str().unwrap_or("").to_string(),
+                name: s["name"].as_str().unwrap_or("").to_string(),
+            })
+        })
+        .collect::<Vec<_>>();
+    if sites.is_empty() {
+        return Err(ShareError::Fail(
+            "Atlassian: this account has no Jira site".into(),
+        ));
+    }
+    Ok(Signed {
+        sites,
+        keep: format!("{}{refresh}", crate::slack::SIGNED_IN),
+    })
+}
+
+/// The site a sign-in goes to: the one typed in the settings, else the first.
+pub fn pick<'a>(sites: &'a [Site], typed: &str) -> Option<&'a Site> {
+    let host = |u: &str| {
+        u.trim()
+            .trim_start_matches("https://")
+            .trim_start_matches("http://")
+            .trim_end_matches('/')
+            .to_lowercase()
+    };
+    let want = host(typed);
+    sites
+        .iter()
+        .find(|s| !want.is_empty() && host(&s.url) == want)
+        .or_else(|| sites.first())
+}
+
+/// A fresh access token, and the refresh token to keep (Atlassian turns it over).
+pub fn refresh(
+    t: &dyn Transport,
+    client: &znimok_google::Client,
+    refresh_token: &str,
+) -> Result<(String, String), ShareError> {
+    let (access, next) = token_call(
+        t,
+        &json!({
+            "grant_type": "refresh_token",
+            "client_id": client.id,
+            "client_secret": client.secret,
+            "refresh_token": refresh_token,
+        }),
+    )?;
+    Ok((access, next.unwrap_or_else(|| refresh_token.to_string())))
+}
+
 fn auth(cfg: &JiraTarget, token: &str) -> String {
     let raw = format!("{}:{}", cfg.email.trim(), token);
     format!(
@@ -81,9 +269,9 @@ pub fn projects(
         "GET",
         &format!(
             "{}/rest/api/3/project/search?maxResults=100&orderBy=-lastIssueUpdatedTime",
-            base_url(&cfg.site)
+            conn(cfg, token).0
         ),
-        &auth(cfg, token),
+        &conn(cfg, token).1,
         None,
     )?;
     Ok(v["values"]
@@ -102,8 +290,7 @@ pub fn projects(
 
 /// Who the token is, and that the project (and the issue) are there.
 pub fn check(t: &dyn Transport, cfg: &JiraTarget, token: &str) -> Result<String, ShareError> {
-    let base = base_url(&cfg.site);
-    let a = auth(cfg, token);
+    let (base, a) = conn(cfg, token);
     let me = json_call(t, "GET", &format!("{base}/rest/api/3/myself"), &a, None)?;
     let who = me["displayName"].as_str().unwrap_or("?").to_string();
     let mut out = who;
@@ -144,8 +331,7 @@ pub fn send(
     item: &Item,
     bytes: &[u8],
 ) -> Result<Sent, ShareError> {
-    let base = base_url(&cfg.site);
-    let a = auth(cfg, token);
+    let (base, a) = conn(cfg, token);
     // The issue: the one in the settings, or a new one.
     let key = if cfg.issue.trim().is_empty() {
         if cfg.project.trim().is_empty() {
@@ -295,6 +481,55 @@ mod tests {
             base_url("https://x.atlassian.net/"),
             "https://x.atlassian.net"
         );
+    }
+
+    #[test]
+    fn signed_in_calls_go_through_atlassian() {
+        let cfg = JiraTarget {
+            site: "plum.atlassian.net".into(),
+            email: "a@b.c".into(),
+            ..Default::default()
+        };
+        let (base, a) = conn(&cfg, "tok");
+        assert_eq!(base, "https://plum.atlassian.net");
+        assert!(a.starts_with("Basic "));
+        let (base, a) = conn(&cfg, "bearer:c-1:at");
+        assert_eq!(
+            (base.as_str(), a.as_str()),
+            ("https://api.atlassian.com/ex/jira/c-1", "Bearer at")
+        );
+        let sites = [
+            Site {
+                cloud_id: "1".into(),
+                url: "https://a.atlassian.net".into(),
+                name: "A".into(),
+            },
+            Site {
+                cloud_id: "2".into(),
+                url: "https://b.atlassian.net".into(),
+                name: "B".into(),
+            },
+        ];
+        assert_eq!(pick(&sites, "b.atlassian.net").unwrap().cloud_id, "2");
+        assert_eq!(pick(&sites, "").unwrap().cloud_id, "1");
+        // The refresh turns the token over; a refused one asks to sign in again.
+        let c = znimok_google::Client {
+            id: "i".into(),
+            secret: "s".into(),
+        };
+        let f = Fake::new(&[(200, r#"{"access_token":"a2","refresh_token":"r2"}"#)]);
+        assert_eq!(refresh(&f, &c, "r1").unwrap(), ("a2".into(), "r2".into()));
+        let v: Value = serde_json::from_slice(&f.seen()[0].body).unwrap();
+        assert_eq!(
+            (v["grant_type"].as_str(), v["client_secret"].as_str()),
+            (Some("refresh_token"), Some("s"))
+        );
+        let f = Fake::new(&[(
+            403,
+            r#"{"error":"unauthorized_client","error_description":"refresh_token is invalid"}"#,
+        )]);
+        let e = refresh(&f, &c, "r1").unwrap_err();
+        assert!(!e.retry() && e.to_string().contains("sign in again"), "{e}");
     }
 
     #[test]

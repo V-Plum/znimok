@@ -1593,6 +1593,9 @@ impl App {
                 id: id.account().into(),
                 name: name.into(),
                 token_set: znimok_share::token(&v, &id).is_ok(),
+                // Signed in through the browser (ZK-273), not a pasted token.
+                signed: znimok_share::token(&v, &id)
+                    .is_ok_and(|t| t.starts_with(znimok_share::slack::SIGNED_IN)),
                 a: f[0].into(),
                 b: f[1].into(),
                 c: f[2].into(),
@@ -1628,6 +1631,8 @@ impl App {
                 })
                 .collect(),
         ));
+        ui.set_int_slack_sign_in(znimok_share::slack::client_id().is_some());
+        ui.set_int_jira_sign_in(znimok_share::jira::client().is_some());
         ui.set_int_slack_accounts(list(
             i.slack_accounts()
                 .map(|a| {
@@ -1757,7 +1762,7 @@ impl App {
             }) else {
                 return;
             };
-            if let Err(e) = set_account_token(&id, &t) {
+            if let Err(e) = znimok_share::set_token(&znimok_settings::Vault::default(), &id, &t) {
                 self.toast(ui, e.to_string());
             }
             return;
@@ -1893,7 +1898,7 @@ impl App {
                 if id.account().is_empty() {
                     return;
                 }
-                let _ = set_account_token(&id, "");
+                let _ = znimok_share::set_token(&znimok_settings::Vault::default(), &id, "");
                 let (key, acc) = (id.key(), id.account().to_string());
                 self.int_state.remove(&key);
                 self.save_prefs(ui, move |p| {
@@ -1939,6 +1944,26 @@ impl App {
                 });
             }
             "google-sign-in" => self.google_sign_in(),
+            "slack-sign-in" => self.slack_sign_in(ui, target),
+            "jira-sign-in" => self.jira_sign_in(ui, target),
+            // Out of a signed-in Slack or Atlassian account: its token goes (ZK-273).
+            "sign-out" => {
+                let Some(id) = znimok_share::TargetId::parse(target) else {
+                    return;
+                };
+                if let Err(e) = znimok_share::set_token(&znimok_settings::Vault::default(), &id, "")
+                {
+                    self.toast(ui, e);
+                }
+                self.int_state.remove(&id.key());
+                if let znimok_share::TargetId::Jira(acc) = id {
+                    self.save_prefs(ui, move |p| {
+                        if let Some(a) = p.integrations.jira_account_mut(&acc) {
+                            a.cloud_id.clear();
+                        }
+                    });
+                }
+            }
             "google-use" => {
                 let id = target.to_string();
                 self.int_state.remove("google");
@@ -2028,6 +2053,186 @@ impl App {
             let _ =
                 slint::invoke_from_event_loop(move || me.with(|a, ui| a.google_signed_in(ui, r)));
         });
+    }
+
+    /// «Sign in to Slack» for an account (ZK-273): the browser, the answer on Znimok's registered
+    /// address, the code exchanged (PKCE, no secret) on a worker thread.
+    fn slack_sign_in(&mut self, ui: &AppWindow, acc: &str) {
+        let Some(cid) = znimok_share::slack::client_id() else {
+            return;
+        };
+        let key = if acc.is_empty() {
+            "slack".to_string()
+        } else {
+            format!("slack:{acc}")
+        };
+        if self.int_state.get(&key).is_some_and(|s| s.1) {
+            return;
+        }
+        let pending = match znimok_share::slack::sign_in(cid) {
+            Ok(p) => p,
+            Err(e) => {
+                self.int_state.insert(key, (format!("✗ {e}"), false));
+                self.settings_sync(ui);
+                return;
+            }
+        };
+        crate::codes::open_url(&pending.url);
+        let waiting = self.tr.tr("int-google-waiting");
+        self.int_state.insert(key.clone(), (waiting, true));
+        let words = znimok_google::Words {
+            done_title: self.tr.tr("int-sign-in-done-title"),
+            done_text: self.tr.tr("int-google-done-text"),
+            failed_title: self.tr.tr("int-google-failed-title"),
+        };
+        let me = self.me();
+        std::thread::spawn(move || {
+            let r = pending
+                .wait(std::time::Duration::from_secs(300), &words)
+                .map_err(znimok_share::ShareError::Fail)
+                .and_then(|code| {
+                    let t = znimok_models::http::system();
+                    znimok_share::slack::exchange(t.as_ref(), cid, &code)
+                });
+            let _ = slint::invoke_from_event_loop(move || {
+                me.with(|a, ui| a.slack_signed_in(ui, &key, r))
+            });
+        });
+        self.settings_sync(ui);
+    }
+
+    /// «Sign in to Atlassian» for a Jira account (ZK-273): as Slack's, on the same address.
+    fn jira_sign_in(&mut self, ui: &AppWindow, acc: &str) {
+        let Some(client) = znimok_share::jira::client() else {
+            return;
+        };
+        let key = if acc.is_empty() {
+            "jira".to_string()
+        } else {
+            format!("jira:{acc}")
+        };
+        if self.int_state.get(&key).is_some_and(|s| s.1) {
+            return;
+        }
+        let pending = match znimok_share::jira::sign_in(&client) {
+            Ok(p) => p,
+            Err(e) => {
+                self.int_state.insert(key, (format!("✗ {e}"), false));
+                self.settings_sync(ui);
+                return;
+            }
+        };
+        crate::codes::open_url(&pending.url);
+        let waiting = self.tr.tr("int-google-waiting");
+        self.int_state.insert(key.clone(), (waiting, true));
+        let words = znimok_google::Words {
+            done_title: self.tr.tr("int-sign-in-done-title"),
+            done_text: self.tr.tr("int-google-done-text"),
+            failed_title: self.tr.tr("int-google-failed-title"),
+        };
+        let me = self.me();
+        std::thread::spawn(move || {
+            let r = pending
+                .wait(std::time::Duration::from_secs(300), &words)
+                .map_err(znimok_share::ShareError::Fail)
+                .and_then(|code| {
+                    let t = znimok_models::http::system();
+                    znimok_share::jira::exchange(t.as_ref(), &client, &code)
+                });
+            let _ = slint::invoke_from_event_loop(move || {
+                me.with(|a, ui| a.jira_signed_in(ui, &key, r))
+            });
+        });
+        self.settings_sync(ui);
+    }
+
+    /// Signed in to Atlassian: the site (the one typed, else the first), its cloud id and the
+    /// token kept for the account.
+    fn jira_signed_in(
+        &mut self,
+        ui: &AppWindow,
+        key: &str,
+        r: Result<znimok_share::jira::Signed, znimok_share::ShareError>,
+    ) {
+        let Some(id) = znimok_share::TargetId::parse(key) else {
+            return;
+        };
+        let acc = id.account().to_string();
+        let typed = self
+            .prefs()
+            .integrations
+            .jira_account(&acc)
+            .map(|a| a.site.clone())
+            .unwrap_or_default();
+        let words = match r {
+            Ok(s) => match znimok_share::jira::pick(&s.sites, &typed).cloned() {
+                Some(site) => {
+                    match znimok_share::set_token(&znimok_settings::Vault::default(), &id, &s.keep)
+                    {
+                        Ok(()) => {
+                            let shown = site.name.clone();
+                            self.save_prefs(ui, move |p| {
+                                if let Some(a) = p.integrations.jira_account_mut(&acc) {
+                                    a.site = site
+                                        .url
+                                        .trim_start_matches("https://")
+                                        .trim_end_matches('/')
+                                        .to_string();
+                                    a.cloud_id = site.cloud_id;
+                                    if a.name.trim().is_empty() {
+                                        a.name = site.name;
+                                    }
+                                }
+                            });
+                            format!(
+                                "✓ {}",
+                                self.tr.tr_args("int-signed-in", &args(&[("name", shown)]))
+                            )
+                        }
+                        Err(e) => format!("✗ {e}"),
+                    }
+                }
+                None => "✗ Atlassian: no Jira site".to_string(),
+            },
+            Err(e) => format!("✗ {e}"),
+        };
+        self.int_state.insert(key.to_string(), (words, false));
+        self.settings_sync(ui);
+    }
+
+    /// Signed in to Slack: the token kept for the account, the workspace's name shown (and the
+    /// account named after it when it has no name).
+    fn slack_signed_in(
+        &mut self,
+        ui: &AppWindow,
+        key: &str,
+        r: Result<znimok_share::slack::Signed, znimok_share::ShareError>,
+    ) {
+        let words = match (r, znimok_share::TargetId::parse(key)) {
+            (Ok(s), Some(id)) => {
+                match znimok_share::set_token(&znimok_settings::Vault::default(), &id, &s.keep) {
+                    Ok(()) => {
+                        let (acc, team) = (id.account().to_string(), s.team.clone());
+                        self.save_prefs(ui, move |p| {
+                            if let Some(a) = p.integrations.slack_account_mut(&acc)
+                                && a.name.trim().is_empty()
+                            {
+                                a.name = team;
+                            }
+                        });
+                        format!(
+                            "✓ {}",
+                            self.tr.tr_args("int-signed-in", &args(&[("name", s.team)]))
+                        )
+                    }
+                    Err(e) => format!("✗ {e}"),
+                }
+            }
+            (Err(e), _) => format!("✗ {e}"),
+            (_, None) => return,
+        };
+        self.int_state.insert(key.to_string(), (words, false));
+        self.settings_sync(ui);
     }
 
     /// The sign-in finished: the account joins the list (the same one again replaces itself) and
@@ -13177,31 +13382,6 @@ fn set_list(
         })
         .collect();
     set(ui, std::rc::Rc::new(slint::VecModel::from(rows)).into());
-}
-
-/// A service account's token into the OS store (empty = deleted): the first account keeps its
-/// own secret, the others one named after them (ZK-280).
-fn set_account_token(
-    id: &znimok_share::TargetId,
-    t: &str,
-) -> Result<(), znimok_settings::SecretError> {
-    use znimok_settings::Secret;
-    let v = znimok_settings::Vault::default();
-    let legacy = match id {
-        znimok_share::TargetId::Telegram(_) => Secret::TelegramBotToken,
-        znimok_share::TargetId::Jira(_) => Secret::JiraApiToken,
-        znimok_share::TargetId::Slack(_) => Secret::SlackBotToken,
-        znimok_share::TargetId::Redmine(_) => Secret::RedmineApiKey,
-        _ => return Ok(()),
-    };
-    match (id.account(), t.is_empty()) {
-        ("", true) => v.delete(legacy).map(|_| ()),
-        ("", false) => v.set(legacy, t),
-        (a, true) => v
-            .delete_named(&znimok_share::account_secret_name(id.service(), a))
-            .map(|_| ()),
-        (a, false) => v.set_named(&znimok_share::account_secret_name(id.service(), a), t),
-    }
 }
 
 #[cfg(test)]

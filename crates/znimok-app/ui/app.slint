@@ -76,7 +76,7 @@ export struct IntTarget { key: string, name: string }
 export struct IntGoogleAccount { id: string, email: string, active: bool }
 // A service account (ZK-280); `a`…`e` are the service's fields (Telegram: chat, its title; Jira:
 // site, e-mail, project, issue, type; Slack: channel; Redmine: address, project, issue).
-export struct IntAccount { id: string, name: string, token-set: bool, a: string, b: string, c: string, d: string, e: string, status: string, busy: bool }
+export struct IntAccount { id: string, name: string, token-set: bool, signed: bool, a: string, b: string, c: string, d: string, e: string, status: string, busy: bool }
 
 // A group title in the library grid (ZK-177): titles and card rows above it.
 export struct LibHeader {
@@ -2302,6 +2302,9 @@ export component AppWindow inherits Window {
     in property <[IntAccount]> int-tg-accounts;
     in property <[IntAccount]> int-jira-accounts;
     in property <[IntAccount]> int-slack-accounts;
+    // «Sign in to Slack» is in this build (ZK-273).
+    in property <bool> int-slack-sign-in;
+    in property <bool> int-jira-sign-in;
     in property <[IntAccount]> int-rm-accounts;
     // For the UI tests (ZK-277): the settings page scrolled to its end.
     public function settings-scroll-end() { set-sv.content-y = min(0px, set-sv.visible-height - set-sv.content-height); }
@@ -3165,13 +3168,14 @@ export component AppWindow inherits Window {
                                 SwitchRow { text: "Jira"; checked: root.int-jira-enabled; toggled => { root.setting("int-jira-enabled", self.checked ? 1 : 0); } }
                                 if root.int-jira-enabled: VerticalLayout {
                                     spacing: 8px;
-                                    if (!root.int-jira-token-set || root.int-help == "jira"): Steps { steps: [@tr("int-jira-step1" => "The site is the address you open Jira at, e.g. your-team.atlassian.net."), @tr("int-jira-step2" => "The e-mail is the one you sign in to Jira with."), @tr("int-jira-step3" => "Open the API tokens page (the button below), press «Create API token», name it Znimok, copy the token and paste it below."), @tr("int-jira-step4" => "The project key is the letters before an issue's number: ZK in ZK-101. An issue is optional — without it each sending makes a new one."), @tr("int-jira-step5" => "Press «Check».")]; }
+                                    if ((!root.int-jira-sign-in && !root.int-jira-token-set) || root.int-help == "jira"): Steps { steps: [@tr("int-jira-step1" => "The site is the address you open Jira at, e.g. your-team.atlassian.net."), @tr("int-jira-step2" => "The e-mail is the one you sign in to Jira with."), @tr("int-jira-step3" => "Open the API tokens page (the button below), press «Create API token», name it Znimok, copy the token and paste it below."), @tr("int-jira-step4" => "The project key is the letters before an issue's number: ZK in ZK-101. An issue is optional — without it each sending makes a new one."), @tr("int-jira-step5" => "Press «Check».")]; }
                                     HorizontalLayout {
                                         alignment: start;
                                         spacing: 8px;
-                                        if (!root.int-jira-token-set || root.int-help == "jira"): TextButton { text: @tr("int-jira-open" => "Open the API tokens page"); clicked => { root.int-action("open", "atlassian-tokens"); } }
-                                        if root.int-jira-token-set: TextButton { text: root.int-help == "jira" ? @tr("int-help-hide" => "Hide the steps") : @tr("int-help-show" => "How to set it up"); clicked => { root.int-help = root.int-help == "jira" ? "" : "jira"; } }
+                                        if ((!root.int-jira-sign-in && !root.int-jira-token-set) || root.int-help == "jira"): TextButton { text: @tr("int-jira-open" => "Open the API tokens page"); clicked => { root.int-action("open", "atlassian-tokens"); } }
+                                        if (root.int-jira-token-set || root.int-jira-sign-in): TextButton { text: root.int-help == "jira" ? @tr("int-help-hide" => "Hide the steps") : @tr("int-help-show" => "How to set it up"); clicked => { root.int-help = root.int-help == "jira" ? "" : "jira"; } }
                                     }
+                                    if root.int-jira-sign-in: Text { text: @tr("int-jira-sign-in-hint" => "The simplest: sign in to Atlassian in the browser — no API token to make. With several sites, type the site first and Znimok takes that one."); color: Theme.text2; font-size: 12px; wrap: word-wrap; }
                                     for acc[i] in root.int-jira-accounts: VerticalLayout {
                                         spacing: 8px;
                                         if i > 0: Rectangle { height: 1px; background: Theme.line; }
@@ -3181,8 +3185,10 @@ export component AppWindow inherits Window {
                                             if i > 0: TextButton { text: @tr("int-account-remove" => "Remove"); clicked => { root.int-action("remove-account", "jira:" + acc.id); } }
                                         }
                                         LineEdit { text: acc.a; placeholder-text: @tr("int-jira-site" => "Site: your-team.atlassian.net"); edited(t) => { root.setting-text("int-acc:jira:site:" + acc.id, t); } }
-                                        LineEdit { text: acc.b; placeholder-text: @tr("int-jira-email" => "E-mail"); edited(t) => { root.setting-text("int-acc:jira:email:" + acc.id, t); } }
-                                        LineEdit { input-type: password; placeholder-text: acc.token-set ? @tr("int-secret-saved" => "Saved — type a new one to replace it") : @tr("int-jira-token" => "API token"); edited(t) => { root.setting-text("int-acc:jira:token:" + acc.id, t); } }
+                                        if root.int-jira-sign-in && !acc.signed: HorizontalLayout { alignment: start; TextButton { primary: !acc.token-set; text: @tr("int-jira-sign-in" => "Sign in to Atlassian"); enabled: !acc.busy; clicked => { root.int-action("jira-sign-in", acc.id); } } }
+                                        if acc.signed: HorizontalLayout { spacing: 8px; Text { text: @tr("int-signed-in" => "Signed in: {0}", acc.name); color: Theme.accent; font-size: 12px; vertical-alignment: center; horizontal-stretch: 1; } TextButton { text: @tr("int-google-sign-out" => "Sign out"); clicked => { root.int-action("sign-out", acc.id == "" ? "jira" : "jira:" + acc.id); } } }
+                                        if !acc.signed: LineEdit { text: acc.b; placeholder-text: @tr("int-jira-email" => "E-mail"); edited(t) => { root.setting-text("int-acc:jira:email:" + acc.id, t); } }
+                                        if !acc.signed: LineEdit { input-type: password; placeholder-text: acc.token-set ? @tr("int-secret-saved" => "Saved — type a new one to replace it") : @tr("int-jira-token" => "API token"); edited(t) => { root.setting-text("int-acc:jira:token:" + acc.id, t); } }
                                         HorizontalLayout {
                                             spacing: 8px;
                                             LineEdit { horizontal-stretch: 1; text: acc.c; placeholder-text: @tr("int-jira-project" => "Project by default (optional)"); edited(t) => { root.setting-text("int-acc:jira:project:" + acc.id, t); } }
@@ -3202,13 +3208,14 @@ export component AppWindow inherits Window {
                                 SwitchRow { text: "Slack"; checked: root.int-slack-enabled; toggled => { root.setting("int-slack-enabled", self.checked ? 1 : 0); } }
                                 if root.int-slack-enabled: VerticalLayout {
                                     spacing: 8px;
-                                    if (!root.int-slack-token-set || root.int-help == "slack"): Steps { steps: [@tr("int-slack-step1" => "Press «Create the Slack app» below: Slack opens with everything filled in. Choose your workspace, then Next and Create."), @tr("int-slack-step2" => "On the app's page press «Install to Workspace», then «Allow»."), @tr("int-slack-step3" => "Open «OAuth & Permissions», copy the «Bot User OAuth Token» (xoxb-…) and paste it below."), @tr("int-slack-step4" => "In the Slack channel write /invite @Znimok so the app may post there."), @tr("int-slack-step5" => "The channel's ID: click the channel's name — it is at the very bottom of the window (C0…). Copy it, paste it below and press «Check».")]; }
+                                    if ((!root.int-slack-sign-in && !root.int-slack-token-set) || root.int-help == "slack"): Steps { steps: [@tr("int-slack-step1" => "Press «Create the Slack app» below: Slack opens with everything filled in. Choose your workspace, then Next and Create."), @tr("int-slack-step2" => "On the app's page press «Install to Workspace», then «Allow»."), @tr("int-slack-step3" => "Open «OAuth & Permissions», copy the «Bot User OAuth Token» (xoxb-…) and paste it below."), @tr("int-slack-step4" => "In the Slack channel write /invite @Znimok so the app may post there."), @tr("int-slack-step5" => "The channel's ID: click the channel's name — it is at the very bottom of the window (C0…). Copy it, paste it below and press «Check».")]; }
                                     HorizontalLayout {
                                         alignment: start;
                                         spacing: 8px;
-                                        if (!root.int-slack-token-set || root.int-help == "slack"): TextButton { text: @tr("int-slack-open" => "Create the Slack app"); clicked => { root.int-action("open", "slack-app"); } }
-                                        if root.int-slack-token-set: TextButton { text: root.int-help == "slack" ? @tr("int-help-hide" => "Hide the steps") : @tr("int-help-show" => "How to set it up"); clicked => { root.int-help = root.int-help == "slack" ? "" : "slack"; } }
+                                        if ((!root.int-slack-sign-in && !root.int-slack-token-set) || root.int-help == "slack"): TextButton { text: @tr("int-slack-open" => "Create the Slack app"); clicked => { root.int-action("open", "slack-app"); } }
+                                        if (root.int-slack-token-set || root.int-slack-sign-in): TextButton { text: root.int-help == "slack" ? @tr("int-help-hide" => "Hide the steps") : @tr("int-help-show" => "How to set it up"); clicked => { root.int-help = root.int-help == "slack" ? "" : "slack"; } }
                                     }
+                                    if root.int-slack-sign-in: Text { text: @tr("int-slack-sign-in-hint" => "The simplest: sign in to Slack in the browser — Znimok then posts as you, into the channels you choose when sharing. No tokens to look for."); color: Theme.text2; font-size: 12px; wrap: word-wrap; }
                                     for acc[i] in root.int-slack-accounts: VerticalLayout {
                                         spacing: 8px;
                                         if i > 0: Rectangle { height: 1px; background: Theme.line; }
@@ -3217,7 +3224,9 @@ export component AppWindow inherits Window {
                                             LineEdit { horizontal-stretch: 1; text: acc.name; placeholder-text: @tr("int-account-name" => "Name in «Share», e.g. «Client A»"); edited(t) => { root.setting-text("int-acc:slack:name:" + acc.id, t); } }
                                             if i > 0: TextButton { text: @tr("int-account-remove" => "Remove"); clicked => { root.int-action("remove-account", "slack:" + acc.id); } }
                                         }
-                                        LineEdit { input-type: password; placeholder-text: acc.token-set ? @tr("int-secret-saved" => "Saved — type a new one to replace it") : @tr("int-slack-token" => "Bot token (xoxb-…)"); edited(t) => { root.setting-text("int-acc:slack:token:" + acc.id, t); } }
+                                        if root.int-slack-sign-in && !acc.signed: HorizontalLayout { alignment: start; TextButton { primary: !acc.token-set; text: @tr("int-slack-sign-in" => "Sign in to Slack"); enabled: !acc.busy; clicked => { root.int-action("slack-sign-in", acc.id); } } }
+                                        if acc.signed: HorizontalLayout { spacing: 8px; Text { text: @tr("int-signed-in" => "Signed in: {0}", acc.name); color: Theme.accent; font-size: 12px; vertical-alignment: center; horizontal-stretch: 1; } TextButton { text: @tr("int-google-sign-out" => "Sign out"); clicked => { root.int-action("sign-out", acc.id == "" ? "slack" : "slack:" + acc.id); } } }
+                                        if !acc.signed: LineEdit { input-type: password; placeholder-text: acc.token-set ? @tr("int-secret-saved" => "Saved — type a new one to replace it") : @tr("int-slack-token" => "Bot token (xoxb-…)"); edited(t) => { root.setting-text("int-acc:slack:token:" + acc.id, t); } }
                                         LineEdit { text: acc.a; placeholder-text: @tr("int-slack-channel" => "Channel by default (optional)"); edited(t) => { root.setting-text("int-acc:slack:channel:" + acc.id, t); } }
                                         HorizontalLayout {
                                             spacing: 12px;
