@@ -13,6 +13,15 @@ use znimok_video_mac::writer::{AvWriter, WriterConfig};
 
 const W: u32 = 320;
 const H: u32 = 240;
+
+/// A test that cannot run on this machine says so and passes — except on CI, where
+/// `ZNIMOK_REQUIRE_GPU` is set: a runner that lost its GPU or encoder must not stay green (ZK-285).
+fn skipped(why: impl std::fmt::Display) {
+    if std::env::var_os("ZNIMOK_REQUIRE_GPU").is_some() {
+        panic!("ZNIMOK_REQUIRE_GPU is set, but: {why}");
+    }
+    eprintln!("skipped: {why}");
+}
 const FPS: u32 = 30;
 const FRAMES: i64 = 90;
 
@@ -80,7 +89,7 @@ fn mp4_html_and_report_with_a_cut() {
     let gpu = match znimok_play::headless_gpu() {
         Ok(g) => g,
         Err(e) => {
-            eprintln!("skipped: {e}");
+            skipped(e);
             return;
         }
     };

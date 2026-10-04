@@ -36,4 +36,8 @@ jobs:
       - name: clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
       - name: test
+        # The GPU, encoder and decoder tests skip on a machine without them; here they must run
+        # (WARP on Windows, the runner's Metal on macOS) — a runner that lost them fails (ZK-285).
+        env:
+          ZNIMOK_REQUIRE_GPU: "1"
         run: cargo test --workspace

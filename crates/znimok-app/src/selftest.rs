@@ -1,8 +1,8 @@
 //! Scripted self-test: `ZNIMOK_SELFTEST=<dir> znimok-app <image>` drives the real window
 //! through the same handlers the UI calls (pointer, keys, text, save, library, export), takes
 //! window snapshots into `<dir>` and writes `report.txt`. Exit code 0 = every check passed.
-//! Needs no desktop session and no synthetic input, so it runs over an idle RDP connection and
-//! in CI.
+//! Needs no desktop session and no synthetic input, so it runs over an idle RDP connection. Not
+//! run by CI yet: before a release, by hand on the release build (docs/RELEASE.md, ZK-285).
 
 use std::cell::RefCell;
 use std::path::PathBuf;
