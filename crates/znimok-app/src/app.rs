@@ -1580,14 +1580,7 @@ impl App {
             })
             .collect();
         ui.set_int_webhooks(std::rc::Rc::new(slint::VecModel::from(hooks)).into());
-        let targets: Vec<crate::IntTarget> = znimok_share::ready(i)
-            .into_iter()
-            .map(|(id, name)| crate::IntTarget {
-                key: id.key().into(),
-                name: name.into(),
-            })
-            .collect();
-        ui.set_int_targets(std::rc::Rc::new(slint::VecModel::from(targets)).into());
+        set_int_targets(ui, i);
         ui.set_int_default(i.default_target.clone().into());
     }
 
@@ -1738,6 +1731,22 @@ impl App {
                 self.save_prefs(ui, |p| p.integrations.google.active = id);
             }
             "google-sign-out" => self.google_sign_out(ui, target),
+            // «Share» next to «Copy» (ZK-271).
+            "share" => {
+                self.share_now(ui, target);
+                return;
+            }
+            // The menu is about to show: the targets as the settings have them now (an editor's
+            // own window is not synced with the settings page).
+            "share-menu" => {
+                set_int_targets(ui, &self.prefs().integrations);
+                return;
+            }
+            "connect" => {
+                ui.set_settings_page(11);
+                self.settings_open(ui);
+                return;
+            }
             "send" => {
                 if self.vexp_open {
                     self.share_video(ui, target);
@@ -1938,6 +1947,50 @@ impl App {
             msg = format!("{msg} — {m}");
         }
         self.toast(ui, msg);
+    }
+
+    /// «Share» in the editor (ZK-271): what it shows, to a target in one click — a screenshot as
+    /// PNG, a recording as MP4 (the video export's choices, a frame becoming the MP4).
+    fn share_now(&mut self, ui: &AppWindow, target: &str) {
+        if ui.get_vid_mode() {
+            let keep = self.vexp.kind;
+            if keep == crate::vexport::FRAME {
+                self.vexp.kind = crate::vexport::MP4;
+            }
+            self.share_video(ui, target);
+            self.vexp.kind = keep;
+            return;
+        }
+        let Some((w, h, rgba)) = self.flatten() else {
+            return;
+        };
+        let name = self.doc_name();
+        let meta = self.file_meta();
+        let opts = io::Encode {
+            format: io::Format::Png,
+            quality: 90,
+            lossless: true,
+            white_bg: false,
+        };
+        let bytes = match io::encode(w, h, &rgba, opts, meta.as_ref()) {
+            Ok(b) => b,
+            Err(e) => {
+                self.toast(ui, format!("{} ({e})", self.tr.tr("export-error")));
+                return;
+            }
+        };
+        let item = znimok_share::Item {
+            file_name: format!("{name}.png"),
+            mime: "image/png".into(),
+            title: name,
+            text: self
+                .s
+                .as_ref()
+                .map(|s| s.ed.doc.meta.description.clone())
+                .unwrap_or_default(),
+            kind: "screenshot".into(),
+        };
+        self.share_bytes(ui, target, item, &bytes);
     }
 
     /// The screenshot as the export sheet has it (format, quality, size) to a target.
@@ -12498,4 +12551,16 @@ mod wave_tests {
         let none = wave_pixels(&[], 0.0, 0.1, 0.01, (w, h), 1.0, [1, 2, 3, 255]);
         assert!((0..w).all(|x| none[((10 * w + x) * 4 + 3) as usize] != 0));
     }
+}
+
+/// The targets of «Send to» and «Share», ready to send (ZK-101, ZK-271).
+fn set_int_targets(ui: &AppWindow, i: &znimok_settings::Integrations) {
+    let targets: Vec<crate::IntTarget> = znimok_share::ready(i)
+        .into_iter()
+        .map(|(id, name)| crate::IntTarget {
+            key: id.key().into(),
+            name: name.into(),
+        })
+        .collect();
+    ui.set_int_targets(std::rc::Rc::new(slint::VecModel::from(targets)).into());
 }
