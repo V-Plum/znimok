@@ -3732,11 +3732,6 @@ onb-agents = Access for AI agents
 # @max: 100
 onb-agents-hint = Off. You can turn it on on the Agents page when you need it.
 
-# @where: Footer
-# @kind: button
-# @max: 20
-onb-skip-all = Skip all
-
 # @where: First-run guide, bottom left: check box, ticked by default
 # @kind: option
 # @max: 36

@@ -3752,11 +3752,6 @@ onb-agents = Доступ для AI-агентів
 # @max: 100
 onb-agents-hint = Вимкнено. Увімкнути можна на сторінці «Агенти», коли знадобиться.
 
-# @where: Footer
-# @kind: button
-# @max: 20
-onb-skip-all = Пропустити все
-
 # @where: First-run guide, bottom left: check box, ticked by default
 # @kind: option
 # @max: 36
