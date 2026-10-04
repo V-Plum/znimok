@@ -224,6 +224,7 @@ mod tests {
             project: "ZT".into(),
             issue: issue.into(),
             issue_type: "Task".into(),
+            ..Default::default()
         }
     }
 

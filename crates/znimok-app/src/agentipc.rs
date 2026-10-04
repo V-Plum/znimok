@@ -59,12 +59,14 @@ pub fn handle(method: &str, params: &Value) -> Option<Result<Value, znimok_ipc::
                 .map(str::to_string);
             // One question per client (ZK-251): «this session» and «always» cover every
             // scope but the sound of a recording, which is asked for on its own.
-            let all = confirm.is_none() && scope != "record_audio";
+            let all = confirm.is_none() && scope != "record_audio" && scope != "share";
             let grant = ask(client, scope, tool, confirm, WAIT);
             Ok(json!({"grant": grant, "all": all && grant.is_some_and(|g| g != "once")}))
         }
         "agents.record" => record(params),
         "agents.app" => app(params),
+        // ZK-274: an agent sends a document to a connected service.
+        "agents.share" => share(params),
         // ZK-242: screenshots for an agent — on macOS only the app may capture.
         "capture.displays" | "capture.windows" | "capture.take" => capture(method, params),
         "agents.activity" => {
@@ -145,10 +147,11 @@ fn show(
                         "settings" => "agents-ask-settings",
                         "record" => "agents-ask-record",
                         "record_audio" => "agents-ask-record-audio",
+                        "share" => "agents-ask-share",
                         _ => "agents-ask-other",
                     });
                     let mut body = a.tr.tr_args("agents-ask-body", &args(&[("what", what)]));
-                    if scope != "record_audio" {
+                    if scope != "record_audio" && scope != "share" {
                         body.push_str(
                             "
 
@@ -568,5 +571,92 @@ fn capture(method: &str, params: &Value) -> Result<Value, znimok_ipc::RpcError> 
             .map(|(path, name)| json!({"path": path.display().to_string(), "name": name}))
             .map_err(fail)
         }
+    }
+}
+
+// ------------------------------------------------------------------ sending (ZK-274)
+
+/// `agents.share`: `targets` — the connected services, no tokens; `places {target}` — a target's
+/// channels, projects, chats (from the service, here on the IPC thread); `send {target, place,
+/// text, title, kind, mime, file_name, path}` — the file into the sending queue, as «Share» puts
+/// it there. The person sees a toast.
+fn share(params: &Value) -> Result<Value, znimok_ipc::RpcError> {
+    let fail = |m: String| znimok_ipc::RpcError::new(-32000, m);
+    if !on_ui(|| crate::with_prefs(|p| p.agents.mcp_enabled).unwrap_or(false))? {
+        return Err(fail("MCP is switched off in Znimok's settings".into()));
+    }
+    let text = |k: &str| {
+        params
+            .get(k)
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_string()
+    };
+    let i = crate::integrations::current();
+    let target = || {
+        znimok_share::TargetId::parse(&text("target"))
+            .filter(|id| znimok_share::ready(&i).iter().any(|(t, _)| t == id))
+            .ok_or_else(|| {
+                fail(format!(
+                    "no connected target «{}» (see share_targets)",
+                    text("target")
+                ))
+            })
+    };
+    match text("op").as_str() {
+        "targets" => Ok(json!({"targets": znimok_share::ready(&i)
+            .into_iter()
+            .map(|(id, name)| json!({
+                "key": id.key(),
+                "name": name,
+                "needs_place": znimok_share::needs_place(&id),
+                "last_place": znimok_share::default_place(&i, &id),
+            }))
+            .collect::<Vec<_>>()})),
+        "places" => {
+            let id = target()?;
+            let t = znimok_models::http::system();
+            let vault = znimok_settings::Vault::default();
+            let places = znimok_share::places(t.as_ref(), &vault, &i, &id)
+                .map_err(|e| fail(e.to_string()))?;
+            Ok(json!({"places": places}))
+        }
+        "send" => {
+            let id = target()?;
+            let bytes = std::fs::read(text("path")).map_err(|e| fail(e.to_string()))?;
+            let place = text("place");
+            if place.trim().is_empty()
+                && znimok_share::needs_place(&id)
+                && znimok_share::default_place(&i, &id).is_empty()
+            {
+                return Err(fail(
+                    "this target needs a place: give place (see share_targets with target)".into(),
+                ));
+            }
+            let item = znimok_share::Item {
+                file_name: text("file_name"),
+                mime: text("mime"),
+                title: text("title"),
+                text: text("text"),
+                kind: text("kind"),
+                place,
+            };
+            let name = crate::integrations::target_name(&i, &id);
+            crate::integrations::send(id, item, &bytes).map_err(fail)?;
+            let (client, shown) = (text("client"), name.clone());
+            let _ = slint::invoke_from_event_loop(move || {
+                crate::with_ctx(|a, ui| {
+                    let msg = a.tr.tr_args(
+                        "share-agent-queued",
+                        &crate::app::fargs(&[("client", client), ("target", shown)]),
+                    );
+                    a.toast(ui, msg);
+                })
+            });
+            Ok(json!({"queued": true, "target": name}))
+        }
+        op => Err(znimok_ipc::RpcError::invalid_params(format!(
+            "«op» is targets, places or send, not «{op}»"
+        ))),
     }
 }

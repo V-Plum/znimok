@@ -6670,3 +6670,38 @@ int-experimental-badge = Експериментальна функція
 # @kind: body
 # @max: 160
 int-experimental = Інтеграції ще в роботі — щось може змінитися або поки не працювати. Розкажіть, що пішло не так.
+
+# @where: Settings → Extensions and integrations: button, one more account of the service (another workspace, site, bot)
+# @kind: label
+# @max: 30
+int-account-add = Додати обліковий запис
+
+# @where: Settings → Extensions and integrations: placeholder, the account's name shown in «Share»
+# @kind: label
+# @max: 44
+int-account-name = Назва в «Поширити», напр. «Клієнт А»
+
+# @where: Settings → Extensions and integrations: button, removes this account and its token
+# @kind: label
+# @max: 16
+int-account-remove = Прибрати
+
+# @where: Toast: the file is in Drive and Gmail's new letter opened with its link; $target the account
+# @kind: body
+# @max: 90
+share-gmail-opened = Лист відкрито в Gmail — допишіть, кому
+
+# @where: Settings → Agents: a permission in a client's list
+# @kind: label
+# @max: 24
+agents-scope-share = надсилання назовні
+
+# @where: The permission question: what an agent asks for — sending to the connected services
+# @kind: body
+# @max: 120
+agents-ask-share = надсилати документи у ваші підключені сервіси (Google Drive, Gmail, Telegram, Jira, Slack, Redmine, вебхуки)
+
+# @where: Toast: an agent sent a document; $client the agent, $target where
+# @kind: body
+# @max: 90
+share-agent-queued = { $client } надсилає в { $target }…

@@ -313,6 +313,15 @@ pub fn to_srgb8(frame: &Frame) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A test that cannot run on this machine says so and passes — except on CI, where
+    /// `ZNIMOK_REQUIRE_GPU` is set: a runner that lost its GPU or encoder must not stay green (ZK-285).
+    fn skipped(why: impl std::fmt::Display) {
+        if std::env::var_os("ZNIMOK_REQUIRE_GPU").is_some() {
+            panic!("ZNIMOK_REQUIRE_GPU is set, but: {why}");
+        }
+        eprintln!("skipped: {why}");
+    }
     use znimok_platform::{ColorInfo, Rect};
 
     fn half(v: f32) -> [u8; 2] {
@@ -401,7 +410,7 @@ mod tests {
         let t = match ToneMapper::new() {
             Ok(t) => t,
             Err(e) => {
-                eprintln!("skipped: {e}");
+                skipped(e);
                 return;
             }
         };
@@ -431,7 +440,7 @@ mod tests {
     #[test]
     fn sdr_white_is_white_and_above_clips() {
         let Some(t) = ToneMapper::shared() else {
-            eprintln!("skipped: no GPU device");
+            skipped("no GPU device");
             return;
         };
         let mut f = frame(PixelFormat::Rgba16Float, Transfer::ScRgb, 240.0, 12.5);

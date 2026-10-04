@@ -22,6 +22,7 @@ fn main() {
         project: args.next().unwrap_or_default(),
         issue: args.next().unwrap_or_default(),
         issue_type: "Task".into(),
+        ..Default::default()
     };
     let token = field("API Token");
     let t = znimok_models::http::system();
