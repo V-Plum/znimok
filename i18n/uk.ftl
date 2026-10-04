@@ -6675,3 +6675,18 @@ int-experimental-badge = Експериментальна функція
 # @kind: body
 # @max: 160
 int-experimental = Інтеграції ще в роботі — щось може змінитися або поки не працювати. Розкажіть, що пішло не так.
+
+# @where: Settings → Extensions and integrations: button, one more account of the service (another workspace, site, bot)
+# @kind: label
+# @max: 30
+int-account-add = Додати обліковий запис
+
+# @where: Settings → Extensions and integrations: placeholder, the account's name shown in «Share»
+# @kind: label
+# @max: 44
+int-account-name = Назва в «Поширити», напр. «Клієнт А»
+
+# @where: Settings → Extensions and integrations: button, removes this account and its token
+# @kind: label
+# @max: 16
+int-account-remove = Прибрати

@@ -61,40 +61,36 @@ pub fn places(
     cfg: &Integrations,
     id: &TargetId,
 ) -> Result<Vec<Place>, ShareError> {
-    use znimok_settings::Secret;
     let pairs = match id {
-        TargetId::Telegram => {
-            let token = secret(vault, Secret::TelegramBotToken, "Telegram")?;
-            let mut out = telegram::find_chats(t, &token)?;
-            let known = cfg.telegram.chat_id.trim();
+        TargetId::Telegram(a) => {
+            let acc = account(cfg.telegram_account(a))?;
+            let mut out = telegram::find_chats(t, &token(vault, id)?)?;
+            let known = acc.chat_id.trim();
             if !known.is_empty() && !out.iter().any(|(i, _)| i == known) {
-                let name = if cfg.telegram.chat_title.is_empty() {
+                let name = if acc.chat_title.is_empty() {
                     known.to_string()
                 } else {
-                    cfg.telegram.chat_title.clone()
+                    acc.chat_title.clone()
                 };
                 out.push((known.to_string(), name));
             }
             out
         }
-        TargetId::Slack => {
-            let token = secret(vault, Secret::SlackBotToken, "Slack")?;
-            slack::channels(t, &token)?
+        TargetId::Slack(_) => slack::channels(t, &token(vault, id)?)?,
+        TargetId::Jira(a) => jira::projects(t, account(cfg.jira_account(a))?, &token(vault, id)?)?,
+        TargetId::Redmine(a) => {
+            redmine::projects(t, account(cfg.redmine_account(a))?, &token(vault, id)?)?
         }
-        TargetId::Jira => {
-            let token = secret(vault, Secret::JiraApiToken, "Jira")?;
-            jira::projects(t, &cfg.jira, &token)?
-        }
-        TargetId::Redmine => {
-            let key = secret(vault, Secret::RedmineApiKey, "Redmine")?;
-            redmine::projects(t, &cfg.redmine, &key)?
-        }
-        TargetId::Google | TargetId::Webhook(_) => Vec::new(),
+        TargetId::Google(_) | TargetId::Webhook(_) => Vec::new(),
     };
     Ok(pairs
         .into_iter()
         .map(|(id, name)| Place { id, name })
         .collect())
+}
+
+fn account<T>(a: Option<&T>) -> Result<&T, ShareError> {
+    a.ok_or_else(|| ShareError::Fail("this account is no longer in the settings".into()))
 }
 
 /// `ZK-101` is an issue, `ZK` a project.
@@ -104,78 +100,184 @@ fn jira_issue_key(s: &str) -> bool {
     })
 }
 
-/// Which target: the keys of [`Integrations::default_target`].
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+/// Which target: the keys of [`Integrations::default_target`]. A service's target carries the
+/// account (ZK-280): empty = the first one (`slack`), else `slack:<id>`; Google's is the
+/// account's `sub` (empty = the one marked in the settings).
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum TargetId {
-    Google,
-    Telegram,
-    Jira,
-    Slack,
-    Redmine,
+    Google(String),
+    Telegram(String),
+    Jira(String),
+    Slack(String),
+    Redmine(String),
     Webhook(String),
 }
 
 impl TargetId {
-    pub fn key(&self) -> String {
+    /// The service's word: `google`, `telegram`, `jira`, `slack`, `redmine`, `webhook`.
+    pub fn service(&self) -> &'static str {
         match self {
-            Self::Google => "google".into(),
-            Self::Telegram => "telegram".into(),
-            Self::Jira => "jira".into(),
-            Self::Slack => "slack".into(),
-            Self::Redmine => "redmine".into(),
-            Self::Webhook(id) => format!("webhook:{id}"),
+            Self::Google(_) => "google",
+            Self::Telegram(_) => "telegram",
+            Self::Jira(_) => "jira",
+            Self::Slack(_) => "slack",
+            Self::Redmine(_) => "redmine",
+            Self::Webhook(_) => "webhook",
+        }
+    }
+
+    /// The account (or the webhook) inside the service.
+    pub fn account(&self) -> &str {
+        match self {
+            Self::Google(a)
+            | Self::Telegram(a)
+            | Self::Jira(a)
+            | Self::Slack(a)
+            | Self::Redmine(a)
+            | Self::Webhook(a) => a,
+        }
+    }
+
+    pub fn key(&self) -> String {
+        match (self, self.account()) {
+            (Self::Webhook(id), _) => format!("webhook:{id}"),
+            (_, "") => self.service().to_string(),
+            (_, a) => format!("{}:{a}", self.service()),
         }
     }
 
     pub fn parse(s: &str) -> Option<Self> {
-        Some(match s {
-            "google" => Self::Google,
-            "telegram" => Self::Telegram,
-            "jira" => Self::Jira,
-            "slack" => Self::Slack,
-            "redmine" => Self::Redmine,
-            _ => Self::Webhook(s.strip_prefix("webhook:")?.to_string()),
+        let (service, account) = s.split_once(':').unwrap_or((s, ""));
+        let a = account.to_string();
+        Some(match service {
+            "google" => Self::Google(a),
+            "telegram" => Self::Telegram(a),
+            "jira" => Self::Jira(a),
+            "slack" => Self::Slack(a),
+            "redmine" => Self::Redmine(a),
+            "webhook" if !a.is_empty() => Self::Webhook(a),
+            _ => return None,
         })
     }
 }
 
-/// The targets that are switched on and filled in enough to send, in the order of the menu.
+// On disk (the queue's jobs) a target is its key. A job left by 0.0.16 has the old form — a
+// variant's name (`"Telegram"`) or `{"Webhook": "<id>"}` — and is read too.
+impl Serialize for TargetId {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(&self.key())
+    }
+}
+
+impl<'de> Deserialize<'de> for TargetId {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum Raw {
+            Key(String),
+            Webhook {
+                #[serde(rename = "Webhook")]
+                webhook: String,
+            },
+        }
+        let key = match Raw::deserialize(d)? {
+            Raw::Key(k) => k.to_lowercase_first(),
+            Raw::Webhook { webhook } => format!("webhook:{webhook}"),
+        };
+        TargetId::parse(&key).ok_or_else(|| serde::de::Error::custom(format!("no target {key}")))
+    }
+}
+
+trait LowerFirst {
+    fn to_lowercase_first(self) -> String;
+}
+
+impl LowerFirst for String {
+    /// `Telegram` → `telegram`; `slack:a1` stays.
+    fn to_lowercase_first(self) -> String {
+        let mut c = self.chars();
+        match c.next() {
+            Some(f) => f.to_lowercase().collect::<String>() + c.as_str(),
+            None => self,
+        }
+    }
+}
+
+/// «Slack · Client A» when the account has a name, else the service with its place.
+fn label(service: &str, name: &str, place: &str, n: usize) -> String {
+    if !name.trim().is_empty() {
+        format!("{service} · {}", name.trim())
+    } else if !place.is_empty() || n == 0 {
+        named(service, place)
+    } else {
+        format!("{service} {}", n + 1)
+    }
+}
+
+/// The targets that are switched on and filled in enough to send, in the order of the menu:
+/// each account of a service is a target of its own (ZK-280).
 pub fn ready(cfg: &Integrations) -> Vec<(TargetId, String)> {
     let mut out = Vec::new();
-    if cfg.google.enabled
-        && let Some(a) = cfg.google.current()
-    {
-        out.push((TargetId::Google, format!("Google Drive · {}", a.email)));
+    if cfg.google.enabled {
+        for a in &cfg.google.accounts {
+            out.push((
+                TargetId::Google(a.id.clone()),
+                format!("Google Drive · {}", a.email),
+            ));
+        }
     }
     if cfg.telegram.enabled {
-        let t = &cfg.telegram;
-        let name = if t.chat_title.is_empty() {
-            "Telegram".into()
-        } else {
-            format!("Telegram · {}", t.chat_title)
-        };
-        out.push((TargetId::Telegram, name));
+        for (n, t) in cfg.telegram_accounts().enumerate() {
+            let place = if t.chat_title.is_empty() {
+                t.chat_id.trim()
+            } else {
+                t.chat_title.as_str()
+            };
+            out.push((
+                TargetId::Telegram(t.id.clone()),
+                label("Telegram", &t.name, place, n),
+            ));
+        }
     }
-    if cfg.jira.enabled && !cfg.jira.site.trim().is_empty() {
-        let j = &cfg.jira;
-        let what = if j.issue.trim().is_empty() {
-            j.project.trim().to_string()
-        } else {
-            j.issue.trim().to_string()
-        };
-        out.push((TargetId::Jira, named("Jira", &what)));
+    if cfg.jira.enabled {
+        for (n, j) in cfg.jira_accounts().enumerate() {
+            if j.site.trim().is_empty() {
+                continue;
+            }
+            let what = if j.issue.trim().is_empty() {
+                j.project.trim()
+            } else {
+                j.issue.trim()
+            };
+            out.push((
+                TargetId::Jira(j.id.clone()),
+                label("Jira", &j.name, what, n),
+            ));
+        }
     }
     if cfg.slack.enabled {
-        out.push((TargetId::Slack, named("Slack", cfg.slack.channel.trim())));
+        for (n, a) in cfg.slack_accounts().enumerate() {
+            out.push((
+                TargetId::Slack(a.id.clone()),
+                label("Slack", &a.name, a.channel.trim(), n),
+            ));
+        }
     }
-    if cfg.redmine.enabled && !cfg.redmine.url.trim().is_empty() {
-        let r = &cfg.redmine;
-        let what = if r.issue.trim().is_empty() {
-            r.project.trim().to_string()
-        } else {
-            format!("#{}", r.issue.trim())
-        };
-        out.push((TargetId::Redmine, format!("Redmine · {what}")));
+    if cfg.redmine.enabled {
+        for (n, r) in cfg.redmine_accounts().enumerate() {
+            if r.url.trim().is_empty() {
+                continue;
+            }
+            let what = if r.issue.trim().is_empty() {
+                r.project.trim().to_string()
+            } else {
+                format!("#{}", r.issue.trim())
+            };
+            out.push((
+                TargetId::Redmine(r.id.clone()),
+                label("Redmine", &r.name, &what, n),
+            ));
+        }
     }
     for w in &cfg.webhooks {
         if w.enabled && !w.url.trim().is_empty() {
@@ -204,7 +306,7 @@ pub fn ready_now(cfg: &Integrations) -> Vec<(TargetId, String)> {
 pub fn needs_place(id: &TargetId) -> bool {
     matches!(
         id,
-        TargetId::Telegram | TargetId::Slack | TargetId::Jira | TargetId::Redmine
+        TargetId::Telegram(_) | TargetId::Slack(_) | TargetId::Jira(_) | TargetId::Redmine(_)
     )
 }
 
@@ -219,14 +321,34 @@ pub fn default_place(cfg: &Integrations, id: &TargetId) -> String {
         return p.id.clone();
     }
     match id {
-        TargetId::Telegram => cfg.telegram.chat_id.trim().to_string(),
-        TargetId::Slack => cfg.slack.channel.trim().to_string(),
-        TargetId::Jira if !cfg.jira.issue.trim().is_empty() => cfg.jira.issue.trim().to_string(),
-        TargetId::Jira => cfg.jira.project.trim().to_string(),
-        TargetId::Redmine if !cfg.redmine.issue.trim().is_empty() => {
-            format!("#{}", cfg.redmine.issue.trim())
-        }
-        TargetId::Redmine => cfg.redmine.project.trim().to_string(),
+        TargetId::Telegram(a) => cfg
+            .telegram_account(a)
+            .map(|t| t.chat_id.trim().to_string())
+            .unwrap_or_default(),
+        TargetId::Slack(a) => cfg
+            .slack_account(a)
+            .map(|t| t.channel.trim().to_string())
+            .unwrap_or_default(),
+        TargetId::Jira(a) => cfg
+            .jira_account(a)
+            .map(|j| {
+                if j.issue.trim().is_empty() {
+                    j.project.trim().to_string()
+                } else {
+                    j.issue.trim().to_string()
+                }
+            })
+            .unwrap_or_default(),
+        TargetId::Redmine(a) => cfg
+            .redmine_account(a)
+            .map(|r| {
+                if r.issue.trim().is_empty() {
+                    r.project.trim().to_string()
+                } else {
+                    format!("#{}", r.issue.trim())
+                }
+            })
+            .unwrap_or_default(),
         _ => String::new(),
     }
 }
@@ -297,8 +419,30 @@ pub(crate) fn timeout_for(bytes: usize) -> Duration {
 /// Answers up to this size are read (JSON of the services).
 pub(crate) const MAX_ANSWER: usize = 4 << 20;
 
-fn secret(v: &Vault, s: znimok_settings::Secret, what: &str) -> Result<String, ShareError> {
-    match v.get(s) {
+/// The name in the OS store of a service account's token (ZK-280) — the first account keeps its
+/// own [`znimok_settings::Secret`].
+pub fn account_secret_name(service: &str, id: &str) -> String {
+    format!("share-{service}-{id}")
+}
+
+/// The token (the key) of a target's account, from the OS store.
+pub fn token(vault: &Vault, id: &TargetId) -> Result<String, ShareError> {
+    use znimok_settings::Secret;
+    let what = match id {
+        TargetId::Telegram(_) => "Telegram",
+        TargetId::Jira(_) => "Jira",
+        TargetId::Slack(_) => "Slack",
+        TargetId::Redmine(_) => "Redmine",
+        _ => return Err(ShareError::Fail("no token for this target".into())),
+    };
+    let got = match (id, id.account()) {
+        (TargetId::Telegram(_), "") => vault.get(Secret::TelegramBotToken),
+        (TargetId::Jira(_), "") => vault.get(Secret::JiraApiToken),
+        (TargetId::Slack(_), "") => vault.get(Secret::SlackBotToken),
+        (TargetId::Redmine(_), "") => vault.get(Secret::RedmineApiKey),
+        (_, a) => vault.get_named(&account_secret_name(id.service(), a)),
+    };
+    match got {
         Ok(Some(t)) if !t.trim().is_empty() => Ok(t.trim().to_string()),
         Ok(_) => Err(ShareError::Fail(format!(
             "{what}: no token in the settings"
@@ -316,18 +460,21 @@ fn or<'a>(chosen: &'a str, settings: &'a str) -> &'a str {
     }
 }
 
-/// An access token for the Google account sending goes to.
+/// An access token for a Google account (`sub`; empty = the one marked in the settings).
 fn google_access(
     t: &dyn Transport,
     vault: &Vault,
     cfg: &Integrations,
+    sub: &str,
 ) -> Result<String, ShareError> {
     let client = google::client()
         .ok_or_else(|| ShareError::Fail("Google: not available in this build".into()))?;
-    let account = cfg
-        .google
-        .current()
-        .ok_or_else(|| ShareError::Fail("Google: no account signed in".into()))?;
+    let account = if sub.is_empty() {
+        cfg.google.current()
+    } else {
+        cfg.google.accounts.iter().find(|a| a.id == sub)
+    }
+    .ok_or_else(|| ShareError::Fail("Google: no account signed in".into()))?;
     let refresh = match vault.get_named(&google::secret_name(&account.id)) {
         Ok(Some(r)) if !r.trim().is_empty() => r,
         Ok(_) => {
@@ -356,24 +503,19 @@ pub fn check(
     id: &TargetId,
     probe: &str,
 ) -> Result<String, ShareError> {
-    use znimok_settings::Secret;
     match id {
-        TargetId::Google => google::check(t, &google_access(t, vault, cfg)?),
-        TargetId::Telegram => {
-            let token = secret(vault, Secret::TelegramBotToken, "Telegram")?;
-            telegram::check(t, &token, &cfg.telegram.chat_id, probe)
+        TargetId::Google(sub) => google::check(t, &google_access(t, vault, cfg, sub)?),
+        TargetId::Telegram(a) => {
+            let chat = account(cfg.telegram_account(a))?.chat_id.clone();
+            telegram::check(t, &token(vault, id)?, &chat, probe)
         }
-        TargetId::Jira => {
-            let token = secret(vault, Secret::JiraApiToken, "Jira")?;
-            jira::check(t, &cfg.jira, &token)
+        TargetId::Jira(a) => jira::check(t, account(cfg.jira_account(a))?, &token(vault, id)?),
+        TargetId::Slack(a) => {
+            let channel = account(cfg.slack_account(a))?.channel.clone();
+            slack::check(t, &token(vault, id)?, &channel)
         }
-        TargetId::Slack => {
-            let token = secret(vault, Secret::SlackBotToken, "Slack")?;
-            slack::check(t, &token, &cfg.slack.channel)
-        }
-        TargetId::Redmine => {
-            let key = secret(vault, Secret::RedmineApiKey, "Redmine")?;
-            redmine::check(t, &cfg.redmine, &key)
+        TargetId::Redmine(a) => {
+            redmine::check(t, account(cfg.redmine_account(a))?, &token(vault, id)?)
         }
         TargetId::Webhook(wid) => {
             let w = cfg
@@ -396,7 +538,6 @@ pub fn send(
     item: &Item,
     bytes: &[u8],
 ) -> Result<Sent, ShareError> {
-    use znimok_settings::Secret;
     let chosen;
     let item = if item.place.trim().is_empty() && needs_place(id) {
         chosen = Item {
@@ -408,23 +549,22 @@ pub fn send(
         item
     };
     match id {
-        TargetId::Google => {
-            let a = google_access(t, vault, cfg)?;
+        TargetId::Google(sub) => {
+            let a = google_access(t, vault, cfg, sub)?;
             google::send(t, &a, cfg.google.link_anyone, item, bytes)
         }
-        TargetId::Telegram => {
-            let token = secret(vault, Secret::TelegramBotToken, "Telegram")?;
+        TargetId::Telegram(a) => {
+            let acc = account(cfg.telegram_account(a))?;
             telegram::send(
                 t,
-                &token,
-                or(&item.place, &cfg.telegram.chat_id),
+                &token(vault, id)?,
+                or(&item.place, &acc.chat_id),
                 item,
                 bytes,
             )
         }
-        TargetId::Jira => {
-            let token = secret(vault, Secret::JiraApiToken, "Jira")?;
-            let mut j = cfg.jira.clone();
+        TargetId::Jira(a) => {
+            let mut j = account(cfg.jira_account(a))?.clone();
             let place = item.place.trim();
             if jira_issue_key(place) {
                 j.issue = place.to_uppercase();
@@ -432,15 +572,20 @@ pub fn send(
                 j.project = place.to_uppercase();
                 j.issue.clear();
             }
-            jira::send(t, &j, &token, item, bytes)
+            jira::send(t, &j, &token(vault, id)?, item, bytes)
         }
-        TargetId::Slack => {
-            let token = secret(vault, Secret::SlackBotToken, "Slack")?;
-            slack::send(t, &token, or(&item.place, &cfg.slack.channel), item, bytes)
+        TargetId::Slack(a) => {
+            let acc = account(cfg.slack_account(a))?;
+            slack::send(
+                t,
+                &token(vault, id)?,
+                or(&item.place, &acc.channel),
+                item,
+                bytes,
+            )
         }
-        TargetId::Redmine => {
-            let key = secret(vault, Secret::RedmineApiKey, "Redmine")?;
-            let mut r = cfg.redmine.clone();
+        TargetId::Redmine(a) => {
+            let mut r = account(cfg.redmine_account(a))?.clone();
             let place = item.place.trim();
             if let Some(n) = place.strip_prefix('#') {
                 r.issue = n.to_string();
@@ -448,7 +593,7 @@ pub fn send(
                 r.project = place.to_string();
                 r.issue.clear();
             }
-            redmine::send(t, &r, &key, item, bytes)
+            redmine::send(t, &r, &token(vault, id)?, item, bytes)
         }
         TargetId::Webhook(wid) => {
             let w = cfg
@@ -593,11 +738,11 @@ mod tests {
     #[test]
     fn target_ids_and_the_menu() {
         for id in [
-            TargetId::Google,
-            TargetId::Telegram,
-            TargetId::Jira,
-            TargetId::Slack,
-            TargetId::Redmine,
+            TargetId::Google(String::new()),
+            TargetId::Telegram(String::new()),
+            TargetId::Jira(String::new()),
+            TargetId::Slack(String::new()),
+            TargetId::Redmine(String::new()),
             TargetId::Webhook("a1".into()),
         ] {
             assert_eq!(TargetId::parse(&id.key()), Some(id));
@@ -630,11 +775,77 @@ mod tests {
                 email: email.into(),
             });
         }
-        assert_eq!(ready(&cfg)[0].1, "Google Drive · a@x.org");
-        cfg.google.active = "2".into();
-        assert_eq!(ready(&cfg)[0].1, "Google Drive · b@x.org");
-        cfg.google.active = "gone".into();
-        assert_eq!(ready(&cfg)[0].1, "Google Drive · a@x.org");
+        // ZK-280: each account is a target of its own.
+        let all = ready(&cfg);
+        assert_eq!(
+            all[0],
+            (
+                TargetId::Google("1".into()),
+                "Google Drive · a@x.org".into()
+            )
+        );
+        assert_eq!(
+            all[1],
+            (
+                TargetId::Google("2".into()),
+                "Google Drive · b@x.org".into()
+            )
+        );
+        cfg.slack.enabled = true;
+        cfg.slack.name = "Plum".into();
+        cfg.slack_more.push(znimok_settings::SlackTarget {
+            id: "c2".into(),
+            name: "Client B".into(),
+            ..Default::default()
+        });
+        cfg.slack_more.push(znimok_settings::SlackTarget {
+            id: "c3".into(),
+            ..Default::default()
+        });
+        let slack: Vec<(String, String)> = ready(&cfg)
+            .into_iter()
+            .filter(|(id, _)| id.service() == "slack")
+            .map(|(id, n)| (id.key(), n))
+            .collect();
+        assert_eq!(
+            slack,
+            [
+                ("slack".to_string(), "Slack · Plum".to_string()),
+                ("slack:c2".into(), "Slack · Client B".into()),
+                ("slack:c3".into(), "Slack 3".into()),
+            ]
+        );
+        assert_eq!(
+            TargetId::parse("slack:c2"),
+            Some(TargetId::Slack("c2".into()))
+        );
+    }
+
+    #[test]
+    fn a_job_left_by_0_0_16_is_read() {
+        // The queue keeps the target as its key now; the old form is read too.
+        for (json, key) in [
+            (r#""Telegram""#, "telegram"),
+            (r#"{"Webhook":"w1"}"#, "webhook:w1"),
+            (r#""slack:c2""#, "slack:c2"),
+        ] {
+            let id: TargetId = serde_json::from_str(json).unwrap();
+            assert_eq!(id.key(), key);
+        }
+        let back = serde_json::to_string(&TargetId::Jira("a".into())).unwrap();
+        assert_eq!(back, r#""jira:a""#);
+    }
+
+    #[test]
+    fn each_account_its_token() {
+        let v = Vault::new("znimok-test-zk280");
+        let _ = v.set_named(&account_secret_name("slack", "c2"), "xoxb-two");
+        assert_eq!(
+            token(&v, &TargetId::Slack("c2".into())).unwrap(),
+            "xoxb-two"
+        );
+        assert!(token(&v, &TargetId::Slack("c9".into())).is_err());
+        let _ = v.delete_named(&account_secret_name("slack", "c2"));
     }
 
     #[test]
@@ -672,7 +883,7 @@ mod tests {
         assert_eq!(ready(&cfg).len(), 2);
         assert!(ready_now(&cfg).is_empty());
         cfg.slack.channel = "C1".into();
-        assert_eq!(ready_now(&cfg)[0].0, TargetId::Slack);
+        assert_eq!(ready_now(&cfg)[0].0, TargetId::Slack(String::new()));
         // The place sent to last counts as well, and comes first.
         cfg.share_memory.insert(
             "telegram".into(),
@@ -685,9 +896,12 @@ mod tests {
             },
         );
         assert_eq!(ready_now(&cfg).len(), 2);
-        assert_eq!(default_place(&cfg, &TargetId::Telegram), "42");
+        assert_eq!(
+            default_place(&cfg, &TargetId::Telegram(String::new())),
+            "42"
+        );
         cfg.redmine.issue = "7".into();
-        assert_eq!(default_place(&cfg, &TargetId::Redmine), "#7");
+        assert_eq!(default_place(&cfg, &TargetId::Redmine(String::new())), "#7");
     }
 
     #[test]

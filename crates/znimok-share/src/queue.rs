@@ -226,8 +226,8 @@ mod tests {
             file_name: "a.png".into(),
             ..Default::default()
         };
-        let j1 = enqueue(&d, TargetId::Telegram, item.clone(), b"one").unwrap();
-        let j2 = enqueue(&d, TargetId::Jira, item.clone(), b"two").unwrap();
+        let j1 = enqueue(&d, TargetId::Telegram(String::new()), item.clone(), b"one").unwrap();
+        let j2 = enqueue(&d, TargetId::Jira(String::new()), item.clone(), b"two").unwrap();
         assert_eq!(pending(&d).len(), 2);
         // Sent: gone.
         let ok = |_: &TargetId, _: &Item, b: &[u8]| {
@@ -267,7 +267,7 @@ mod tests {
     #[test]
     fn retries_end() {
         let d = dir("end");
-        let mut job = enqueue(&d, TargetId::Slack, Item::default(), b"x").unwrap();
+        let mut job = enqueue(&d, TargetId::Slack(String::new()), Item::default(), b"x").unwrap();
         let busy = |_: &TargetId, _: &Item, _: &[u8]| Err(ShareError::Again("timeout".into()));
         for _ in 0..BACKOFF_S.len() {
             attempt(&d, &job, &busy);

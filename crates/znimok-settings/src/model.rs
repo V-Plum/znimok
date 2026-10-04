@@ -59,11 +59,79 @@ pub struct Integrations {
     pub jira: JiraTarget,
     pub slack: SlackTarget,
     pub redmine: RedmineTarget,
+    /// More accounts of a service (ZK-280: a freelancer's employers — another workspace, site,
+    /// bot): each a target of its own in «Share»; the fields above are the first one. Their
+    /// tokens are secrets of their own (`share-<service>-<id>`). Switched on with the first.
+    pub telegram_more: Vec<TelegramTarget>,
+    pub jira_more: Vec<JiraTarget>,
+    pub slack_more: Vec<SlackTarget>,
+    pub redmine_more: Vec<RedmineTarget>,
     pub webhooks: Vec<WebhookTarget>,
     /// The «Share» window (ZK-279): the target chosen last, and what was chosen for each target
     /// (by its key) — shown again next time, always changeable.
     pub share_last: String,
     pub share_memory: std::collections::BTreeMap<String, ShareMemory>,
+}
+
+macro_rules! accounts {
+    ($all:ident, $one:ident, $one_mut:ident, $first:ident, $more:ident, $ty:ty) => {
+        /// The service's accounts, the first one first (ZK-280).
+        pub fn $all(&self) -> impl Iterator<Item = &$ty> {
+            std::iter::once(&self.$first).chain(self.$more.iter())
+        }
+
+        /// One account by its id (empty = the first).
+        pub fn $one(&self, id: &str) -> Option<&$ty> {
+            if id.is_empty() {
+                Some(&self.$first)
+            } else {
+                self.$more.iter().find(|a| a.id == id)
+            }
+        }
+
+        pub fn $one_mut(&mut self, id: &str) -> Option<&mut $ty> {
+            if id.is_empty() {
+                Some(&mut self.$first)
+            } else {
+                self.$more.iter_mut().find(|a| a.id == id)
+            }
+        }
+    };
+}
+
+impl Integrations {
+    accounts!(
+        telegram_accounts,
+        telegram_account,
+        telegram_account_mut,
+        telegram,
+        telegram_more,
+        TelegramTarget
+    );
+    accounts!(
+        jira_accounts,
+        jira_account,
+        jira_account_mut,
+        jira,
+        jira_more,
+        JiraTarget
+    );
+    accounts!(
+        slack_accounts,
+        slack_account,
+        slack_account_mut,
+        slack,
+        slack_more,
+        SlackTarget
+    );
+    accounts!(
+        redmine_accounts,
+        redmine_account,
+        redmine_account_mut,
+        redmine,
+        redmine_more,
+        RedmineTarget
+    );
 }
 
 /// What «Share» chose for a target last (ZK-279).
@@ -133,6 +201,10 @@ pub struct GoogleAccount {
 #[serde(default)]
 pub struct TelegramTarget {
     pub enabled: bool,
+    /// The account's id (ZK-280): empty for the first one, else made once.
+    pub id: String,
+    /// The account's name in «Share» («Client A»); empty = the service's name.
+    pub name: String,
     /// A chat id (`123456789`, `-100…` for a group or channel) or `@channel`.
     pub chat_id: String,
     /// The chat's name as Telegram gave it, for the settings page.
@@ -143,6 +215,10 @@ pub struct TelegramTarget {
 #[serde(default)]
 pub struct JiraTarget {
     pub enabled: bool,
+    /// The account's id (ZK-280): empty for the first one, else made once.
+    pub id: String,
+    /// The account's name in «Share» («Client A»); empty = the service's name.
+    pub name: String,
     /// `your-site.atlassian.net` or a full URL.
     pub site: String,
     pub email: String,
@@ -158,6 +234,8 @@ impl Default for JiraTarget {
     fn default() -> Self {
         Self {
             enabled: false,
+            id: String::new(),
+            name: String::new(),
             site: String::new(),
             email: String::new(),
             project: String::new(),
@@ -171,6 +249,10 @@ impl Default for JiraTarget {
 #[serde(default)]
 pub struct SlackTarget {
     pub enabled: bool,
+    /// The account's id (ZK-280): empty for the first one, else made once.
+    pub id: String,
+    /// The account's name in «Share» («Client A»); empty = the service's name.
+    pub name: String,
     /// The channel's ID (`C0123ABCD`; Slack: channel details → the bottom of the About tab).
     pub channel: String,
 }
@@ -179,6 +261,10 @@ pub struct SlackTarget {
 #[serde(default)]
 pub struct RedmineTarget {
     pub enabled: bool,
+    /// The account's id (ZK-280): empty for the first one, else made once.
+    pub id: String,
+    /// The account's name in «Share» («Client A»); empty = the service's name.
+    pub name: String,
     /// The Redmine's address, `https://redmine.example.com`.
     pub url: String,
     /// The project of new issues (its identifier).

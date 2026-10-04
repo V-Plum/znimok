@@ -6627,3 +6627,18 @@ int-experimental-badge = Experimental
 # @kind: body
 # @max: 160
 int-experimental = Experimental: the integrations are still being built — things may change or not work yet. Tell us what goes wrong.
+
+# @where: Settings → Extensions and integrations: button, one more account of the service (another workspace, site, bot)
+# @kind: label
+# @max: 30
+int-account-add = Add an account
+
+# @where: Settings → Extensions and integrations: placeholder, the account's name shown in «Share»
+# @kind: label
+# @max: 44
+int-account-name = Name in «Share», e.g. «Client A»
+
+# @where: Settings → Extensions and integrations: button, removes this account and its token
+# @kind: label
+# @max: 16
+int-account-remove = Remove
