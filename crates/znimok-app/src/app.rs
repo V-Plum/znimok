@@ -2138,6 +2138,26 @@ impl App {
         let name = crate::integrations::target_name(&i, target);
         // Drive (ZK-260): the link goes to the clipboard, ready to paste.
         let key = match &ev {
+            // Gmail (ZK-262): the letter with the link opens; the person adds who it goes to.
+            znimok_share::queue::Event::Sent { job, sent }
+                if matches!(job.target, znimok_share::TargetId::Gmail(_)) && sent.url.is_some() =>
+            {
+                let email = i
+                    .google
+                    .accounts
+                    .iter()
+                    .find(|a| a.id == job.target.account())
+                    .map(|a| a.email.clone())
+                    .unwrap_or_default();
+                let link = sent.url.clone().unwrap_or_default();
+                crate::codes::open_url(&znimok_share::gmail_compose_url(
+                    &email,
+                    &job.item.title,
+                    &job.item.text,
+                    &link,
+                ));
+                "share-gmail-opened"
+            }
             znimok_share::queue::Event::Sent { job, sent }
                 if matches!(job.target, znimok_share::TargetId::Google(_))
                     && sent.url.as_deref().is_some_and(crate::text::copy) =>

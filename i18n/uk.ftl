@@ -3752,6 +3752,11 @@ onb-agents = Доступ для AI-агентів
 # @max: 100
 onb-agents-hint = Вимкнено. Увімкнути можна на сторінці «Агенти», коли знадобиться.
 
+# @where: Footer
+# @kind: button
+# @max: 20
+onb-skip-all = Пропустити все
+
 # @where: First-run guide, bottom left: check box, ticked by default
 # @kind: option
 # @max: 36
@@ -6685,3 +6690,8 @@ int-account-name = Назва в «Поширити», напр. «Клієнт 
 # @kind: label
 # @max: 16
 int-account-remove = Прибрати
+
+# @where: Toast: the file is in Drive and Gmail's new letter opened with its link; $target the account
+# @kind: body
+# @max: 90
+share-gmail-opened = Лист відкрито в Gmail — допишіть, кому

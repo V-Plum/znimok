@@ -3732,6 +3732,11 @@ onb-agents = Access for AI agents
 # @max: 100
 onb-agents-hint = Off. You can turn it on on the Agents page when you need it.
 
+# @where: Footer
+# @kind: button
+# @max: 20
+onb-skip-all = Skip all
+
 # @where: First-run guide, bottom left: check box, ticked by default
 # @kind: option
 # @max: 36
@@ -6637,3 +6642,8 @@ int-account-name = Name in «Share», e.g. «Client A»
 # @kind: label
 # @max: 16
 int-account-remove = Remove
+
+# @where: Toast: the file is in Drive and Gmail's new letter opened with its link; $target the account
+# @kind: body
+# @max: 90
+share-gmail-opened = The letter is open in Gmail — add who it goes to
