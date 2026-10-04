@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>Znimok — signing in</title>
+<style>
+:root{--bg:#fff;--fg:#1d1d1f;--mute:#6e6e73}
+@media (prefers-color-scheme:dark){:root{--bg:#141416;--fg:#f2f2f4;--mute:#a1a1a6}}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.5 system-ui,sans-serif;display:grid;place-items:center;min-height:100vh;padding:16px;box-sizing:border-box;text-align:center}
+p{color:var(--mute)}
+a{color:inherit}
+</style>
+</head>
+<body>
+<main>
+<h2>Back to Znimok…</h2>
+<p id="hint">If nothing happens, <a id="go" href="#">continue</a>. / Якщо нічого не відбувається, <a id="go2" href="#">продовжте</a>.</p>
+</main>
+<script>
+// Slack wants an https address to send the person back to (ZK-273); Znimok waits on this
+// computer at http://localhost:47821/callback. The code and the state go there as they came —
+// nothing is kept or sent anywhere else.
+(function () {
+  var q = location.search || "";
+  var to = "http://localhost:47821/callback" + q;
+  document.getElementById("go").href = to;
+  document.getElementById("go2").href = to;
+  if (q.indexOf("state=") >= 0) { location.replace(to); }
+})();
+</script>
+</body>
+</html>

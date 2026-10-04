@@ -173,6 +173,19 @@ pub fn begin(
     port: Option<u16>,
     path: &str,
 ) -> std::io::Result<Pending> {
+    begin_via(auth_url, params, port, path, None)
+}
+
+/// As [`begin`], but the service sends the person back to `public` — an https page that hands the
+/// code on to the port (Slack wants https for an app other workspaces may install, ZK-273); the
+/// authorization and the exchange both name `public`.
+pub fn begin_via(
+    auth_url: &str,
+    params: &[(&str, &str)],
+    port: Option<u16>,
+    path: &str,
+    public: Option<&str>,
+) -> std::io::Result<Pending> {
     let (listeners, redirect) = match port {
         Some(p) => {
             let mut l = vec![TcpListener::bind(("127.0.0.1", p))?];
@@ -187,6 +200,7 @@ pub fn begin(
             (vec![l], redirect)
         }
     };
+    let redirect = public.map(str::to_string).unwrap_or(redirect);
     let (verifier, challenge) = pkce();
     let state = b64url(uuid::Uuid::new_v4().as_bytes());
     let mut all: Vec<(&str, &str)> = params.to_vec();

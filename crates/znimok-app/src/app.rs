@@ -1593,6 +1593,9 @@ impl App {
                 id: id.account().into(),
                 name: name.into(),
                 token_set: znimok_share::token(&v, &id).is_ok(),
+                // Signed in through the browser (ZK-273), not a pasted token.
+                signed: znimok_share::token(&v, &id)
+                    .is_ok_and(|t| t.starts_with(znimok_share::slack::SIGNED_IN)),
                 a: f[0].into(),
                 b: f[1].into(),
                 c: f[2].into(),
@@ -1943,6 +1946,24 @@ impl App {
             "google-sign-in" => self.google_sign_in(),
             "slack-sign-in" => self.slack_sign_in(ui, target),
             "jira-sign-in" => self.jira_sign_in(ui, target),
+            // Out of a signed-in Slack or Atlassian account: its token goes (ZK-273).
+            "sign-out" => {
+                let Some(id) = znimok_share::TargetId::parse(target) else {
+                    return;
+                };
+                if let Err(e) = znimok_share::set_token(&znimok_settings::Vault::default(), &id, "")
+                {
+                    self.toast(ui, e);
+                }
+                self.int_state.remove(&id.key());
+                if let znimok_share::TargetId::Jira(acc) = id {
+                    self.save_prefs(ui, move |p| {
+                        if let Some(a) = p.integrations.jira_account_mut(&acc) {
+                            a.cloud_id.clear();
+                        }
+                    });
+                }
+            }
             "google-use" => {
                 let id = target.to_string();
                 self.int_state.remove("google");

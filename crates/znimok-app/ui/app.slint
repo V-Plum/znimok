@@ -76,7 +76,7 @@ export struct IntTarget { key: string, name: string }
 export struct IntGoogleAccount { id: string, email: string, active: bool }
 // A service account (ZK-280); `a`…`e` are the service's fields (Telegram: chat, its title; Jira:
 // site, e-mail, project, issue, type; Slack: channel; Redmine: address, project, issue).
-export struct IntAccount { id: string, name: string, token-set: bool, a: string, b: string, c: string, d: string, e: string, status: string, busy: bool }
+export struct IntAccount { id: string, name: string, token-set: bool, signed: bool, a: string, b: string, c: string, d: string, e: string, status: string, busy: bool }
 
 // A group title in the library grid (ZK-177): titles and card rows above it.
 export struct LibHeader {
@@ -3186,9 +3186,10 @@ export component AppWindow inherits Window {
                                             if i > 0: TextButton { text: @tr("int-account-remove" => "Remove"); clicked => { root.int-action("remove-account", "jira:" + acc.id); } }
                                         }
                                         LineEdit { text: acc.a; placeholder-text: @tr("int-jira-site" => "Site: your-team.atlassian.net"); edited(t) => { root.setting-text("int-acc:jira:site:" + acc.id, t); } }
-                                        if root.int-jira-sign-in: HorizontalLayout { alignment: start; TextButton { primary: !acc.token-set; text: @tr("int-jira-sign-in" => "Sign in to Atlassian"); enabled: !acc.busy; clicked => { root.int-action("jira-sign-in", acc.id); } } }
-                                        LineEdit { text: acc.b; placeholder-text: @tr("int-jira-email" => "E-mail"); edited(t) => { root.setting-text("int-acc:jira:email:" + acc.id, t); } }
-                                        LineEdit { input-type: password; placeholder-text: acc.token-set ? @tr("int-secret-saved" => "Saved — type a new one to replace it") : @tr("int-jira-token" => "API token"); edited(t) => { root.setting-text("int-acc:jira:token:" + acc.id, t); } }
+                                        if root.int-jira-sign-in && !acc.signed: HorizontalLayout { alignment: start; TextButton { primary: !acc.token-set; text: @tr("int-jira-sign-in" => "Sign in to Atlassian"); enabled: !acc.busy; clicked => { root.int-action("jira-sign-in", acc.id); } } }
+                                        if acc.signed: HorizontalLayout { spacing: 8px; Text { text: @tr("int-signed-in" => "Signed in: {0}", acc.name); color: Theme.accent; font-size: 12px; vertical-alignment: center; horizontal-stretch: 1; } TextButton { text: @tr("int-google-sign-out" => "Sign out"); clicked => { root.int-action("sign-out", acc.id == "" ? "jira" : "jira:" + acc.id); } } }
+                                        if !acc.signed: LineEdit { text: acc.b; placeholder-text: @tr("int-jira-email" => "E-mail"); edited(t) => { root.setting-text("int-acc:jira:email:" + acc.id, t); } }
+                                        if !acc.signed: LineEdit { input-type: password; placeholder-text: acc.token-set ? @tr("int-secret-saved" => "Saved — type a new one to replace it") : @tr("int-jira-token" => "API token"); edited(t) => { root.setting-text("int-acc:jira:token:" + acc.id, t); } }
                                         HorizontalLayout {
                                             spacing: 8px;
                                             LineEdit { horizontal-stretch: 1; text: acc.c; placeholder-text: @tr("int-jira-project" => "Project by default (optional)"); edited(t) => { root.setting-text("int-acc:jira:project:" + acc.id, t); } }
@@ -3224,8 +3225,9 @@ export component AppWindow inherits Window {
                                             LineEdit { horizontal-stretch: 1; text: acc.name; placeholder-text: @tr("int-account-name" => "Name in «Share», e.g. «Client A»"); edited(t) => { root.setting-text("int-acc:slack:name:" + acc.id, t); } }
                                             if i > 0: TextButton { text: @tr("int-account-remove" => "Remove"); clicked => { root.int-action("remove-account", "slack:" + acc.id); } }
                                         }
-                                        if root.int-slack-sign-in: HorizontalLayout { alignment: start; TextButton { primary: !acc.token-set; text: @tr("int-slack-sign-in" => "Sign in to Slack"); enabled: !acc.busy; clicked => { root.int-action("slack-sign-in", acc.id); } } }
-                                        LineEdit { input-type: password; placeholder-text: acc.token-set ? @tr("int-secret-saved" => "Saved — type a new one to replace it") : @tr("int-slack-token" => "Bot token (xoxb-…)"); edited(t) => { root.setting-text("int-acc:slack:token:" + acc.id, t); } }
+                                        if root.int-slack-sign-in && !acc.signed: HorizontalLayout { alignment: start; TextButton { primary: !acc.token-set; text: @tr("int-slack-sign-in" => "Sign in to Slack"); enabled: !acc.busy; clicked => { root.int-action("slack-sign-in", acc.id); } } }
+                                        if acc.signed: HorizontalLayout { spacing: 8px; Text { text: @tr("int-signed-in" => "Signed in: {0}", acc.name); color: Theme.accent; font-size: 12px; vertical-alignment: center; horizontal-stretch: 1; } TextButton { text: @tr("int-google-sign-out" => "Sign out"); clicked => { root.int-action("sign-out", acc.id == "" ? "slack" : "slack:" + acc.id); } } }
+                                        if !acc.signed: LineEdit { input-type: password; placeholder-text: acc.token-set ? @tr("int-secret-saved" => "Saved — type a new one to replace it") : @tr("int-slack-token" => "Bot token (xoxb-…)"); edited(t) => { root.setting-text("int-acc:slack:token:" + acc.id, t); } }
                                         LineEdit { text: acc.a; placeholder-text: @tr("int-slack-channel" => "Channel by default (optional)"); edited(t) => { root.setting-text("int-acc:slack:channel:" + acc.id, t); } }
                                         HorizontalLayout {
                                             spacing: 12px;

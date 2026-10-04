@@ -50,9 +50,13 @@ pub fn app_url() -> String {
 
 // ------------------------------------------------------------------ signing in (ZK-273)
 
-/// The address Slack sends the person back to: registered in Znimok's Slack app exactly so.
+/// Where the answer of a sign-in comes on this computer (Atlassian's registered address too).
 pub const SIGN_IN_PORT: u16 = 47821;
 pub const SIGN_IN_PATH: &str = "/callback";
+/// The address Slack sends the person back to — registered in Znimok's Slack app: Slack wants
+/// https for an app other workspaces may install, so the site's page hands the code on to
+/// `http://localhost:47821/callback` (site/oauth/slack.html).
+pub const SIGN_IN_RELAY: &str = "https://v-plum.github.io/znimok/oauth/slack.html";
 /// User scopes: a desktop sign-in with PKCE may not ask for a bot, so Znimok posts as the person —
 /// files into a channel, the channels to choose from.
 pub const USER_SCOPES: &str = "files:write,chat:write,channels:read,groups:read";
@@ -69,11 +73,12 @@ pub fn client_id() -> Option<&'static str> {
 
 /// Starts «Sign in to Slack»: the address to open, and the port waiting for the answer.
 pub fn sign_in(client_id: &str) -> std::io::Result<znimok_google::Pending> {
-    znimok_google::begin(
+    znimok_google::begin_via(
         "https://slack.com/oauth/v2/authorize",
         &[("client_id", client_id), ("user_scope", USER_SCOPES)],
         Some(SIGN_IN_PORT),
         SIGN_IN_PATH,
+        Some(SIGN_IN_RELAY),
     )
 }
 
@@ -388,7 +393,13 @@ mod tests {
     #[test]
     fn sign_in_exchange_and_refresh() {
         let p = sign_in("123.456").unwrap();
-        assert_eq!(p.redirect, "http://localhost:47821/callback");
+        // Slack sends the person to the site's https page, which hands the code on.
+        assert_eq!(p.redirect, SIGN_IN_RELAY);
+        assert!(
+            p.url.contains(
+                "redirect_uri=https%3A%2F%2Fv-plum.github.io%2Fznimok%2Foauth%2Fslack.html"
+            )
+        );
         assert!(p.url.contains("user_scope=files%3Awrite%2Cchat%3Awrite"));
         assert!(!p.url.contains("client_secret"));
         drop(p);
