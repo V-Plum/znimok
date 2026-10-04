@@ -141,6 +141,9 @@ macro_rules! on {
     }};
 }
 
+/// The UI's GPU as «name (backend)» (ZK-284); unset when Slint chose the device itself.
+pub static GPU_ADAPTER: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+
 /// The wgpu device for Slint, made the way Slint would (the adapter from WGPU_ADAPTER_NAME or the
 /// first one of the chosen backends) but with the adapter's own limits and, where the adapter has
 /// them, NV12 textures — the video player's compute pass and zero-copy path (ZK-92).
@@ -164,6 +167,17 @@ fn manual_wgpu(s: &slint::wgpu_30::WGPUSettings) -> Option<slint::wgpu_30::WGPUC
             .ok()
         })?;
     let nv12 = adapter.features() & wgpu::Features::TEXTURE_FORMAT_NV12;
+    // Which GPU draws and plays video (ZK-284): in the log, and on the About page for bug reports.
+    let info = adapter.get_info();
+    let gpu = format!("{} ({:?})", info.name, info.backend);
+    tracing::info!(
+        vendor = info.vendor,
+        device = info.device,
+        driver = %info.driver_info,
+        nv12 = !nv12.is_empty(),
+        "wgpu: {gpu}"
+    );
+    let _ = GPU_ADAPTER.set(gpu);
     let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
         label: Some("znimok"),
         required_features: s.device_required_features | nv12,
@@ -172,7 +186,7 @@ fn manual_wgpu(s: &slint::wgpu_30::WGPUSettings) -> Option<slint::wgpu_30::WGPUC
         memory_hints: s.device_memory_hints.clone(),
         trace: wgpu::Trace::default(),
     }))
-    .map_err(|e| eprintln!("wgpu: own device failed ({e}); Slint chooses"))
+    .map_err(|e| tracing::warn!("wgpu: own device failed ({e}); Slint chooses"))
     .ok()?;
     // wgpu's answer to an error nobody caught is a panic — and `Surface::configure` fails on
     // DX12 when the GPU will not go idle for a resize (ZK-249: a crash after an hour of work).

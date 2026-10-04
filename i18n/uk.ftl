@@ -3578,6 +3578,11 @@ about-copied = Версію скопійовано
 # @max: 60
 about-build = збірка { $commit } · { $platform }
 
+# @where: About page, under the version: the GPU that draws the window and plays video; $gpu like «Intel(R) UHD Graphics 630 (Dx12)»
+# @kind: value
+# @max: 80
+about-gpu = Відеокарта: { $gpu }
+
 # @where: About page: a build made on a developer's machine, not by the release pipeline
 # @kind: value
 # @max: 20

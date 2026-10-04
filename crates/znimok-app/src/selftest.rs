@@ -1,8 +1,8 @@
 //! Scripted self-test: `ZNIMOK_SELFTEST=<dir> znimok-app <image>` drives the real window
 //! through the same handlers the UI calls (pointer, keys, text, save, library, export), takes
 //! window snapshots into `<dir>` and writes `report.txt`. Exit code 0 = every check passed.
-//! Needs no desktop session and no synthetic input, so it runs over an idle RDP connection and
-//! in CI.
+//! Needs no desktop session and no synthetic input, so it runs over an idle RDP connection. Not
+//! run by CI yet: before a release, by hand on the release build (docs/RELEASE.md, ZK-285).
 
 use std::cell::RefCell;
 use std::path::PathBuf;
@@ -5274,6 +5274,16 @@ pub fn start(app: Shared, ui: &AppWindow, dir: PathBuf, image: Option<PathBuf>) 
             "about: the version and the build are shown",
             version.contains(env!("CARGO_PKG_VERSION")) && build.contains(std::env::consts::ARCH),
             format!("{version} · {build}"),
+        );
+        // ZK-284: the GPU that draws, for bug reports (when Znimok made the device itself).
+        let gpu = ui.get_pref_gpu();
+        r.check(
+            "about: the GPU is shown when known",
+            match crate::GPU_ADAPTER.get() {
+                Some(name) => gpu.contains(name.as_str()),
+                None => gpu.is_empty(),
+            },
+            gpu.to_string(),
         );
         ui.invoke_setting("close".into(), 0);
     }));

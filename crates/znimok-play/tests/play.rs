@@ -8,7 +8,7 @@
 
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
-use std::sync::mpsc;
+use std::sync::{Mutex, mpsc};
 use std::time::Duration;
 
 use znimok_play::{Converter, Event, Gpu, Player, Source, Thumbs};
@@ -27,6 +27,18 @@ const W: u32 = 640;
 const H: u32 = 360;
 const SECONDS: f64 = 3.0;
 
+/// The tests one at a time: one of them makes the zero-copy step fail for the whole process.
+static ONE_AT_A_TIME: Mutex<()> = Mutex::new(());
+
+/// A test that cannot run on this machine says so and passes — except on CI, where
+/// `ZNIMOK_REQUIRE_GPU` is set: a runner that lost its GPU or encoder must not stay green (ZK-285).
+fn skipped(why: impl std::fmt::Display) {
+    if std::env::var_os("ZNIMOK_REQUIRE_GPU").is_some() {
+        panic!("ZNIMOK_REQUIRE_GPU is set, but: {why}");
+    }
+    eprintln!("skipped: {why}");
+}
+
 /// Records the synthetic source; None when this machine cannot.
 fn record(dir: &Path) -> Option<PathBuf> {
     record_clip(dir, W, H, FPS, SECONDS)
@@ -35,16 +47,8 @@ fn record(dir: &Path) -> Option<PathBuf> {
 /// Records the synthetic source at any size; None when this machine cannot.
 fn record_clip(dir: &Path, w: u32, h: u32, fps: u32, seconds: f64) -> Option<PathBuf> {
     znimok_video_win::mf::startup().unwrap();
-    let gpu = Rc::new(
-        RecGpu::new(None)
-            .map_err(|e| eprintln!("skipped: {e}"))
-            .ok()?,
-    );
-    let bridge = Rc::new(
-        Bridge::new(&gpu)
-            .map_err(|e| eprintln!("skipped: {e}"))
-            .ok()?,
-    );
+    let gpu = Rc::new(RecGpu::new(None).map_err(skipped).ok()?);
+    let bridge = Rc::new(Bridge::new(&gpu).map_err(skipped).ok()?);
     let pool = FramePool::new(gpu.clone(), bridge.clone(), w, h, PoolFormat::Bgra8).ok()?;
     let src = SyntheticSource::new(pool.clone(), w, h, 1.0).ok()?;
     let clock = ManualClock::new();
@@ -68,7 +72,7 @@ fn record_clip(dir: &Path, w: u32, h: u32, fps: u32, seconds: f64) -> Option<Pat
         },
         ctl.clone(),
     )
-    .map_err(|e| eprintln!("skipped (no encoder): {e}"))
+    .map_err(|e| skipped(format!("no encoder: {e}")))
     .ok()?;
     let start = clock.ticks();
     let f = clock.frequency();
@@ -209,12 +213,13 @@ impl Rig {
 
 #[test]
 fn plays_a_recording_on_the_gpu() {
+    let _one = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
     let dir = std::env::temp_dir().join(format!("znimok-play-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     let Some(mp4) = record(&dir) else { return };
     let Some(gpu) = device(true) else {
-        eprintln!("skipped: no wgpu device");
+        skipped("no wgpu device");
         return;
     };
     let frames = (SECONDS * f64::from(FPS)) as i64;
@@ -336,17 +341,43 @@ fn plays_a_recording_on_the_gpu() {
 /// A device without NV12 textures: the planes go through CPU memory, the same shader converts.
 #[test]
 fn plays_through_the_upload_path() {
+    let _one = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
     let dir = std::env::temp_dir().join(format!("znimok-play-up-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     let Some(mp4) = record(&dir) else { return };
     let Some(gpu) = device(false) else {
-        eprintln!("skipped: no wgpu device");
+        skipped("no wgpu device");
         return;
     };
     let r = open(&gpu, Source::File(mp4), (SECONDS * f64::from(FPS)) as i64);
     for f in [0, 61, 12] {
         assert_eq!(r.seek(f), (f, Some(f as u32)), "upload path, frame {f}");
+    }
+    drop(r);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn a_failing_zero_copy_goes_on_through_the_upload_path() {
+    let _one = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
+    let dir = std::env::temp_dir().join(format!("znimok-play-fall-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let Some(mp4) = record(&dir) else { return };
+    let Some(gpu) = device(true) else {
+        skipped("no wgpu device");
+        return;
+    };
+    let r = open(&gpu, Source::File(mp4), (SECONDS * f64::from(FPS)) as i64);
+    assert_eq!(r.seek(0), (0, Some(0)), "before the failure");
+    // A driver's shared texture or fence gives up mid-play (ZK-283): the next frames come
+    // through CPU memory, exact as before, and the player never stops on its own.
+    znimok_play::fail_zero_copy_for_test(true);
+    let after: Vec<_> = [61, 12, 30].iter().map(|&f| r.seek(f)).collect();
+    znimok_play::fail_zero_copy_for_test(false);
+    for (f, got) in [61, 12, 30].iter().zip(after) {
+        assert_eq!(got, (*f, Some(*f as u32)), "after the failure, frame {f}");
     }
     drop(r);
     let _ = std::fs::remove_dir_all(&dir);
@@ -375,6 +406,7 @@ fn cpu_time() -> Duration {
 #[test]
 #[ignore]
 fn bench_4k() {
+    let _one = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
     let dir = std::env::temp_dir().join(format!("znimok-play-4k-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();

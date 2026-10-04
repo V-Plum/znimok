@@ -1499,6 +1499,13 @@ impl App {
                 .into(),
         );
         ui.set_pref_build(about_build(&self.tr).into());
+        ui.set_pref_gpu(
+            crate::GPU_ADAPTER
+                .get()
+                .map(|g| self.tr.tr_args("about-gpu", &args(&[("gpu", g.clone())])))
+                .unwrap_or_default()
+                .into(),
+        );
         self.int_sync(ui, &p);
     }
 
@@ -2918,11 +2925,14 @@ impl App {
                 }
             }
             "about-copy" => {
-                let text = format!(
+                let mut text = format!(
                     "Znimok {} ({})",
                     env!("CARGO_PKG_VERSION"),
                     about_build(&self.tr)
                 );
+                if let Some(gpu) = crate::GPU_ADAPTER.get() {
+                    text.push_str(&format!("\nGPU: {gpu}"));
+                }
                 let _ = arboard::Clipboard::new().and_then(|mut cb| cb.set_text(text));
                 let done = self.tr.tr("about-copied");
                 self.toast(ui, done);
@@ -10032,6 +10042,17 @@ impl App {
         self.vexp_run = None;
         self.vexp_timer = None;
         let fmt = p.name().to_string();
+        match &r {
+            // Hardware or software encoder, or copied as is (ZK-284).
+            Ok((o, _)) => tracing::info!(
+                format = %fmt,
+                frames = o.frames,
+                hardware = o.hardware,
+                copied = o.copied,
+                "export done"
+            ),
+            Err(e) => tracing::warn!(format = %fmt, "export failed: {e}"),
+        }
         // Made for «Send to» (ZK-101): the file goes to the queue, not to the clipboard.
         if let (Some(job), Ok((_, path))) = (self.vexp_share.take(), &r) {
             let ext = path
@@ -11886,11 +11907,19 @@ impl App {
         };
         match e {
             znimok_play::Event::Opened(info) => {
+                // gpu / upload / software (ZK-284): how this machine plays video, for bug reports.
+                tracing::info!(
+                    path = info.path,
+                    "player: {}×{} at {} fps",
+                    info.width,
+                    info.height,
+                    info.fps
+                );
                 v.path = Some(info.path);
                 self.sync_video(ui);
             }
             znimok_play::Event::Failed(err) => {
-                eprintln!("player: {err}");
+                tracing::warn!("player: {err}");
                 v.player = None;
                 v.shown = None;
                 v.player_error = Some(err);

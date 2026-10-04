@@ -32,6 +32,10 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 pub use convert::{Converter, Gpu};
+/// For tests: makes the zero-copy step fail, to see the player go on through CPU memory.
+#[cfg(windows)]
+#[doc(hidden)]
+pub use win::fail_zero_copy_for_test;
 use znimok_core::Raster;
 use znimok_video::edit::VideoEdit;
 
@@ -165,6 +169,9 @@ pub(crate) trait Decoder {
         thumb: bool,
     ) -> Result<wgpu::SubmissionIndex, String>;
 }
+
+/// How many failures in a row, without a frame between them, stop the player for good.
+const FAILS_IN_A_ROW: u32 = 2;
 
 fn open_decoder(gpu: &Gpu, source: &Source) -> Result<Box<dyn Decoder>, String> {
     #[cfg(windows)]
@@ -517,6 +524,9 @@ impl Engine {
         let mut due = Instant::now();
         // The frame playback stands on (the last one shown).
         let mut pos: i64 = 0;
+        // Failures since the last frame shown: one may be a bad frame, the same again means the
+        // video cannot be shown here — the UI is told instead of keeping the last frame (ZK-283).
+        let mut errors = 0u32;
         loop {
             // Commands: all that wait. Idle: wait for one, or send the paused frame's CPU copy.
             let busy = playing || want.is_some();
@@ -592,12 +602,18 @@ impl Engine {
                 match got {
                     Ok(Some(i)) => {
                         pos = f;
+                        errors = 0;
                         self.deliver(i, f, playing, on_event);
                     }
                     Ok(None) => playing = false,
                     Err(e) => {
-                        eprintln!("player: {e}");
+                        tracing::warn!("player: {e}");
                         playing = false;
+                        errors += 1;
+                        if errors >= FAILS_IN_A_ROW {
+                            on_event(Event::Failed(e));
+                            return;
+                        }
                     }
                 }
                 if playing {
@@ -660,13 +676,19 @@ impl Engine {
             match got {
                 Ok(Some(i)) => {
                     pos = next;
+                    errors = 0;
                     self.deliver(i, next, true, on_event);
                     due += step;
                 }
                 Ok(None) => playing = false,
                 Err(e) => {
-                    eprintln!("player: {e}");
+                    tracing::warn!("player: {e}");
                     playing = false;
+                    errors += 1;
+                    if errors >= FAILS_IN_A_ROW {
+                        on_event(Event::Failed(e));
+                        return;
+                    }
                 }
             }
         }
@@ -682,7 +704,7 @@ impl Engine {
                 frame: f,
                 raster: Arc::new(Raster::new(tex.width(), tex.height(), rgba)),
             }),
-            Err(e) => eprintln!("player: readback: {e}"),
+            Err(e) => tracing::warn!("player: readback: {e}"),
         }
     }
 }
@@ -793,14 +815,14 @@ impl Thumbs {
                 let mut dec = match open_decoder(&gpu, &source) {
                     Ok(d) => d,
                     Err(e) => {
-                        eprintln!("thumbnails: {e}");
+                        tracing::warn!("thumbnails: {e}");
                         return;
                     }
                 };
                 let mut conv = match Converter::new(&gpu) {
                     Ok(c) => c,
                     Err(e) => {
-                        eprintln!("thumbnails: {e}");
+                        tracing::warn!("thumbnails: {e}");
                         return;
                     }
                 };
@@ -818,18 +840,18 @@ impl Thumbs {
                         Ok(Some(_)) => {}
                         Ok(None) => continue,
                         Err(e) => {
-                            eprintln!("thumbnails: {e}");
+                            tracing::warn!("thumbnails: {e}");
                             return;
                         }
                     }
                     if let Err(e) = dec.convert(&conv, &out, true) {
-                        eprintln!("thumbnails: {e}");
+                        tracing::warn!("thumbnails: {e}");
                         return;
                     }
                     match conv.read(&out) {
                         Ok(px) => on_thumb(f, Raster::new(tw, th, px)),
                         Err(e) => {
-                            eprintln!("thumbnails: {e}");
+                            tracing::warn!("thumbnails: {e}");
                             return;
                         }
                     }

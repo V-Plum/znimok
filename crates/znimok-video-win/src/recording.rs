@@ -265,6 +265,14 @@ fn run(
     if let Some(q) = req.events.take() {
         rec = rec.with_events(q);
     }
+    // What records (ZK-284): the capture API, the GPU and the encoder go to the log.
+    tracing::info!(
+        api,
+        gpu = %gpu.name,
+        encoder = %encoder,
+        hardware,
+        "recording: {w}×{h}"
+    );
     let _ = tx.send(Ok(Started {
         api,
         gpu: gpu.name.clone(),

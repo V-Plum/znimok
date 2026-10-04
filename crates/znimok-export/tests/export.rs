@@ -27,6 +27,15 @@ use znimok_video_win::source::{FramePool, PoolFormat, Source as RecSource};
 use znimok_video_win::synthetic::{SyntheticSource, read_index};
 
 const FPS: u32 = 30;
+
+/// A test that cannot run on this machine says so and passes — except on CI, where
+/// `ZNIMOK_REQUIRE_GPU` is set: a runner that lost its GPU or encoder must not stay green (ZK-285).
+fn skipped(why: impl std::fmt::Display) {
+    if std::env::var_os("ZNIMOK_REQUIRE_GPU").is_some() {
+        panic!("ZNIMOK_REQUIRE_GPU is set, but: {why}");
+    }
+    eprintln!("skipped: {why}");
+}
 const W: u32 = 640;
 const H: u32 = 360;
 const SECONDS: f64 = 3.0;
@@ -38,16 +47,8 @@ fn record(dir: &Path) -> Option<PathBuf> {
 /// The synthetic recording, with a synthetic tone as its audio track when `audio`.
 fn record_with(dir: &Path, audio: bool) -> Option<PathBuf> {
     znimok_video_win::mf::startup().unwrap();
-    let gpu = Rc::new(
-        RecGpu::new(None)
-            .map_err(|e| eprintln!("skipped: {e}"))
-            .ok()?,
-    );
-    let bridge = Rc::new(
-        Bridge::new(&gpu)
-            .map_err(|e| eprintln!("skipped: {e}"))
-            .ok()?,
-    );
+    let gpu = Rc::new(RecGpu::new(None).map_err(skipped).ok()?);
+    let bridge = Rc::new(Bridge::new(&gpu).map_err(skipped).ok()?);
     let pool = FramePool::new(gpu.clone(), bridge.clone(), W, H, PoolFormat::Bgra8).ok()?;
     let src = SyntheticSource::new(pool.clone(), W, H, 1.0).ok()?;
     let clock = ManualClock::new();
@@ -80,7 +81,7 @@ fn record_with(dir: &Path, audio: bool) -> Option<PathBuf> {
         },
         ctl.clone(),
     )
-    .map_err(|e| eprintln!("skipped (no encoder): {e}"))
+    .map_err(|e| skipped(format!("no encoder: {e}")))
     .ok()?;
     let start = clock.ticks();
     let f = clock.frequency();
@@ -123,7 +124,7 @@ fn exports_cut_marked_framed_and_as_gif() {
     let gpu = match znimok_play::headless_gpu() {
         Ok(g) => g,
         Err(e) => {
-            eprintln!("skipped: {e}");
+            skipped(e);
             return;
         }
     };

@@ -504,7 +504,7 @@ impl Decoder for AvPlayer {
             match self.convert_zero(conv, out, thumb) {
                 Ok(d) => return Ok(d),
                 Err(e) => {
-                    eprintln!("player: {e}; uploading the planes from now on");
+                    tracing::warn!("player: {e}; uploading the planes from now on");
                     self.cache = None;
                     self.path = "upload";
                 }

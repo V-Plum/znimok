@@ -551,7 +551,7 @@ impl MfSink {
                     },
                     // No video processor on this device: RGB32 to the writer, its converter.
                     Err(e) => {
-                        eprintln!("без відеопроцесора D3D11 ({e}): RGB32 у кодувальник");
+                        tracing::warn!("no D3D11 video processor ({e}): RGB32 into the encoder");
                         let (_, inp) = video_types(cfg, Input::Rgb32Memory)?;
                         writer
                             .SetInputMediaType(video, &inp, &ep)
@@ -614,7 +614,7 @@ impl MfSink {
                 Err(e) => {
                     // A half-opened writer may have created the file: start over.
                     let _ = std::fs::remove_file(path);
-                    eprintln!("апаратний кодувальник недоступний ({e}); програмний");
+                    tracing::warn!("no hardware encoder ({e}); the software one");
                 }
             }
         }
