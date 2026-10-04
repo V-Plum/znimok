@@ -6665,3 +6665,13 @@ share-comment = Коментар (необов'язково)
 # @kind: label
 # @max: 16
 share-send = Надіслати
+
+# @where: Settings → Extensions and integrations: the label at the top, the integrations are experimental
+# @kind: label
+# @max: 30
+int-experimental-badge = Експериментальна функція
+
+# @where: Settings → Extensions and integrations: the note at the top, the integrations are experimental
+# @kind: body
+# @max: 160
+int-experimental = Інтеграції ще в роботі — щось може змінитися або поки не працювати. Розкажіть, що пішло не так.

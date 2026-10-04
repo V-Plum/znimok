@@ -3032,6 +3032,21 @@ export component AppWindow inherits Window {
                             // ---- Extensions and integrations (ZK-101)
                             if root.settings-page == 11: VerticalLayout {
                                 spacing: 14px;
+                                // The owner, 04.10: the integrations are marked experimental.
+                                Rectangle {
+                                    border-radius: 10px;
+                                    background: Theme.attention.transparentize(0.85);
+                                    border-width: 1px;
+                                    border-color: Theme.attention.transparentize(0.5);
+                                    height: exp-note.preferred-height;
+                                    exp-note := HorizontalLayout {
+                                        padding: 10px;
+                                        padding-left: 12px;
+                                        spacing: 10px;
+                                        Text { text: @tr("int-experimental-badge" => "Experimental"); color: Theme.attention; font-size: 12px; font-weight: 700; vertical-alignment: center; }
+                                        Text { text: @tr("int-experimental" => "Experimental: the integrations are still being built — things may change or not work yet. Tell us what goes wrong."); color: Theme.text2; font-size: 12px; wrap: word-wrap; horizontal-stretch: 1; vertical-alignment: center; }
+                                    }
+                                }
                                 Text { text: @tr("int-intro" => "Znimok in the browser and on Logitech devices, and where «Send to» delivers a screenshot, a recording or a report. Tokens and keys stay in the system's secret store."); color: Theme.text3; font-size: 12px; wrap: word-wrap; }
                                 // Extensions
                                 Text { text: @tr("int-extensions" => "Extensions"); color: Theme.text; font-size: 14px; font-weight: 700; }

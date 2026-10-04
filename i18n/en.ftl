@@ -6617,3 +6617,13 @@ share-comment = Comment (optional)
 # @kind: label
 # @max: 16
 share-send = Send
+
+# @where: Settings → Extensions and integrations: the label at the top, the integrations are experimental
+# @kind: label
+# @max: 30
+int-experimental-badge = Experimental
+
+# @where: Settings → Extensions and integrations: the note at the top, the integrations are experimental
+# @kind: body
+# @max: 160
+int-experimental = Experimental: the integrations are still being built — things may change or not work yet. Tell us what goes wrong.
