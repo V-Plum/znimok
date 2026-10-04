@@ -21,6 +21,7 @@ use std::ffi::c_void;
 use std::io::{BufReader, Read, Seek, SeekFrom};
 use std::sync::Mutex;
 use std::sync::OnceLock;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use wgpu::hal::api::Dx12;
 use windows::Win32::Foundation::{
@@ -554,6 +555,9 @@ impl MfPlayer {
         out: &wgpu::Texture,
         thumb: bool,
     ) -> Result<wgpu::SubmissionIndex, String> {
+        if FAIL_ZERO_COPY.load(Ordering::Relaxed) {
+            return Err("zero-copy failed (forced by a test)".into());
+        }
         let sample = self.sample.as_ref().ok_or("no frame")?;
         let (w, h) = (self.width, self.height);
         // SAFETY: MF / D3D11 calls on the decoder's sample and our own textures.
@@ -664,6 +668,13 @@ impl MfPlayer {
     }
 }
 
+/// For tests: the zero-copy step fails, as a driver's shared texture or fence might (ZK-283).
+static FAIL_ZERO_COPY: AtomicBool = AtomicBool::new(false);
+
+pub fn fail_zero_copy_for_test(on: bool) {
+    FAIL_ZERO_COPY.store(on, Ordering::Relaxed);
+}
+
 impl Decoder for MfPlayer {
     fn size(&self) -> (u32, u32) {
         (self.width, self.height)
@@ -744,10 +755,18 @@ impl Decoder for MfPlayer {
         out: &wgpu::Texture,
         thumb: bool,
     ) -> Result<wgpu::SubmissionIndex, String> {
+        // As on macOS: a zero-copy step that fails mid-play (the shared texture, the copy, the
+        // fence) leaves that path for good and the planes go through CPU memory (ZK-283).
         if self.zero {
-            self.convert_zero(conv, out, thumb)
-        } else {
-            self.convert_upload(conv, out, thumb)
+            match self.convert_zero(conv, out, thumb) {
+                Ok(d) => return Ok(d),
+                Err(e) => {
+                    eprintln!("player: {e}; uploading the planes from now on");
+                    self.zero = false;
+                    self.path = "upload";
+                }
+            }
         }
+        self.convert_upload(conv, out, thumb)
     }
 }
