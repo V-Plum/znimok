@@ -145,6 +145,13 @@ fn the_integrations_page_scrolls_to_its_end() {
         })
         .collect();
     ui.set_int_webhooks(std::rc::Rc::new(slint::VecModel::from(hooks)).into());
+    let one = || -> slint::ModelRc<crate::IntAccount> {
+        std::rc::Rc::new(slint::VecModel::from(vec![crate::IntAccount::default()])).into()
+    };
+    ui.set_int_tg_accounts(one());
+    ui.set_int_jira_accounts(one());
+    ui.set_int_slack_accounts(one());
+    ui.set_int_rm_accounts(one());
     settle();
     ui.invoke_settings_scroll_end();
     settle();
@@ -213,5 +220,62 @@ fn the_share_window_picks_a_service_and_a_place() {
     assert_eq!(
         *seen.borrow(),
         ["place:C2", "target:google", "what:document", "send:"]
+    );
+}
+
+/// ZK-280: a service with two accounts — the name of each, «Remove» on the added one only, and
+/// the buttons say which account.
+#[test]
+fn a_service_with_two_accounts() {
+    let ui = window();
+    // Tall enough for the whole page: what is scrolled away is not in the tree.
+    ui.window()
+        .set_size(slint::LogicalSize::new(1360.0, 2400.0));
+    ui.set_page(2);
+    ui.set_settings_page(11);
+    ui.set_int_slack_enabled(true);
+    ui.set_int_slack_token_set(true);
+    let accounts = vec![
+        crate::IntAccount {
+            name: "Plum".into(),
+            token_set: true,
+            ..Default::default()
+        },
+        crate::IntAccount {
+            id: "c2".into(),
+            name: "Client B".into(),
+            ..Default::default()
+        },
+    ];
+    ui.set_int_slack_accounts(std::rc::Rc::new(slint::VecModel::from(accounts)).into());
+    settle();
+    let seen = Rc::new(RefCell::new(Vec::new()));
+    {
+        let seen = seen.clone();
+        ui.on_int_action(move |a, b| seen.borrow_mut().push(format!("{a}:{b}")));
+    }
+    // A button is in the tree twice (the button and its label's text): the buttons only.
+    let button = |e: &ElementHandle| e.accessible_role() == Some(AccessibleRole::Button);
+    let removes: Vec<ElementHandle> = ElementHandle::find_by_accessible_label(&ui, "Remove")
+        .filter(|e| reachable(e) && button(e))
+        .collect();
+    assert_eq!(removes.len(), 1, "«Remove» only on the added account");
+    removes[0].mock_single_click(PointerEventButton::Left);
+    by_label(&ui, "Add an account").mock_single_click(PointerEventButton::Left);
+    let checks: Vec<ElementHandle> = ElementHandle::find_by_accessible_label(&ui, "Check")
+        .filter(|e| reachable(e) && button(e))
+        .collect();
+    for c in &checks {
+        c.mock_single_click(PointerEventButton::Left);
+    }
+    let seen = seen.borrow().clone();
+    assert!(
+        seen.contains(&"remove-account:slack:c2".to_string()),
+        "{seen:?}"
+    );
+    assert!(seen.contains(&"add-account:slack".to_string()), "{seen:?}");
+    assert!(
+        seen.contains(&"check:slack".to_string()) && seen.contains(&"check:slack:c2".to_string()),
+        "{seen:?}"
     );
 }

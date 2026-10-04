@@ -182,6 +182,7 @@ mod tests {
             url: "https://rm.example.com/".into(),
             project: "web".into(),
             issue: issue.into(),
+            ..Default::default()
         }
     }
 
