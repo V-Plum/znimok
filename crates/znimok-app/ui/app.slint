@@ -2342,6 +2342,8 @@ export component AppWindow inherits Window {
     in property <string> pref-version;
     // The commit and the platform on the About page (ZK-198).
     in property <string> pref-build;
+    // «Graphics: Intel(R) UHD Graphics 630 (Dx12)» (ZK-284); empty when unknown.
+    in property <string> pref-gpu;
     // Start at login (ZK-57 / ZK-77) and the first-run guide.
     in property <bool> pref-autostart;
     in property <bool> pref-autostart-ok: true;
@@ -3559,6 +3561,7 @@ export component AppWindow inherits Window {
                                             Text { text: root.pref-build; color: Theme.text3; font-family: "JetBrains Mono"; font-size: 11px; vertical-alignment: center; }
                                             TextButton { text: @tr("about-copy-version" => "Copy"); clicked => { root.setting("about-copy", 0); } }
                                         }
+                                        if root.pref-gpu != "": Text { text: root.pref-gpu; color: Theme.text3; font-family: "JetBrains Mono"; font-size: 11px; wrap: word-wrap; }
                                     }
                                 }
                                 Rectangle { height: 1px; background: Theme.line; }

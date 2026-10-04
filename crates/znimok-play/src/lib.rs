@@ -607,7 +607,7 @@ impl Engine {
                     }
                     Ok(None) => playing = false,
                     Err(e) => {
-                        eprintln!("player: {e}");
+                        tracing::warn!("player: {e}");
                         playing = false;
                         errors += 1;
                         if errors >= FAILS_IN_A_ROW {
@@ -682,7 +682,7 @@ impl Engine {
                 }
                 Ok(None) => playing = false,
                 Err(e) => {
-                    eprintln!("player: {e}");
+                    tracing::warn!("player: {e}");
                     playing = false;
                     errors += 1;
                     if errors >= FAILS_IN_A_ROW {
@@ -704,7 +704,7 @@ impl Engine {
                 frame: f,
                 raster: Arc::new(Raster::new(tex.width(), tex.height(), rgba)),
             }),
-            Err(e) => eprintln!("player: readback: {e}"),
+            Err(e) => tracing::warn!("player: readback: {e}"),
         }
     }
 }
@@ -815,14 +815,14 @@ impl Thumbs {
                 let mut dec = match open_decoder(&gpu, &source) {
                     Ok(d) => d,
                     Err(e) => {
-                        eprintln!("thumbnails: {e}");
+                        tracing::warn!("thumbnails: {e}");
                         return;
                     }
                 };
                 let mut conv = match Converter::new(&gpu) {
                     Ok(c) => c,
                     Err(e) => {
-                        eprintln!("thumbnails: {e}");
+                        tracing::warn!("thumbnails: {e}");
                         return;
                     }
                 };
@@ -840,18 +840,18 @@ impl Thumbs {
                         Ok(Some(_)) => {}
                         Ok(None) => continue,
                         Err(e) => {
-                            eprintln!("thumbnails: {e}");
+                            tracing::warn!("thumbnails: {e}");
                             return;
                         }
                     }
                     if let Err(e) = dec.convert(&conv, &out, true) {
-                        eprintln!("thumbnails: {e}");
+                        tracing::warn!("thumbnails: {e}");
                         return;
                     }
                     match conv.read(&out) {
                         Ok(px) => on_thumb(f, Raster::new(tw, th, px)),
                         Err(e) => {
-                            eprintln!("thumbnails: {e}");
+                            tracing::warn!("thumbnails: {e}");
                             return;
                         }
                     }

@@ -435,7 +435,7 @@ impl MfPlayer {
         let bridge = match Bridge::new(gpu) {
             Ok(b) => Some(b),
             Err(err) => {
-                eprintln!("player: no D3D11 decoding ({err}); software decoder");
+                tracing::warn!("player: no D3D11 decoding ({err}); software decoder");
                 None
             }
         };
