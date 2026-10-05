@@ -72,9 +72,14 @@ impl RecordRequest {
 }
 
 /// What the recording is made of, known once it started.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Started {
+    /// The video.
     pub size: (u32, u32),
+    /// What ScreenCaptureKit was asked for: the content's own pixels (ZK-295).
+    pub capture: (u32, u32),
+    /// The first frame as it came (None: the recording started before one did).
+    pub first: Option<crate::source::FrameFacts>,
     pub bitrate: u32,
     pub keyframe_interval: u32,
     pub audio_tracks: usize,
@@ -185,11 +190,22 @@ impl SCStreamDelegateTrait for Watch {
     }
 }
 
-/// Even sides within what H.264 takes everywhere (4096 × 2304 — a 5K display is scaled down).
+/// The video's size for content of `w` × `h` pixels: even sides within what H.264 takes
+/// everywhere (4096 × 2304 — a 5K display, or a MacBook's «More Space» mode, is scaled down).
 fn out_size(w: f64, h: f64) -> (u32, u32) {
     let k = (4096.0 / w).min(2304.0 / h).min(1.0);
     let even = |v: f64| ((v * k / 2.0).round() as u32 * 2).max(64);
     (even(w), even(h))
+}
+
+/// What ScreenCaptureKit is asked for: the content's own pixels, to the pixel. Never the
+/// video's size when that is smaller (ZK-295): asked to scale a display down to the encoder's
+/// limit, macOS 27 drew it at half the size in a corner of the frame (and scalesToFit with the
+/// best resolution changed nothing) — the writer scales instead, as it does any frame that is
+/// not the video's size.
+fn capture_size(w: f64, h: f64) -> (u32, u32) {
+    let side = |v: f64| (v.round() as u32).clamp(2, 16_384);
+    (side(w), side(h))
 }
 
 fn screen_error(e: impl std::fmt::Display) -> VideoError {
@@ -242,7 +258,9 @@ fn run(
                 Err(e) => return fail(screen_error(e), &tx),
             };
             let f = d.frame();
-            let scale = SCShareableContentInfo::for_filter(&filter)
+            let info = SCShareableContentInfo::for_filter(&filter);
+            let scale = info
+                .as_ref()
                 .map(|i| f64::from(i.point_pixel_scale()))
                 .filter(|s| *s > 0.0)
                 .unwrap_or(2.0);
@@ -258,9 +276,13 @@ fn run(
                         },
                     }),
                 ),
-                None => (f.size.width * scale, f.size.height * scale, None),
+                // The whole display: its pixels as the system counts them.
+                None => match info.as_ref().map(|i| i.pixel_size()) {
+                    Some((pw, ph)) if pw > 0 && ph > 0 => (f64::from(pw), f64::from(ph), None),
+                    _ => (f.size.width * scale, f.size.height * scale, None),
+                },
             };
-            (filter, out_size(pw, ph), rect)
+            (filter, capture_size(pw, ph), out_size(pw, ph), rect)
         }
         Target::Window { id } => {
             let windows = content.windows();
@@ -277,15 +299,16 @@ fn run(
                     (w.frame().size.width * 2.0) as u32,
                     (w.frame().size.height * 2.0) as u32,
                 ));
-            (filter, out_size(f64::from(pw), f64::from(ph)), None)
+            let (pw, ph) = (f64::from(pw), f64::from(ph));
+            (filter, capture_size(pw, ph), out_size(pw, ph), None)
         }
     };
-    let (filter, (w, h), rect) = picked;
+    let (filter, capture, (w, h), rect) = picked;
     let fps = req.fps;
 
     let mut cfg = SCStreamConfiguration::new()
-        .with_width(w)
-        .with_height(h)
+        .with_width(capture.0)
+        .with_height(capture.1)
         .with_pixel_format(PixelFormat::BGRA)
         .with_fps(fps)
         .with_queue_depth(5)
@@ -297,9 +320,8 @@ fn run(
     if let Some(r) = rect {
         cfg = cfg.with_source_rect(r);
     }
-    // macOS 27 captures at the nominal (1×) resolution by default and does not scale it to the
-    // size asked for: a Retina screen came out in the top-left quarter of the frame (ZK-292).
-    // The full pixel resolution, scaled to the output, as before.
+    // The full pixel resolution (macOS 27 may default to the nominal 1×, ZK-292); the size asked
+    // for is the content's own, so nothing is left to scale — see `capture_size`.
     cfg = cfg.with_scales_to_fit(true);
     cfg = cfg
         .clone()
@@ -388,6 +410,8 @@ fn run(
     }
     let _ = tx.send(Ok(Started {
         size: (w, h),
+        capture,
+        first: shared.first.lock().ok().and_then(|f| *f),
         bitrate,
         keyframe_interval,
         audio_tracks: rec.audio_tracks(),
@@ -405,5 +429,18 @@ mod tests {
         assert_eq!(super::out_size(2940.0, 1912.0), (2940, 1912));
         assert_eq!(super::out_size(5120.0, 2880.0), (4096, 2304));
         assert_eq!(super::out_size(301.0, 99.0), (302, 100));
+    }
+
+    /// ZK-295: the screen is asked for its own pixels whatever the video's size is.
+    #[test]
+    fn the_capture_is_never_scaled_by_the_system() {
+        // A MacBook Pro 14 in «More Space»: 1800 x 1169 points, 3600 x 2338 pixels.
+        assert_eq!(super::capture_size(3600.0, 2338.0), (3600, 2338));
+        assert_eq!(super::out_size(3600.0, 2338.0), (3548, 2304));
+        // The default mode fits the encoder as it is.
+        assert_eq!(super::capture_size(3024.0, 1964.0), (3024, 1964));
+        assert_eq!(super::out_size(3024.0, 1964.0), (3024, 1964));
+        // An odd side stays the content's (the writer makes the video even).
+        assert_eq!(super::capture_size(301.0, 99.0), (301, 99));
     }
 }

@@ -289,6 +289,8 @@ fn start_inner(choice: &Choice) -> Result<(), String> {
     req.clicks = p.clicks;
     let rec = Recording::start(req).map_err(|e| e.to_string())?;
     let size = rec.started().size;
+    // What was asked of the system and what came (ZK-295): the facts to read a wrong picture by.
+    tracing::info!(started = ?rec.started(), source = choice.source, "recording: started");
     let bar = crate::RecBar::new().map_err(|e| e.to_string())?;
     let edges = if choice.source == "screen" {
         Vec::new()

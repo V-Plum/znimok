@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::Duration;
 
-use screencapturekit::cm::CMSampleBuffer;
+use screencapturekit::cm::{CMSampleBuffer, CMSampleBufferSCExt};
 use screencapturekit::stream::output_type::SCStreamOutputType;
 use znimok_video::traits::{AudioPacket, FrameSource, Pulled};
 use znimok_video::{Result, VideoError};
@@ -13,12 +13,27 @@ use znimok_video::{Result, VideoError};
 use crate::clock::host_to_hns;
 use crate::writer::PixelBuf;
 
+/// What ScreenCaptureKit said about a frame it handed over, and the buffer's real size: where
+/// the picture is (ZK-295 — a display came out in a quarter of a buffer of the size asked for).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct FrameFacts {
+    /// The buffer, pixels.
+    pub buffer: (u32, u32),
+    /// `SCStreamFrameInfo.contentRect`: x, y, width, height.
+    pub content_rect: Option<(f64, f64, f64, f64)>,
+    /// `contentScale` (the content against its native size) and `scaleFactor` (points → pixels).
+    pub content_scale: Option<f64>,
+    pub scale_factor: Option<f64>,
+}
+
 /// What the stream's callbacks hand to the recording.
 #[derive(Default)]
 pub struct Shared {
     latest: Mutex<Option<Arc<PixelBuf>>>,
     arrived: Condvar,
     frames: AtomicU64,
+    /// The first frame's facts (for the log, and to see that the picture fills the buffer).
+    pub first: Mutex<Option<FrameFacts>>,
     /// The stream stopped by itself (the window closed, the display went).
     pub stopped: AtomicBool,
     /// Packets of the system sound and of the microphone, until their source reads them.
@@ -35,6 +50,25 @@ impl Shared {
                 let ptr = sample.image_buffer_ptr_borrowed();
                 // SAFETY: a CVPixelBufferRef borrowed from the live sample; retained here.
                 if let Some(pb) = unsafe { PixelBuf::retain_raw(ptr) } {
+                    if self.frames.load(Ordering::Acquire) == 0
+                        && let Ok(mut f) = self.first.lock()
+                    {
+                        // SAFETY: plain getters of a live pixel buffer.
+                        let buffer = unsafe {
+                            (
+                                objc2_core_video::CVPixelBufferGetWidth(&pb.0) as u32,
+                                objc2_core_video::CVPixelBufferGetHeight(&pb.0) as u32,
+                            )
+                        };
+                        *f = Some(FrameFacts {
+                            buffer,
+                            content_rect: sample
+                                .content_rect()
+                                .map(|r| (r.origin.x, r.origin.y, r.size.width, r.size.height)),
+                            content_scale: sample.content_scale(),
+                            scale_factor: sample.scale_factor(),
+                        });
+                    }
                     if let Ok(mut l) = self.latest.lock() {
                         *l = Some(Arc::new(pb));
                     }
