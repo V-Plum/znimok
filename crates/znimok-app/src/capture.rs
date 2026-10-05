@@ -91,7 +91,7 @@ impl FrozenDisplay {
     ///
     /// Everything past the overlay counts in desktop units (the recording, its frame and bar, a
     /// window's bounds): this is the one place frame pixels become them.
-    pub fn to_desktop(&self, r: PxRect) -> Rect {
+    pub fn desktop_rect(self, r: PxRect) -> Rect {
         let b = self.bounds;
         let kx = f64::from(self.rect.w.max(1)) / f64::from(b.width.max(1));
         let ky = f64::from(self.rect.h.max(1)) / f64::from(b.height.max(1));
@@ -158,7 +158,7 @@ impl Frozen {
     }
 
     /// What a choice in the recording overlay records (ZK-180): its display and the piece of
-    /// it, in desktop units — through [`FrozenDisplay::to_desktop`], never frame pixels as they
+    /// it, in desktop units — through [`FrozenDisplay::desktop_rect`], never frame pixels as they
     /// are (ZK-295).
     pub fn video_choice(
         &self,
@@ -169,7 +169,7 @@ impl Frozen {
         let d = self.part_at(rect);
         crate::rec::Choice {
             display: d.bounds,
-            frame: d.to_desktop(rect),
+            frame: d.desktop_rect(rect),
             window,
             source,
         }
@@ -611,14 +611,14 @@ mod tests {
             bounds: rect(0, 0, 1800, 1169),
             rect: px(0, 0, 3600, 2338),
         };
-        assert_eq!(retina.to_desktop(px(0, 0, 3600, 2338)), retina.bounds);
+        assert_eq!(retina.desktop_rect(px(0, 0, 3600, 2338)), retina.bounds);
         assert_eq!(
-            retina.to_desktop(px(200, 150, 1280, 720)),
+            retina.desktop_rect(px(200, 150, 1280, 720)),
             rect(100, 75, 640, 360)
         );
         // A piece reaching outside is clipped to the display.
         assert_eq!(
-            retina.to_desktop(px(3000, 2000, 2000, 2000)),
+            retina.desktop_rect(px(3000, 2000, 2000, 2000)),
             rect(1500, 1000, 300, 169)
         );
         // Windows: frame pixels are the desktop's, only the origin moves.
@@ -626,9 +626,9 @@ mod tests {
             bounds: rect(-1920, 120, 1920, 1080),
             rect: px(0, 0, 1920, 1080),
         };
-        assert_eq!(second.to_desktop(second.rect), second.bounds);
+        assert_eq!(second.desktop_rect(second.rect), second.bounds);
         assert_eq!(
-            second.to_desktop(px(200, 150, 640, 360)),
+            second.desktop_rect(px(200, 150, 640, 360)),
             rect(-1720, 270, 640, 360)
         );
         // Two displays in one frame on a common grid (the densest one's): a plain display
@@ -637,13 +637,13 @@ mod tests {
             bounds: rect(1800, 0, 1920, 1080),
             rect: px(3600, 0, 3840, 2160),
         };
-        assert_eq!(plain.to_desktop(plain.rect), plain.bounds);
+        assert_eq!(plain.desktop_rect(plain.rect), plain.bounds);
         assert_eq!(
-            plain.to_desktop(px(3600 + 400, 200, 800, 600)),
+            plain.desktop_rect(px(3600 + 400, 200, 800, 600)),
             rect(1800 + 200, 100, 400, 300)
         );
         // A sliver stays something to record.
-        assert_eq!(retina.to_desktop(px(10, 10, 1, 1)).width, 2);
+        assert_eq!(retina.desktop_rect(px(10, 10, 1, 1)).width, 2);
     }
 
     /// The recording's choice from the overlay, whatever the gesture.

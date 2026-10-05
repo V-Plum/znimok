@@ -689,25 +689,18 @@ mod probe {
                 );
             }
             // The app as a whole left out (another kind of filter).
-            if let Some(app) = mine.first().and_then(|w| w.owning_application()) {
-                if let Ok(fa) = SCContentFilter::create()
+            if let Some(app) = mine.first().and_then(|w| w.owning_application())
+                && let Ok(fa) = SCContentFilter::create()
                     .with_display(&d)
                     .with_excluding_applications(&[&app], &[])
                     .build()
-                {
-                    stream_case(
-                        &mut out,
-                        "Y1 without the Znimok application: the video's size, scalesToFit + Best",
-                        &fa,
-                        best(base(cap.0, cap.1).with_scales_to_fit(true)),
-                    );
-                    stream_case(
-                        &mut out,
-                        "Y2 without the Znimok application: exact, scalesToFit + Best",
-                        &fa,
-                        best(base(exact.0, exact.1).with_scales_to_fit(true)),
-                    );
-                }
+            {
+                stream_case(
+                    &mut out,
+                    "Y1 without the Znimok application: the video's size, scalesToFit + Best",
+                    &fa,
+                    best(base(cap.0, cap.1).with_scales_to_fit(true)),
+                );
             }
 
             // ZK-295, what the app did: frame pixels taken for points — the display asked for as
