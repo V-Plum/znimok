@@ -1001,8 +1001,7 @@ mod tests {
             ..Default::default()
         };
         slack::send(&f, "xoxb", or(&item.place, &cfg.slack.channel), &item, b"x").unwrap();
-        let v: serde_json::Value = serde_json::from_slice(&f.seen()[2].body).unwrap();
-        assert_eq!(v["channel_id"], "CCHOSEN");
+        assert!(f.seen()[2].body_text().contains("channel_id=CCHOSEN"));
         assert_eq!(or("", "CSETTINGS"), "CSETTINGS");
     }
 

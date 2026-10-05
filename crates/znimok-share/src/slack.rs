@@ -377,17 +377,19 @@ pub fn send(
     if !item.text.trim().is_empty() {
         comment = format!("{comment}\n{}", item.text.trim());
     }
-    let body = json!({
-        "files": [{"id": file_id, "title": item.title}],
-        "channel_id": channel.trim(),
-        "initial_comment": comment,
-    })
-    .to_string();
+    // As a form, the way Slack's own SDKs call it (ZK-293): with a JSON body the file was uploaded
+    // and the answer «ok», but it was shared nowhere.
+    let files = json!([{"id": file_id, "title": item.title}]).to_string();
+    let body = znimok_google::form_body(&[
+        ("files", files.as_str()),
+        ("channel_id", channel.trim()),
+        ("initial_comment", comment.as_str()),
+    ]);
     let r = t.request(
         "POST",
         &format!("{API}/files.completeUploadExternal"),
         &[("Authorization", &a)],
-        Some((body.as_bytes(), "application/json; charset=utf-8")),
+        Some((body.as_bytes(), "application/x-www-form-urlencoded")),
         timeout_for(0),
         MAX_ANSWER,
     )?;
@@ -433,9 +435,11 @@ mod tests {
         assert_eq!(seen[0].header("Authorization"), Some("Bearer xoxb-1"));
         assert_eq!(seen[1].url, "https://files.slack.com/upload/v1/abc");
         assert_eq!(seen[1].body, b"PNG");
-        let v: Value = serde_json::from_slice(&seen[2].body).unwrap();
-        assert_eq!(v["channel_id"], "C123");
-        assert_eq!(v["files"][0]["id"], "F1");
+        // A form (ZK-293): channel_id and files (a JSON string) as fields.
+        assert_eq!(seen[2].content_type, "application/x-www-form-urlencoded");
+        let b = seen[2].body_text();
+        assert!(b.contains("channel_id=C123"), "{b}");
+        assert!(b.contains("files=%5B%7B%22id%22%3A%22F1%22"), "{b}");
     }
 
     #[test]
