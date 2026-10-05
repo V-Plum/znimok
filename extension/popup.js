@@ -25,7 +25,10 @@ function show(st) {
   document.getElementById("hint").textContent = !st.connected ? T.hintOff : (st.log ? T.hintOn + " " + T.hintLog : T.hintOn);
   go.disabled = !st.connected || st.app !== "idle";
   if (st.connected && !st.ctl) err.textContent = T.why.disabled;
-  else if (st.lastError && T.why[st.lastError]) err.textContent = T.why[st.lastError];
+  else if (st.lastError && T.why[st.lastError]) {
+    err.textContent = T.why[st.lastError];
+    chrome.runtime.sendMessage({ q: "seen" });
+  }
 }
 chrome.runtime.sendMessage({ q: "state" }, (st) => {
   if (st && st.connected) { show(st); return; }

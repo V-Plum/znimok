@@ -464,6 +464,8 @@ function onAppState(m) {
   app = { state: m.state, ms: Number(m.ms) || 0, at: Date.now(), log: m.log == null ? app.log : m.log,
           ctl: m.ctl == null ? app.ctl : m.ctl, app: m.app !== false };
   if (app.state !== "idle" && was === "idle") lastError = "";
+  // «Znimok not found» is over once Znimok is there (ZK-296).
+  if (app.app && lastError === "no-app") lastError = "";
   paintAction();
   if (app.state === "rec" && !badgeTimer) badgeTimer = setInterval(paintAction, 1000);
   if (app.state !== "rec" && badgeTimer) { clearInterval(badgeTimer); badgeTimer = null; }
@@ -574,6 +576,8 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
     reply({ connected: !!port && app.app, recording, browser: browserName, app: app.state, ctl: app.ctl, log: app.log, lastError });
     return true;
   }
+  // The popup showed the last failure: once is enough, the «!» on the icon goes (ZK-296).
+  if (msg && msg.q === "seen") { lastError = ""; paintAction(); reply({ ok: true }); return true; }
   if (msg && msg.q === "reconnect") { if (port) { try { port.disconnect(); } catch (e) {} port = null; } connect(); reply({ ok: true }); return true; }
   if (msg && msg.q === "rec") {
     chrome.storage.local.set({ pageOnly: !!msg.pageOnly });
