@@ -69,8 +69,11 @@ struct State {
     /// The log is written (Settings → Recording); the extension may start recordings.
     log: bool,
     control: bool,
-    /// Hosts that said hello (browsers connected).
-    hosts: usize,
+    /// Hosts inside their long poll now, and when the last one left it: a browser is connected
+    /// while its host polls (ZK-296 — a count of hellos and byes went wrong with every host that
+    /// ended without a bye).
+    polling: usize,
+    polled: Option<std::time::Instant>,
 }
 
 struct Recording {
@@ -216,9 +219,18 @@ impl Hub {
         self.cv.notify_all();
     }
 
-    /// Browsers connected now (hosts that said hello and still poll).
+    /// Browsers connected now: hosts inside their long poll (one that just left it is between
+    /// two polls).
     pub fn hosts(&self) -> usize {
-        self.lock().hosts
+        let st = self.lock();
+        if st.polling > 0 {
+            st.polling
+        } else {
+            usize::from(
+                st.polled
+                    .is_some_and(|t| t.elapsed() < Duration::from_secs(3)),
+            )
+        }
     }
 
     /// Messages after `since`, waiting up to `timeout` for one.
@@ -245,17 +257,13 @@ impl Hub {
     ) -> Option<Result<Value, znimok_ipc::RpcError>> {
         Some(match method {
             "devtools.hello" => {
-                let mut st = self.lock();
-                st.hosts += 1;
+                let st = self.lock();
                 let s = Self::state_of(&st);
                 let rec = st.rec.is_some() && st.log;
                 Ok(json!({"state": s, "seq": st.seq, "recording": rec}))
             }
-            "devtools.bye" => {
-                let mut st = self.lock();
-                st.hosts = st.hosts.saturating_sub(1);
-                Ok(json!({}))
-            }
+            // Hosts before ZK-296 said it; the count is by the polls now.
+            "devtools.bye" => Ok(json!({})),
             "devtools.events" => {
                 let events = params
                     .get("events")
@@ -283,7 +291,13 @@ impl Hub {
                     .and_then(Value::as_u64)
                     .unwrap_or(15_000)
                     .min(30_000);
+                self.lock().polling += 1;
                 let (seq, msgs) = self.wait(since, Duration::from_millis(ms));
+                {
+                    let mut st = self.lock();
+                    st.polling = st.polling.saturating_sub(1);
+                    st.polled = Some(std::time::Instant::now());
+                }
                 Ok(json!({"seq": seq, "msgs": msgs}))
             }
             "devtools.cmd" => {
@@ -394,5 +408,25 @@ mod tests {
         let (_, msgs) = hub.wait(seq2, Duration::from_millis(10));
         assert!(msgs.iter().any(|m| m["cmd"] == "stop"));
         assert!(hub.handle("other", &json!({})).is_none());
+    }
+
+    /// ZK-296: a browser is connected while its host polls — however the host ends.
+    #[test]
+    fn hosts_are_the_ones_that_poll() {
+        let hub = std::sync::Arc::new(Hub::new());
+        assert_eq!(hub.hosts(), 0);
+        hub.handle("devtools.hello", &json!({})).unwrap().unwrap();
+        assert_eq!(hub.hosts(), 0, "a hello alone is not a connected browser");
+        let h2 = hub.clone();
+        let poll = std::thread::spawn(move || {
+            h2.handle("devtools.wait", &json!({"since": 0, "timeout_ms": 300}))
+                .unwrap()
+                .unwrap()
+        });
+        std::thread::sleep(Duration::from_millis(100));
+        assert_eq!(hub.hosts(), 1);
+        poll.join().unwrap();
+        // Between two polls it is still there; no bye is needed for it to go later.
+        assert_eq!(hub.hosts(), 1);
     }
 }
