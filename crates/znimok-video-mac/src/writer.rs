@@ -30,13 +30,13 @@ use objc2_core_audio_types::{
     AudioStreamBasicDescription, kAudioFormatFlagIsPacked, kAudioFormatFlagIsSignedInteger,
     kAudioFormatLinearPCM, kAudioFormatMPEG4AAC,
 };
-use objc2_core_foundation::{CFRetained, CFString};
+use objc2_core_foundation::{CFDictionary, CFRetained, CFString};
 use objc2_core_media::{
     CMAudioFormatDescriptionCreate, CMAudioSampleBufferCreateReadyWithPacketDescriptions,
     CMBlockBuffer, CMFormatDescription, CMSampleBuffer, CMTime,
 };
 use objc2_core_video::{
-    CVPixelBuffer, CVPixelBufferGetBaseAddress, CVPixelBufferGetBytesPerRow,
+    CVPixelBuffer, CVPixelBufferCreate, CVPixelBufferGetBaseAddress, CVPixelBufferGetBytesPerRow,
     CVPixelBufferLockBaseAddress, CVPixelBufferLockFlags, CVPixelBufferPool,
     CVPixelBufferUnlockBaseAddress, kCVPixelBufferHeightKey, kCVPixelBufferIOSurfacePropertiesKey,
     kCVPixelBufferPixelFormatTypeKey, kCVPixelBufferWidthKey, kCVPixelFormatType_32BGRA,
@@ -63,6 +63,67 @@ impl PixelBuf {
         // SAFETY: the caller says it is a live CVPixelBuffer; retaining keeps it alive.
         Some(Self(unsafe { CFRetained::retain(p) }))
     }
+}
+
+/// Fills a BGRA buffer (at least `w`×`h`) with `rgba` (`w`×`h`, tightly packed).
+fn fill_bgra(pb: &CVPixelBuffer, w: usize, h: usize, rgba: &[u8]) -> Result<(), String> {
+    if rgba.len() < w * h * 4 {
+        return Err("the frame is smaller than the video".into());
+    }
+    // SAFETY: the buffer is locked while its memory is written, each row within its stride.
+    unsafe {
+        CVPixelBufferLockBaseAddress(pb, CVPixelBufferLockFlags(0));
+        let base = CVPixelBufferGetBaseAddress(pb).cast::<u8>();
+        let stride = CVPixelBufferGetBytesPerRow(pb);
+        if base.is_null() || stride < w * 4 {
+            CVPixelBufferUnlockBaseAddress(pb, CVPixelBufferLockFlags(0));
+            return Err("CVPixelBuffer: no memory".into());
+        }
+        for y in 0..h {
+            let src = &rgba[y * w * 4..(y + 1) * w * 4];
+            let dst = std::slice::from_raw_parts_mut(base.add(y * stride), w * 4);
+            for (d, s) in dst
+                .as_chunks_mut::<4>()
+                .0
+                .iter_mut()
+                .zip(src.as_chunks::<4>().0)
+            {
+                d[0] = s[2];
+                d[1] = s[1];
+                d[2] = s[0];
+                d[3] = 255;
+            }
+        }
+        CVPixelBufferUnlockBaseAddress(pb, CVPixelBufferLockFlags(0));
+    }
+    Ok(())
+}
+
+/// A BGRA buffer of its own (IOSurface-backed, as ScreenCaptureKit's are) of any size with
+/// `rgba` in it: what the screen hands over, for tests and tools.
+pub fn bgra_buffer(width: u32, height: u32, rgba: &[u8]) -> Result<PixelBuf, String> {
+    let empty: Retained<NSDictionary<NSString, AnyObject>> = NSDictionary::new();
+    // SAFETY: CoreVideo's extern CFString key.
+    let attrs = unsafe { dict(&[(cf_key(kCVPixelBufferIOSurfacePropertiesKey), &empty)]) };
+    let mut out: *mut CVPixelBuffer = std::ptr::null_mut();
+    // SAFETY: NSDictionary is toll-free bridged to CFDictionary; a valid out-pointer.
+    let st = unsafe {
+        CVPixelBufferCreate(
+            None,
+            width as usize,
+            height as usize,
+            kCVPixelFormatType_32BGRA,
+            Some(&*(Retained::as_ptr(&attrs).cast::<CFDictionary>())),
+            NonNull::from(&mut out),
+        )
+    };
+    let pb = NonNull::new(out)
+        .filter(|_| st == 0)
+        // SAFETY: a +1 object from a Create function.
+        .map(|p| unsafe { CFRetained::from_raw(p) })
+        .ok_or_else(|| format!("CVPixelBufferCreate: {st}"))?;
+    fill_bgra(&pb, width as usize, height as usize, rgba)?;
+    Ok(PixelBuf(pb))
 }
 
 /// Seconds as a `CMTime` of `timescale`.
@@ -442,32 +503,7 @@ impl AvWriter {
             // SAFETY: a +1 object from a Create function.
             .map(|p| unsafe { CFRetained::from_raw(p) })
             .ok_or_else(|| format!("CVPixelBufferPoolCreatePixelBuffer: {st}"))?;
-        // SAFETY: the buffer is locked while its memory is written, each row within its stride.
-        unsafe {
-            CVPixelBufferLockBaseAddress(&pb, CVPixelBufferLockFlags(0));
-            let base = CVPixelBufferGetBaseAddress(&pb).cast::<u8>();
-            let stride = CVPixelBufferGetBytesPerRow(&pb);
-            if base.is_null() || stride < w * 4 {
-                CVPixelBufferUnlockBaseAddress(&pb, CVPixelBufferLockFlags(0));
-                return Err("CVPixelBuffer: no memory".into());
-            }
-            for y in 0..h {
-                let src = &rgba[y * w * 4..(y + 1) * w * 4];
-                let dst = std::slice::from_raw_parts_mut(base.add(y * stride), w * 4);
-                for (d, s) in dst
-                    .as_chunks_mut::<4>()
-                    .0
-                    .iter_mut()
-                    .zip(src.as_chunks::<4>().0)
-                {
-                    d[0] = s[2];
-                    d[1] = s[1];
-                    d[2] = s[0];
-                    d[3] = 255;
-                }
-            }
-            CVPixelBufferUnlockBaseAddress(&pb, CVPixelBufferLockFlags(0));
-        }
+        fill_bgra(&pb, w, h, rgba)?;
         Ok(PixelBuf(pb))
     }
 

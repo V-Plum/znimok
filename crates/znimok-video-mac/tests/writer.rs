@@ -4,7 +4,7 @@
 #![cfg(target_os = "macos")]
 
 use znimok_video::check::mp4::read_mp4_file;
-use znimok_video_mac::writer::{AvWriter, WriterConfig};
+use znimok_video_mac::writer::{AvWriter, WriterConfig, bgra_buffer};
 
 #[test]
 fn frames_and_sound_into_an_mp4() {
@@ -123,4 +123,97 @@ fn frames_and_sound_into_an_mp4() {
         .count();
     assert!(yellow > 500, "{yellow} yellow pixels");
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A picture with a white square in each corner and a red one in the middle, on blue.
+fn corners(w: usize, h: usize) -> Vec<u8> {
+    let mut rgba = vec![0u8; w * h * 4];
+    let q = (w.min(h) / 8).max(8);
+    for y in 0..h {
+        for x in 0..w {
+            let corner = (x < q || x >= w - q) && (y < q || y >= h - q);
+            let mid = x.abs_diff(w / 2) < q / 2 && y.abs_diff(h / 2) < q / 2;
+            let p = (y * w + x) * 4;
+            rgba[p..p + 4].copy_from_slice(if corner {
+                &[255, 255, 255, 255]
+            } else if mid {
+                &[230, 30, 30, 255]
+            } else {
+                &[20, 40, 160, 255]
+            });
+        }
+    }
+    rgba
+}
+
+/// The video's first frame after `frames` of `src` size went into a writer of `out` size.
+fn through(name: &str, src: (u32, u32), out: (u32, u32)) -> (u32, u32, Vec<u8>) {
+    let dir = std::env::temp_dir().join(format!("znimok-avfit-{name}-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let part = dir.join("out.mp4.part");
+    let cfg = WriterConfig {
+        width: out.0,
+        height: out.1,
+        fps: 30,
+        bitrate: 8_000_000,
+        keyframe_interval: 8,
+        audio_tracks: 0,
+        audio_bitrate: 0,
+        real_time: false,
+    };
+    let mut wr = AvWriter::create(&part, &cfg).unwrap();
+    let pb = bgra_buffer(src.0, src.1, &corners(src.0 as usize, src.1 as usize)).unwrap();
+    let (mut f, mut idle) = (0i64, 0);
+    while f < 10 {
+        if wr.append_frame(&pb.0, f).unwrap() {
+            f += 1;
+            idle = 0;
+        } else {
+            idle += 1;
+            assert!(idle < 5000, "the writer stopped taking frames at {f}");
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+    }
+    wr.finish().unwrap();
+    let done = dir.join("out.mp4");
+    std::fs::rename(&part, &done).unwrap();
+    let r = znimok_video_mac::poster::first_frame(&done).unwrap();
+    let _ = std::fs::remove_dir_all(&dir);
+    r
+}
+
+fn is(rgba: &[u8], w: u32, x: u32, y: u32, what: &str) -> bool {
+    let p = ((y * w + x) * 4) as usize;
+    let (r, g, b) = (rgba[p], rgba[p + 1], rgba[p + 2]);
+    match what {
+        "white" => r > 200 && g > 200 && b > 200,
+        "red" => r > 170 && g < 90 && b < 90,
+        _ => b > 110 && r < 90,
+    }
+}
+
+/// ZK-295: the screen's frames are not always the video's size (a display over the encoder's
+/// limit is captured whole and scaled here; whatever else the system hands over). The writer
+/// fills the video with the frame — larger or smaller, never a part of it in a corner.
+#[test]
+fn a_frame_of_another_size_fills_the_video() {
+    for (name, src, out) in [
+        // A display of 3600 x 2338 pixels into the encoder's 3548 x 2304.
+        ("down", (3600u32, 2338u32), (3548u32, 2304u32)),
+        // A frame of half the size (what a 1x capture of a Retina screen is).
+        ("up", (886u32, 576u32), (1772u32, 1152u32)),
+        ("same", (640u32, 400u32), (640u32, 400u32)),
+    ] {
+        let (w, h, rgba) = through(name, src, out);
+        assert_eq!((w, h), out, "{name}");
+        let m = 6;
+        for (x, y) in [(m, m), (w - m, m), (m, h - m), (w - m, h - m)] {
+            assert!(
+                is(&rgba, w, x, y, "white"),
+                "{name}: the corner at {x},{y} of {w}x{h}"
+            );
+        }
+        assert!(is(&rgba, w, w / 2, h / 2, "red"), "{name}: the middle");
+        assert!(is(&rgba, w, w / 4, h / 2, "blue"), "{name}: the field");
+    }
 }
