@@ -217,6 +217,119 @@ mod live {
             "{events:?}"
         );
         println!("ok   an older version is «not found» after a check the person started");
+        drop(s);
+
+        // 3. ZK-297 — a background check that finds nothing: not a word to the driver, the end
+        // of the cycle comes through the delegate alone, and the updater is free again.
+        let port = serve(appcast("0.0.1", 0));
+        let host = host_bundle(&dir.join("quiet"), "1.0.0", port);
+        let s = Sparkle::start(&fw, Some(&host), None).expect("start");
+        s.check(false);
+        assert!(s.session_in_progress(), "a background check is a session");
+        let mut events = Vec::new();
+        let done = run_loop_until(20.0, || {
+            events.extend(s.poll());
+            events
+                .iter()
+                .any(|e| matches!(e, Event::CycleFinished { .. }))
+        });
+        println!("{events:?}");
+        assert!(done, "no end of the cycle from Sparkle in 20 s");
+        assert_eq!(
+            events
+                .iter()
+                .filter(|e| !matches!(e, Event::CycleFinished { .. }))
+                .count(),
+            0,
+            "the driver hears nothing of a quiet background check: {events:?}"
+        );
+        match &events[0] {
+            Event::CycleFinished {
+                background: true,
+                error: Some((code, _)),
+            } => assert_eq!(*code, znimok_mac::sparkle::NO_UPDATE),
+            other => panic!("expected the cycle's end with «no update», got {other:?}"),
+        }
+        assert!(!s.session_in_progress() && s.can_check());
+        println!("ok   a background check that finds nothing ends through the delegate only");
+        drop(s);
+
+        // 4. A background check that cannot reach the feed (no network after a wake): the same.
+        let dead = {
+            let l = TcpListener::bind("127.0.0.1:0").unwrap();
+            l.local_addr().unwrap().port()
+        };
+        let host = host_bundle(&dir.join("offline"), "1.0.0", dead);
+        let s = Sparkle::start(&fw, Some(&host), None).expect("start");
+        s.check(false);
+        let mut events = Vec::new();
+        let done = run_loop_until(90.0, || {
+            events.extend(s.poll());
+            events
+                .iter()
+                .any(|e| matches!(e, Event::CycleFinished { .. }))
+        });
+        println!("{events:?}");
+        assert!(done, "no end of the cycle from Sparkle in 90 s");
+        match events.last() {
+            Some(Event::CycleFinished {
+                background: true,
+                error: Some((code, _)),
+            }) => assert_ne!(*code, znimok_mac::sparkle::NO_UPDATE),
+            other => panic!("expected the cycle's end with an error, got {other:?}"),
+        }
+        assert!(
+            !events
+                .iter()
+                .any(|e| matches!(e, Event::Error(_) | Event::Dismissed)),
+            "a failed background check is silent for the driver: {events:?}"
+        );
+        assert!(!s.session_in_progress() && s.can_check());
+        println!("ok   a background check that fails ends through the delegate only");
+        drop(s);
+
+        // 5. A found update waits for its answer and a check is asked for: Sparkle says it is
+        // shown already; dismissing it ends the cycle, and a new check can start.
+        let port = serve(appcast("99.0.0", 0));
+        let host = host_bundle(&dir.join("pending"), "1.0.0", port);
+        let s = Sparkle::start(&fw, Some(&host), None).expect("start");
+        s.check(false);
+        let mut events = Vec::new();
+        assert!(run_loop_until(20.0, || {
+            events.extend(s.poll());
+            events.iter().any(|e| matches!(e, Event::Found { .. }))
+        }));
+        assert!(s.awaits_reply() && s.session_in_progress());
+        events.clear();
+        s.check(true);
+        run_loop_until(1.0, || {
+            events.extend(s.poll());
+            events.contains(&Event::InFocus)
+        });
+        println!("{events:?}");
+        assert!(
+            events.contains(&Event::InFocus),
+            "a check over a pending update only brings it into focus"
+        );
+        assert!(s.awaits_reply(), "the found update still waits");
+        events.clear();
+        assert!(s.reply(Choice::Dismiss));
+        let done = run_loop_until(10.0, || {
+            events.extend(s.poll());
+            events
+                .iter()
+                .any(|e| matches!(e, Event::CycleFinished { .. }))
+        });
+        println!("{events:?}");
+        assert!(done && events.contains(&Event::Dismissed));
+        assert!(matches!(
+            events.last(),
+            Some(Event::CycleFinished { error: None, .. })
+        ));
+        assert!(!s.session_in_progress() && s.can_check());
+        println!(
+            "ok   a pending update: a check brings it into focus, a dismissal frees the updater"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

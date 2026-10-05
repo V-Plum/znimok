@@ -6750,3 +6750,8 @@ share-place-chosen = Вибрано: { $name }
 # @kind: label
 # @max: 24
 share-place-clear = Зняти вибір
+
+# @where: Updates page: the reason when the updater gave no answer to a check
+# @kind: status
+# @max: 60
+upd-no-answer = оновлювач не відповів — спробуйте ще раз
