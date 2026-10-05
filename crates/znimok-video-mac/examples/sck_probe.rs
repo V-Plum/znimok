@@ -531,6 +531,185 @@ mod probe {
                 ),
             );
 
+            // --- As the app records: with windows left out of the display (its own ones).
+            let all = content.windows();
+            let of_znimok = |w: &SCWindow| {
+                w.owning_application().is_some_and(|a| {
+                    a.bundle_identifier() == "ua.plum.znimok.app"
+                        || a.application_name().to_lowercase().contains("znimok")
+                })
+            };
+            let mine: Vec<SCWindow> = all.iter().filter(|w| of_znimok(w)).cloned().collect();
+            let _ = writeln!(
+                out,
+                "\n--- windows of Znimok (what the app leaves out): {}",
+                mine.len()
+            );
+            for w in &mine {
+                let fr = w.frame();
+                let _ = writeln!(
+                    out,
+                    "    id {} layer {} on_screen {} frame {:.0},{:.0} {:.0}x{:.0} title {:?}",
+                    w.window_id(),
+                    w.window_layer(),
+                    w.is_on_screen(),
+                    fr.origin.x,
+                    fr.origin.y,
+                    fr.size.width,
+                    fr.size.height,
+                    w.title()
+                );
+            }
+            // Another app's ordinary window, to see whether any exclusion does it.
+            let other: Vec<SCWindow> = all
+                .iter()
+                .filter(|w| !of_znimok(w) && w.is_on_screen() && w.window_layer() == 0)
+                .filter(|w| w.frame().size.width > 200.0)
+                .take(1)
+                .cloned()
+                .collect();
+            if let Some(w) = other.first() {
+                let _ = writeln!(
+                    out,
+                    "--- another window to leave out: id {} of {:?} title {:?}",
+                    w.window_id(),
+                    w.owning_application().map(|a| a.application_name()),
+                    w.title()
+                );
+            }
+            // The video's size as the recording computes it (within 4096 x 2304).
+            let cap = {
+                let k = (4096.0 / nw).min(2304.0 / nh).min(1.0);
+                (even(nw * k), even(nh * k))
+            };
+            let _ = writeln!(
+                out,
+                "--- exact {}x{}, the video {}x{}",
+                exact.0, exact.1, cap.0, cap.1
+            );
+            let without = |ws: &[SCWindow]| {
+                let refs: Vec<&SCWindow> = ws.iter().collect();
+                SCContentFilter::create()
+                    .with_display(&d)
+                    .with_excluding_windows(&refs)
+                    .build()
+            };
+            let on_screen: Vec<SCWindow> =
+                mine.iter().filter(|w| w.is_on_screen()).cloned().collect();
+            let off_screen: Vec<SCWindow> =
+                mine.iter().filter(|w| !w.is_on_screen()).cloned().collect();
+            let sets: [(&str, &[SCWindow]); 4] = [
+                ("Znimok's windows", &mine),
+                ("Znimok's on-screen windows", &on_screen),
+                ("Znimok's off-screen windows", &off_screen),
+                ("another app's window", &other),
+            ];
+            for (label, set) in sets {
+                if set.is_empty() {
+                    let _ = writeln!(out, "\n[X without {label}: none, skipped]");
+                    continue;
+                }
+                let Ok(fx) = without(set) else {
+                    let _ = writeln!(out, "\n[X without {label}: the filter failed]");
+                    continue;
+                };
+                if let Some(i) = SCShareableContentInfo::for_filter(&fx) {
+                    let (w, h) = i.pixel_size();
+                    let r = i.content_rect();
+                    let _ = writeln!(
+                        out,
+                        "\n--- without {label} ({}): filter pixel_size {w}x{h}, pointPixelScale {}, contentRect {:.1},{:.1} {:.1}x{:.1}",
+                        set.len(),
+                        i.point_pixel_scale(),
+                        r.origin.x,
+                        r.origin.y,
+                        r.size.width,
+                        r.size.height
+                    );
+                }
+                stream_case(
+                    &mut out,
+                    &format!(
+                        "X1 without {label}: the video's size, scalesToFit + Best (as 0.0.21 records)"
+                    ),
+                    &fx,
+                    best(base(cap.0, cap.1).with_scales_to_fit(true)),
+                );
+                stream_case(
+                    &mut out,
+                    &format!("X2 without {label}: exact, scalesToFit + Best"),
+                    &fx,
+                    best(base(exact.0, exact.1).with_scales_to_fit(true)),
+                );
+                stream_case(
+                    &mut out,
+                    &format!("X3 without {label}: the video's size, defaults (as 0.0.19)"),
+                    &fx,
+                    base(cap.0, cap.1),
+                );
+                stream_case(
+                    &mut out,
+                    &format!(
+                        "X4 without {label}: the video's size + sourceRect whole + destinationRect in pixels"
+                    ),
+                    &fx,
+                    best(base(cap.0, cap.1).with_scales_to_fit(true))
+                        .with_source_rect(whole)
+                        .with_destination_rect(px(cap.0, cap.1)),
+                );
+                stream_case(
+                    &mut out,
+                    &format!(
+                        "X5 without {label}: exact + sourceRect whole + destinationRect in pixels"
+                    ),
+                    &fx,
+                    best(base(exact.0, exact.1).with_scales_to_fit(true))
+                        .with_source_rect(whole)
+                        .with_destination_rect(px(exact.0, exact.1)),
+                );
+                stream_case(
+                    &mut out,
+                    &format!(
+                        "X6 without {label}: region 800x600 pt, exact pixels (as a region is recorded)"
+                    ),
+                    &fx,
+                    best(base(even(800.0 * scale), even(600.0 * scale)).with_scales_to_fit(true))
+                        .with_source_rect(region),
+                );
+                shot_case(
+                    &mut out,
+                    &format!("X7 without {label}: screenshot exact (as a screenshot is taken)"),
+                    &fx,
+                    best(
+                        SCStreamConfiguration::new()
+                            .with_width(exact.0)
+                            .with_height(exact.1)
+                            .with_scales_to_fit(true),
+                    ),
+                );
+            }
+            // The app as a whole left out (another kind of filter).
+            if let Some(app) = mine.first().and_then(|w| w.owning_application()) {
+                if let Ok(fa) = SCContentFilter::create()
+                    .with_display(&d)
+                    .with_excluding_applications(&[&app], &[])
+                    .build()
+                {
+                    stream_case(
+                        &mut out,
+                        "Y1 without the Znimok application: the video's size, scalesToFit + Best",
+                        &fa,
+                        best(base(cap.0, cap.1).with_scales_to_fit(true)),
+                    );
+                    stream_case(
+                        &mut out,
+                        "Y2 without the Znimok application: exact, scalesToFit + Best",
+                        &fa,
+                        best(base(exact.0, exact.1).with_scales_to_fit(true)),
+                    );
+                }
+            }
+
             // The recording itself, as the app makes it: two seconds, then its first frame.
             if id == main_id {
                 let _ = writeln!(out, "\n[R the recording as the app makes it]");

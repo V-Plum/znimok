@@ -53,13 +53,10 @@ impl Shared {
                     if self.frames.load(Ordering::Acquire) == 0
                         && let Ok(mut f) = self.first.lock()
                     {
-                        // SAFETY: plain getters of a live pixel buffer.
-                        let buffer = unsafe {
-                            (
-                                objc2_core_video::CVPixelBufferGetWidth(&pb.0) as u32,
-                                objc2_core_video::CVPixelBufferGetHeight(&pb.0) as u32,
-                            )
-                        };
+                        let buffer = (
+                            objc2_core_video::CVPixelBufferGetWidth(&pb.0) as u32,
+                            objc2_core_video::CVPixelBufferGetHeight(&pb.0) as u32,
+                        );
                         *f = Some(FrameFacts {
                             buffer,
                             content_rect: sample
