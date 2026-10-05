@@ -76,8 +76,8 @@ impl RecordRequest {
 pub struct Started {
     /// The video.
     pub size: (u32, u32),
-    /// What ScreenCaptureKit was asked for: the content's own pixels (ZK-295).
-    pub capture: (u32, u32),
+    /// A region that reached outside its display was clipped to it (ZK-295).
+    pub region_clipped: bool,
     /// The first frame as it came (None: the recording started before one did).
     pub first: Option<crate::source::FrameFacts>,
     pub bitrate: u32,
@@ -198,14 +198,29 @@ fn out_size(w: f64, h: f64) -> (u32, u32) {
     (even(w), even(h))
 }
 
-/// What ScreenCaptureKit is asked for: the content's own pixels, to the pixel. Never the
-/// video's size when that is smaller (ZK-295): asked to scale a display down to the encoder's
-/// limit, macOS 27 drew it at half the size in a corner of the frame (and scalesToFit with the
-/// best resolution changed nothing) — the writer scales instead, as it does any frame that is
-/// not the video's size.
-fn capture_size(w: f64, h: f64) -> (u32, u32) {
-    let side = |v: f64| (v.round() as u32).clamp(2, 16_384);
-    (side(w), side(h))
+/// The part of a display a region asks for, in points from the display's corner: within the
+/// display, and `None` when that is the whole of it. A region reaching outside its display can
+/// only be a mistake of units (ZK-295: frame pixels taken for points — a Retina display of
+/// 1800 × 1169 asked for as «3600 × 2338 from its corner» — and ScreenCaptureKit drew the
+/// display into a quarter of the video); the second value says the region was clipped.
+type Region = (f64, f64, f64, f64);
+
+fn region_in(display: (f64, f64), r: Region) -> (Option<Region>, bool) {
+    let (dw, dh) = display;
+    let (x0, y0) = (r.0.clamp(0.0, dw), r.1.clamp(0.0, dh));
+    let (x1, y1) = ((r.0 + r.2).clamp(0.0, dw), (r.1 + r.3).clamp(0.0, dh));
+    let clipped = (x0 - r.0).abs() > 1.0
+        || (y0 - r.1).abs() > 1.0
+        || (x1 - (r.0 + r.2)).abs() > 1.0
+        || (y1 - (r.1 + r.3)).abs() > 1.0;
+    // Nothing of it on the display: the display itself rather than no recording.
+    if x1 - x0 < 2.0 || y1 - y0 < 2.0 {
+        return (None, true);
+    }
+    if x0 <= 0.5 && y0 <= 0.5 && x1 >= dw - 0.5 && y1 >= dh - 0.5 {
+        return (None, clipped);
+    }
+    (Some((x0, y0, x1 - x0, y1 - y0)), clipped)
 }
 
 fn screen_error(e: impl std::fmt::Display) -> VideoError {
@@ -236,6 +251,7 @@ fn run(
     };
     // The filter, the stream's output size and, for a region, its rectangle in points.
     let me = std::process::id() as i32;
+    let mut clipped = false;
     let picked = match &req.target {
         Target::Display { id, region } => {
             let displays = content.displays();
@@ -264,15 +280,20 @@ fn run(
                 .map(|i| f64::from(i.point_pixel_scale()))
                 .filter(|s| *s > 0.0)
                 .unwrap_or(2.0);
+            let (region, was_clipped) = match region {
+                Some(r) => region_in((f.size.width, f.size.height), *r),
+                None => (None, false),
+            };
+            clipped = was_clipped;
             let (pw, ph, rect) = match region {
                 Some((x, y, w, h)) => (
                     w * scale,
                     h * scale,
                     Some(CGRect {
-                        origin: CGPoint { x: *x, y: *y },
+                        origin: CGPoint { x, y },
                         size: CGSize {
-                            width: *w,
-                            height: *h,
+                            width: w,
+                            height: h,
                         },
                     }),
                 ),
@@ -282,7 +303,7 @@ fn run(
                     _ => (f.size.width * scale, f.size.height * scale, None),
                 },
             };
-            (filter, capture_size(pw, ph), out_size(pw, ph), rect)
+            (filter, out_size(pw, ph), rect)
         }
         Target::Window { id } => {
             let windows = content.windows();
@@ -299,16 +320,15 @@ fn run(
                     (w.frame().size.width * 2.0) as u32,
                     (w.frame().size.height * 2.0) as u32,
                 ));
-            let (pw, ph) = (f64::from(pw), f64::from(ph));
-            (filter, capture_size(pw, ph), out_size(pw, ph), None)
+            (filter, out_size(f64::from(pw), f64::from(ph)), None)
         }
     };
-    let (filter, capture, (w, h), rect) = picked;
+    let (filter, (w, h), rect) = picked;
     let fps = req.fps;
 
     let mut cfg = SCStreamConfiguration::new()
-        .with_width(capture.0)
-        .with_height(capture.1)
+        .with_width(w)
+        .with_height(h)
         .with_pixel_format(PixelFormat::BGRA)
         .with_fps(fps)
         .with_queue_depth(5)
@@ -320,8 +340,10 @@ fn run(
     if let Some(r) = rect {
         cfg = cfg.with_source_rect(r);
     }
-    // The full pixel resolution (macOS 27 may default to the nominal 1×, ZK-292); the size asked
-    // for is the content's own, so nothing is left to scale — see `capture_size`.
+    // The content scaled to the video's size at the full pixel resolution. (The probe of
+    // 05.10.2026 on macOS 27 — examples/sck_probe.rs — showed ScreenCaptureKit fills the frame
+    // with or without these two, at the content's own size or a smaller one; the quarter of
+    // ZK-292 / ZK-295 was a region in the wrong units, see `region_in`.)
     cfg = cfg.with_scales_to_fit(true);
     cfg = cfg
         .clone()
@@ -410,7 +432,7 @@ fn run(
     }
     let _ = tx.send(Ok(Started {
         size: (w, h),
-        capture,
+        region_clipped: clipped,
         first: shared.first.lock().ok().and_then(|f| *f),
         bitrate,
         keyframe_interval,
@@ -431,16 +453,27 @@ mod tests {
         assert_eq!(super::out_size(301.0, 99.0), (302, 100));
     }
 
-    /// ZK-295: the screen is asked for its own pixels whatever the video's size is.
+    /// ZK-295: a region is a part of its display, in points.
     #[test]
-    fn the_capture_is_never_scaled_by_the_system() {
-        // A MacBook Pro 14 in «More Space»: 1800 x 1169 points, 3600 x 2338 pixels.
-        assert_eq!(super::capture_size(3600.0, 2338.0), (3600, 2338));
-        assert_eq!(super::out_size(3600.0, 2338.0), (3548, 2304));
-        // The default mode fits the encoder as it is.
-        assert_eq!(super::capture_size(3024.0, 1964.0), (3024, 1964));
-        assert_eq!(super::out_size(3024.0, 1964.0), (3024, 1964));
-        // An odd side stays the content's (the writer makes the video even).
-        assert_eq!(super::capture_size(301.0, 99.0), (301, 99));
+    fn a_region_stays_within_its_display() {
+        use super::region_in;
+        let d = (1800.0, 1169.0);
+        // An ordinary region.
+        assert_eq!(
+            region_in(d, (100.0, 75.0, 640.0, 360.0)),
+            (Some((100.0, 75.0, 640.0, 360.0)), false)
+        );
+        // The whole display, to the point or within a rounding.
+        assert_eq!(region_in(d, (0.0, 0.0, 1800.0, 1169.0)), (None, false));
+        assert_eq!(region_in(d, (0.3, 0.0, 1799.6, 1169.0)), (None, false));
+        // The bug: frame pixels for points — twice the display. The display, and a word about it.
+        assert_eq!(region_in(d, (0.0, 0.0, 3600.0, 2338.0)), (None, true));
+        // A region in pixels: what is left of it on the display, said too.
+        assert_eq!(
+            region_in(d, (1600.0, 1000.0, 1280.0, 720.0)),
+            (Some((1600.0, 1000.0, 200.0, 169.0)), true)
+        );
+        // Wholly outside: the display rather than nothing.
+        assert_eq!(region_in(d, (5000.0, 0.0, 100.0, 100.0)), (None, true));
     }
 }

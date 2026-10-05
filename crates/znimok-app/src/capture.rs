@@ -83,6 +83,40 @@ pub struct FrozenDisplay {
     pub rect: PxRect,
 }
 
+impl FrozenDisplay {
+    /// A piece of this display, frame pixels → desktop units (ZK-295). The frame has as many
+    /// pixels to a desktop unit as the display is dense: one on Windows, two on a Retina screen
+    /// (its units are points) — and in a frame of several displays each has its own count. The
+    /// piece is clipped to the display; the whole display comes out as exactly its bounds.
+    ///
+    /// Everything past the overlay counts in desktop units (the recording, its frame and bar, a
+    /// window's bounds): this is the one place frame pixels become them.
+    pub fn to_desktop(&self, r: PxRect) -> Rect {
+        let b = self.bounds;
+        let kx = f64::from(self.rect.w.max(1)) / f64::from(b.width.max(1));
+        let ky = f64::from(self.rect.h.max(1)) / f64::from(b.height.max(1));
+        let edge = |v: i32, origin: i32, k: f64, max: u32| {
+            (f64::from(v - origin) / k)
+                .round()
+                .clamp(0.0, f64::from(max)) as i32
+        };
+        let (x0, y0) = (
+            edge(r.x, self.rect.x, kx, b.width),
+            edge(r.y, self.rect.y, ky, b.height),
+        );
+        let (x1, y1) = (
+            edge(r.x + r.w, self.rect.x, kx, b.width),
+            edge(r.y + r.h, self.rect.y, ky, b.height),
+        );
+        Rect {
+            x: b.x + x0,
+            y: b.y + y0,
+            width: (x1 - x0).max(2) as u32,
+            height: (y1 - y0).max(2) as u32,
+        }
+    }
+}
+
 impl Frozen {
     /// A piece of the frozen frame (clamped to it).
     pub fn crop(&self, r: PxRect) -> Option<Raster> {
@@ -121,6 +155,24 @@ impl Frozen {
             .find(|d| d.rect.contains(cx, cy))
             .copied()
             .unwrap_or(parts[0])
+    }
+
+    /// What a choice in the recording overlay records (ZK-180): its display and the piece of
+    /// it, in desktop units — through [`FrozenDisplay::to_desktop`], never frame pixels as they
+    /// are (ZK-295).
+    pub fn video_choice(
+        &self,
+        rect: PxRect,
+        source: &'static str,
+        window: Option<u64>,
+    ) -> crate::rec::Choice {
+        let d = self.part_at(rect);
+        crate::rec::Choice {
+            display: d.bounds,
+            frame: d.to_desktop(rect),
+            window,
+            source,
+        }
     }
 
     pub fn whole(&self) -> PxRect {
@@ -530,4 +582,87 @@ pub fn display_under_cursor() -> Result<Raster, Fail> {
     Err(Fail::Other(
         "screen capture is not available on this system".into(),
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn rect(x: i32, y: i32, width: u32, height: u32) -> Rect {
+        Rect {
+            x,
+            y,
+            width,
+            height,
+        }
+    }
+
+    fn px(x: i32, y: i32, w: i32, h: i32) -> PxRect {
+        PxRect { x, y, w, h }
+    }
+
+    /// ZK-295: a Retina display's frame has two pixels to the point. The whole display chosen in
+    /// the overlay is the display's bounds (it was «a region of 3600 × 2338 points» of a display
+    /// of 1800 × 1169 — recorded into a quarter of the video), a region is where it was dragged.
+    #[test]
+    fn frame_pixels_become_desktop_units() {
+        // A MacBook Pro 14 in «More Space»: 1800 x 1169 points, 3600 x 2338 pixels.
+        let retina = FrozenDisplay {
+            bounds: rect(0, 0, 1800, 1169),
+            rect: px(0, 0, 3600, 2338),
+        };
+        assert_eq!(retina.to_desktop(px(0, 0, 3600, 2338)), retina.bounds);
+        assert_eq!(
+            retina.to_desktop(px(200, 150, 1280, 720)),
+            rect(100, 75, 640, 360)
+        );
+        // A piece reaching outside is clipped to the display.
+        assert_eq!(
+            retina.to_desktop(px(3000, 2000, 2000, 2000)),
+            rect(1500, 1000, 300, 169)
+        );
+        // Windows: frame pixels are the desktop's, only the origin moves.
+        let second = FrozenDisplay {
+            bounds: rect(-1920, 120, 1920, 1080),
+            rect: px(0, 0, 1920, 1080),
+        };
+        assert_eq!(second.to_desktop(second.rect), second.bounds);
+        assert_eq!(
+            second.to_desktop(px(200, 150, 640, 360)),
+            rect(-1720, 270, 640, 360)
+        );
+        // Two displays in one frame on a common grid (the densest one's): a plain display
+        // enlarged twice next to a Retina one — each with its own count.
+        let plain = FrozenDisplay {
+            bounds: rect(1800, 0, 1920, 1080),
+            rect: px(3600, 0, 3840, 2160),
+        };
+        assert_eq!(plain.to_desktop(plain.rect), plain.bounds);
+        assert_eq!(
+            plain.to_desktop(px(3600 + 400, 200, 800, 600)),
+            rect(1800 + 200, 100, 400, 300)
+        );
+        // A sliver stays something to record.
+        assert_eq!(retina.to_desktop(px(10, 10, 1, 1)).width, 2);
+    }
+
+    /// The recording's choice from the overlay, whatever the gesture.
+    #[test]
+    fn the_overlay_s_choice_for_a_recording() {
+        let frozen = Frozen {
+            raster: Raster::solid(3600, 2338, znimok_core::Rgb::new(0, 0, 0)),
+            bounds: rect(0, 0, 1800, 1169),
+            windows: Vec::new(),
+            displays: Vec::new(),
+        };
+        // A click on the desktop: the whole display, in its own units.
+        let c = frozen.video_choice(frozen.whole(), "screen", None);
+        assert_eq!((c.display, c.frame), (frozen.bounds, frozen.bounds));
+        assert_eq!(c.source, "screen");
+        // A region, and a window with its id.
+        let c = frozen.video_choice(px(200, 150, 1280, 720), "region", None);
+        assert_eq!(c.frame, rect(100, 75, 640, 360));
+        let c = frozen.video_choice(px(440, 262, 2720, 1720), "window", Some(7));
+        assert_eq!((c.frame, c.window), (rect(220, 131, 1360, 860), Some(7)));
+    }
 }

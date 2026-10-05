@@ -710,38 +710,65 @@ mod probe {
                 }
             }
 
-            // The recording itself, as the app makes it: two seconds, then its first frame.
+            // ZK-295, what the app did: frame pixels taken for points — the display asked for as
+            // a region twice its size. The display comes out in a quarter of the frame.
+            let twice = CGRect {
+                origin: CGPoint { x: 0.0, y: 0.0 },
+                size: CGSize {
+                    width: pts_w * scale,
+                    height: pts_h * scale,
+                },
+            };
+            stream_case(
+                &mut out,
+                "Z a region twice the display (pixels for points): the bug of 0.0.21",
+                &filter,
+                best(base(cap.0, cap.1).with_scales_to_fit(true)).with_source_rect(twice),
+            );
+
+            // The recording itself, as the app makes it: a second, then its first frame.
             if id == main_id {
-                let _ = writeln!(out, "\n[R the recording as the app makes it]");
-                let mp4 = std::path::Path::new(&path).with_extension("mp4");
-                let _ = std::fs::remove_file(&mp4);
-                let req = RecordRequest::new(Target::Display { id, region: None }, mp4.clone());
-                match Recording::start(req) {
-                    Ok(rec) => {
-                        let _ = writeln!(out, "    started: {:?}", rec.started());
-                        std::thread::sleep(Duration::from_secs(2));
-                        let fin = rec.stop();
-                        let _ = writeln!(
-                            out,
-                            "    result: frames {:?}, error {:?}, file {:?}",
-                            fin.result.frames,
-                            fin.result.error.as_ref().map(|e| e.to_string()),
-                            fin.path
-                        );
-                        match znimok_video_mac::poster::first_frame(&mp4) {
-                            Ok((w, h, rgba)) => say_seen(
-                                &mut out,
-                                &look(w as usize, h as usize, w as usize * 4, &rgba),
-                            ),
-                            Err(e) => {
-                                let _ = writeln!(out, "    first_frame: {e}");
+                let mut record = |name: &str, region: Option<(f64, f64, f64, f64)>| {
+                    let _ = writeln!(out, "\n[{name}]");
+                    let mp4 = std::path::Path::new(&path).with_extension("mp4");
+                    let _ = std::fs::remove_file(&mp4);
+                    let req = RecordRequest::new(Target::Display { id, region }, mp4.clone());
+                    match Recording::start(req) {
+                        Ok(rec) => {
+                            let _ = writeln!(out, "    started: {:?}", rec.started());
+                            std::thread::sleep(Duration::from_millis(1200));
+                            let fin = rec.stop();
+                            let _ = writeln!(
+                                out,
+                                "    result: frames {:?}, error {:?}",
+                                fin.result.frames,
+                                fin.result.error.as_ref().map(|e| e.to_string())
+                            );
+                            match znimok_video_mac::poster::first_frame(&mp4) {
+                                Ok((w, h, rgba)) => say_seen(
+                                    &mut out,
+                                    &look(w as usize, h as usize, w as usize * 4, &rgba),
+                                ),
+                                Err(e) => {
+                                    let _ = writeln!(out, "    first_frame: {e}");
+                                }
                             }
                         }
+                        Err(e) => {
+                            let _ = writeln!(out, "    start: {e}");
+                        }
                     }
-                    Err(e) => {
-                        let _ = writeln!(out, "    start: {e}");
-                    }
-                }
+                    let _ = std::fs::remove_file(&mp4);
+                };
+                record("R1 the recording of the whole display", None);
+                record(
+                    "R2 the recording of a region, 800 x 600 points from 100, 100",
+                    Some((100.0, 100.0, 800.0, 600.0)),
+                );
+                record(
+                    "R3 the recording asked for with pixels for points (0.0.21's whole display): clipped to the display",
+                    Some((0.0, 0.0, pts_w * scale, pts_h * scale)),
+                );
             }
         }
         finish(&path, &out);

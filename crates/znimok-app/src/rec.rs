@@ -255,7 +255,13 @@ fn start_inner(choice: &Choice) -> Result<(), String> {
                 .or_else(|| displays.iter().find(|d| d.primary))
                 .ok_or_else(|| "no display".to_string())?;
             let id: u32 = d.id.0.parse().map_err(|_| "no display".to_string())?;
-            let whole = choice.frame == d.bounds;
+            // The whole display, give or take a unit of rounding.
+            let near = |a: i64, b: i64| (a - b).abs() <= 1;
+            let (f, b) = (choice.frame, d.bounds);
+            let whole = near(f.x.into(), b.x.into())
+                && near(f.y.into(), b.y.into())
+                && near(f.width.into(), b.width.into())
+                && near(f.height.into(), b.height.into());
             Target::Display {
                 id,
                 region: (!whole).then(|| {
@@ -290,7 +296,12 @@ fn start_inner(choice: &Choice) -> Result<(), String> {
     let rec = Recording::start(req).map_err(|e| e.to_string())?;
     let size = rec.started().size;
     // What was asked of the system and what came (ZK-295): the facts to read a wrong picture by.
-    tracing::info!(started = ?rec.started(), source = choice.source, "recording: started");
+    tracing::info!(started = ?rec.started(), source = choice.source, frame = ?choice.frame,
+        display = ?choice.display, "recording: started");
+    if rec.started().region_clipped {
+        tracing::warn!(frame = ?choice.frame, display = ?choice.display,
+            "recording: the region reached outside its display and was clipped to it");
+    }
     let bar = crate::RecBar::new().map_err(|e| e.to_string())?;
     let edges = if choice.source == "screen" {
         Vec::new()
