@@ -6692,3 +6692,13 @@ int-jira-sign-in = Sign in to Atlassian
 # @kind: body
 # @max: 200
 int-jira-sign-in-hint = The simplest: sign in to Atlassian in the browser — no API token to make. With several sites, type the site first and Znimok takes that one.
+
+# @where: The «Share» window: the place chosen, shown above the list; $name its name
+# @kind: label
+# @max: 60
+share-place-chosen = Chosen: { $name }
+
+# @where: The «Share» window: button ✕, clears the place chosen
+# @kind: label
+# @max: 24
+share-place-clear = Clear the choice

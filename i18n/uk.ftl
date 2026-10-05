@@ -6740,3 +6740,13 @@ int-jira-sign-in = Увійти в Atlassian
 # @kind: body
 # @max: 200
 int-jira-sign-in-hint = Найпростіше — увійти в Atlassian у браузері: API-токен створювати не треба. Якщо сайтів кілька, спершу впишіть сайт — Znimok візьме саме його.
+
+# @where: The «Share» window: the place chosen, shown above the list; $name its name
+# @kind: label
+# @max: 60
+share-place-chosen = Вибрано: { $name }
+
+# @where: The «Share» window: button ✕, clears the place chosen
+# @kind: label
+# @max: 24
+share-place-clear = Зняти вибір
