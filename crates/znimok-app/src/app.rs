@@ -441,6 +441,9 @@ pub struct App {
     update_found: Option<crate::update::Found>,
     /// macOS (ZK-143): where the Sparkle update stands.
     update_phase: crate::update::Phase,
+    /// macOS (ZK-297): the person pressed «Check now» and waits for its answer.
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+    update_user_waits: bool,
     /// The folder's fingerprint at the last look, and when that was (the watcher, ZK-131).
     lib_fp: u64,
     lib_polled: Option<Instant>,
@@ -643,6 +646,7 @@ impl App {
             update_busy: false,
             update_found: None,
             update_phase: crate::update::Phase::Idle,
+            update_user_waits: false,
             lib_fp: 0,
             lib_polled: None,
             recheck_timer: slint::Timer::default(),
@@ -793,7 +797,7 @@ impl App {
     /// macOS: also where Sparkle's events are taken (every timer tick).
     pub fn update_tick(&mut self, ui: &AppWindow) {
         #[cfg(target_os = "macos")]
-        self.sparkle_events(ui);
+        self.sparkle_step(ui);
         if self.update_busy {
             return;
         }
@@ -802,32 +806,33 @@ impl App {
         if !p.updates.check_daily || now.saturating_sub(p.updates.last_check) < 24 * 3600 {
             return;
         }
+        // A daily check that failed (no network after a wake) is not tried again every tick.
+        #[cfg(target_os = "macos")]
+        if !crate::update::mac::may_check_in_background() {
+            return;
+        }
         self.update_check(ui, false);
     }
 
     /// «Перевірити зараз» (`user_initiated`), and the daily check.
     pub fn update_check(&mut self, ui: &AppWindow, user_initiated: bool) {
-        if self.update_busy {
-            return;
-        }
         #[cfg(target_os = "macos")]
         {
-            // Sparkle: a background check is silent unless there is an update; a check by the
-            // person answers either way (through the events).
+            // Sparkle, through the one flow of the process (ZK-297): it knows what runs, what
+            // waits for an answer, and answers either way.
             if !crate::update::mac::available() {
                 self.update_checked(ui, crate::update::Found::NotConfigured);
                 return;
             }
-            if crate::update::mac::check(user_initiated) {
-                self.update_busy = true;
-                if user_initiated {
-                    ui.set_upd_status(self.tr.tr("upd-checking").into());
-                }
-                ui.set_upd_busy(true);
-            }
+            let fx = crate::update::mac::press(user_initiated);
+            self.sparkle_effects(ui, fx);
+            self.sparkle_sync(ui);
         }
         #[cfg(not(target_os = "macos"))]
         {
+            if self.update_busy {
+                return;
+            }
             let _ = user_initiated;
             self.update_busy = true;
             ui.set_upd_status(self.tr.tr("upd-checking").into());
@@ -839,89 +844,80 @@ impl App {
         }
     }
 
-    /// macOS: what Sparkle said since the last tick, into the page's state.
+    /// macOS: what Sparkle said since the last tick, and its own state, through the flow; then
+    /// this window's page from it.
     #[cfg(target_os = "macos")]
-    fn sparkle_events(&mut self, ui: &AppWindow) {
-        use crate::update::mac::{Choice, Event};
-        use crate::update::{Found, Phase};
-        let events = crate::update::mac::poll();
-        if events.is_empty() {
+    fn sparkle_step(&mut self, ui: &AppWindow) {
+        if !crate::update::mac::available() {
             return;
         }
-        for e in events {
+        let fx = crate::update::mac::step();
+        self.sparkle_effects(ui, fx);
+        self.sparkle_sync(ui);
+    }
+
+    /// macOS: what the flow asks of the app.
+    #[cfg(target_os = "macos")]
+    fn sparkle_effects(&mut self, ui: &AppWindow, effects: Vec<crate::update::flow::Effect>) {
+        use crate::update::Found;
+        use crate::update::flow::Effect;
+        for e in effects {
             match e {
-                Event::Checking => {
-                    self.update_busy = true;
-                }
-                Event::Found {
-                    version,
-                    notes_url,
-                    size,
-                    ..
-                } => {
-                    self.update_phase = Phase::Idle;
-                    self.update_checked(
-                        ui,
-                        Found::Sparkle {
-                            version,
-                            notes: notes_url,
-                            size,
-                        },
-                    );
-                }
-                Event::NotFound(_) => {
-                    self.update_phase = Phase::Idle;
-                    self.update_checked(ui, Found::UpToDate);
-                }
-                Event::Error(e) => {
-                    self.update_phase = Phase::Idle;
-                    self.update_checked(ui, Found::Failed(e));
-                }
-                Event::NotesFailed(_) => {}
-                Event::DownloadStarted => {
-                    self.update_busy = true;
-                    self.update_phase = Phase::Downloading {
-                        received: 0,
-                        total: 0,
+                Effect::Checked(found) => {
+                    let found = match *found {
+                        Found::Failed(e) if e.is_empty() => {
+                            Found::Failed(self.tr.tr("upd-no-answer"))
+                        }
+                        f => f,
                     };
+                    self.update_checked(ui, found);
                 }
-                Event::DownloadTotal(t) => {
-                    if let Phase::Downloading { total, .. } = &mut self.update_phase {
-                        *total = t;
+                // «Оновити зараз» means the whole way, as on Windows: every window saves.
+                Effect::SaveAll => {
+                    for (app, wui) in crate::wins::all() {
+                        if let Ok(mut a) = app.try_borrow_mut() {
+                            a.save_now(&wui);
+                        }
                     }
-                }
-                Event::DownloadProgress(n) => {
-                    if let Phase::Downloading { received, .. } = &mut self.update_phase {
-                        *received += n;
-                    }
-                }
-                Event::Extracting(p) => {
-                    self.update_busy = true;
-                    self.update_phase = Phase::Extracting(p);
-                }
-                Event::ReadyToInstall => {
-                    // «Оновити зараз» means the whole way, as on Windows: save, then relaunch.
                     self.save_now(ui);
-                    self.update_phase = Phase::Installing;
-                    crate::update::mac::reply(Choice::Install);
                 }
-                Event::Installing { app_terminated } => {
-                    self.update_phase = Phase::Installing;
-                    if !app_terminated {
-                        // Sparkle's installer waits for the app: leave the loop (before_exit
-                        // saves and flushes), the new version comes up by itself.
-                        let _ = slint::quit_event_loop();
-                    }
-                }
-                Event::InstalledAndRelaunched(_) => {
-                    self.update_phase = Phase::Idle;
-                    self.update_busy = false;
-                }
-                Event::Dismissed => {
-                    self.update_phase = Phase::Idle;
-                    self.update_busy = false;
+                // Sparkle's installer waits for the app: leave the loop (before_exit saves and
+                // flushes), the new version comes up by itself.
+                Effect::Quit => {
+                    let _ = slint::quit_event_loop();
                 }
             }
+        }
+    }
+
+    /// macOS: this window's copy of the flow (one for all windows), and its page.
+    #[cfg(target_os = "macos")]
+    fn sparkle_sync(&mut self, ui: &AppWindow) {
+        use crate::update::{Found, Phase};
+        let (busy, waits, phase, found) = crate::update::mac::state();
+        let found = found.map(|f| match f {
+            Found::Failed(e) if e.is_empty() => Found::Failed(self.tr.tr("upd-no-answer")),
+            f => f,
+        });
+        // The flow's answer when it has one; nothing while the person's new check runs.
+        let found = if found.is_some() || (busy && waits) {
+            found
+        } else {
+            self.update_found.clone()
+        };
+        if busy == self.update_busy
+            && waits == self.update_user_waits
+            && phase == self.update_phase
+            && found == self.update_found
+        {
+            return;
+        }
+        self.update_busy = busy;
+        self.update_user_waits = waits;
+        self.update_phase = phase;
+        self.update_found = found;
+        if busy && waits && self.update_phase == Phase::Idle {
+            ui.set_upd_status(self.tr.tr("upd-checking").into());
         }
         let p = self.prefs();
         self.agents_sync(ui, &p);
@@ -966,23 +962,11 @@ impl App {
     pub fn update_install(&mut self, ui: &AppWindow) {
         #[cfg(target_os = "macos")]
         {
-            if self.update_busy
-                || !matches!(
-                    self.update_found,
-                    Some(crate::update::Found::Sparkle { .. })
-                )
-            {
-                return;
-            }
-            if crate::update::mac::reply(crate::update::mac::Choice::Install) {
-                self.update_busy = true;
-                self.update_phase = crate::update::Phase::Downloading {
-                    received: 0,
-                    total: 0,
-                };
+            if crate::update::mac::install() {
                 ui.set_upd_status(self.tr.tr("upd-downloading").into());
                 ui.set_upd_busy(true);
                 ui.set_upd_progress(0.0);
+                self.sparkle_sync(ui);
             }
         }
         #[cfg(not(target_os = "macos"))]

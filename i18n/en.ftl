@@ -6702,3 +6702,8 @@ share-place-chosen = Chosen: { $name }
 # @kind: label
 # @max: 24
 share-place-clear = Clear the choice
+
+# @where: Updates page: the reason when the updater gave no answer to a check
+# @kind: status
+# @max: 60
+upd-no-answer = the updater did not answer — try again
