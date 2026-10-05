@@ -11,6 +11,11 @@
 //! - Automatic checks are off in Sparkle; the app asks ([`Sparkle::check`]) on its own daily
 //!   timer, as on Windows (security review: nothing goes to the network unless the person
 //!   turned the daily check on or pressed the button).
+//! - **The driver alone does not say when a check is over** (ZK-297): a background check that
+//!   finds nothing, or fails (no network after a wake), ends without a single call to the
+//!   driver — Sparkle shows errors only for an update it has shown. The end of every cycle
+//!   comes through the delegate ([`Event::CycleFinished`]), and [`Sparkle::session_in_progress`]
+//!   is the truth at any moment.
 //!
 //! Sparkle calls the driver on the main thread; the app polls [`Sparkle::poll`] from its timer,
 //! also on the main thread.
@@ -75,7 +80,24 @@ pub enum Event {
     InstalledAndRelaunched(bool),
     /// Everything torn down (the person dismissed, or the session ended).
     Dismissed,
+    /// A check was asked for while a found update waits for its answer: Sparkle only says the
+    /// update is already shown.
+    InFocus,
+    /// A whole cycle is over, whoever started it (`background`: the app's own daily check) and
+    /// however it went: `error` is `None` after an update that was shown and answered, the code
+    /// [`NO_UPDATE`] when there is nothing newer, anything else a failure — the only word about
+    /// a background check that found nothing or failed.
+    CycleFinished {
+        background: bool,
+        error: Option<(i64, String)>,
+    },
 }
+
+/// `SUNoUpdateError`: the feed has nothing newer.
+pub const NO_UPDATE: i64 = 1001;
+/// `SUInstallationCanceledError`, `SUInstallationAuthorizeLaterError`: the person's own choice.
+pub const CANCELED: i64 = 4007;
+pub const AUTHORIZE_LATER: i64 = 4008;
 
 /// A reply block Sparkle waits on (`SPUUserUpdateChoice`), kept until the app answers.
 type Reply = RefCell<Option<RcBlock<dyn Fn(isize)>>>;
@@ -243,7 +265,9 @@ define_class!(
         }
 
         #[unsafe(method(showUpdateInFocus))]
-        fn show_in_focus(&self) {}
+        fn show_in_focus(&self) {
+            let _ = self.ivars().tx.send(Event::InFocus);
+        }
 
         #[unsafe(method(dismissUpdateInstallation))]
         fn dismiss(&self) {
@@ -272,6 +296,7 @@ impl Driver {
 
 struct DelegateIvars {
     feed: Option<String>,
+    tx: Sender<Event>,
 }
 
 define_class!(
@@ -295,12 +320,22 @@ define_class!(
         fn should_prompt(&self, _updater: &AnyObject) -> bool {
             false
         }
+
+        // The end of every update cycle (`SPUUpdateCheck`: 0 the person's check, 1 a background
+        // one, 2 information only).
+        #[unsafe(method(updater:didFinishUpdateCycleForUpdateCheck:error:))]
+        fn cycle_finished(&self, _updater: &AnyObject, check: isize, error: Option<&NSError>) {
+            let _ = self.ivars().tx.send(Event::CycleFinished {
+                background: check != 0,
+                error: error.map(|e| (e.code() as i64, error_text(e))),
+            });
+        }
     }
 );
 
 impl Delegate {
-    fn new(mtm: MainThreadMarker, feed: Option<String>) -> Retained<Self> {
-        let this = Self::alloc(mtm).set_ivars(DelegateIvars { feed });
+    fn new(mtm: MainThreadMarker, feed: Option<String>, tx: Sender<Event>) -> Retained<Self> {
+        let this = Self::alloc(mtm).set_ivars(DelegateIvars { feed, tx });
         // SAFETY: plain NSObject init.
         unsafe { msg_send![super(this), init] }
     }
@@ -344,8 +379,8 @@ impl Sparkle {
             None => NSBundle::mainBundle(),
         };
         let (tx, rx) = channel();
-        let driver = Driver::new(mtm, tx);
-        let delegate = Delegate::new(mtm, feed.map(str::to_string));
+        let driver = Driver::new(mtm, tx.clone());
+        let delegate = Delegate::new(mtm, feed.map(str::to_string), tx);
         // SAFETY: the documented initialiser; the driver and delegate outlive the updater (kept
         // in `Sparkle`).
         let updater: Retained<AnyObject> = unsafe {
