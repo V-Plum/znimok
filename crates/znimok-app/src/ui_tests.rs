@@ -210,6 +210,12 @@ fn the_share_window_picks_a_service_and_a_place() {
         let seen = seen.clone();
         ui.on_sh_set(move |a, b| seen.borrow_mut().push(format!("{a}:{b}")));
     }
+    // The place chosen stays in sight above the list, with ✕ to clear it (ZK-294).
+    ui.set_sh_place("C1".into());
+    ui.set_sh_place_name("Chosen: #general".into());
+    settle();
+    by_label(&ui, "Chosen: #general");
+    by_label(&ui, "Clear the choice").mock_single_click(PointerEventButton::Left);
     by_label(&ui, "#design").mock_single_click(PointerEventButton::Left);
     by_label(&ui, "Google Drive · a@b.c").mock_single_click(PointerEventButton::Left);
     by_label(&ui, "Znimok document").mock_single_click(PointerEventButton::Left);
@@ -219,7 +225,13 @@ fn the_share_window_picks_a_service_and_a_place() {
     by_label(&ui, "Send").mock_single_click(PointerEventButton::Left);
     assert_eq!(
         *seen.borrow(),
-        ["place:C2", "target:google", "what:document", "send:"]
+        [
+            "place:",
+            "place:C2",
+            "target:google",
+            "what:document",
+            "send:"
+        ]
     );
 }
 

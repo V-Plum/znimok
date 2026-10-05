@@ -2416,6 +2416,7 @@ impl App {
                 self.share_sync(ui);
             }
             "place" => {
+                let mut filtered = false;
                 if let Some(sh) = self.sh.as_mut() {
                     sh.place = value.to_string();
                     sh.place_name = sh
@@ -2424,10 +2425,17 @@ impl App {
                         .find(|p| p.id == value)
                         .map(|p| p.name.clone())
                         .unwrap_or_else(|| value.to_string());
+                    filtered = !sh.typed.is_empty();
                     sh.typed.clear();
                     ui.set_sh_typed("".into());
                 }
-                self.share_sync(ui);
+                // Only the mark changes (ZK-294): the list is not built again, so it stays where
+                // it was scrolled; a filtered one comes back whole.
+                if filtered {
+                    self.share_sync(ui);
+                } else {
+                    self.share_sync_place(ui);
+                }
             }
             "what" => {
                 if let Some(sh) = self.sh.as_mut() {
@@ -2623,7 +2631,7 @@ impl App {
                 .map(|p| (p.id.clone(), p.name.clone())),
         );
         set_list(ui, AppWindow::set_sh_places, rows.into_iter());
-        ui.set_sh_place(sh.place.clone().into());
+        self.share_sync_place(ui);
         ui.set_sh_note(
             if sh.loading {
                 self.tr.tr("share-places-loading")
@@ -2644,6 +2652,28 @@ impl App {
         let ask = self.prefs().video.hide_on_export == znimok_settings::HideOnExport::Ask;
         ui.set_sh_hide_shown(sh.has_log && ask && (sh.what == "report" || sh.what == "logs"));
         ui.set_sh_hide(sh.hide);
+        ui.set_sh_can_send(id.is_some() && (!needs || !sh.place.trim().is_empty()));
+    }
+
+    /// The place chosen, above the list and in it, and whether «Send» can (ZK-294).
+    fn share_sync_place(&self, ui: &AppWindow) {
+        let Some(sh) = self.sh.as_ref() else {
+            return;
+        };
+        ui.set_sh_place(sh.place.clone().into());
+        ui.set_sh_place_name(
+            if sh.place.trim().is_empty() {
+                String::new()
+            } else {
+                self.tr.tr_args(
+                    "share-place-chosen",
+                    &args(&[("name", sh.place_name.clone())]),
+                )
+            }
+            .into(),
+        );
+        let id = znimok_share::TargetId::parse(&sh.target);
+        let needs = id.as_ref().is_some_and(znimok_share::needs_place);
         ui.set_sh_can_send(id.is_some() && (!needs || !sh.place.trim().is_empty()));
     }
 

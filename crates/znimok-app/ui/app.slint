@@ -5327,6 +5327,8 @@ export component AppWindow inherits Window {
     in property <bool> sh-has-places;
     in property <[IntTarget]> sh-places;
     in property <string> sh-place;
+    // «Chosen: #qa-team», above the list (ZK-294); empty — nothing chosen.
+    in property <string> sh-place-name;
     in-out property <string> sh-typed;
     in property <string> sh-note;
     in property <[IntTarget]> sh-whats;
@@ -5412,6 +5414,18 @@ export component AppWindow inherits Window {
                         alignment: start;
                         if root.sh-has-places: Text { text: @tr("share-place" => "Where exactly"); color: Theme.text3; font-size: 11px; font-weight: 600; letter-spacing: 0.4px; }
                         if root.sh-has-places: LineEdit { text <=> root.sh-typed; placeholder-text: @tr("share-place-search" => "Search or type: a channel, a project, an issue, a chat"); edited(t) => { root.sh-set("typed", t); } }
+                        // The place chosen, always in sight, with ✕ to clear it (ZK-294).
+                        if root.sh-has-places && root.sh-place-name != "": Rectangle {
+                            height: 32px;
+                            border-radius: 8px;
+                            background: Theme.accent.transparentize(0.86);
+                            HorizontalLayout {
+                                padding-left: 10px;
+                                spacing: 6px;
+                                Text { text: root.sh-place-name; color: Theme.text; font-size: 12px; font-weight: 600; vertical-alignment: center; horizontal-stretch: 1; overflow: elide; }
+                                IconButton { width: 30px; height: 30px; icon: "M7 7 L17 17 M17 7 L7 17"; label: @tr("share-place-clear" => "Clear the choice"); clicked => { root.sh-set("place", ""); } }
+                            }
+                        }
                         // Every place, scrolling past eight rows (ZK-290); typing narrows it.
                         if root.sh-has-places: ListView {
                             height: min(8, root.sh-places.length) * 32px;
