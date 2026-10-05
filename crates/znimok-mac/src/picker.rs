@@ -62,7 +62,13 @@ pub fn pick_and_capture(done: impl FnOnce(Result<Option<Picked>, String>) + Send
                         let cfg = SCStreamConfiguration::new()
                             .with_width(pw.max(1))
                             .with_height(ph.max(1))
-                            .with_shows_cursor(false);
+                            .with_shows_cursor(false)
+                            .with_scales_to_fit(true);
+                        // The full pixel resolution: macOS 27 defaults to 1× (ZK-292).
+                        let cfg = cfg
+                            .clone()
+                            .with_capture_resolution_type(screencapturekit::stream::configuration::SCCaptureResolutionType::Best)
+                            .unwrap_or(cfg);
                         SCScreenshotManager::capture_image(&filter, &cfg)
                             .map_err(|e| format!("capture_image: {e}"))
                             .and_then(|img| {

@@ -838,7 +838,12 @@ fn place(a: &Active) {
         set_rect(e.window(), x, y, w.max(1) as u32, h.max(1) as u32);
     }
     let area = crate::system::work_area(a.display);
-    let k = a.bar.window().scale_factor();
+    // The bar's size in desktop units: pixels on Windows, points on macOS (ZK-292).
+    let k = if cfg!(target_os = "macos") {
+        1.0
+    } else {
+        a.bar.window().scale_factor()
+    };
     let (bw, bh) = ((272.0 * k) as i32, (52.0 * k) as i32);
     let cx = (f.x + f.width as i32 / 2 - bw / 2).clamp(
         area.x + 8,
@@ -853,14 +858,27 @@ fn place(a: &Active) {
     } else {
         area.y + area.height as i32 - bh - 24
     };
-    a.bar
-        .window()
-        .set_position(slint::PhysicalPosition::new(cx, y));
+    set_pos(a.bar.window(), cx, y);
+}
+
+/// Desktop units are the system's: physical pixels on Windows, points on macOS, where the
+/// recorded window's and the display's rectangles come in points (ZK-292: set as pixels, the
+/// frame came out half its size in the corner and the bar halfway up the screen).
+fn set_pos(w: &slint::Window, x: i32, y: i32) {
+    if cfg!(target_os = "macos") {
+        w.set_position(slint::LogicalPosition::new(x as f32, y as f32));
+    } else {
+        w.set_position(slint::PhysicalPosition::new(x, y));
+    }
 }
 
 fn set_rect(w: &slint::Window, x: i32, y: i32, width: u32, height: u32) {
-    w.set_position(slint::PhysicalPosition::new(x, y));
-    w.set_size(slint::PhysicalSize::new(width, height));
+    set_pos(w, x, y);
+    if cfg!(target_os = "macos") {
+        w.set_size(slint::LogicalSize::new(width as f32, height as f32));
+    } else {
+        w.set_size(slint::PhysicalSize::new(width, height));
+    }
 }
 
 /// The mouse goes through the edge, and it stays out of captures.

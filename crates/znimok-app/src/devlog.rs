@@ -95,16 +95,101 @@ fn record_window(r: &Value) {
         if marker.is_empty() {
             return fail("not-found");
         }
-        let (windows, displays) = windows_and_displays();
-        let found: Vec<_> = windows
-            .into_iter()
-            .filter(|w| w.title.contains(marker))
-            .collect();
-        let w = match found.as_slice() {
-            [w] => w.clone(),
-            [] => return fail("not-found"),
-            _ => return fail("ambiguous"),
-        };
+        find_marked(r.clone(), marker.to_string(), 0);
+    }
+    #[cfg(not(any(windows, target_os = "macos")))]
+    fail("unsupported");
+}
+
+/// How many times the mark is looked for, 150 ms apart (ZK-291).
+#[cfg(any(windows, target_os = "macos"))]
+const MARK_TRIES: u32 = 10;
+
+/// Looks for the window whose title carries the mark. On macOS the browser hands its new title
+/// to the window server a moment later, so a first look often finds the old one (ZK-291): look
+/// again, then by the window's bounds the extension sent (points, as macOS has them).
+#[cfg(any(windows, target_os = "macos"))]
+fn find_marked(r: Value, marker: String, tries: u32) {
+    let rid = r.get("rid").cloned().unwrap_or(Value::Null);
+    let fail = |why: &str| hub().reply(json!({"rec": "fail", "rid": rid, "why": why}));
+    let (windows, displays) = windows_and_displays();
+    let found: Vec<_> = windows
+        .iter()
+        .filter(|w| w.title.contains(&marker))
+        .cloned()
+        .collect();
+    let w = match found.as_slice() {
+        [w] => w.clone(),
+        [_, _, ..] => return fail("ambiguous"),
+        [] if tries + 1 < MARK_TRIES => {
+            slint::Timer::single_shot(std::time::Duration::from_millis(150), move || {
+                find_marked(r, marker, tries + 1)
+            });
+            return;
+        }
+        [] => match by_bounds(&r, &windows) {
+            Some(w) => w,
+            None => {
+                tracing::warn!(
+                    tries,
+                    "record this window: no window with the mark {marker}"
+                );
+                return fail("not-found");
+            }
+        },
+    };
+    if tries > 0 {
+        tracing::info!(
+            tries,
+            "record this window: found after waiting for the title"
+        );
+    }
+    record_found(&r, w, &displays);
+}
+
+/// The browser's window by the bounds the extension sent (`wl`, `wt`, `ww`, `wh`): on macOS the
+/// browser's window coordinates are the system's points, so the window is the one with the same
+/// frame (±2). Only one such window, else nothing. On Windows the browser counts in its own
+/// device-independent pixels, which are not the system's: not used there.
+#[cfg(any(windows, target_os = "macos"))]
+fn by_bounds(
+    r: &Value,
+    windows: &[znimok_platform::WindowInfo],
+) -> Option<znimok_platform::WindowInfo> {
+    if !cfg!(target_os = "macos") {
+        return None;
+    }
+    let n = |k: &str| r.get(k).and_then(Value::as_f64).map(|v| v.round() as i64);
+    let (x, y, w, h) = (n("wl")?, n("wt")?, n("ww")?, n("wh")?);
+    let near = |a: i64, b: i64| (a - b).abs() <= 2;
+    let found: Vec<_> = windows
+        .iter()
+        .filter(|win| {
+            !win.own
+                && near(i64::from(win.bounds.x), x)
+                && near(i64::from(win.bounds.y), y)
+                && near(i64::from(win.bounds.width), w)
+                && near(i64::from(win.bounds.height), h)
+        })
+        .collect();
+    match found.as_slice() {
+        [one] => {
+            tracing::info!(app = %one.app, "record this window: found by its bounds");
+            Some((*one).clone())
+        }
+        _ => None,
+    }
+}
+
+/// The browser's window is found: its display, then the recording once the mark is gone.
+#[cfg(any(windows, target_os = "macos"))]
+fn record_found(
+    r: &Value,
+    w: znimok_platform::WindowInfo,
+    displays: &[znimok_platform::DisplayInfo],
+) {
+    let rid = r.get("rid").cloned().unwrap_or(Value::Null);
+    {
         hub().reply(json!({"rec": "found", "rid": rid}));
         // Its display: as the system says, else the one its centre is on.
         let (cx, cy) = (
@@ -144,8 +229,6 @@ fn record_window(r: &Value) {
             }
         });
     }
-    #[cfg(not(any(windows, target_os = "macos")))]
-    fail("unsupported");
 }
 
 /// The windows on screen (with their titles) and the displays.
