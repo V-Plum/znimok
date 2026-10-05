@@ -179,7 +179,15 @@ impl MacCapture {
         let cfg = SCStreamConfiguration::new()
             .with_width(pw)
             .with_height(ph)
-            .with_shows_cursor(false);
+            .with_shows_cursor(false)
+            .with_scales_to_fit(true);
+        // The full pixel resolution: macOS 27 defaults to 1× (ZK-292).
+        let cfg = cfg
+            .clone()
+            .with_capture_resolution_type(
+                screencapturekit::stream::configuration::SCCaptureResolutionType::Best,
+            )
+            .unwrap_or(cfg);
         let img = SCScreenshotManager::capture_image(filter, &cfg).map_err(|e| {
             let msg = e.to_string();
             if msg.contains("TCC") || msg.contains("declined") {

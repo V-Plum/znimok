@@ -10,6 +10,7 @@ use std::thread::JoinHandle;
 use screencapturekit::cg::{CGPoint, CGRect, CGSize};
 use screencapturekit::prelude::*;
 use screencapturekit::shareable_content::SCShareableContentInfo;
+use screencapturekit::stream::configuration::SCCaptureResolutionType;
 use screencapturekit::stream::configuration::pixel_format::PixelFormat;
 use znimok_video::events::EventQueue;
 use znimok_video::recorder::{
@@ -296,6 +297,14 @@ fn run(
     if let Some(r) = rect {
         cfg = cfg.with_source_rect(r);
     }
+    // macOS 27 captures at the nominal (1×) resolution by default and does not scale it to the
+    // size asked for: a Retina screen came out in the top-left quarter of the frame (ZK-292).
+    // The full pixel resolution, scaled to the output, as before.
+    cfg = cfg.with_scales_to_fit(true);
+    cfg = cfg
+        .clone()
+        .with_capture_resolution_type(SCCaptureResolutionType::Best)
+        .unwrap_or(cfg);
     if req.clicks && req.cursor {
         cfg = cfg.clone().with_shows_mouse_clicks(true).unwrap_or(cfg);
     }
