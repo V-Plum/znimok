@@ -164,7 +164,12 @@ mod probe {
     }
 
     /// One stream with `cfg`: the first complete frame (and how many came in the wait).
-    fn stream_case(out: &mut String, name: &str, filter: &SCContentFilter, cfg: SCStreamConfiguration) {
+    fn stream_case(
+        out: &mut String,
+        name: &str,
+        filter: &SCContentFilter,
+        cfg: SCStreamConfiguration,
+    ) {
         let _ = writeln!(out, "\n[{name}]");
         let _ = writeln!(
             out,
@@ -252,7 +257,12 @@ mod probe {
         }
     }
 
-    fn shot_case(out: &mut String, name: &str, filter: &SCContentFilter, cfg: SCStreamConfiguration) {
+    fn shot_case(
+        out: &mut String,
+        name: &str,
+        filter: &SCContentFilter,
+        cfg: SCStreamConfiguration,
+    ) {
         let _ = writeln!(out, "\n[{name}]");
         let _ = writeln!(
             out,
@@ -282,7 +292,9 @@ mod probe {
     }
 
     pub fn run() {
-        let path = std::env::args().nth(1).unwrap_or_else(|| "sck-probe.txt".into());
+        let path = std::env::args()
+            .nth(1)
+            .unwrap_or_else(|| "sck-probe.txt".into());
         let mut out = String::new();
         let _ = writeln!(out, "Znimok sck_probe (ZK-295)");
         let content = match SCShareableContent::get() {
@@ -317,7 +329,14 @@ mod probe {
                     CGDisplayModeRelease(m);
                     r
                 };
-                (CGDisplayPixelsWide(id), CGDisplayPixelsHigh(id), r.0, r.1, r.2, r.3)
+                (
+                    CGDisplayPixelsWide(id),
+                    CGDisplayPixelsHigh(id),
+                    r.0,
+                    r.1,
+                    r.2,
+                    r.3,
+                )
             };
             let _ = writeln!(
                 out,
@@ -392,7 +411,12 @@ mod probe {
                 },
             };
 
-            stream_case(&mut out, "A exact, defaults", &filter, base(exact.0, exact.1));
+            stream_case(
+                &mut out,
+                "A exact, defaults",
+                &filter,
+                base(exact.0, exact.1),
+            );
             stream_case(
                 &mut out,
                 "B exact, scalesToFit + Best",
@@ -521,12 +545,15 @@ mod probe {
                         let _ = writeln!(
                             out,
                             "    result: frames {:?}, error {:?}, file {:?}",
-                            fin.result.frames, fin.result.error.as_ref().map(|e| e.to_string()), fin.path
+                            fin.result.frames,
+                            fin.result.error.as_ref().map(|e| e.to_string()),
+                            fin.path
                         );
                         match znimok_video_mac::poster::first_frame(&mp4) {
-                            Ok((w, h, rgba)) => {
-                                say_seen(&mut out, &look(w as usize, h as usize, w as usize * 4, &rgba))
-                            }
+                            Ok((w, h, rgba)) => say_seen(
+                                &mut out,
+                                &look(w as usize, h as usize, w as usize * 4, &rgba),
+                            ),
                             Err(e) => {
                                 let _ = writeln!(out, "    first_frame: {e}");
                             }
