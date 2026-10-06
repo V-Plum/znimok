@@ -235,6 +235,55 @@ fn the_share_window_picks_a_service_and_a_place() {
     );
 }
 
+/// ZK-298: what is typed narrows the places and Enter takes it; a click on a row picks that row.
+#[test]
+fn typing_narrows_and_a_click_picks() {
+    let ui = window();
+    ui.set_page(1);
+    let rows = |r: &[(&str, &str)]| -> slint::ModelRc<crate::IntTarget> {
+        let v: Vec<crate::IntTarget> = r
+            .iter()
+            .map(|(k, n)| crate::IntTarget {
+                key: (*k).into(),
+                name: (*n).into(),
+            })
+            .collect();
+        std::rc::Rc::new(slint::VecModel::from(v)).into()
+    };
+    ui.set_sh_targets(rows(&[("slack", "Slack")]));
+    ui.set_sh_target("slack".into());
+    ui.set_sh_has_places(true);
+    ui.set_sh_places(rows(&[("ved", "Use «ved»"), ("D1", "@Vedmid")]));
+    ui.set_sh_whats(rows(&[("image", "Picture")]));
+    ui.set_sh_what("image".into());
+    ui.set_sh_open(true);
+    settle();
+    let seen = Rc::new(RefCell::new(Vec::new()));
+    {
+        let seen = seen.clone();
+        ui.on_sh_set(move |a, b| seen.borrow_mut().push(format!("{a}:{b}")));
+    }
+    let field = i_slint_backend_testing::ElementQuery::from_root(&ui)
+        .match_descendants()
+        .match_accessible_role(AccessibleRole::TextInput)
+        .find_all()
+        .into_iter()
+        .find(reachable)
+        .expect("the search field");
+    field.mock_single_click(PointerEventButton::Left);
+    for c in ["v", "e", "d", "\n"] {
+        ui.window()
+            .dispatch_event(slint::platform::WindowEvent::KeyPressed { text: c.into() });
+        ui.window()
+            .dispatch_event(slint::platform::WindowEvent::KeyReleased { text: c.into() });
+    }
+    by_label(&ui, "@Vedmid").mock_single_click(PointerEventButton::Left);
+    assert_eq!(
+        *seen.borrow(),
+        ["typed:v", "typed:ve", "typed:ved", "accept:ved", "place:D1"]
+    );
+}
+
 /// ZK-280: a service with two accounts — the name of each, «Remove» on the added one only, and
 /// the buttons say which account.
 #[test]

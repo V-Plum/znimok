@@ -5413,7 +5413,7 @@ export component AppWindow inherits Window {
                         spacing: 10px;
                         alignment: start;
                         if root.sh-has-places: Text { text: @tr("share-place" => "Where exactly"); color: Theme.text3; font-size: 11px; font-weight: 600; letter-spacing: 0.4px; }
-                        if root.sh-has-places: LineEdit { text <=> root.sh-typed; placeholder-text: @tr("share-place-search" => "Search or type: a channel, a project, an issue, a chat"); edited(t) => { root.sh-set("typed", t); } }
+                        if root.sh-has-places: LineEdit { text <=> root.sh-typed; placeholder-text: @tr("share-place-search" => "Search or type: a channel, a project, an issue, a chat"); edited(t) => { root.sh-set("typed", t); } accepted(t) => { root.sh-set("accept", t); } }
                         // The place chosen, always in sight, with ✕ to clear it (ZK-294).
                         if root.sh-has-places && root.sh-place-name != "": Rectangle {
                             height: 32px;
