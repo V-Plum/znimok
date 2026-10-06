@@ -2391,16 +2391,28 @@ impl App {
                 self.settings_open(ui);
             }
             "target" => self.share_pick(ui, value),
+            // Typing only narrows the list; the place is chosen by a click (ZK-298). The text
+            // typed was the place at once, and the field was cleared on a click — on Windows the
+            // system's text input then told the old text again, and it won over the click.
             "typed" => {
                 if let Some(sh) = self.sh.as_mut() {
                     sh.typed = value.trim().to_string();
-                    sh.place = sh.typed.clone();
-                    sh.place_name = sh.typed.clone();
                 }
                 self.share_sync(ui);
             }
+            // Enter in the field: the first place that matches, else what is typed.
+            "accept" => {
+                let pick = self.sh.as_ref().and_then(|sh| {
+                    share_matches(sh)
+                        .next()
+                        .map(|p| p.id.clone())
+                        .or_else(|| (!sh.typed.is_empty()).then(|| sh.typed.clone()))
+                });
+                if let Some(p) = pick {
+                    self.share_set(ui, "place", &p);
+                }
+            }
             "place" => {
-                let mut filtered = false;
                 if let Some(sh) = self.sh.as_mut() {
                     sh.place = value.to_string();
                     sh.place_name = sh
@@ -2409,17 +2421,10 @@ impl App {
                         .find(|p| p.id == value)
                         .map(|p| p.name.clone())
                         .unwrap_or_else(|| value.to_string());
-                    filtered = !sh.typed.is_empty();
-                    sh.typed.clear();
-                    ui.set_sh_typed("".into());
                 }
                 // Only the mark changes (ZK-294): the list is not built again, so it stays where
-                // it was scrolled; a filtered one comes back whole.
-                if filtered {
-                    self.share_sync(ui);
-                } else {
-                    self.share_sync_place(ui);
-                }
+                // it was scrolled, and the field keeps what is typed (ZK-298).
+                self.share_sync_place(ui);
             }
             "what" => {
                 if let Some(sh) = self.sh.as_mut() {
@@ -2603,17 +2608,8 @@ impl App {
                     .tr_args("share-place-use", &args(&[("place", sh.typed.clone())])),
             ));
         }
-        rows.extend(
-            sh.places
-                .iter()
-                .filter(|p| {
-                    q.is_empty()
-                        || p.name.to_lowercase().contains(&q)
-                        || p.id.to_lowercase().contains(&q)
-                })
-                // All of them: the window's list scrolls (ZK-290).
-                .map(|p| (p.id.clone(), p.name.clone())),
-        );
+        // All of them: the window's list scrolls (ZK-290).
+        rows.extend(share_matches(sh).map(|p| (p.id.clone(), p.name.clone())));
         set_list(ui, AppWindow::set_sh_places, rows.into_iter());
         self.share_sync_place(ui);
         ui.set_sh_note(
@@ -13417,6 +13413,14 @@ fn share_whats(video: bool, has_log: bool) -> Vec<&'static str> {
 }
 
 /// A list of `(key, name)` into one of the window's `[IntTarget]` properties.
+/// The «Share» window's places that match what is typed (all of them when nothing is).
+fn share_matches(sh: &ShareSheet) -> impl Iterator<Item = &znimok_share::Place> {
+    let q = sh.typed.to_lowercase();
+    sh.places.iter().filter(move |p| {
+        q.is_empty() || p.name.to_lowercase().contains(&q) || p.id.to_lowercase().contains(&q)
+    })
+}
+
 fn set_list(
     ui: &AppWindow,
     set: fn(&AppWindow, slint::ModelRc<crate::IntTarget>),
