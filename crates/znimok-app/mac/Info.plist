@@ -16,6 +16,9 @@
     <key>NSHighResolutionCapable</key><true/>
     <key>NSSupportsAutomaticGraphicsSwitching</key><true/>
     <key>NSScreenCaptureUsageDescription</key><string>Znimok робить знімки екрана й вікон, які ви вибираєте.</string>
+    <!-- The microphone in a recording (ZK-299: with the hardened runtime macOS asks only with this
+         text and the audio-input entitlement, Znimok.entitlements). -->
+    <key>NSMicrophoneUsageDescription</key><string>Znimok записує ваш голос у відео, коли ви вмикаєте мікрофон.</string>
     <!-- Sparkle 2 (ZK-143): the appcast of the latest release; the app checks on its own timer.
          The public key is keys/znimok-sparkle-ed25519.pub.pem (its raw 32 bytes, base64). -->
     <key>SUFeedURL</key><string>https://github.com/V-Plum/znimok/releases/latest/download/appcast.xml</string>
