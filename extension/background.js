@@ -37,6 +37,7 @@ let app = { state: "idle", ms: 0, at: 0, log: 1, ctl: 1, app: false };
 const pending = new Map();       // rid → { resolve, tabId, suffix, marked, preAttached, timer }
 let ridSeq = 0;
 let lastError = "";
+let noHost = false;     // the browser found no host manifest (ZK-300)
 
 const browserName = /Edg\//.test(navigator.userAgent) ? "Edge" : "Chrome";
 
@@ -73,7 +74,10 @@ function connect() {
     else if (m.rec) onRecReply(m);
   });
   port.onDisconnect.addListener(() => {
-    void chrome.runtime.lastError;
+    // «Specified native messaging host not found»: this browser has no manifest for Znimok — a
+    // different thing from Znimok not running (ZK-300: Chrome Canary looked like the latter).
+    const le = chrome.runtime.lastError;
+    noHost = !!(le && /not found/i.test(le.message || ""));
     port = null;
     if (recording) stopRecording();
     onAppState({ state: "idle", ms: 0, log: app.log, ctl: app.ctl, app: false });
@@ -573,7 +577,7 @@ chrome.commands.onCommand.addListener(async (command, tab) => {
 // ---- the popup's questions ----
 chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
   if (msg && msg.q === "state") {
-    reply({ connected: !!port && app.app, recording, browser: browserName, app: app.state, ctl: app.ctl, log: app.log, lastError });
+    reply({ connected: !!port && app.app, recording, browser: browserName, app: app.state, ctl: app.ctl, log: app.log, lastError, noHost: !port && noHost });
     return true;
   }
   // The popup showed the last failure: once is enough, the «!» on the icon goes (ZK-296).

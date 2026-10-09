@@ -67,7 +67,10 @@ impl Default for Config {
             max_request: 1 << 20,
             hello_timeout: Duration::from_secs(5),
             idle_timeout: Duration::from_secs(600),
-            max_clients: 8,
+            // Every browser's native host keeps up to three connections (the long poll, the
+            // events, the commands); with Claude Desktop, the Logi plugin and the CLI, 8 ran out
+            // with a few browsers open and the rest were dropped (ZK-300).
+            max_clients: 32,
             rate: 50,
             burst: 100,
             auth_failures_before_delay: 5,

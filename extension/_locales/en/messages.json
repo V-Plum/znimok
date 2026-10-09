@@ -126,5 +126,9 @@
   "whyFailed": {
     "message": "Could not start recording.",
     "description": "Popup error"
+  },
+  "hintNoHost": {
+    "message": "Znimok is not set up for this browser. Update Znimok and start it — it registers itself.",
+    "description": "Popup hint when the browser has no native host manifest (ZK-300)"
   }
 }

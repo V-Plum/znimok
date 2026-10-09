@@ -1,9 +1,14 @@
 //! The host's registration for the browsers, in the user's profile (no administrator):
 //!
 //! - Windows: the manifest in `%LOCALAPPDATA%\Znimok\NativeMessaging`, and its path as the default
-//!   value of `HKCU\Software\{Google\Chrome, Microsoft\Edge, Chromium}\NativeMessagingHosts\…`;
-//! - macOS: the manifest in `~/Library/Application Support/{Google/Chrome, Microsoft Edge,
-//!   Chromium}/NativeMessagingHosts`.
+//!   value of `HKCU\<browser key>\NativeMessagingHosts\…` ([`KEYS`]). Every channel of Chrome
+//!   (Beta, Dev, Canary) reads the `Google\Chrome` key, every channel of Edge the `Microsoft\Edge`
+//!   one; Opera reads Chrome's;
+//! - macOS: the manifest in `~/Library/Application Support/<browser>/NativeMessagingHosts`, where
+//!   every channel has a folder of its own ([`MAC_BROWSERS`]: Chrome Canary is
+//!   `Google/Chrome Canary`). Written for the browsers that are there (their folder exists), and
+//!   always for Chrome, Edge and Chromium as before. ZK-300: the extension in Chrome Canary said
+//!   «Znimok not found» with the app running — there was no manifest for it to start the host.
 //!
 //! The app registers on every start (cheap and idempotent: it follows the app when it moves); the
 //! uninstaller removes it.
@@ -29,11 +34,48 @@ pub fn manifest(host_exe: &Path) -> String {
 }
 
 #[cfg(windows)]
-const KEYS: [&str; 3] = [
+const KEYS: [&str; 5] = [
     "Software\\Google\\Chrome\\NativeMessagingHosts",
     "Software\\Microsoft\\Edge\\NativeMessagingHosts",
     "Software\\Chromium\\NativeMessagingHosts",
+    "Software\\BraveSoftware\\Brave-Browser\\NativeMessagingHosts",
+    "Software\\Vivaldi\\NativeMessagingHosts",
 ];
+
+/// The browsers' folders in `~/Library/Application Support` (each holds `NativeMessagingHosts`);
+/// the first three get the manifest even when they are not installed (yet).
+pub const MAC_BROWSERS: [&str; 19] = [
+    "Google/Chrome",
+    "Microsoft Edge",
+    "Chromium",
+    "Google/Chrome Beta",
+    "Google/Chrome Dev",
+    "Google/Chrome Canary",
+    "Google/Chrome for Testing",
+    "Microsoft Edge Beta",
+    "Microsoft Edge Dev",
+    "Microsoft Edge Canary",
+    "BraveSoftware/Brave-Browser",
+    "BraveSoftware/Brave-Browser-Beta",
+    "BraveSoftware/Brave-Browser-Nightly",
+    "Vivaldi",
+    "Vivaldi Snapshot",
+    "com.operasoftware.Opera",
+    "com.operasoftware.OperaGX",
+    "Arc/User Data",
+    "Thorium",
+];
+
+/// The `NativeMessagingHosts` folders under `base` (`~/Library/Application Support`) to write
+/// the manifest into: the browsers that are there, and always the first three.
+pub fn mac_host_dirs(base: &Path) -> Vec<PathBuf> {
+    MAC_BROWSERS
+        .iter()
+        .enumerate()
+        .filter(|(i, b)| *i < 3 || base.join(b).is_dir())
+        .map(|(_, b)| base.join(b).join("NativeMessagingHosts"))
+        .collect()
+}
 
 #[cfg(windows)]
 fn manifest_path() -> Option<PathBuf> {
@@ -50,14 +92,10 @@ fn browser_dirs() -> Vec<PathBuf> {
     let Some(home) = std::env::var_os("HOME") else {
         return Vec::new();
     };
-    let base = PathBuf::from(home).join("Library/Application Support");
-    ["Google/Chrome", "Microsoft Edge", "Chromium"]
-        .iter()
-        .map(|b| base.join(b).join("NativeMessagingHosts"))
-        .collect()
+    mac_host_dirs(&PathBuf::from(home).join("Library/Application Support"))
 }
 
-/// Registers `host_exe` as the host for Chrome, Edge and Chromium.
+/// Registers `host_exe` as the host for the Chromium browsers (see the module's doc).
 pub fn register(host_exe: &Path) -> Result<(), String> {
     let m = manifest(host_exe);
     #[cfg(windows)]
@@ -223,5 +261,35 @@ mod tests {
                 format!("chrome-extension://{}/", crate::STORE_EXTENSION_ID),
             ])
         );
+    }
+}
+
+#[cfg(test)]
+mod host_dirs {
+    use super::*;
+
+    /// ZK-300: Chrome Canary (and the other channels and Chromium browsers) get the manifest when
+    /// they are installed; the three of old always do; absent ones are not created.
+    #[test]
+    fn the_manifest_goes_to_every_installed_browser() {
+        let base = std::env::temp_dir().join(format!("znimok-reg-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(base.join("Google/Chrome Canary")).unwrap();
+        std::fs::create_dir_all(base.join("BraveSoftware/Brave-Browser")).unwrap();
+        std::fs::create_dir_all(base.join("Arc/User Data")).unwrap();
+        let dirs = mac_host_dirs(&base);
+        let has = |b: &str| dirs.contains(&base.join(b).join("NativeMessagingHosts"));
+        for b in [
+            "Google/Chrome",
+            "Microsoft Edge",
+            "Chromium",
+            "Google/Chrome Canary",
+            "BraveSoftware/Brave-Browser",
+            "Arc/User Data",
+        ] {
+            assert!(has(b), "{b}");
+        }
+        assert!(!has("Vivaldi") && !has("Microsoft Edge Beta"), "{dirs:?}");
+        let _ = std::fs::remove_dir_all(&base);
     }
 }
