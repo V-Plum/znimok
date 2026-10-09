@@ -89,6 +89,9 @@ fn record_window(r: &Value) {
     if crate::rec::is_recording() || crate::overlay::is_open() {
         return fail("busy");
     }
+    if screen_permission_missing() {
+        return fail("no-permission");
+    }
     #[cfg(any(windows, target_os = "macos"))]
     {
         let marker = r.get("marker").and_then(Value::as_str).unwrap_or("");
@@ -244,6 +247,29 @@ pub(crate) fn windows_and_displays() -> (
         .map(|m| m.info)
         .collect();
     (windows, displays)
+}
+
+/// macOS: no «Screen Recording» permission — ScreenCaptureKit then lists no window at all, and a
+/// window looked for is «not found» (ZK-301: the first Developer ID build is another app for TCC,
+/// the old permission no longer counts). Asks for it (the system prompt the first time, the
+/// settings pane after that) and says so.
+#[cfg(target_os = "macos")]
+pub(crate) fn screen_permission_missing() -> bool {
+    use znimok_platform::{Permission, PermissionState, Permissions};
+    let cap = znimok_mac::MacCapture::new();
+    if cap.status(Permission::ScreenRecording) == PermissionState::Granted
+        || cap.request(Permission::ScreenRecording) == PermissionState::Granted
+    {
+        return false;
+    }
+    tracing::warn!("no Screen Recording permission: the settings pane is opened");
+    let _ = cap.open_settings(Permission::ScreenRecording);
+    true
+}
+
+#[cfg(not(target_os = "macos"))]
+pub(crate) fn screen_permission_missing() -> bool {
+    false
 }
 
 /// The windows on screen (titles need «Screen Recording», which recording has anyway) and the

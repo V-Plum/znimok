@@ -123,6 +123,10 @@
     "message": "Znimok didn't answer.",
     "description": "Popup error"
   },
+  "whyNoPermission": {
+    "message": "Znimok needs the Screen Recording permission: System Settings → Privacy & Security → Screen & System Audio Recording — turn Znimok on (or remove it and add it again), then restart Znimok.",
+    "description": "Popup error: macOS Screen Recording permission is missing (ZK-301)"
+  },
   "whyFailed": {
     "message": "Could not start recording.",
     "description": "Popup error"

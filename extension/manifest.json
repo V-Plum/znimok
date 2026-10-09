@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "__MSG_extName__",
   "short_name": "Znimok",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "__MSG_extDesc__",
   "default_locale": "en",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAqDzjIZdbv+2uRswgXvquXwM2LKhQ0yboVZPVXGH86eexNs6FwvL81+C1K5+V+dxQ/w0Xz594M6n0lv8j/D0vVoWLayHxAirDeBjn5sIY1qoMtUVmkGoMBmnNpi9mR4qbwxKAJpn5qZKS27u4+BHAh9duXrK9mzDeq/SVxpdIEPgW3pQkGnRMSDiWli2eyJH0ULrBcMXaGKB8ZQ7cccf7W5wfEp1fRR8dW6Jb/B/UnJdai8Q/TGHwaNQQEziO9fG0x7KxVdmnnQqL3ur545u/o4r82RlECXOsJ4fvObxvv7HkR5k044uhMSAThA3xZvlqVL7zULoFJyCkr5D6RbwjlQIDAQAB",

@@ -387,6 +387,13 @@ fn start(what: What, opts: crate::rec::AgentOpts, limit_s: u64) -> Result<Value,
     if crate::overlay::is_open() || !crate::capture::available() {
         return Err("Znimok is busy with a capture".into());
     }
+    if crate::devlog::screen_permission_missing() {
+        return Err(
+            "Znimok has no Screen Recording permission on this Mac: System Settings → Privacy & \
+             Security → Screen & System Audio Recording, then restart Znimok"
+                .into(),
+        );
+    }
     let (windows, displays) = targets();
     let holding = |x: i32, y: i32| {
         displays.iter().find(|d| {
