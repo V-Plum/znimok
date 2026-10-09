@@ -259,7 +259,9 @@ browser's window; while it records, a click on its icon stops it, pause is in th
 right-click menu. Settings → "Recording" → "Browser": write the log, let the extension start a
 recording, and whether a browser is connected. Install the extension from the
 [Chrome Web Store](https://chromewebstore.google.com/detail/jhnaichejniloonjcimjpfeggkmcmpek) (Settings → "Recording" has
-the button). Znimok registers itself for the browsers; no administrator rights needed.
+the button). Znimok registers itself for the browsers; no administrator rights needed. On macOS "Record this
+window" needs the Screen Recording permission: without it Znimok shows the system prompt (or opens
+System Settings → Privacy & Security → Screen Recording) and the extension says what to do.
 
 **The DevTools log in the video editor.** When a recording has the browser's log, a "log" lane with
 ticks appears under the marks lane of the timeline: errors red (with a faint line across the whole
