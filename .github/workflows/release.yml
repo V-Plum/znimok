@@ -233,14 +233,25 @@ jobs:
         run: |
           cargo audit bin target/release/znimok-app
           cargo audit bin target/release/znimok
-      - name: Signing identity (self-signed, ZK-183) — the permissions survive updates
+      - name: Signing identity (Developer ID, ZK-299; self-signed ZK-183 as a fallback)
         env:
-          P12: ${{ secrets.ZNIMOK_MAC_CERT_P12 }}
-          PASS: ${{ secrets.ZNIMOK_MAC_CERT_PASS }}
+          DEVID_P12: ${{ secrets.ZNIMOK_MAC_DEVID_P12 }}
+          DEVID_PASS: ${{ secrets.ZNIMOK_MAC_DEVID_PASS }}
+          SELF_P12: ${{ secrets.ZNIMOK_MAC_CERT_P12 }}
+          SELF_PASS: ${{ secrets.ZNIMOK_MAC_CERT_PASS }}
         run: |
           # TCC (Screen Recording, Microphone) and the Keychain remember the app by its designated
           # requirement: with an ad-hoc signature it changes with every build, with one stable
-          # certificate it does not. Gatekeeper still asks on first start (notarisation, ZK-80).
+          # certificate it does not. Developer ID + notarisation (ZK-299) also satisfies
+          # Gatekeeper; the self-signed identity stays as the fallback when its secrets are gone.
+          if [[ -n "$DEVID_P12" && -n "$DEVID_PASS" ]]; then
+            P12="$DEVID_P12"; PASS="$DEVID_PASS"
+            IDENTITY="Developer ID Application: Vadym Slyva (97FD384J6A)"
+            echo "ZNIMOK_DEVID=1" >> "$GITHUB_ENV"
+          else
+            P12="$SELF_P12"; PASS="$SELF_PASS"; IDENTITY="Znimok (self-signed)"
+            echo "::warning::ZNIMOK_MAC_DEVID_P12 is not set — self-signed, not notarised (ZK-299)"
+          fi
           if [[ -z "$P12" || -z "$PASS" ]]; then
             echo "::warning::ZNIMOK_MAC_CERT_P12 is not set — ad-hoc signature, macOS permissions reset with each update (ZK-183)"
             echo "ZNIMOK_SIGN_IDENTITY=-" >> "$GITHUB_ENV"
@@ -256,11 +267,15 @@ jobs:
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$kp" "$kc" >/dev/null
           security list-keychains -d user -s "$kc" $(security list-keychains -d user | tr -d '"')
           rm -f "$RUNNER_TEMP/id.p12"
-          echo "ZNIMOK_SIGN_IDENTITY=Znimok (self-signed)" >> "$GITHUB_ENV"
+          security find-identity -v -p codesigning "$kc" | grep -qF "$IDENTITY"
+          echo "ZNIMOK_SIGN_IDENTITY=$IDENTITY" >> "$GITHUB_ENV"
       - name: Quick Look thumbnails (ZnimokThumbnail.appex, ZK-76)
         run: bash crates/znimok-thumbnail/mac/build-appex.sh target/appex "${{ needs.version.outputs.version }}"
-      - name: Znimok.app (self-signed, ZK-183; Developer ID and notarisation come with ZK-80)
+      - name: Znimok.app (Developer ID + hardened runtime + notarisation, ZK-299)
         env:
+          NOTARY_KEY: ${{ secrets.ZNIMOK_NOTARY_KEY }}
+          NOTARY_KEY_ID: ${{ secrets.ZNIMOK_NOTARY_KEY_ID }}
+          NOTARY_ISSUER: ${{ secrets.ZNIMOK_NOTARY_ISSUER }}
           SPARKLE_VERSION: "2.10.0"
           SPARKLE_SHA256: c2bf58aa8387266ac179357b1415d6f2635f044da8be41042af32425dae6da0c
         run: |
@@ -272,15 +287,27 @@ jobs:
           # The .znimok document icon (ZK-150), named by the document type in Info.plist.
           cp crates/znimok-thumbnail/icons/ZnimokDocument.icns "$app/Contents/Resources/"
           cp crates/znimok-app/icons/Znimok.icns "$app/Contents/Resources/"
-          # Sparkle 2 (ZK-143): the framework of the pinned release, as published (its own
-          # signatures stay valid; re-signing comes with Developer ID, ZK-80). Loaded at run time
-          # from Contents/Frameworks — no link step.
+          # Sparkle 2 (ZK-143): the framework of the pinned release, loaded at run time from
+          # Contents/Frameworks — no link step. With Developer ID it is re-signed by the team
+          # (library validation of the hardened runtime, notarisation), inside out as Sparkle's
+          # documentation says.
           curl -sSL -o "$RUNNER_TEMP/sparkle.tar.xz" "https://github.com/sparkle-project/Sparkle/releases/download/$SPARKLE_VERSION/Sparkle-$SPARKLE_VERSION.tar.xz"
           echo "$SPARKLE_SHA256  $RUNNER_TEMP/sparkle.tar.xz" | shasum -a 256 -c -
           mkdir -p "$RUNNER_TEMP/sparkle" "$app/Contents/Frameworks"
           tar -xf "$RUNNER_TEMP/sparkle.tar.xz" -C "$RUNNER_TEMP/sparkle" Sparkle.framework
           ditto "$RUNNER_TEMP/sparkle/Sparkle.framework" "$app/Contents/Frameworks/Sparkle.framework"
           codesign --verify --strict "$app/Contents/Frameworks/Sparkle.framework"
+          sign=(--force --sign "$ZNIMOK_SIGN_IDENTITY")
+          if [[ "${ZNIMOK_DEVID:-}" == 1 ]]; then
+            sign+=(--options runtime --timestamp)
+            fw="$app/Contents/Frameworks/Sparkle.framework"
+            codesign "${sign[@]}" "$fw/Versions/B/XPCServices/Installer.xpc"
+            codesign "${sign[@]}" --preserve-metadata=entitlements "$fw/Versions/B/XPCServices/Downloader.xpc"
+            codesign "${sign[@]}" "$fw/Versions/B/Autoupdate"
+            codesign "${sign[@]}" "$fw/Versions/B/Updater.app"
+            codesign "${sign[@]}" "$fw"
+            codesign --verify --strict --deep "$fw"
+          fi
           # CFBundleVersion is what Sparkle compares with the appcast: the version itself.
           sed -e "s/@BUILD@/$v/" \
               -e "s#<key>CFBundleShortVersionString</key><string>[^<]*</string>#<key>CFBundleShortVersionString</key><string>$v</string>#" \
@@ -297,14 +324,30 @@ jobs:
               open(p, "w").write(s)
           PY
           plutil -lint "$app/Contents/Info.plist"
+          # The command-line tool beside the app's executable is a binary of its own.
+          codesign "${sign[@]}" --identifier ua.plum.znimok.cli "$app/Contents/MacOS/znimok"
           # The extension keeps its own signature (sandbox entitlement): no --deep here.
-          codesign --force --sign "$ZNIMOK_SIGN_IDENTITY" --identifier ua.plum.znimok.app "$app"
-          codesign --verify --strict "$app"
+          codesign "${sign[@]}" --identifier ua.plum.znimok.app \
+            --entitlements crates/znimok-app/mac/Znimok.entitlements "$app"
+          codesign --verify --strict --deep "$app"
           codesign -d -r- "$app" 2>&1 | tail -1
           codesign -d --entitlements - "$app/Contents/PlugIns/ZnimokThumbnail.appex" | grep -q app-sandbox
+          if [[ "${ZNIMOK_DEVID:-}" == 1 ]]; then
+            if [[ -n "$NOTARY_KEY" ]]; then
+              bash tools/mac_notarize.sh "$app"
+              spctl --assess --type execute -vv "$app"
+            else
+              echo "::warning::ZNIMOK_NOTARY_KEY is not set — signed with Developer ID, not notarised"
+            fi
+          fi
           (cd dist && ditto -c -k --keepParent Znimok.app "Znimok-$v-macos-arm64.zip")
-          cp target/release/znimok dist/znimok
+          # The same signed file as in the app: its notarisation (by cdhash) covers it too.
+          cp "$app/Contents/MacOS/znimok" dist/znimok
       - name: DMG
+        env:
+          NOTARY_KEY: ${{ secrets.ZNIMOK_NOTARY_KEY }}
+          NOTARY_KEY_ID: ${{ secrets.ZNIMOK_NOTARY_KEY_ID }}
+          NOTARY_ISSUER: ${{ secrets.ZNIMOK_NOTARY_ISSUER }}
         run: |
           v="${{ needs.version.outputs.version }}"
           mkdir -p dmg && cp -R dist/Znimok.app dmg/ && ln -s /Applications dmg/Applications
@@ -320,6 +363,12 @@ jobs:
             echo "::warning::hdiutil verify: the image is busy, again in 5 s ($try/3)"
             sync; sleep 5
           done
+          if [[ "${ZNIMOK_DEVID:-}" == 1 && -n "$NOTARY_KEY" ]]; then
+            dmg="dist/Znimok-$v-macos-arm64.dmg"
+            codesign --force --sign "$ZNIMOK_SIGN_IDENTITY" --timestamp "$dmg"
+            bash tools/mac_notarize.sh "$dmg"
+            spctl --assess --type open --context context:primary-signature -vv "$dmg"
+          fi
       - name: appcast (Sparkle, ZK-143) — the DMG signed with the Ed25519 key
         env:
           ZNIMOK_SPARKLE_KEY: ${{ secrets.ZNIMOK_SPARKLE_KEY }}
@@ -347,7 +396,7 @@ jobs:
           # The release URL does not exist yet: install the same cask from the DMG built above.
           sed -i '' "s#^  url .*#  url \"file://$PWD/stores-in/Znimok-$v-macos-arm64.dmg\"#" "$tap/Casks/znimok.rb"
           brew install --cask --appdir="$RUNNER_TEMP/Apps" local/znimok/znimok
-          # Ad-hoc signed until ZK-80: take the download quarantine off before running the CLI.
+          # A build without Developer ID is not notarised: take the quarantine off before the CLI.
           xattr -dr com.apple.quarantine "$RUNNER_TEMP/Apps/Znimok.app" || true
           "$(brew --prefix)/bin/znimok" --version
           brew uninstall --cask --zap local/znimok/znimok
