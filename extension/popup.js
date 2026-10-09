@@ -6,7 +6,7 @@ const T = {
   title: M("popupTitle"), app: M("popupApp"), rec: M("popupRec"),
   on: M("popupOn"), off: M("popupOff"), recOn: M("popupRecOn"), recOff: M("popupRecOff"),
   go: M("popupGo"), busy: M("popupBusy"), page: M("popupPage"),
-  hintOff: M("hintOff"), hintOn: M("hintOn"), hintLog: M("hintLog"),
+  hintOff: M("hintOff"), hintOn: M("hintOn"), hintLog: M("hintLog"), hintNoHost: M("hintNoHost"),
   why: {
     "no-app": M("whyNoApp"), disabled: M("whyDisabled"), busy: M("whyBusy"),
     "not-found": M("whyNotFound"), ambiguous: M("whyAmbiguous"), minimized: M("whyMinimized"),
@@ -22,7 +22,8 @@ function show(st) {
   const c = document.getElementById("conn"), r = document.getElementById("rec");
   c.textContent = st.connected ? T.on : T.off; c.className = st.connected ? "ok" : "no";
   r.textContent = st.recording ? T.recOn : T.recOff; r.className = st.recording ? "ok" : "";
-  document.getElementById("hint").textContent = !st.connected ? T.hintOff : (st.log ? T.hintOn + " " + T.hintLog : T.hintOn);
+  document.getElementById("hint").textContent = !st.connected ? (st.noHost ? T.hintNoHost : T.hintOff)
+    : (st.log ? T.hintOn + " " + T.hintLog : T.hintOn);
   go.disabled = !st.connected || st.app !== "idle";
   if (st.connected && !st.ctl) err.textContent = T.why.disabled;
   else if (st.lastError && T.why[st.lastError]) {
