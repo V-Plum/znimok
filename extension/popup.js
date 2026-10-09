@@ -11,6 +11,7 @@ const T = {
     "no-app": M("whyNoApp"), disabled: M("whyDisabled"), busy: M("whyBusy"),
     "not-found": M("whyNotFound"), ambiguous: M("whyAmbiguous"), minimized: M("whyMinimized"),
     unsupported: M("whyUnsupported"), timeout: M("whyTimeout"), failed: M("whyFailed"),
+    "no-permission": M("whyNoPermission"),
   },
 };
 document.querySelectorAll("[data-i]").forEach((e) => { e.textContent = T[e.dataset.i]; });

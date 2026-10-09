@@ -123,6 +123,10 @@
     "message": "Znimok не відповів.",
     "description": "Popup error"
   },
+  "whyNoPermission": {
+    "message": "Znimok потребує дозволу на запис екрана: Системні параметри → Приватність і безпека → Запис екрана та системного аудіо — увімкніть Znimok (або видаліть його й додайте знову), потім перезапустіть Znimok.",
+    "description": "Popup error: macOS Screen Recording permission is missing (ZK-301)"
+  },
   "whyFailed": {
     "message": "Не вдалося почати запис.",
     "description": "Popup error"
