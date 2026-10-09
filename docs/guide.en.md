@@ -247,7 +247,7 @@ plays, a hide shows as a hatched plate and a marker as a translucent one; paused
 frame's pixels again. "Frame as screenshot" takes that frame's marks along, editable. Changes of
 time undo like everything else.
 
-**The browser's DevTools log.** The Znimok extension for Chrome and Edge writes, while you record,
+**The browser's DevTools log.** The Znimok extension for Chrome and Edge (and the other Chromium browsers — Chrome Beta/Dev/Canary, Brave, Vivaldi, Opera, Arc: Znimok sets itself up for every one installed) writes, while you record,
 what the page's DevTools panels show: the console (with objects and stacks), errors, the network —
 request and response headers, the request's payload, the response, timings — navigations and
 dataLayer (every GTM or gtag event as full JSON, with what the array held before the recording), in sync
