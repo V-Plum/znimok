@@ -488,12 +488,20 @@ jobs:
             echo "SIGNED=0" >> "$GITHUB_ENV"
           fi
       - name: notes
+        env:
+          # Developer ID + notarisation (ZK-299): what the macOS line of the notes says.
+          NOTARISED: ${{ secrets.ZNIMOK_MAC_DEVID_P12 != '' && secrets.ZNIMOK_NOTARY_KEY != '' && '1' || '0' }}
         run: |
+          if [[ "$NOTARISED" == "1" ]]; then
+            mac_sig="signed with Developer ID and notarised by Apple: opens with a double click"
+          else
+            mac_sig="ad-hoc signed, not notarised: open with right-click → Open"
+          fi
           {
             echo "Znimok ${{ needs.version.outputs.version }}"
             echo
             echo "- Windows: Znimok-…-windows-x64.msi — installs for the current user, no admin rights (Start menu, .znimok files, Explorer thumbnails, \`znimok\` on PATH). The .zip is the same without installing."
-            echo "- macOS (Apple silicon): Znimok-…-macos-arm64.dmg (or .zip) — ad-hoc signed, not notarised: open with right-click → Open. Finder thumbnails included. Updates itself through Sparkle (appcast.xml, EdDSA-signed)."
+            echo "- macOS (Apple silicon): Znimok-…-macos-arm64.dmg (or .zip) — $mac_sig. Finder thumbnails included. Updates itself through Sparkle (appcast.xml, EdDSA-signed)."
             echo "- Claude Desktop: znimok-….mcpb. SBOM: …-sbom-cyclonedx.zip. Binaries carry their dependency list (cargo auditable)."
             echo "- Browser extension (the DevTools log of a recording, Chrome / Edge): znimok-extension-….zip — or, simpler, from the Chrome Web Store: https://chromewebstore.google.com/detail/jhnaichejniloonjcimjpfeggkmcmpek"
             if [[ "$SIGNED" == "1" ]]; then

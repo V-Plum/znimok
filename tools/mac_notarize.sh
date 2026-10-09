@@ -4,6 +4,9 @@
 #   tools/mac_notarize.sh dist/Znimok.app
 #   tools/mac_notarize.sh dist/Znimok-0.0.23-macos-arm64.dmg
 #
+# Apple usually answers in minutes, but a queue of hours happens (Mayday Mail waited 167 min on
+# 09.10.2026): the wait is 3 h.
+#
 # The App Store Connect API key comes from the environment: NOTARY_KEY (the .p8 text),
 # NOTARY_KEY_ID, NOTARY_ISSUER. An .app is sent zipped (ditto), a .dmg as it is; on a refusal the
 # notary's log is printed and the script fails. The same key notarises any of the team's apps.
@@ -26,7 +29,7 @@ else
   upload="$target"
 fi
 
-out="$(xcrun notarytool submit "$upload" "${auth[@]}" --wait --timeout 40m --output-format json)"
+out="$(xcrun notarytool submit "$upload" "${auth[@]}" --wait --timeout 3h --output-format json)"
 echo "$out"
 id="$(printf '%s' "$out" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("id",""))')"
 status="$(printf '%s' "$out" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("status",""))')"
