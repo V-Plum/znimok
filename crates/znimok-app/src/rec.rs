@@ -12,7 +12,8 @@
 //! library; the card after a capture says so.
 //!
 //! On macOS ScreenCaptureKit draws the pointer and its clicks itself (the settings' switches)
-//! and leaves this app's own windows out of a display's capture; the clicks are not logged.
+//! and leaves this app's own windows out of a display's capture; the clicks reach the log
+//! through a listen-only event tap (ZK-302).
 #![cfg_attr(
     not(any(windows, target_os = "macos")),
     allow(dead_code, unused_imports, unused_variables)
@@ -102,6 +103,9 @@ struct Active {
     /// The cursor and the clicks (ZK-90): the hook lives as long as the recording.
     #[cfg(windows)]
     mouse: Option<znimok_video_win::MouseInput>,
+    /// The clicks into the recording's log (ZK-302): ScreenCaptureKit only draws them.
+    #[cfg(target_os = "macos")]
+    clicks: Option<znimok_video_mac::clicks::ClickTap>,
     /// The MP4 being written (it becomes the document's stream).
     mp4: PathBuf,
     size: (u32, u32),
@@ -293,8 +297,31 @@ fn start_inner(choice: &Choice) -> Result<(), String> {
     req.microphone = p.audio.microphone;
     req.cursor = p.cursor;
     req.clicks = p.clicks;
+    // The clicks logged as on Windows (ZK-302): the queue the recorder reads, fed by a tap.
+    let queue = (p.cursor || p.clicks).then(znimok_video::events::EventQueue::new);
+    req.events = queue.clone();
     let rec = Recording::start(req).map_err(|e| e.to_string())?;
     let size = rec.started().size;
+    let clicks = queue.map(|q| {
+        let f = choice.frame;
+        let tap = znimok_video_mac::clicks::ClickTap::start(
+            q,
+            znimok_video_mac::clicks::ClickMap {
+                frame: (
+                    f64::from(f.x),
+                    f64::from(f.y),
+                    f64::from(f.width),
+                    f64::from(f.height),
+                ),
+                size,
+                skip: None,
+            },
+        );
+        if !tap.active() {
+            tracing::warn!("recording: the system gave no click tap, the clicks are not logged");
+        }
+        tap
+    });
     // What was asked of the system and what came (ZK-295): the facts to read a wrong picture by.
     tracing::info!(started = ?rec.started(), source = choice.source, frame = ?choice.frame,
         display = ?choice.display, "recording: started");
@@ -315,6 +342,7 @@ fn start_inner(choice: &Choice) -> Result<(), String> {
     REC.with(|r| {
         *r.borrow_mut() = Some(Active {
             rec: Some(rec),
+            clicks,
             mp4,
             size,
             fps,
@@ -527,6 +555,10 @@ pub fn stop() {
         #[cfg(windows)]
         if let Some(mut m) = a.mouse.take() {
             m.stop();
+        }
+        #[cfg(target_os = "macos")]
+        if let Some(t) = a.clicks.take() {
+            t.stop();
         }
         let Some(rec) = a.rec.take() else { return };
         let lib = crate::with_lib_dir().unwrap_or_else(crate::library::default_dir);
@@ -872,6 +904,15 @@ fn place(a: &Active) {
         area.y + area.height as i32 - bh - 24
     };
     set_pos(a.bar.window(), cx, y);
+    // The clicks follow the recorded part, and those on the bar are not logged (ZK-302).
+    #[cfg(target_os = "macos")]
+    if let Some(t) = &a.clicks {
+        let d = |v: i32| f64::from(v);
+        t.set_map(|m| {
+            m.frame = (d(f.x), d(f.y), f64::from(f.width), f64::from(f.height));
+            m.skip = Some((d(cx), d(y), d(bw), d(bh)));
+        });
+    }
 }
 
 /// Desktop units are the system's: physical pixels on Windows, points on macOS, where the
