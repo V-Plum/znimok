@@ -220,7 +220,8 @@ at once and repeated until the window changes.
 **Recording on macOS.** ScreenCaptureKit captures (it needs the Screen Recording permission, and
 Microphone for the microphone), VideoToolbox encodes. The system sound and the microphone are
 recorded without extra drivers (macOS 15+). The system draws the pointer and its clicks (the same
-switches); there is no click log in the document on a Mac. Znimok's own windows (the bar, the edge)
+switches), and the clicks, as on Windows, go to the document's log —
+dots on the timeline and in the report. Znimok's own windows (the bar, the edge)
 stay out of a screen recording.
 
 **Editor.** A video document opens in the "Video" mode: the same tools, and under the canvas a transport (Space —
