@@ -868,11 +868,8 @@ fn show_indicators() {
 /// below, inside at the bottom when neither fits).
 fn place(a: &Active) {
     let f = a.frame;
-    let (x0, y0) = (f.x - GAP - EDGE, f.y - GAP - EDGE);
-    let (w, h) = (
-        f.width as i32 + 2 * (GAP + EDGE),
-        f.height as i32 + 2 * (GAP + EDGE),
-    );
+    let area = crate::system::work_area(a.display);
+    let (x0, y0, w, h) = edge_box(f, area, cfg!(target_os = "macos"));
     let rects = [
         (x0, y0, w, EDGE),
         (x0, y0 + h - EDGE, w, EDGE),
@@ -882,7 +879,6 @@ fn place(a: &Active) {
     for (e, (x, y, w, h)) in a.edges.iter().zip(rects) {
         set_rect(e.window(), x, y, w.max(1) as u32, h.max(1) as u32);
     }
-    let area = crate::system::work_area(a.display);
     // The bar's size in desktop units: pixels on Windows, points on macOS (ZK-292).
     let k = if cfg!(target_os = "macos") {
         1.0
@@ -913,6 +909,25 @@ fn place(a: &Active) {
             m.skip = Some((d(cx), d(y), d(bw), d(bh)));
         });
     }
+}
+
+/// The box the four edges go round: the recorded part with a gap around it (x, y, width,
+/// height). With `keep_visible` (macOS) it stays within the visible part of the display: a
+/// maximised window's edges would lie off screen and under the menu bar, and macOS moves such
+/// windows on screen by itself — the edges came out some 40 points inside the window (ZK-303).
+fn edge_box(f: Rect, area: Rect, keep_visible: bool) -> (i32, i32, i32, i32) {
+    let out = GAP + EDGE;
+    let (mut x0, mut y0) = (f.x - out, f.y - out);
+    let (mut x1, mut y1) = (f.x + f.width as i32 + out, f.y + f.height as i32 + out);
+    if keep_visible {
+        let (ax1, ay1) = (area.x + area.width as i32, area.y + area.height as i32);
+        let (cx0, cy0, cx1, cy1) = (x0.max(area.x), y0.max(area.y), x1.min(ax1), y1.min(ay1));
+        // Only when something of the box is left (a part on another display keeps its own).
+        if cx1 - cx0 > 2 * EDGE && cy1 - cy0 > 2 * EDGE {
+            (x0, y0, x1, y1) = (cx0, cy0, cx1, cy1);
+        }
+    }
+    (x0, y0, x1 - x0, y1 - y0)
 }
 
 /// Desktop units are the system's: physical pixels on Windows, points on macOS, where the
@@ -1059,4 +1074,26 @@ pub fn with_bar(f: impl FnOnce(&slint::Window)) {
             f(a.bar.window());
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// ZK-303: a maximised window on a MacBook (1800 × 1169 pt, the menu bar 33 pt): the edges
+    /// stay on the visible part instead of off screen; elsewhere they go round with a gap.
+    #[test]
+    fn the_edges_stay_on_the_visible_part() {
+        let area = Rect::new(0, 33, 1800, 1136);
+        let maximised = Rect::new(0, 33, 1800, 1136);
+        assert_eq!(edge_box(maximised, area, true), (0, 33, 1800, 1136));
+        // Windows: as before, round it (the system does not move them).
+        assert_eq!(edge_box(maximised, area, false), (-5, 28, 1810, 1146));
+        // A smaller window: round it, a gap away, on both systems.
+        let small = Rect::new(200, 150, 800, 600);
+        assert_eq!(edge_box(small, area, true), (195, 145, 810, 610));
+        // Touching the left side only: that side on the visible part, the rest round it.
+        let left = Rect::new(0, 200, 900, 600);
+        assert_eq!(edge_box(left, area, true), (0, 195, 905, 610));
+    }
 }
