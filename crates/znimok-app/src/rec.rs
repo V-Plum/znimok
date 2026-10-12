@@ -850,6 +850,9 @@ const EDGE: i32 = 3;
 const GAP: i32 = 2;
 
 fn show_indicators() {
+    // macOS: the edges and the bar where Znimok puts them, not moved by AppKit (ZK-305).
+    #[cfg(target_os = "macos")]
+    crate::overlay::unconstrain_windows();
     REC.with(|r| {
         let r = r.borrow();
         let Some(a) = r.as_ref() else { return };

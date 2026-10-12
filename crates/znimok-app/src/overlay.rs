@@ -274,7 +274,10 @@ fn unconstrain() {
     ) -> NSRect {
         // SAFETY: AppKit calls this on a live WinitWindow (an NSWindow).
         let win: &NSWindow = unsafe { &*this.cast() };
-        if win.level() >= NSScreenSaverWindowLevel {
+        // The capture overlay (above the menu bar), and the recording's edges and bar: placed
+        // on the visible part by Znimok itself, AppKit moved them down by a hidden title bar's
+        // height near the menu bar — the frame's top came out ~32 pt low (ZK-305).
+        if win.level() >= NSScreenSaverWindowLevel || win.title().to_string() == "Znimok rec" {
             return rect;
         }
         // SAFETY: NSWindow is WinitWindow's superclass; the arguments are AppKit's own.
