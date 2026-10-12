@@ -1219,8 +1219,9 @@ fn wire(ui: &AppWindow, app: &Shared) {
                     == winit::keyboard::PhysicalKey::Code(winit::keyboard::KeyCode::KeyQ)
                 && MODS.with(|c| c.get()).super_key()
             {
+                // After winit's handler (the window hides in close_window).
                 let (app, weak) = (app.clone(), ui.as_weak());
-                let _ = slint::invoke_from_event_loop(move || {
+                slint::Timer::single_shot(Duration::ZERO, move || {
                     if let Some(ui) = weak.upgrade() {
                         close_window(&app, &ui);
                     }
