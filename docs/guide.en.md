@@ -40,7 +40,8 @@ Windows and `brew install --cask v-plum/znimok/znimok` on macOS.
 
 On the first start a short guide shows the hotkeys, the library folder, start at login and (on a
 Mac) the screen recording permission. Znimok lives in the tray (on a Mac, in the menu bar):
-closing the window hides it there, "Quit" is in the icon's menu.
+closing the window hides it there (so do Esc in the library, Alt+F4 on Windows and ⌘Q on a Mac),
+the hotkeys keep working; "Quit" is in the icon's menu.
 
 ## Capturing
 

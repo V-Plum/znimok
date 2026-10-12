@@ -130,6 +130,10 @@ Esc takes off exactly one layer at a time:
 4. the tool (back to Select);
 5. the document — back to the library.
 
+In the library Esc drops the picked cards, then the search, then closes the window — Znimok stays
+in the tray (on a Mac, in the menu bar). ⌘Q on a Mac only closes the window too; to quit, "Quit" in
+the icon's menu.
+
 If autosave is off and there are unsaved changes, Znimok asks first whether to save them.
 
 In dialogs, Enter is the main button and Esc is Cancel.
