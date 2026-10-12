@@ -142,6 +142,43 @@ fn template_buttons(view: &objc2_app_kit::NSView, debug: bool) -> usize {
     marked
 }
 
+/// macOS: ⌘Q is taken off the app menu's Quit (ZK-304), so the key reaches the window and
+/// closes it as Alt+F4 does on Windows; Quit itself stays in the app menu and in the menu bar.
+/// Cheap on a timer: once the Quit item is found, nothing more is done.
+#[cfg(target_os = "macos")]
+pub fn no_cmd_q() {
+    use objc2_app_kit::NSApplication;
+    use objc2_foundation::NSString;
+    thread_local! {
+        static DONE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    }
+    if DONE.with(|d| d.get()) {
+        return;
+    }
+    let Some(mtm) = objc2::MainThreadMarker::new() else {
+        return;
+    };
+    let Some(menu) = NSApplication::sharedApplication(mtm).mainMenu() else {
+        return;
+    };
+    for i in 0..menu.numberOfItems() {
+        let Some(sub) = menu.itemAtIndex(i).and_then(|item| item.submenu()) else {
+            continue;
+        };
+        for j in 0..sub.numberOfItems() {
+            let Some(item) = sub.itemAtIndex(j) else {
+                continue;
+            };
+            if item.action() == Some(objc2::sel!(terminate:)) {
+                if item.keyEquivalent().to_string() == "q" {
+                    item.setKeyEquivalent(&NSString::from_str(""));
+                }
+                DONE.with(|d| d.set(true));
+            }
+        }
+    }
+}
+
 /// macOS: Znimok lives in the menu bar; the Dock icon (and the app menu) only while the editor
 /// window is open. Cheap to call on a timer: it acts only on a change.
 #[cfg(target_os = "macos")]
@@ -156,6 +193,8 @@ pub fn dock(shown: bool) {
     let Some(mtm) = objc2::MainThreadMarker::new() else {
         return;
     };
+    // The app menu is there from the start (winit's): its ⌘Q goes before any return.
+    no_cmd_q();
     let app = NSApplication::sharedApplication(mtm);
     let policy = if shown {
         NSApplicationActivationPolicy::Regular

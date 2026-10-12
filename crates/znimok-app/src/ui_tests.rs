@@ -89,6 +89,41 @@ fn updates_page_check_now_asks_the_app() {
     assert_eq!(asked.borrow().len(), 1);
 }
 
+/// ZK-304: Esc in the library drops the search first, then closes the window (the app stays in
+/// the tray / the menu bar).
+#[test]
+fn escape_in_the_library_closes_the_window() {
+    let ui = window();
+    ui.set_page(0);
+    settle();
+    let seen = Rc::new(RefCell::new(Vec::new()));
+    {
+        let seen = seen.clone();
+        ui.on_search(move |t| seen.borrow_mut().push(format!("search:{t}")));
+    }
+    {
+        let seen = seen.clone();
+        ui.on_window_close(move || seen.borrow_mut().push("close".to_string()));
+    }
+    let field = i_slint_backend_testing::ElementQuery::from_root(&ui)
+        .match_descendants()
+        .match_accessible_role(AccessibleRole::TextInput)
+        .find_all()
+        .into_iter()
+        .find(reachable)
+        .expect("the search field");
+    field.set_accessible_value("cat");
+    ui.invoke_focus_library();
+    let esc: slint::SharedString = slint::platform::Key::Escape.into();
+    for _ in 0..2 {
+        ui.window()
+            .dispatch_event(slint::platform::WindowEvent::KeyPressed { text: esc.clone() });
+        ui.window()
+            .dispatch_event(slint::platform::WindowEvent::KeyReleased { text: esc.clone() });
+    }
+    assert_eq!(*seen.borrow(), ["search:cat", "search:", "close"]);
+}
+
 /// Every button a person can reach has a name for screen readers — on the library, the editor
 /// and every settings page.
 #[test]

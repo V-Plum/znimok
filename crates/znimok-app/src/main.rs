@@ -522,6 +522,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 if TRAY.with(|c| c.get()) {
                     tray::dock(wins::any_visible());
                     tray::template_menu_icon();
+                    tray::no_cmd_q();
                 }
                 app.borrow_mut().lib_poll(&ui, false);
                 // Every window (ZK-107): its message, its autosave; the update check in the
@@ -1206,6 +1207,25 @@ fn wire(ui: &AppWindow, app: &Shared) {
                     return EventResult::PreventDefault;
                 }
                 _ => {}
+            }
+            // macOS: ⌘Q closes the window as Alt+F4 does on Windows — Znimok stays in the menu
+            // bar with its hotkeys; «Quit Znimok» there quits (ZK-304). The app menu's Quit lost
+            // its ⌘Q (`tray::no_cmd_q`), so the key reaches the window. Physical Q: any layout.
+            #[cfg(target_os = "macos")]
+            if let winit::event::WindowEvent::KeyboardInput { event, .. } = ev
+                && event.state == winit::event::ElementState::Pressed
+                && !event.repeat
+                && event.physical_key
+                    == winit::keyboard::PhysicalKey::Code(winit::keyboard::KeyCode::KeyQ)
+                && MODS.with(|c| c.get()).super_key()
+            {
+                let (app, weak) = (app.clone(), ui.as_weak());
+                let _ = slint::invoke_from_event_loop(move || {
+                    if let Some(ui) = weak.upgrade() {
+                        close_window(&app, &ui);
+                    }
+                });
+                return EventResult::PreventDefault;
             }
             // macOS trackpad: pinch to zoom, double tap = fit ↔ 100 %.
             match ev {

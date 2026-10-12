@@ -2393,6 +2393,17 @@ export component AppWindow inherits Window {
                     root.lib-action("pick-none", "");
                     return accept;
                 }
+                // ZK-304: Esc with nothing left to drop closes the window, as its close button
+                // does — Znimok stays in the tray / the menu bar with its hotkeys.
+                if (e.text == Key.Escape) {
+                    if (lib-search.text != "") {
+                        lib-search.text = "";
+                        root.search("");
+                        return accept;
+                    }
+                    root.window-close();
+                    return accept;
+                }
                 if (e.text == Key.Delete || e.text == Key.Backspace) {
                     root.lib-key("delete", false);
                     return accept;
@@ -2463,7 +2474,7 @@ export component AppWindow inherits Window {
                         }
                         Rectangle {
                             width: 300px;
-                            LineEdit {
+                            lib-search := LineEdit {
                                 y: (parent.height - self.height) / 2;
                                 width: parent.width;
                                 placeholder-text: @tr("lib-search" => "Search by name, tag or text in the screenshot");
