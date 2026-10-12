@@ -31,6 +31,10 @@ pub const PALETTE: [Rgb; 8] = [
 ];
 pub const THICK: [i32; 3] = [2, 4, 7];
 
+/// The editor's zoom limits; «fit» stays within them too (ZK-307).
+const MIN_ZOOM: f64 = 0.05;
+const MAX_ZOOM: f64 = 16.0;
+
 /// The marker's own colours (ZK-171, LH `kEdMarkPalette`): highlighter inks — pure channels,
 /// bright under multiply.
 pub const MARKER_PALETTE: [Rgb; 4] = [
@@ -8690,7 +8694,7 @@ impl App {
             return;
         }
         let Some(f) = self.view_frame() else { return };
-        let scale = scale.clamp(0.05, 16.0);
+        let scale = scale.clamp(MIN_ZOOM, MAX_ZOOM);
         match around_out {
             Some(p) => {
                 let d = self.view.to_doc(p.x, p.y);
@@ -8742,7 +8746,10 @@ impl App {
         let margin = 24.0 * self.dpr;
         let w = (self.view.width as f64 - 2.0 * margin).max(16.0);
         let h = (self.view.height as f64 - 2.0 * margin).max(16.0);
-        (w / f.w as f64).min(h / f.h as f64).min(1.0)
+        // Within set_zoom's limits (ZK-307): a canvas squeezed for a moment (an export) gave a
+        // fit under 5 %, set_zoom made it 5 %, and the fitted picture no longer counted as fitted
+        // — it stayed at 5 % when the canvas came back.
+        (w / f.w as f64).min(h / f.h as f64).clamp(MIN_ZOOM, 1.0)
     }
 
     fn fit(&mut self) {
