@@ -229,8 +229,17 @@ async function detach(tabId) {
   try { await chrome.debugger.detach({ tabId }); } catch (e) { /* already */ }
 }
 
+// ZK-306: a recording the app started writes only from the browser in front — never from one
+// left behind the recorded program. «Record this window» from here (ownStart) is always ours.
+let ownStart = 0;
+
 async function startRecording() {
   if (recording) return;
+  if (Date.now() - ownStart > 15000) {
+    let w = null;
+    try { w = await chrome.windows.getLastFocused(); } catch (e) { /* no window */ }
+    if (!w || !w.focused) return;
+  }
   recording = true;
   const tab = await activeTab();
   if (tab) await follow(tab.id);
@@ -514,6 +523,7 @@ function onRecReply(m) {
 
 async function startRec(tabId, windowId, pageOnly) {
   if (!port || !app.app) return { ok: false, why: "no-app" };
+  ownStart = Date.now();
   if (!app.ctl) return { ok: false, why: "disabled" };
   if (app.state !== "idle") return { ok: false, why: "busy" };
   let tab, win;

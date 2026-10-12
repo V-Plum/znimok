@@ -244,6 +244,8 @@ fn start_inner(_choice: &Choice) -> Result<(), String> {
 /// ScreenCaptureKit; sound and the pointer as the settings say.
 #[cfg(target_os = "macos")]
 fn start_inner(choice: &Choice) -> Result<(), String> {
+    // Who is in front, asked before Znimok's own bar shows (ZK-306).
+    let log_ok = crate::devlog::log_belongs(choice.source, choice.window, choice.frame);
     use znimok_platform::Capture;
     use znimok_video_mac::{RecordRequest, Recording, Target};
     let p = agent_video(crate::with_prefs(|p| p.video.clone()).unwrap_or_default());
@@ -359,8 +361,9 @@ fn start_inner(choice: &Choice) -> Result<(), String> {
         })
     });
     show_indicators();
-    // The browser's log (ZK-97): the extension starts writing now (an agent may leave it out).
-    if agent_opts().is_none_or(|o| o.log) {
+    // The browser's log (ZK-97): the extension starts writing now (an agent may leave it out) —
+    // only for a recording of a browser, never a program in the background (ZK-306).
+    if agent_opts().is_none_or(|o| o.log) && log_ok {
         crate::devlog::hub().start(znimok_devtools::now_ms());
     }
     tick();
@@ -369,6 +372,8 @@ fn start_inner(choice: &Choice) -> Result<(), String> {
 
 #[cfg(windows)]
 fn start_inner(choice: &Choice) -> Result<(), String> {
+    // Who is in front, asked before Znimok's own bar shows (ZK-306).
+    let log_ok = crate::devlog::log_belongs(choice.source, choice.window, choice.frame);
     use znimok_platform::WindowId;
     use znimok_video_win::{RecordRequest, Recording, Target};
     let p = agent_video(crate::with_prefs(|p| p.video.clone()).unwrap_or_default());
@@ -467,8 +472,9 @@ fn start_inner(choice: &Choice) -> Result<(), String> {
         })
     });
     show_indicators();
-    // The browser's log (ZK-97): the extension starts writing now (an agent may leave it out).
-    if agent_opts().is_none_or(|o| o.log) {
+    // The browser's log (ZK-97): the extension starts writing now (an agent may leave it out) —
+    // only for a recording of a browser, never a program in the background (ZK-306).
+    if agent_opts().is_none_or(|o| o.log) && log_ok {
         crate::devlog::hub().start(znimok_devtools::now_ms());
     }
     // Clicks on the bar (Pause, Stop) are not the recording's.

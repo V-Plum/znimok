@@ -234,6 +234,99 @@ fn record_found(
     }
 }
 
+/// Whether the browser's log belongs to this recording (ZK-306): never data of a program that
+/// is not in front. A recording started from the extension («Record this window») — yes; a
+/// window — only a browser's; the screen or a region — only when a browser has the focus. A
+/// game recorded with a browser left behind it wrote that browser's log (owner, 12.10.2026).
+pub(crate) fn log_belongs(source: &str, window: Option<u64>, frame: znimok_platform::Rect) -> bool {
+    if source == "browser" {
+        return true;
+    }
+    #[cfg(any(windows, target_os = "macos"))]
+    {
+        let app = match window {
+            Some(id) => windows_and_displays()
+                .0
+                .into_iter()
+                .find(|w| w.id.0 == id)
+                .map(|w| w.app),
+            None => foreground_app(frame),
+        };
+        let ok = app.as_deref().is_some_and(is_browser);
+        tracing::info!(source, ?app, ok, "recording: the browser's log");
+        ok
+    }
+    #[cfg(not(any(windows, target_os = "macos")))]
+    {
+        let _ = (window, frame);
+        false
+    }
+}
+
+/// A browser the extension runs in (Chromium's family), by its executable or bundle name.
+pub(crate) fn is_browser(app: &str) -> bool {
+    let a = app.to_lowercase();
+    [
+        "chrome",
+        "chromium",
+        "msedge",
+        "microsoft edge",
+        "brave",
+        "vivaldi",
+        "opera",
+        "arc",
+    ]
+    .iter()
+    .any(|b| {
+        if *b == "arc" {
+            a == "arc" || a == "arc.exe"
+        } else {
+            a.contains(b)
+        }
+    })
+}
+
+/// The program whose window has the focus now.
+/// Windows: when that is Znimok itself (its overlay has just gone), the topmost other window over
+/// the recorded part — the list is in z-order, front first.
+#[cfg(windows)]
+fn foreground_app(frame: znimok_platform::Rect) -> Option<String> {
+    use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowThreadProcessId};
+    let mut pid = 0u32;
+    // SAFETY: plain queries; the pid is written into our variable.
+    unsafe {
+        let h = GetForegroundWindow();
+        if h.0.is_null() {
+            return None;
+        }
+        GetWindowThreadProcessId(h, Some(&mut pid));
+    }
+    let windows = windows_and_displays().0;
+    if pid != std::process::id()
+        && let Some(w) = windows.iter().find(|w| w.pid == pid && !w.own)
+    {
+        return Some(w.app.clone());
+    }
+    let over = |w: &znimok_platform::WindowInfo| {
+        let b = w.bounds;
+        b.x < frame.x + frame.width as i32
+            && frame.x < b.x + b.width as i32
+            && b.y < frame.y + frame.height as i32
+            && frame.y < b.y + b.height as i32
+    };
+    windows
+        .into_iter()
+        .find(|w| !w.own && !w.minimized && w.pid != std::process::id() && over(w))
+        .map(|w| w.app)
+}
+
+/// The application in front now (Znimok itself right after its overlay — then no log).
+#[cfg(target_os = "macos")]
+fn foreground_app(_frame: znimok_platform::Rect) -> Option<String> {
+    let app = objc2_app_kit::NSWorkspace::sharedWorkspace().frontmostApplication()?;
+    app.localizedName().map(|n| n.to_string())
+}
+
 /// The windows on screen (with their titles) and the displays.
 #[cfg(windows)]
 pub(crate) fn windows_and_displays() -> (
@@ -285,4 +378,39 @@ pub(crate) fn windows_and_displays() -> (
         cap.windows().unwrap_or_default(),
         cap.displays().unwrap_or_default(),
     )
+}
+
+#[cfg(test)]
+mod log_owner_tests {
+    /// ZK-306: the log is written only for a browser — by its executable (Windows) or its
+    /// application name (macOS); a game, an editor or Znimok itself is not one.
+    #[test]
+    fn a_browser_is_known_by_its_name() {
+        for b in [
+            "chrome.exe",
+            "Google Chrome",
+            "Google Chrome Canary",
+            "msedge.exe",
+            "Microsoft Edge",
+            "brave.exe",
+            "Brave Browser",
+            "vivaldi.exe",
+            "opera.exe",
+            "Arc",
+            "chromium",
+        ] {
+            assert!(super::is_browser(b), "{b}");
+        }
+        for o in [
+            "MaydayMail.exe",
+            "Mayday Mail",
+            "znimok-app.exe",
+            "Code.exe",
+            "Finder",
+            "Archive Utility",
+            "search.exe",
+        ] {
+            assert!(!super::is_browser(o), "{o}");
+        }
+    }
 }
