@@ -64,12 +64,13 @@ pub(crate) fn run(agent: &Agent, name: &str, args: &Value) -> Option<Result<Outp
     Some(match name {
         "capture_active_window" => (|| {
             delay(args);
-            // The list is in front-to-back order; Znimok's own windows are already left out.
+            // The list is in front-to-back order; Znimok's own windows are already left out, and
+            // the shell's are never «the window in front» (ZK-311).
             let w = agent
                 .capture
                 .windows()?
                 .into_iter()
-                .next()
+                .find(|w| !crate::tools::is_system_window(w))
                 .ok_or("no window on screen")?;
             let target = CaptureTarget::Window { id: w.id };
             let (doc, path) = match agent.capture.take(&target)? {

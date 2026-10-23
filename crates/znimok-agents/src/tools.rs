@@ -9,7 +9,7 @@ use serde_json::{Value, json};
 use std::path::PathBuf;
 use znimok_core::{Command, Document, Editor, Raster};
 use znimok_models::Rgba;
-use znimok_platform::{CaptureTarget, DisplayId, Rect, WindowId};
+use znimok_platform::{CaptureTarget, DisplayId, Rect, WindowId, WindowInfo};
 
 pub const DOC_MIME: &str = "application/x-znimok";
 
@@ -105,10 +105,15 @@ pub(crate) const TOOLS: &[Tool] = &[
     Tool {
         name: "list_windows",
         title: "List windows",
-        description: "Visible top-level windows: id, title, app (executable or bundle name), bounds. Use an id with capture_window.",
+        description: "Visible top-level windows: id, title, app (executable or bundle name), bounds. Use an id with capture_window. The shell's and the system's windows (the taskbar, the desktop, the touch keyboard, Znimok's own) are left out unless all is true.",
         scope: Some(Scope::Capture),
         read_only: true,
-        schema: || obj(json!({}), &[]),
+        schema: || {
+            obj(
+                json!({"all": {"type": "boolean", "description": "Also the shell's, the system's and Znimok's own windows"}}),
+                &[],
+            )
+        },
     },
     Tool {
         name: "capture_screen",
@@ -359,6 +364,46 @@ pub(crate) fn link(doc: &Document) -> Value {
         "mimeType": DOC_MIME,
         "description": "The library document (original pixels and marks)"
     })
+}
+
+/// A window nobody means when asking for «the windows» (ZK-311): the shell's and the input
+/// system's (the taskbar and the desktop are explorer's windows with no title or «Program
+/// Manager»; the touch keyboard's «Shell Handwriting Canvas»; the start menu, the search and
+/// the input experience hosts), a window too small to be an application (Znimok's own 16×16
+/// helper included), and one with no title at all.
+pub(crate) fn is_system_window(w: &WindowInfo) -> bool {
+    const APPS: &[&str] = &[
+        "textinputhost.exe",
+        "tabtip.exe",
+        "shellexperiencehost.exe",
+        "startmenuexperiencehost.exe",
+        "searchhost.exe",
+        "searchapp.exe",
+        "lockapp.exe",
+        "applicationframehost.exe",
+        "dock",
+        "window server",
+        "control center",
+        "control centre",
+        "notification center",
+        "notification centre",
+        "spotlight",
+        "wallpaper",
+    ];
+    const TITLES: &[&str] = &[
+        "program manager",
+        "shell handwriting canvas",
+        "windows input experience",
+        "microsoft text input application",
+    ];
+    let app = w.app.to_lowercase();
+    let title = w.title.trim().to_lowercase();
+    title.is_empty()
+        || w.bounds.width < 48
+        || w.bounds.height < 48
+        || APPS.contains(&app.as_str())
+        || TITLES.contains(&title.as_str())
+        || app.starts_with("znimok")
 }
 
 pub(crate) fn summary(doc: &Document, path: &std::path::Path) -> Value {
@@ -622,10 +667,12 @@ impl Agent {
                 Ok(Output::ok(json!({"displays": d}), vec![]))
             }
             "list_windows" => {
+                let all = args["all"].as_bool().unwrap_or(false);
                 let w: Vec<Value> = self
                     .capture
                     .windows()?
                     .into_iter()
+                    .filter(|w| all || !is_system_window(w))
                     .map(|w| json!({"id": w.id.0, "title": w.title, "app": w.app, "bounds": w.bounds}))
                     .collect();
                 Ok(Output::ok(json!({"windows": w}), vec![]))
@@ -976,8 +1023,57 @@ impl Agent {
 
 #[cfg(test)]
 mod arg_tests {
-    use super::arg_int;
+    use super::{arg_int, is_system_window};
     use serde_json::json;
+
+    /// The shell's, the system's and Znimok's own windows are not «the windows» (ZK-311).
+    #[test]
+    fn shell_and_system_windows_are_told_apart() {
+        let win = |title: &str, app: &str, w: u32, h: u32| znimok_platform::WindowInfo {
+            id: znimok_platform::WindowId(1),
+            title: title.into(),
+            app: app.into(),
+            pid: 1,
+            bounds: znimok_platform::Rect {
+                x: 0,
+                y: 0,
+                width: w,
+                height: h,
+            },
+            display: None,
+            scale_factor: 1.0,
+            minimized: false,
+            own: false,
+        };
+        assert!(!is_system_window(&win(
+            "Inbox — Chrome",
+            "chrome.exe",
+            1380,
+            1868
+        )));
+        assert!(!is_system_window(&win(
+            "Znimok — Document",
+            "chrome.exe",
+            800,
+            600
+        )));
+        assert!(is_system_window(&win(
+            "Program Manager",
+            "explorer.exe",
+            2560,
+            1440
+        )));
+        assert!(is_system_window(&win("", "explorer.exe", 2560, 48)));
+        assert!(is_system_window(&win(
+            "Shell Handwriting Canvas",
+            "TabTip.exe",
+            2560,
+            1440
+        )));
+        assert!(is_system_window(&win("Znimok", "znimok-app.exe", 16, 16)));
+        assert!(is_system_window(&win("Znimok", "Znimok", 1200, 800)));
+        assert!(is_system_window(&win("Item-0", "Control Centre", 40, 24)));
+    }
 
     /// Missing, wrong type and a number sent as a string are told apart (ZK-123).
     #[test]

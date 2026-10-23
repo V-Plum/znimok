@@ -69,7 +69,7 @@ characters do), or a path to a `.znimok` file. Every write returns the resulting
 
 | Tool | Arguments | Returns |
 |---|---|---|
-| `list_targets` | — | the displays (id, name, bounds, scale, primary) and the visible windows in front-to-back order (id, title, app, bounds) |
+| `list_targets` | `all?` (also the shell's, the system's and Znimok's own windows) | the displays (id, name, bounds, scale, primary) and the visible windows in front-to-back order (id, title, app, bounds) — the taskbar, the desktop, the touch keyboard and the like left out |
 | `capture` | `target` screen / window / active_window / region; `display?`, `window?`, `x? y? width? height?`; `delay_seconds?` (≤ 30) | a new document: id, size, the picture; for the window in front — which window it was |
 | `record` | `action` start / pause / resume / stop; for start: `display?` or `window?` or `region?`, `sound?` none / system / microphone / both, `devtools_log?` (true), `limit_seconds?` (300, ≤ 3600) | start: recording, size, limit; stop: the recording as a library document (also one that ended by its limit) |
 | `record_status` | — | recording or not, the agent's or the person's, paused, length so far, the last finished document |
