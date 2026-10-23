@@ -102,7 +102,7 @@ pub(crate) const TOOLS: &[Tool] = &[
     Tool {
         name: "marks",
         title: "Add, change or remove marks",
-        description: "Changes a document's marks in one go, in this order: delete (ids, or all), update (move, resize, restyle by id), add (new marks in plain words: rect, ellipse, arrow, line, pen, text, counter, hide, highlighter, stamp). Each part is one step of undo. Returns the picture.",
+        description: "Changes a document's marks in one go, in this order: delete (ids, or all), update (move, resize, restyle by id), add (new marks in plain words: rect, ellipse, arrow, line, pen, text, counter, hide, highlighter, stamp; around_text places a mark by a text on the picture — a frame around a button, an arrow at a label — without coordinates). Each part is one step of undo. Returns the picture.",
         scope: Some(Scope::LibraryWrite),
         read_only: false,
         schema: || {

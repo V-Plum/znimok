@@ -11,6 +11,7 @@ use znimok_core::{
     Align, Command, CounterShape, Data, Document, Editor, Head, HideMode, IRect, Object, ObjectId,
     Rgb,
 };
+use znimok_models::ocr::Rect as OcrRect;
 
 fn colour_arg(what: &str) -> Value {
     json!({"type": "string", "description": format!("{what}: #RRGGBB, or red, orange, yellow, green, blue, violet, black, white, grey")})
@@ -42,6 +43,8 @@ fn mark_schema() -> Value {
             "shape": {"type": "string", "enum": ["circle", "rounded_box", "pin"], "description": "counter"},
             "stamp": {"type": "integer", "minimum": 0, "description": "stamp: 0–5 are the vector stamps, 100+ emoji"},
             "name": {"type": "string", "description": "A name for the layers list"},
+            "around_text": {"type": "string", "description": "Place the mark by this text on the picture (read on this device, as ocr does) instead of giving coordinates: a box around it (rect, ellipse, hide, highlighter), an arrow's head at its left, a counter or a stamp beside it, a text below it. The first line that contains the text, top to bottom; on a recording the frame at from_ms."},
+            "padding": {"type": "integer", "minimum": 0, "description": "around_text: room around the text in pixels (6)"},
             "from_ms": {"type": "integer", "minimum": 0, "description": "Recording only: when the mark appears, ms as recorded (the whole recording without times)"},
             "to_ms": {"type": "integer", "minimum": 1, "description": "Recording only: when it goes (not included)"}
         },
@@ -474,6 +477,129 @@ pub(crate) fn apply(
     apply_timed(agent, args, cmds, |_| Vec::new())
 }
 
+/// Where a phrase stands among the lines read (ZK-309): the first line, top to bottom, that
+/// contains it (case folded); the union of the words' boxes that cover it when the engine gives
+/// words, else the line's box cut by the phrase's share of the characters.
+pub(crate) fn phrase_box(lines: &[znimok_models::ocr::Line], needle: &str) -> Option<OcrRect> {
+    let needle = needle.trim().to_lowercase();
+    if needle.is_empty() {
+        return None;
+    }
+    let n_chars = needle.chars().count();
+    for line in lines {
+        let text = line.text.to_lowercase();
+        let Some(byte) = text.find(&needle) else {
+            continue;
+        };
+        let start = text[..byte].chars().count();
+        let end = start + n_chars;
+        if !line.words.is_empty() {
+            // The words joined by one space are the line's text; a word is in when its characters
+            // overlap the phrase's.
+            let mut at = 0;
+            let mut found: Option<OcrRect> = None;
+            for w in &line.words {
+                let len = w.text.chars().count();
+                if at < end && at + len > start {
+                    found = Some(match found {
+                        Some(f) => f.union(w.rect),
+                        None => w.rect,
+                    });
+                }
+                at += len + 1;
+            }
+            if let Some(f) = found {
+                return Some(f);
+            }
+        }
+        let total = text.chars().count().max(1) as f32;
+        let r = line.rect;
+        return Some(OcrRect {
+            x: r.x + r.w * start as f32 / total,
+            y: r.y,
+            w: (r.w * n_chars as f32 / total).max(1.0),
+            h: r.h,
+        });
+    }
+    None
+}
+
+/// The marks with `around_text` get their place (ZK-309): the text of the picture (the frame at
+/// the mark's from_ms on a recording) read once per frame, the phrase found, the mark put around
+/// it as its kind wants. The others pass as they are.
+fn around_text(agent: &Agent, args: &Value) -> Result<Value, String> {
+    let mut out = args.clone();
+    let Some(marks) = out["marks"].as_array_mut() else {
+        return Ok(out);
+    };
+    if !marks.iter().any(|m| m.get("around_text").is_some()) {
+        return Ok(out);
+    }
+    let (doc, path) = agent.doc(args)?;
+    let engine = znimok_models::ocr::system().ok_or("no text recognition on this system")?;
+    let mut read: std::collections::HashMap<i64, znimok_models::ocr::OcrResult> =
+        Default::default();
+    for (i, m) in marks.iter_mut().enumerate() {
+        let Some(needle) = m["around_text"]
+            .as_str()
+            .map(str::trim)
+            .filter(|t| !t.is_empty())
+        else {
+            continue;
+        };
+        let needle = needle.to_string();
+        let ms = m["from_ms"].as_i64().unwrap_or(0);
+        if let std::collections::hash_map::Entry::Vacant(e) = read.entry(ms) {
+            let r = crate::vexport::picture(&doc, &path, &json!({"at_ms": ms}))?;
+            let img = znimok_models::Rgba::new(r.width, r.height, r.rgba).ok_or("empty picture")?;
+            e.insert(engine.recognize(&img, &[]).map_err(|e| e.to_string())?);
+        }
+        let res = &read[&ms];
+        let Some(b) = phrase_box(&res.lines, &needle) else {
+            return Err(format!(
+                "mark {i}: «{needle}» is not on the picture ({} lines read; ocr shows them)",
+                res.lines.len()
+            ));
+        };
+        let pad = opt_int(m, "padding")?.unwrap_or(6).max(0) as f32;
+        let (x0, y0) = ((b.x - pad).floor() as i64, (b.y - pad).floor() as i64);
+        let (x1, y1) = (
+            (b.x + b.w + pad).ceil() as i64,
+            (b.y + b.h + pad).ceil() as i64,
+        );
+        let cy = (b.y + b.h / 2.0).round() as i64;
+        let size = opt_int(m, "size")?.unwrap_or(36).max(6) as i64;
+        match arg_str(m, "kind").unwrap_or("") {
+            "rect" | "ellipse" | "hide" | "highlighter" => {
+                m["x"] = json!(x0);
+                m["y"] = json!(y0);
+                m["width"] = json!((x1 - x0).max(1));
+                m["height"] = json!((y1 - y0).max(1));
+            }
+            "arrow" | "line" => {
+                m["to"] = json!([x0, cy]);
+                if m.get("from").is_none() {
+                    m["from"] = json!([(x0 - 120).max(0), (cy + 80).max(0)]);
+                }
+            }
+            "counter" | "stamp" => {
+                m["x"] = json!((x0 - size / 2).max(size / 2));
+                m["y"] = json!(cy);
+            }
+            "text" => {
+                m["x"] = json!(x0.max(0));
+                m["y"] = json!(y1);
+            }
+            other => {
+                return Err(format!(
+                    "mark {i}: around_text places rect, ellipse, hide, highlighter, arrow, line, counter, stamp and text, not «{other}»"
+                ));
+            }
+        }
+    }
+    Ok(out)
+}
+
 /// [`apply`], then the times of marks on a recording (ZK-239): `times` gets the ids of the
 /// marks just made and answers which marks take which time arguments.
 fn apply_timed(
@@ -514,34 +640,37 @@ pub(crate) fn run(agent: &Agent, name: &str, args: &Value) -> Option<Result<Outp
             s["marks"] = json!(doc.objects.iter().map(mark_json).collect::<Vec<_>>());
             Output::ok(s, vec![])
         }),
-        "add_marks" => apply_timed(
-            agent,
-            args,
-            |_| {
-                let marks = args["marks"].as_array().ok_or("«marks» must be an array")?;
-                marks
-                    .iter()
-                    .enumerate()
-                    .map(|(i, m)| {
-                        mark(m)
-                            .map(|object| Command::AddObject {
-                                object,
-                                select: false,
-                                merge: None,
-                            })
-                            .map_err(|e| format!("mark {i}: {e}"))
-                    })
-                    .collect()
-            },
-            // One new mark per mark given, in order: each takes its own from_ms / to_ms.
-            |created| {
-                created
-                    .iter()
-                    .copied()
-                    .zip(args["marks"].as_array().into_iter().flatten().cloned())
-                    .collect()
-            },
-        ),
+        "add_marks" => (|| {
+            let args = &around_text(agent, args)?;
+            apply_timed(
+                agent,
+                args,
+                |_| {
+                    let marks = args["marks"].as_array().ok_or("«marks» must be an array")?;
+                    marks
+                        .iter()
+                        .enumerate()
+                        .map(|(i, m)| {
+                            mark(m)
+                                .map(|object| Command::AddObject {
+                                    object,
+                                    select: false,
+                                    merge: None,
+                                })
+                                .map_err(|e| format!("mark {i}: {e}"))
+                        })
+                        .collect()
+                },
+                // One new mark per mark given, in order: each takes its own from_ms / to_ms.
+                |created| {
+                    created
+                        .iter()
+                        .copied()
+                        .zip(args["marks"].as_array().into_iter().flatten().cloned())
+                        .collect()
+                },
+            )
+        })(),
         "update_marks" => apply_timed(
             agent,
             args,
@@ -723,4 +852,69 @@ pub(crate) fn run(agent: &Agent, name: &str, args: &Value) -> Option<Result<Outp
         }),
         _ => return None,
     })
+}
+
+#[cfg(test)]
+mod around_tests {
+    use super::phrase_box;
+    use znimok_models::ocr::{Line, Rect, Word};
+
+    fn word(t: &str, x: f32, w: f32) -> Word {
+        Word {
+            text: t.into(),
+            rect: Rect {
+                x,
+                y: 100.0,
+                w,
+                h: 16.0,
+            },
+        }
+    }
+
+    /// With words: the union of the words the phrase covers; without: the line's share (ZK-309).
+    #[test]
+    fn a_phrase_is_placed_by_its_words_or_its_share() {
+        let lines = vec![
+            Line {
+                text: "Help every member".into(),
+                rect: Rect {
+                    x: 20.0,
+                    y: 40.0,
+                    w: 300.0,
+                    h: 16.0,
+                },
+                confidence: None,
+                words: vec![],
+            },
+            Line {
+                text: "Request a demo See how it works".into(),
+                rect: Rect {
+                    x: 40.0,
+                    y: 100.0,
+                    w: 330.0,
+                    h: 16.0,
+                },
+                confidence: None,
+                words: vec![
+                    word("Request", 40.0, 60.0),
+                    word("a", 105.0, 10.0),
+                    word("demo", 120.0, 45.0),
+                    word("See", 220.0, 30.0),
+                    word("how", 255.0, 30.0),
+                    word("it", 290.0, 15.0),
+                    word("works", 310.0, 60.0),
+                ],
+            },
+        ];
+        let b = phrase_box(&lines, "see how it works").unwrap();
+        assert_eq!((b.x, b.y, b.w, b.h), (220.0, 100.0, 150.0, 16.0));
+        let b = phrase_box(&lines, "Request a demo").unwrap();
+        assert_eq!((b.x, b.w), (40.0, 125.0));
+        // No words: «member» is the last 6 of 17 characters.
+        let b = phrase_box(&lines, "member").unwrap();
+        assert!((b.x - (20.0 + 300.0 * 11.0 / 17.0)).abs() < 0.01, "{b:?}");
+        assert!((b.w - 300.0 * 6.0 / 17.0).abs() < 0.01);
+        assert!(phrase_box(&lines, "Find a Job").is_none());
+        assert!(phrase_box(&lines, "  ").is_none());
+    }
 }
