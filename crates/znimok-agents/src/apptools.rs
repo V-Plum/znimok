@@ -1,7 +1,7 @@
 //! What an agent does with the running app (ZK-238): the window in front captured, a document
 //! opened in the editor or put on the clipboard, and what the app is doing now.
 
-use crate::backend::Shot;
+use crate::backend::{Capturer, Shot};
 use crate::library;
 use crate::permissions::Scope;
 use crate::tools::{Agent, Output, Tool, arg_str, doc_arg, image, link, obj, summary};
@@ -24,6 +24,29 @@ pub(crate) fn delay(args: &Value) {
     }
 }
 
+/// How long a capture waits for the picture to settle when asked to (ZK-312).
+pub(crate) const STABLE_LIMIT: std::time::Duration = std::time::Duration::from_secs(5);
+
+pub(crate) fn stable_arg() -> Value {
+    json!({"type": "boolean",
+           "description": "Take the shot once the picture stops changing (a page still loading, a menu sliding in): shots 0.4 s apart until two are the same, up to 5 s; the answer's «stable» says whether it got there"})
+}
+
+/// The shot as asked: at once, or once the picture has settled (`wait_until_stable`), and
+/// whether it had when asked.
+pub(crate) fn take(
+    capture: &dyn Capturer,
+    target: &CaptureTarget,
+    args: &Value,
+) -> Result<(Shot, Option<bool>), String> {
+    if args["wait_until_stable"].as_bool().unwrap_or(false) {
+        let (shot, stable) = capture.take_stable(target, STABLE_LIMIT)?;
+        Ok((shot, Some(stable)))
+    } else {
+        Ok((capture.take(target)?, None))
+    }
+}
+
 pub(crate) const TOOLS: &[Tool] = &[
     Tool {
         name: "capture_active_window",
@@ -31,7 +54,12 @@ pub(crate) const TOOLS: &[Tool] = &[
         description: "Screenshot of the window in front of the others (not Znimok's own). When the agent runs in a terminal, that terminal is in front — give delay_seconds so the person can switch to the window they mean. Saved as a new library document.",
         scope: Some(Scope::Capture),
         read_only: false,
-        schema: || obj(json!({"delay_seconds": delay_arg()}), &[]),
+        schema: || {
+            obj(
+                json!({"delay_seconds": delay_arg(), "wait_until_stable": stable_arg()}),
+                &[],
+            )
+        },
     },
     Tool {
         name: "open_in_editor",
@@ -73,13 +101,17 @@ pub(crate) fn run(agent: &Agent, name: &str, args: &Value) -> Option<Result<Outp
                 .find(|w| !crate::tools::is_system_window(w))
                 .ok_or("no window on screen")?;
             let target = CaptureTarget::Window { id: w.id };
-            let (doc, path) = match agent.capture.take(&target)? {
+            let (shot, stable) = take(agent.capture.as_ref(), &target, args)?;
+            let (doc, path) = match shot {
                 Shot::Pixels(r) => agent.new_doc(r, "window")?,
                 Shot::Saved(p) => (library::load(&p)?, p),
             };
             let r = library::render(&doc, 1.0);
             let mut s = summary(&doc, &path);
             s["window"] = json!({"id": w.id.0, "title": w.title, "app": w.app});
+            if let Some(stable) = stable {
+                s["stable"] = json!(stable);
+            }
             Ok(Output::ok(
                 s,
                 image(&r).into_iter().chain([link(&doc)]).collect(),

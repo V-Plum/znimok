@@ -571,6 +571,31 @@ impl Raster {
         }
     }
 
+    /// Whether `other` is the same picture, give or take a blinking caret: the same size, and
+    /// fewer than `per_mille` pixels in a thousand differ in any channel by more than 8.
+    pub fn nearly_same(&self, other: &Raster, per_mille: u32) -> bool {
+        if self.width != other.width || self.height != other.height {
+            return false;
+        }
+        let budget = u64::from(self.width) * u64::from(self.height) * u64::from(per_mille) / 1000;
+        let mut differ = 0u64;
+        for (a, b) in self
+            .rgba
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .zip(other.rgba.as_chunks::<4>().0)
+        {
+            if a.iter().zip(b).any(|(x, y)| x.abs_diff(*y) > 8) {
+                differ += 1;
+                if differ > budget {
+                    return false;
+                }
+            }
+        }
+        true
+    }
+
     pub fn solid(width: u32, height: u32, rgb: Rgb) -> Self {
         let mut rgba = Vec::with_capacity((width * height * 4) as usize);
         for _ in 0..width * height {
