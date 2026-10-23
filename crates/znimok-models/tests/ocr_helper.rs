@@ -58,3 +58,19 @@ fn restarts_after_the_helper_left() {
     let again = h.recognize(&img, &[]).unwrap().text();
     assert_eq!(first, again);
 }
+
+/// The languages asked for go with the request (ZK-308): English alone is what the reply
+/// reports, and a Latin line reads at least as well as with the pair.
+#[test]
+fn english_alone_is_read_with_english_alone() {
+    let Some(h) = helper() else {
+        return;
+    };
+    let img = picture("consolas-15-light-03.png"); // «SELECT ім'я, прізвище FROM users WHERE id = 42;»
+    let en = h.recognize(&img, &["en"]).unwrap();
+    assert_eq!(en.languages, vec!["en"]);
+    assert!(en.text().contains("SELECT"), "{}", en.text());
+    let both = h.recognize(&img, &["uk", "en"]).unwrap();
+    assert_eq!(both.languages, vec!["uk", "en"]);
+    assert!(both.text().contains("прізвище"), "{}", both.text());
+}

@@ -52,6 +52,8 @@ pub struct Vid {
     pub raster: Option<(i64, Arc<Raster>)>,
     /// «Кадр як знімок» waits for the CPU copy of the frame shown.
     pub shot_pending: bool,
+    /// «Текст зі знімка» waits for it too (ZK-308): the region asked, or the whole frame.
+    pub text_pending: Option<Option<znimok_core::IRect>>,
     pub playing: bool,
     pub backward: bool,
     /// The tone table last sent to the player (None: not sent yet).
@@ -103,6 +105,7 @@ impl Vid {
             shown: None,
             raster: None,
             shot_pending: false,
+            text_pending: None,
             playing: false,
             backward: false,
             tone_sent: None,

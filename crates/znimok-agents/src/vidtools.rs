@@ -4,7 +4,6 @@
 //! where a word stands on a picture, to put a mark by it. All from the file, on this computer;
 //! sensitive values of the log are hidden as the person's settings say.
 
-use crate::library;
 use crate::permissions::Scope;
 use crate::tools::{Agent, Output, Tool, arg_int, arg_str, doc_arg, obj};
 use serde_json::{Value, json};
@@ -52,7 +51,7 @@ pub(crate) const TOOLS: &[Tool] = &[
     Tool {
         name: "find_text",
         title: "Find text on a picture",
-        description: "Where a word or a phrase stands on a library document: the lines that contain it (read on this computer) with their boxes in pixels — to frame it, point an arrow at it or hide it.",
+        description: "Where a word or a phrase stands on a library document: the lines that contain it (read on this computer) with their boxes in pixels — to frame it, point an arrow at it or hide it. A recording: on the frame at at_ms.",
         scope: Some(Scope::LibraryRead),
         read_only: true,
         schema: || {
@@ -60,7 +59,8 @@ pub(crate) const TOOLS: &[Tool] = &[
                 json!({
                     "document": doc_arg(),
                     "text": {"type": "string"},
-                    "languages": {"type": "array", "items": {"type": "string"}, "description": "BCP 47 tags in order of preference, e.g. [\"uk\", \"en\"]"}
+                    "languages": {"type": "array", "items": {"type": "string"}, "description": "BCP 47 tags in order of preference, e.g. [\"uk\", \"en\"]"},
+                    "at_ms": {"type": "integer", "description": "A recording: the time of the frame to read, in ms as recorded (0 when left out)"}
                 }),
                 &["document", "text"],
             )
@@ -326,14 +326,14 @@ pub(crate) fn run(agent: &Agent, name: &str, args: &Value) -> Option<Result<Outp
             ))
         }),
         "find_text" => (|| {
-            let (doc, _) = agent.doc(args)?;
+            let (doc, path) = agent.doc(args)?;
             let needle = arg_str(args, "text").map(str::trim).filter(|t| !t.is_empty()).ok_or("«text» is required")?;
             let langs: Vec<String> = args["languages"]
                 .as_array()
                 .map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect())
                 .unwrap_or_default();
             let langs: Vec<&str> = langs.iter().map(String::as_str).collect();
-            let r = library::render(&doc, 1.0);
+            let r = crate::vexport::picture(&doc, &path, args)?;
             let img = znimok_models::Rgba::new(r.width, r.height, r.rgba).ok_or("empty picture")?;
             let engine = znimok_models::ocr::system().ok_or("no text recognition on this system")?;
             let res = engine.recognize(&img, &langs).map_err(|e| e.to_string())?;

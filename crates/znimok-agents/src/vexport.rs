@@ -196,7 +196,19 @@ fn znimok_export_image_format(f: &str) -> Option<crate::library::ExportFormat> {
     }
 }
 
-/// `video_frames`: frames of a recording to look at, with the marks of their moment.
+/// The picture of a document for reading text (ZK-308): a screenshot as rendered; a recording
+/// — its frame at `at_ms` (0 when left out), full size, with the marks of that moment.
+pub(crate) fn picture(doc: &Document, path: &Path, args: &Value) -> Result<Raster, String> {
+    let part = match znimok_format::open_parts(path) {
+        Ok((_, Some(part))) => part,
+        _ => return Ok(crate::library::render(doc, 1.0)),
+    };
+    let ms = args["at_ms"].as_i64().unwrap_or(0);
+    let mut frames = znimok_play::Frames::open(gpu()?, &source(&part))?;
+    let (_, r) = frame_at(&mut frames, doc, &part, ms, true)?;
+    Ok(r)
+}
+
 /// One frame of a recording as a PNG, full size, with the marks of its moment — the resource
 /// `znimok://library/<id>/frame/<n>` (ZK-239); `n` counts frames as recorded.
 pub(crate) fn frame_png(path: &Path, n: i64) -> Result<Vec<u8>, String> {
