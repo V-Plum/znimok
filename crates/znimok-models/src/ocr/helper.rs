@@ -7,7 +7,9 @@
 //! killed with it; a crash costs one request, not the app.
 //!
 //! Two readings: **text** (`ukr+eng`, what people see and copy) and **masking** (`eng+ukr`: Latin
-//! reads better — e-mail, keys, cards; secrets are looked for in both).
+//! reads better — e-mail, keys, cards; secrets are looked for in both). The languages asked for
+//! go with the request (protocol v2, ZK-308): `["en"]` loads English alone, which reads a Latin
+//! page better than the pair and is what the reply then reports.
 
 use super::{Line, Ocr, OcrError, OcrResult, Rect, Word, is_russian, match_languages};
 use crate::Rgba;
@@ -25,14 +27,31 @@ pub enum Mode {
     Masking = 1,
 }
 
-/// A request: header + 8-bit grey pixels (luma of the RGBA picture).
-pub fn encode_request(img: &Rgba, mode: Mode) -> Vec<u8> {
+/// Tesseract's name for the languages, in the order asked (`uk` → `ukr`, `en` → `eng`); none
+/// known = empty, the helper then takes the mode's default.
+pub fn tess_langs(languages: &[&str]) -> String {
+    let names: Vec<&str> = languages
+        .iter()
+        .filter_map(|l| match *l {
+            "uk" => Some("ukr"),
+            "en" => Some("eng"),
+            _ => None,
+        })
+        .collect();
+    names.join("+")
+}
+
+/// A request: header, the languages (protocol v2), then 8-bit grey pixels (luma of the RGBA
+/// picture).
+pub fn encode_request(img: &Rgba, mode: Mode, languages: &[&str]) -> Vec<u8> {
+    let langs = tess_langs(languages);
     let n = img.width as usize * img.height as usize;
-    let mut out = Vec::with_capacity(20 + n);
+    let mut out = Vec::with_capacity(24 + langs.len() + n);
     out.extend_from_slice(b"ZOCR");
-    for v in [1u32, mode as u32, img.width, img.height] {
+    for v in [2u32, mode as u32, img.width, img.height, langs.len() as u32] {
         out.extend_from_slice(&v.to_le_bytes());
     }
+    out.extend_from_slice(langs.as_bytes());
     out.extend(img.pixels.as_chunks::<4>().0.iter().map(|p| {
         let (r, g, b) = (p[0] as u32, p[1] as u32, p[2] as u32);
         ((r * 299 + g * 587 + b * 114 + 500) / 1000) as u8
@@ -68,8 +87,9 @@ struct ReplyWord {
     h: f32,
 }
 
-/// The helper's JSON reply → lines with words (confidence 0–1).
-pub fn parse_reply(json: &[u8], mode: Mode) -> Result<OcrResult, OcrError> {
+/// The helper's JSON reply → lines with words (confidence 0–1); `languages` = what was read
+/// with (the mode's default when the request named none).
+pub fn parse_reply(json: &[u8], mode: Mode, languages: &[&str]) -> Result<OcrResult, OcrError> {
     let r: Reply =
         serde_json::from_slice(json).map_err(|e| OcrError::Os(format!("helper reply: {e}")))?;
     if let Some(e) = r.error {
@@ -102,9 +122,13 @@ pub fn parse_reply(json: &[u8], mode: Mode) -> Result<OcrResult, OcrError> {
                 .collect(),
         })
         .collect();
-    let languages = match mode {
-        Mode::Text => vec!["uk".into(), "en".into()],
-        Mode::Masking => vec!["en".into(), "uk".into()],
+    let languages = if languages.is_empty() {
+        match mode {
+            Mode::Text => vec!["uk".into(), "en".into()],
+            Mode::Masking => vec!["en".into(), "uk".into()],
+        }
+    } else {
+        languages.iter().map(|l| l.to_string()).collect()
     };
     Ok(OcrResult {
         lines,
@@ -153,13 +177,13 @@ impl TessHelper {
         }
     }
 
-    fn run(&self, img: &Rgba, mode: Mode) -> Result<OcrResult, OcrError> {
+    fn run(&self, img: &Rgba, mode: Mode, languages: &[&str]) -> Result<OcrResult, OcrError> {
         if img.width > MAX_SIDE || img.height > MAX_SIDE {
             return Err(OcrError::Os(
                 "picture too large for text recognition".into(),
             ));
         }
-        let req = encode_request(img, mode);
+        let req = encode_request(img, mode, languages);
         let mut live = self.live.lock().unwrap_or_else(|e| e.into_inner());
         // The helper leaves after a few idle seconds: a broken pipe means «start it again».
         for attempt in 0..2 {
@@ -167,7 +191,7 @@ impl TessHelper {
                 *live = Some(proc::Live::start(&self.exe)?);
             }
             match live.as_mut().map(|l| l.exchange(&req)) {
-                Some(Ok(reply)) => return parse_reply(&reply, mode),
+                Some(Ok(reply)) => return parse_reply(&reply, mode, languages),
                 Some(Err(e)) => {
                     *live = None;
                     if attempt == 1 {
@@ -199,7 +223,13 @@ impl Ocr for TessHelper {
                 available: self.languages(),
             });
         }
-        let mut r = self.run(img, Mode::Text)?;
+        // Both languages in the usual order = the mode's default (same models, no reload).
+        let asked: Vec<&str> = if usable.len() == LANGUAGES.len() {
+            Vec::new()
+        } else {
+            usable.iter().map(String::as_str).collect()
+        };
+        let mut r = self.run(img, Mode::Text, &asked)?;
         r.missing = missing;
         Ok(r)
     }
@@ -209,7 +239,7 @@ impl Ocr for TessHelper {
         img: &Rgba,
         _languages: &[&str],
     ) -> Result<OcrResult, OcrError> {
-        self.run(img, Mode::Masking)
+        self.run(img, Mode::Masking, &[])
     }
 }
 
@@ -355,20 +385,28 @@ mod tests {
     #[test]
     fn request_is_header_and_luma() {
         let img = Rgba::new(2, 1, vec![255, 255, 255, 255, 0, 0, 0, 255]).unwrap();
-        let r = encode_request(&img, Mode::Masking);
+        let r = encode_request(&img, Mode::Masking, &[]);
         assert_eq!(&r[..4], b"ZOCR");
-        assert_eq!(u32::from_le_bytes(r[4..8].try_into().unwrap()), 1);
+        assert_eq!(u32::from_le_bytes(r[4..8].try_into().unwrap()), 2);
         assert_eq!(u32::from_le_bytes(r[8..12].try_into().unwrap()), 1);
         assert_eq!(u32::from_le_bytes(r[12..16].try_into().unwrap()), 2);
         assert_eq!(u32::from_le_bytes(r[16..20].try_into().unwrap()), 1);
-        assert_eq!(&r[20..], &[255, 0]);
+        assert_eq!(u32::from_le_bytes(r[20..24].try_into().unwrap()), 0);
+        assert_eq!(&r[24..], &[255, 0]);
+        // The languages asked for travel with the request, in Tesseract's names.
+        let r = encode_request(&img, Mode::Text, &["en", "uk"]);
+        assert_eq!(u32::from_le_bytes(r[20..24].try_into().unwrap()), 7);
+        assert_eq!(&r[24..31], b"eng+ukr");
+        assert_eq!(&r[31..], &[255, 0]);
+        assert_eq!(tess_langs(&["en"]), "eng");
+        assert_eq!(tess_langs(&["de"]), "");
     }
 
     #[test]
     fn reply_becomes_lines_and_words() {
         let json = br#"{"lines":[{"x":10,"y":20,"w":100,"h":14,"conf":91.5,"text":"v.plum@example.com o 14:35",
             "words":[{"x":10,"y":20,"w":60,"h":14,"conf":90,"text":"v.plum@example.com"}]}]}"#;
-        let r = parse_reply(json, Mode::Text).unwrap();
+        let r = parse_reply(json, Mode::Text, &[]).unwrap();
         assert_eq!(r.lines.len(), 1);
         assert_eq!(r.lines[0].words[0].text, "v.plum@example.com");
         assert_eq!(
@@ -382,10 +420,14 @@ mod tests {
         );
         assert!((r.lines[0].confidence.unwrap() - 0.915).abs() < 1e-6);
         assert_eq!(r.languages, vec!["uk", "en"]);
+        assert_eq!(
+            parse_reply(json, Mode::Text, &["en"]).unwrap().languages,
+            vec!["en"]
+        );
         assert!(matches!(
-            parse_reply(br#"{"error":"bad"}"#, Mode::Text),
+            parse_reply(br#"{"error":"bad"}"#, Mode::Text, &[]),
             Err(OcrError::Os(_))
         ));
-        assert!(parse_reply(b"not json", Mode::Text).is_err());
+        assert!(parse_reply(b"not json", Mode::Text, &[]).is_err());
     }
 }

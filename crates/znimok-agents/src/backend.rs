@@ -119,7 +119,34 @@ pub trait Capturer {
         let _ = id;
         Err("content_only is not available on this system yet".into())
     }
+    /// The shot once the picture stops changing (ZK-312): taken again every [`STABLE_EVERY`]
+    /// until two in a row are the same, or `limit` passes — then the last one, and `false`.
+    fn take_stable(&self, target: &CaptureTarget, limit: Duration) -> Result<(Shot, bool), String> {
+        let start = Instant::now();
+        let mut last = self.take(target)?;
+        loop {
+            std::thread::sleep(STABLE_EVERY);
+            let next = self.take(target)?;
+            match (&last, &next) {
+                (Shot::Pixels(a), Shot::Pixels(b)) if a.nearly_same(b, STABLE_PER_MILLE) => {
+                    return Ok((next, true));
+                }
+                // Saved by the app: nothing to compare here (the app compares when asked).
+                (Shot::Saved(_), _) => return Ok((next, true)),
+                _ => {}
+            }
+            if start.elapsed() >= limit {
+                return Ok((next, false));
+            }
+            last = next;
+        }
+    }
 }
+
+/// How often a shot is taken again while waiting for the picture to settle.
+pub const STABLE_EVERY: Duration = Duration::from_millis(400);
+/// Pixels in a thousand two shots may differ in and still be «the same» (a caret, a clock).
+pub const STABLE_PER_MILLE: u32 = 1;
 
 pub enum Shot {
     /// Pixels to be saved as a new library document here.
@@ -199,6 +226,21 @@ impl Capturer for ViaGui {
             .as_str()
             .ok_or("the app did not return a document")?;
         Ok(Shot::Saved(path.into()))
+    }
+    /// The app takes the shots and compares them (ZK-312); `stable` comes back with the path.
+    fn take_stable(&self, target: &CaptureTarget, limit: Duration) -> Result<(Shot, bool), String> {
+        self.0.ensure_running()?;
+        let v = self.0.call(
+            "capture.take",
+            json!({ "target": target, "stable_ms": limit.as_millis() as u64 }),
+        )?;
+        let path = v["path"]
+            .as_str()
+            .ok_or("the app did not return a document")?;
+        Ok((
+            Shot::Saved(path.into()),
+            v["stable"].as_bool().unwrap_or(true),
+        ))
     }
 }
 

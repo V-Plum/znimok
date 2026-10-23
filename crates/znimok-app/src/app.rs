@@ -6781,11 +6781,46 @@ impl App {
         let Some(frame) = self.s.as_ref().map(|s| s.ed.doc.frame()) else {
             return;
         };
+        // A recording (ZK-308): the frame shown, not the poster. Its CPU copy comes a moment after
+        // the player rests: wait for it (a playing recording pauses).
+        let frame_px = match self.s.as_mut().and_then(|s| s.vid.as_mut()) {
+            Some(v) if v.shown.is_some() && v.player.is_some() => {
+                match v.raster.as_ref().filter(|(f, _)| *f == v.frame) {
+                    Some((_, r)) => Some(r.clone()),
+                    None => {
+                        v.text_pending = Some(region);
+                        if v.playing {
+                            v.playing = false;
+                            if let Some(p) = &v.player {
+                                p.pause();
+                            }
+                        }
+                        if let Some(t) = self.text.as_mut() {
+                            t.busy = true;
+                        }
+                        ui.set_text_busy(true);
+                        ui.set_text_status(self.tr.tr("text-busy").into());
+                        return;
+                    }
+                }
+            }
+            _ => None,
+        };
         // The picture itself, not the marks drawn on it (they only add noise) — but a Hide stays:
-        // what was hidden must not come back as text.
+        // what was hidden must not come back as text (on a recording, one live on this frame).
         let Some((w, h, rgba)) = self.s.as_ref().map(|s| {
             let mut doc = s.ed.doc.clone();
-            doc.objects.retain(|o| o.kind() == Kind::Hide);
+            if let Some(r) = frame_px {
+                doc.banks = vec![r];
+                doc.source = 0;
+            }
+            let keep: Vec<ObjectId> = doc
+                .objects
+                .iter()
+                .filter(|o| o.kind() == Kind::Hide && doc.live(o))
+                .map(|o| o.id)
+                .collect();
+            doc.objects.retain(|o| keep.contains(&o.id));
             let mut pix = Pixmap::new(1, 1);
             self.renderer.render(&doc, View::one_to_one(&doc), &mut pix);
             (
@@ -11981,6 +12016,7 @@ impl App {
                 }
                 v.raster = Some((frame, raster));
                 let shot = std::mem::take(&mut v.shot_pending);
+                let text = v.text_pending.take();
                 if hides {
                     self.frame_changed = true;
                     self.dirty = true;
@@ -11988,6 +12024,9 @@ impl App {
                 }
                 if shot {
                     self.frame_as_shot(ui);
+                }
+                if let Some(region) = text {
+                    self.text_read(ui, region);
                 }
             }
         }

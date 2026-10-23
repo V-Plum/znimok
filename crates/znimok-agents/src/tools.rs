@@ -9,7 +9,7 @@ use serde_json::{Value, json};
 use std::path::PathBuf;
 use znimok_core::{Command, Document, Editor, Raster};
 use znimok_models::Rgba;
-use znimok_platform::{CaptureTarget, DisplayId, Rect, WindowId};
+use znimok_platform::{CaptureTarget, DisplayId, Rect, WindowId, WindowInfo};
 
 pub const DOC_MIME: &str = "application/x-znimok";
 
@@ -105,10 +105,15 @@ pub(crate) const TOOLS: &[Tool] = &[
     Tool {
         name: "list_windows",
         title: "List windows",
-        description: "Visible top-level windows: id, title, app (executable or bundle name), bounds. Use an id with capture_window.",
+        description: "Visible top-level windows: id, title, app (executable or bundle name), bounds. Use an id with capture_window. The shell's and the system's windows (the taskbar, the desktop, the touch keyboard, Znimok's own) are left out unless all is true.",
         scope: Some(Scope::Capture),
         read_only: true,
-        schema: || obj(json!({}), &[]),
+        schema: || {
+            obj(
+                json!({"all": {"type": "boolean", "description": "Also the shell's, the system's and Znimok's own windows"}}),
+                &[],
+            )
+        },
     },
     Tool {
         name: "capture_screen",
@@ -119,7 +124,8 @@ pub(crate) const TOOLS: &[Tool] = &[
         schema: || {
             obj(
                 json!({"display": {"type": "string", "description": "Display id from list_displays"},
-                       "delay_seconds": crate::apptools::delay_arg()}),
+                       "delay_seconds": crate::apptools::delay_arg(),
+                       "wait_until_stable": crate::apptools::stable_arg()}),
                 &[],
             )
         },
@@ -134,7 +140,8 @@ pub(crate) const TOOLS: &[Tool] = &[
             obj(
                 json!({"window": {"type": "integer", "description": "Window id from list_windows"},
                        "content_only": {"type": "boolean", "description": "Only the window's page area — a browser's page without the tabs, the address bar and the side panels (an editor's text) — as the window shows it now; the answer's «content» gives where it was"},
-                       "delay_seconds": crate::apptools::delay_arg()}),
+                       "delay_seconds": crate::apptools::delay_arg(),
+                       "wait_until_stable": crate::apptools::stable_arg()}),
                 &["window"],
             )
         },
@@ -150,7 +157,8 @@ pub(crate) const TOOLS: &[Tool] = &[
                 json!({
                     "x": {"type": "integer"}, "y": {"type": "integer"},
                     "width": {"type": "integer", "minimum": 1}, "height": {"type": "integer", "minimum": 1},
-                    "delay_seconds": crate::apptools::delay_arg()
+                    "delay_seconds": crate::apptools::delay_arg(),
+                    "wait_until_stable": crate::apptools::stable_arg()
                 }),
                 &["x", "y", "width", "height"],
             )
@@ -252,14 +260,15 @@ pub(crate) const TOOLS: &[Tool] = &[
     Tool {
         name: "ocr",
         title: "Recognise text",
-        description: "Text of a library document, on this computer (nothing leaves it), with line boxes in pixels.",
+        description: "Text of a library document, on this computer (nothing leaves it), with line boxes in pixels. A recording: the frame at at_ms.",
         scope: Some(Scope::LibraryRead),
         read_only: true,
         schema: || {
             obj(
                 json!({
                     "document": doc_arg(),
-                    "languages": {"type": "array", "items": {"type": "string"}, "description": "BCP 47 tags in order of preference, e.g. [\"uk\", \"en\"]"}
+                    "languages": {"type": "array", "items": {"type": "string"}, "description": "BCP 47 tags in order of preference, e.g. [\"uk\", \"en\"]"},
+                    "at_ms": {"type": "integer", "description": "A recording: the time of the frame to read, in ms as recorded (0 when left out)"}
                 }),
                 &["document"],
             )
@@ -360,6 +369,46 @@ pub(crate) fn link(doc: &Document) -> Value {
         "mimeType": DOC_MIME,
         "description": "The library document (original pixels and marks)"
     })
+}
+
+/// A window nobody means when asking for «the windows» (ZK-311): the shell's and the input
+/// system's (the taskbar and the desktop are explorer's windows with no title or «Program
+/// Manager»; the touch keyboard's «Shell Handwriting Canvas»; the start menu, the search and
+/// the input experience hosts), a window too small to be an application (Znimok's own 16×16
+/// helper included), and one with no title at all.
+pub(crate) fn is_system_window(w: &WindowInfo) -> bool {
+    const APPS: &[&str] = &[
+        "textinputhost.exe",
+        "tabtip.exe",
+        "shellexperiencehost.exe",
+        "startmenuexperiencehost.exe",
+        "searchhost.exe",
+        "searchapp.exe",
+        "lockapp.exe",
+        "applicationframehost.exe",
+        "dock",
+        "window server",
+        "control center",
+        "control centre",
+        "notification center",
+        "notification centre",
+        "spotlight",
+        "wallpaper",
+    ];
+    const TITLES: &[&str] = &[
+        "program manager",
+        "shell handwriting canvas",
+        "windows input experience",
+        "microsoft text input application",
+    ];
+    let app = w.app.to_lowercase();
+    let title = w.title.trim().to_lowercase();
+    title.is_empty()
+        || w.bounds.width < 48
+        || w.bounds.height < 48
+        || APPS.contains(&app.as_str())
+        || TITLES.contains(&title.as_str())
+        || app.starts_with("znimok")
 }
 
 pub(crate) fn summary(doc: &Document, path: &std::path::Path) -> Value {
@@ -587,7 +636,7 @@ impl Agent {
 
     /// The page alone of a window (ZK-310): its page area cut out of the window's own capture
     /// (which sees the window even under others — a screen region would see what covers it).
-    fn content_shot(&self, id: WindowId) -> Result<Output, String> {
+    fn content_shot(&self, id: WindowId, args: &Value) -> Result<Output, String> {
         let rect = self.capture.content_rect(id)?.ok_or(
             "this window has no page area (not a browser or a document window?) — capture it whole",
         )?;
@@ -598,7 +647,9 @@ impl Agent {
             .find(|w| w.id == id)
             .map(|w| w.bounds)
             .ok_or("the window is gone")?;
-        let whole = match self.capture.take(&CaptureTarget::Window { id })? {
+        let (shot, stable) =
+            crate::apptools::take(self.capture.as_ref(), &CaptureTarget::Window { id }, args)?;
+        let whole = match shot {
             Shot::Pixels(r) => r,
             // The app saved the whole window as a document of its own; the page is cut out of
             // its picture into another.
@@ -626,20 +677,28 @@ impl Agent {
         let mut s = summary(&doc, &path);
         s["content"] =
             json!({"x": rect.x, "y": rect.y, "width": rect.width, "height": rect.height});
+        if let Some(stable) = stable {
+            s["stable"] = json!(stable);
+        }
         Ok(Output::ok(
             s,
             image(&r).into_iter().chain([link(&doc)]).collect(),
         ))
     }
 
-    fn shot(&self, target: CaptureTarget, source: &str) -> Result<Output, String> {
-        let (doc, path) = match self.capture.take(&target)? {
+    fn shot(&self, target: CaptureTarget, source: &str, args: &Value) -> Result<Output, String> {
+        let (shot, stable) = crate::apptools::take(self.capture.as_ref(), &target, args)?;
+        let (doc, path) = match shot {
             Shot::Pixels(r) => self.new_doc(r, source)?,
             Shot::Saved(p) => (library::load(&p)?, p),
         };
         let r = library::render(&doc, 1.0);
+        let mut s = summary(&doc, &path);
+        if let Some(stable) = stable {
+            s["stable"] = json!(stable);
+        }
         Ok(Output::ok(
-            summary(&doc, &path),
+            s,
             image(&r).into_iter().chain([link(&doc)]).collect(),
         ))
     }
@@ -670,10 +729,12 @@ impl Agent {
                 Ok(Output::ok(json!({"displays": d}), vec![]))
             }
             "list_windows" => {
+                let all = args["all"].as_bool().unwrap_or(false);
                 let w: Vec<Value> = self
                     .capture
                     .windows()?
                     .into_iter()
+                    .filter(|w| all || !is_system_window(w))
                     .map(|w| json!({"id": w.id.0, "title": w.title, "app": w.app, "bounds": w.bounds}))
                     .collect();
                 Ok(Output::ok(json!({"windows": w}), vec![]))
@@ -691,16 +752,16 @@ impl Agent {
                     }
                 };
                 crate::apptools::delay(args);
-                self.shot(CaptureTarget::Display { id }, "screen")
+                self.shot(CaptureTarget::Display { id }, "screen", args)
             }
             "capture_window" => {
                 let id = u64::try_from(arg_int(args, "window")?)
                     .map_err(|_| "«window» must be an id from list_windows".to_string())?;
                 crate::apptools::delay(args);
                 if args["content_only"].as_bool().unwrap_or(false) {
-                    return self.content_shot(WindowId(id));
+                    return self.content_shot(WindowId(id), args);
                 }
-                self.shot(CaptureTarget::Window { id: WindowId(id) }, "window")
+                self.shot(CaptureTarget::Window { id: WindowId(id) }, "window", args)
             }
             "capture_region" => {
                 let n = |k: &str| arg_int(args, k);
@@ -715,7 +776,7 @@ impl Agent {
                     height: h as u32,
                 };
                 crate::apptools::delay(args);
-                self.shot(CaptureTarget::Region { rect }, "region")
+                self.shot(CaptureTarget::Region { rect }, "region", args)
             }
             "annotate" => {
                 let (doc, path) = self.doc(args)?;
@@ -841,7 +902,7 @@ impl Agent {
                 ))
             }
             "ocr" => {
-                let (doc, _) = self.doc(args)?;
+                let (doc, path) = self.doc(args)?;
                 let langs: Vec<String> = args["languages"]
                     .as_array()
                     .map(|a| {
@@ -851,7 +912,7 @@ impl Agent {
                     })
                     .unwrap_or_default();
                 let langs: Vec<&str> = langs.iter().map(String::as_str).collect();
-                let r = library::render(&doc, 1.0);
+                let r = crate::vexport::picture(&doc, &path, args)?;
                 let img = Rgba::new(r.width, r.height, r.rgba).ok_or("empty picture")?;
                 let engine =
                     znimok_models::ocr::system().ok_or("no text recognition on this system")?;
@@ -1027,8 +1088,57 @@ impl Agent {
 
 #[cfg(test)]
 mod arg_tests {
-    use super::arg_int;
+    use super::{arg_int, is_system_window};
     use serde_json::json;
+
+    /// The shell's, the system's and Znimok's own windows are not «the windows» (ZK-311).
+    #[test]
+    fn shell_and_system_windows_are_told_apart() {
+        let win = |title: &str, app: &str, w: u32, h: u32| znimok_platform::WindowInfo {
+            id: znimok_platform::WindowId(1),
+            title: title.into(),
+            app: app.into(),
+            pid: 1,
+            bounds: znimok_platform::Rect {
+                x: 0,
+                y: 0,
+                width: w,
+                height: h,
+            },
+            display: None,
+            scale_factor: 1.0,
+            minimized: false,
+            own: false,
+        };
+        assert!(!is_system_window(&win(
+            "Inbox — Chrome",
+            "chrome.exe",
+            1380,
+            1868
+        )));
+        assert!(!is_system_window(&win(
+            "Znimok — Document",
+            "chrome.exe",
+            800,
+            600
+        )));
+        assert!(is_system_window(&win(
+            "Program Manager",
+            "explorer.exe",
+            2560,
+            1440
+        )));
+        assert!(is_system_window(&win("", "explorer.exe", 2560, 48)));
+        assert!(is_system_window(&win(
+            "Shell Handwriting Canvas",
+            "TabTip.exe",
+            2560,
+            1440
+        )));
+        assert!(is_system_window(&win("Znimok", "znimok-app.exe", 16, 16)));
+        assert!(is_system_window(&win("Znimok", "Znimok", 1200, 800)));
+        assert!(is_system_window(&win("Item-0", "Control Centre", 40, 24)));
+    }
 
     /// Missing, wrong type and a number sent as a string are told apart (ZK-123).
     #[test]

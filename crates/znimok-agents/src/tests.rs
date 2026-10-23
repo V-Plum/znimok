@@ -111,6 +111,27 @@ fn modern(mut params: Value) -> Value {
     params
 }
 
+/// `wait_until_stable` on a still screen: two shots the same at once, `stable: true` (ZK-312).
+#[test]
+fn a_still_screen_is_stable_at_once() {
+    let e = env("stable", true);
+    e.agent
+        .perms
+        .grant("t", Scope::Capture, Grant::Always)
+        .unwrap();
+    let out = e.agent.call(
+        "t",
+        "capture",
+        &json!({"target": "screen", "wait_until_stable": true}),
+    );
+    assert!(!out.is_error, "{:?}", out.content);
+    let v = out.structured.unwrap();
+    assert_eq!(v["stable"], json!(true), "{v}");
+    assert!(v["id"].is_string());
+    let out = e.agent.call("t", "capture", &json!({"target": "screen"}));
+    assert!(out.structured.unwrap().get("stable").is_none());
+}
+
 #[test]
 fn legacy_handshake_then_capture_and_annotate() {
     let e = env("legacy", true);

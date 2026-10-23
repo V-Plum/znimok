@@ -48,15 +48,20 @@ pub(crate) const TOOLS: &[Tool] = &[
     Tool {
         name: "list_targets",
         title: "Displays and windows",
-        description: "What can be captured or recorded: the displays (id, name, bounds, scale, primary) and the visible windows in front-to-back order (id, title, app, bounds).",
+        description: "What can be captured or recorded: the displays (id, name, bounds, scale, primary) and the visible windows in front-to-back order (id, title, app, bounds). The shell's and the system's windows (the taskbar, the desktop, the touch keyboard, Znimok's own) are left out unless all is true.",
         scope: Some(Scope::Capture),
         read_only: true,
-        schema: || obj(json!({}), &[]),
+        schema: || {
+            obj(
+                json!({"all": {"type": "boolean", "description": "Also the shell's, the system's and Znimok's own windows"}}),
+                &[],
+            )
+        },
     },
     Tool {
         name: "capture",
         title: "Take a screenshot",
-        description: "Screenshot of a display (the primary one by default), a window (id from list_targets), the window in front (active_window), or a region in desktop units. Saved as a new library document; returns the picture and its id. delay_seconds (up to 30) gives the person time to bring the right window forward; content_only (target window) gives a browser's page without its tabs and bars.",
+        description: "Screenshot of a display (the primary one by default), a window (id from list_targets), the window in front (active_window), or a region in desktop units. Saved as a new library document; returns the picture and its id. delay_seconds (up to 30) gives the person time to bring the right window forward; wait_until_stable takes the shot once the picture stops changing; content_only (target window) gives a browser's page without its tabs and bars.",
         scope: Some(Scope::Capture),
         read_only: false,
         schema: || {
@@ -69,6 +74,7 @@ pub(crate) const TOOLS: &[Tool] = &[
                 "width": {"type": "integer", "minimum": 1}, "height": {"type": "integer", "minimum": 1},
             });
             props["delay_seconds"] = crate::apptools::delay_arg();
+            props["wait_until_stable"] = crate::apptools::stable_arg();
             obj(props, &["target"])
         },
     },
@@ -197,7 +203,7 @@ pub(crate) const TOOLS: &[Tool] = &[
     Tool {
         name: "ocr",
         title: "Read the text",
-        description: "The text on a document with the box of every line, on the device. With find: only the lines that contain that text (to place a mark, or to check a word is on screen).",
+        description: "The text on a document with the box of every line, on the device. With find: only the lines that contain that text (to place a mark, or to check a word is on screen). A recording: the frame at at_ms (0 when left out).",
         scope: Some(Scope::LibraryRead),
         read_only: true,
         schema: || {
@@ -268,7 +274,7 @@ pub(crate) fn run(
     Some(match name {
         "list_targets" => (|| {
             let d = inner("list_displays", json!({}))?;
-            let w = inner("list_windows", json!({}))?;
+            let w = inner("list_windows", json!({"all": args["all"]}))?;
             let mut v = d.structured.unwrap_or_default();
             v["windows"] = w.structured.unwrap_or_default()["windows"].take();
             Ok(Output::ok(v, vec![]))

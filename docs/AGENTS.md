@@ -69,8 +69,8 @@ characters do), or a path to a `.znimok` file. Every write returns the resulting
 
 | Tool | Arguments | Returns |
 |---|---|---|
-| `list_targets` | — | the displays (id, name, bounds, scale, primary) and the visible windows in front-to-back order (id, title, app, bounds) |
-| `capture` | `target` screen / window / active_window / region; `display?`, `window?`, `content_only?` (target window: a browser's page without the tabs, the address bar and the side panels — Windows), `x? y? width? height?`; `delay_seconds?` (≤ 30) | a new document: id, size, the picture; for the window in front — which window it was; with `content_only` — `content`, where the page area was |
+| `list_targets` | `all?` (also the shell's, the system's and Znimok's own windows) | the displays (id, name, bounds, scale, primary) and the visible windows in front-to-back order (id, title, app, bounds) — the taskbar, the desktop, the touch keyboard and the like left out |
+| `capture` | `target` screen / window / active_window / region; `display?`, `window?`, `content_only?` (target window: a browser's page without the tabs, the address bar and the side panels — Windows), `x? y? width? height?`; `delay_seconds?` (≤ 30); `wait_until_stable?` (shots 0.4 s apart until two are the same, up to 5 s) | a new document: id, size, the picture; for the window in front — which window it was; with `wait_until_stable` — `stable`, whether the picture had settled; with `content_only` — `content`, where the page area was |
 | `record` | `action` start / pause / resume / stop; for start: `display?` or `window?` or `region?`, `sound?` none / system / microphone / both, `devtools_log?` (true), `limit_seconds?` (300, ≤ 3600) | start: recording, size, limit; stop: the recording as a library document (also one that ended by its limit) |
 | `record_status` | — | recording or not, the agent's or the person's, paused, length so far, the last finished document |
 | `library_search` | `query?`, `kind?` screenshot / video, `tags?`, `pinned?`, `has_log?`, `since?` / `until?` (YYYY-MM-DD), `trash?`, `limit?`, `with_tags?` | documents: id, name, size, created, source, tags, kind, pinned, duration, whether it has the browser log; with `with_tags` — every tag with its count |
@@ -83,7 +83,7 @@ characters do), or a path to a `.znimok` file. Every write returns the resulting
 | `transform` | `document`, `crop?` {x, y, width, height / reset}, `rotate?` {turn right / left / half, mirror}, `resize?` {width / height / percent / canvas}, `tone?` {exposure, gamma, contrast / reset} — in that order. A recording: crop and tone as for a picture, `resize` is its size on export, `rotate` is refused; `video?` {`restore` [{from_ms, to_ms}] / `restore_all`, `cut` [{from_ms, to_ms}], `trim` {from_ms, to_ms / reset}, `mute` [{track, muted}]} (ZK-239) | the picture; a recording also `video` (kept, cuts, trim, size, tracks) |
 | `annotate` | `document`, `commands` (the editor's document commands as JSON) | the picture |
 | `redact_pii` | `document`, `apply?` (true), `kinds?` | what was (or would be) hidden |
-| `ocr` | `document`, `languages?`, `find?` | the text with the box of every line; with `find` — only the lines that contain it |
+| `ocr` | `document`, `languages?`, `find?`, `at_ms?` (a recording: the frame's time) | the text with the box of every line; with `find` — only the lines that contain it |
 | `read_codes` | `document?` (else the screen) | QR codes and barcodes: text, kind, box |
 | `video_info` | `document` (a recording) | length, size, frame rate, trims and cuts, sound tracks, marks with their times, clicks, whether it has the DevTools log |
 | `devlog` | `document`, `part?` summary / events, `kinds?`, `errors_only?`, `query?`, `from_ms?` / `to_ms?`, `limit?` (≤ 500), `offset?`, `index?` | summary: counts, errors, failed requests, navigations, dataLayer events with times; events: rows in time order; index: one event whole |

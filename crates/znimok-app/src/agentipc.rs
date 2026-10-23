@@ -606,18 +606,46 @@ fn capture(method: &str, params: &Value) -> Result<Value, znimok_ipc::RpcError> 
                 znimok_platform::CaptureTarget::Region { .. } => "region",
                 _ => "screen",
             };
-            let raster = crate::capture::take(&target).map_err(|e| match e {
-                crate::capture::Fail::Permission => fail(
-                    "Znimok has no Screen Recording permission yet: the system asked the person — try again once it is given".into(),
-                ),
-                crate::capture::Fail::Other(m) => fail(m),
-            })?;
+            let take = || {
+                crate::capture::take(&target).map_err(|e| match e {
+                    crate::capture::Fail::Permission => fail(
+                        "Znimok has no Screen Recording permission yet: the system asked the person — try again once it is given".into(),
+                    ),
+                    crate::capture::Fail::Other(m) => fail(m),
+                })
+            };
+            let mut raster = take()?;
+            // Asked to wait for the picture to settle (ZK-312): shots 0.4 s apart until two in
+            // a row are the same, or the time runs out.
+            let mut stable = None;
+            if let Some(ms) = params.get("stable_ms").and_then(Value::as_u64) {
+                let limit = Duration::from_millis(ms);
+                let start = std::time::Instant::now();
+                stable = Some(loop {
+                    std::thread::sleep(Duration::from_millis(400));
+                    let next = take()?;
+                    let same = raster.nearly_same(&next, 1);
+                    raster = next;
+                    if same {
+                        break true;
+                    }
+                    if start.elapsed() >= limit {
+                        break false;
+                    }
+                });
+            }
             on_ui(move || {
                 let mut out = Err("Znimok's window is not ready".to_string());
                 crate::with_ctx(|a, ui| out = a.store_quietly(ui, raster, source));
                 out
             })?
-            .map(|(path, name)| json!({"path": path.display().to_string(), "name": name}))
+            .map(|(path, name)| {
+                let mut v = json!({"path": path.display().to_string(), "name": name});
+                if let Some(s) = stable {
+                    v["stable"] = json!(s);
+                }
+                v
+            })
             .map_err(fail)
         }
     }
