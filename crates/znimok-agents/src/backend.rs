@@ -16,7 +16,7 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant};
 use znimok_core::Raster;
 use znimok_ipc::{CallError, Client, Config};
-use znimok_platform::{CaptureTarget, DisplayInfo, WindowInfo};
+use znimok_platform::{CaptureTarget, DisplayInfo, Rect, WindowId, WindowInfo};
 
 /// The running app, reached over IPC.
 #[derive(Default)]
@@ -113,6 +113,12 @@ pub trait Capturer {
     fn windows(&self) -> Result<Vec<WindowInfo>, String>;
     /// The picture as sRGB RGBA, plus where it came from (`screen` / `window` / `region`).
     fn take(&self, target: &CaptureTarget) -> Result<Shot, String>;
+    /// The page area of a window (ZK-310): a browser's page, an editor's text — without the
+    /// title bar, the tabs, the address bar, the side panels. `None`: the window has none.
+    fn content_rect(&self, id: WindowId) -> Result<Option<Rect>, String> {
+        let _ = id;
+        Err("content_only is not available on this system yet".into())
+    }
 }
 
 pub enum Shot {
@@ -155,6 +161,9 @@ impl Capturer for Local {
         };
         Ok(Shot::Pixels(Raster::new(f.width, f.height, f.to_srgb8())))
     }
+    fn content_rect(&self, id: WindowId) -> Result<Option<Rect>, String> {
+        Ok(znimok_win::content_rect(id))
+    }
 }
 
 /// Through the running app (macOS; also usable on Windows when the app should own the shot).
@@ -169,6 +178,18 @@ impl Capturer for ViaGui {
     fn windows(&self) -> Result<Vec<WindowInfo>, String> {
         self.0.ensure_running()?;
         serde_json::from_value(self.0.call("capture.windows", json!({}))?)
+            .map_err(|e| e.to_string())
+    }
+    fn content_rect(&self, id: WindowId) -> Result<Option<Rect>, String> {
+        self.0.ensure_running()?;
+        let v = self
+            .0
+            .call("capture.content_rect", json!({ "window": id.0 }))?;
+        if v.is_null() {
+            return Ok(None);
+        }
+        serde_json::from_value(v)
+            .map(Some)
             .map_err(|e| e.to_string())
     }
     fn take(&self, target: &CaptureTarget) -> Result<Shot, String> {

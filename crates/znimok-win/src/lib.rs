@@ -23,6 +23,8 @@ pub use win::autostart::{BACKGROUND_ARG, RunKeyAutostart};
 #[cfg(windows)]
 pub use win::clipboard::WinClipboard;
 #[cfg(windows)]
+pub use win::content::content_rect;
+#[cfg(windows)]
 pub use win::fileassoc::{PROG_ID, WinFileAssoc};
 #[cfg(windows)]
 pub use win::raw;

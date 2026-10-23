@@ -391,6 +391,22 @@ pub fn freeze_display(same: Option<Rect>) -> Result<Frozen, Fail> {
 /// The window alone, unoccluded (WGC window capture / ScreenCaptureKit window filter).
 /// What an agent asked for (ZK-242: on macOS only the app may capture, so the MCP server asks
 /// it): a display, a window alone or a region, as sRGB RGBA. Runs on a worker thread.
+/// The page area of a window (ZK-310) — a browser's page without the tabs and bars; `None` when
+/// the window has none. macOS waits for the Accessibility (AX) lookup.
+#[cfg(windows)]
+pub fn content_rect(
+    id: znimok_platform::WindowId,
+) -> Result<Option<znimok_platform::Rect>, String> {
+    Ok(znimok_win::content_rect(id))
+}
+
+#[cfg(not(windows))]
+pub fn content_rect(
+    _id: znimok_platform::WindowId,
+) -> Result<Option<znimok_platform::Rect>, String> {
+    Err("content_only is not available on macOS yet".into())
+}
+
 #[cfg(windows)]
 pub fn take(target: &CaptureTarget) -> Result<Raster, Fail> {
     let cap = znimok_win::WinCapture::new();

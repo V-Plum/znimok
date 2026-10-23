@@ -1,5 +1,6 @@
 pub mod autostart;
 pub mod clipboard;
+pub mod content;
 mod display;
 mod dxgi;
 pub mod fileassoc;

@@ -56,7 +56,7 @@ pub(crate) const TOOLS: &[Tool] = &[
     Tool {
         name: "capture",
         title: "Take a screenshot",
-        description: "Screenshot of a display (the primary one by default), a window (id from list_targets), the window in front (active_window), or a region in desktop units. Saved as a new library document; returns the picture and its id. delay_seconds (up to 30) gives the person time to bring the right window forward.",
+        description: "Screenshot of a display (the primary one by default), a window (id from list_targets), the window in front (active_window), or a region in desktop units. Saved as a new library document; returns the picture and its id. delay_seconds (up to 30) gives the person time to bring the right window forward; content_only (target window) gives a browser's page without its tabs and bars.",
         scope: Some(Scope::Capture),
         read_only: false,
         schema: || {
@@ -64,6 +64,7 @@ pub(crate) const TOOLS: &[Tool] = &[
                 "target": {"type": "string", "enum": ["screen", "window", "active_window", "region"], "description": "What to capture"},
                 "display": {"type": "string", "description": "Display id (target screen); the primary one by default"},
                 "window": {"type": "integer", "description": "Window id (target window)"},
+                "content_only": {"type": "boolean", "description": "target window: only its page area — a browser's page without the tabs, the address bar and the side panels — as shown now (Windows; the answer's «content» gives where it was)"},
                 "x": {"type": "integer"}, "y": {"type": "integer"},
                 "width": {"type": "integer", "minimum": 1}, "height": {"type": "integer", "minimum": 1},
             });
