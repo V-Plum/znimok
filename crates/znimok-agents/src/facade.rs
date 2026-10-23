@@ -48,10 +48,15 @@ pub(crate) const TOOLS: &[Tool] = &[
     Tool {
         name: "list_targets",
         title: "Displays and windows",
-        description: "What can be captured or recorded: the displays (id, name, bounds, scale, primary) and the visible windows in front-to-back order (id, title, app, bounds).",
+        description: "What can be captured or recorded: the displays (id, name, bounds, scale, primary) and the visible windows in front-to-back order (id, title, app, bounds). The shell's and the system's windows (the taskbar, the desktop, the touch keyboard, Znimok's own) are left out unless all is true.",
         scope: Some(Scope::Capture),
         read_only: true,
-        schema: || obj(json!({}), &[]),
+        schema: || {
+            obj(
+                json!({"all": {"type": "boolean", "description": "Also the shell's, the system's and Znimok's own windows"}}),
+                &[],
+            )
+        },
     },
     Tool {
         name: "capture",
@@ -267,7 +272,7 @@ pub(crate) fn run(
     Some(match name {
         "list_targets" => (|| {
             let d = inner("list_displays", json!({}))?;
-            let w = inner("list_windows", json!({}))?;
+            let w = inner("list_windows", json!({"all": args["all"]}))?;
             let mut v = d.structured.unwrap_or_default();
             v["windows"] = w.structured.unwrap_or_default()["windows"].take();
             Ok(Output::ok(v, vec![]))
