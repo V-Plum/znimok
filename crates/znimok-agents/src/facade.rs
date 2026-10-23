@@ -56,7 +56,7 @@ pub(crate) const TOOLS: &[Tool] = &[
     Tool {
         name: "capture",
         title: "Take a screenshot",
-        description: "Screenshot of a display (the primary one by default), a window (id from list_targets), the window in front (active_window), or a region in desktop units. Saved as a new library document; returns the picture and its id. delay_seconds (up to 30) gives the person time to bring the right window forward.",
+        description: "Screenshot of a display (the primary one by default), a window (id from list_targets), the window in front (active_window), or a region in desktop units. Saved as a new library document; returns the picture and its id. delay_seconds (up to 30) gives the person time to bring the right window forward; wait_until_stable takes the shot once the picture stops changing.",
         scope: Some(Scope::Capture),
         read_only: false,
         schema: || {
@@ -68,6 +68,7 @@ pub(crate) const TOOLS: &[Tool] = &[
                 "width": {"type": "integer", "minimum": 1}, "height": {"type": "integer", "minimum": 1},
             });
             props["delay_seconds"] = crate::apptools::delay_arg();
+            props["wait_until_stable"] = crate::apptools::stable_arg();
             obj(props, &["target"])
         },
     },

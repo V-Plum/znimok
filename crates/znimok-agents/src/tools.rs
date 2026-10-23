@@ -119,7 +119,8 @@ pub(crate) const TOOLS: &[Tool] = &[
         schema: || {
             obj(
                 json!({"display": {"type": "string", "description": "Display id from list_displays"},
-                       "delay_seconds": crate::apptools::delay_arg()}),
+                       "delay_seconds": crate::apptools::delay_arg(),
+                       "wait_until_stable": crate::apptools::stable_arg()}),
                 &[],
             )
         },
@@ -133,7 +134,8 @@ pub(crate) const TOOLS: &[Tool] = &[
         schema: || {
             obj(
                 json!({"window": {"type": "integer", "description": "Window id from list_windows"},
-                       "delay_seconds": crate::apptools::delay_arg()}),
+                       "delay_seconds": crate::apptools::delay_arg(),
+                       "wait_until_stable": crate::apptools::stable_arg()}),
                 &["window"],
             )
         },
@@ -149,7 +151,8 @@ pub(crate) const TOOLS: &[Tool] = &[
                 json!({
                     "x": {"type": "integer"}, "y": {"type": "integer"},
                     "width": {"type": "integer", "minimum": 1}, "height": {"type": "integer", "minimum": 1},
-                    "delay_seconds": crate::apptools::delay_arg()
+                    "delay_seconds": crate::apptools::delay_arg(),
+                    "wait_until_stable": crate::apptools::stable_arg()
                 }),
                 &["x", "y", "width", "height"],
             )
@@ -584,14 +587,19 @@ impl Agent {
         Ok((doc, path))
     }
 
-    fn shot(&self, target: CaptureTarget, source: &str) -> Result<Output, String> {
-        let (doc, path) = match self.capture.take(&target)? {
+    fn shot(&self, target: CaptureTarget, source: &str, args: &Value) -> Result<Output, String> {
+        let (shot, stable) = crate::apptools::take(self.capture.as_ref(), &target, args)?;
+        let (doc, path) = match shot {
             Shot::Pixels(r) => self.new_doc(r, source)?,
             Shot::Saved(p) => (library::load(&p)?, p),
         };
         let r = library::render(&doc, 1.0);
+        let mut s = summary(&doc, &path);
+        if let Some(stable) = stable {
+            s["stable"] = json!(stable);
+        }
         Ok(Output::ok(
-            summary(&doc, &path),
+            s,
             image(&r).into_iter().chain([link(&doc)]).collect(),
         ))
     }
@@ -643,13 +651,13 @@ impl Agent {
                     }
                 };
                 crate::apptools::delay(args);
-                self.shot(CaptureTarget::Display { id }, "screen")
+                self.shot(CaptureTarget::Display { id }, "screen", args)
             }
             "capture_window" => {
                 let id = u64::try_from(arg_int(args, "window")?)
                     .map_err(|_| "«window» must be an id from list_windows".to_string())?;
                 crate::apptools::delay(args);
-                self.shot(CaptureTarget::Window { id: WindowId(id) }, "window")
+                self.shot(CaptureTarget::Window { id: WindowId(id) }, "window", args)
             }
             "capture_region" => {
                 let n = |k: &str| arg_int(args, k);
@@ -664,7 +672,7 @@ impl Agent {
                     height: h as u32,
                 };
                 crate::apptools::delay(args);
-                self.shot(CaptureTarget::Region { rect }, "region")
+                self.shot(CaptureTarget::Region { rect }, "region", args)
             }
             "annotate" => {
                 let (doc, path) = self.doc(args)?;
