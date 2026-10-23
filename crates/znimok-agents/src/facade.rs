@@ -201,7 +201,7 @@ pub(crate) const TOOLS: &[Tool] = &[
     Tool {
         name: "ocr",
         title: "Read the text",
-        description: "The text on a document with the box of every line, on the device. With find: only the lines that contain that text (to place a mark, or to check a word is on screen).",
+        description: "The text on a document with the box of every line, on the device. With find: only the lines that contain that text (to place a mark, or to check a word is on screen). A recording: the frame at at_ms (0 when left out).",
         scope: Some(Scope::LibraryRead),
         read_only: true,
         schema: || {

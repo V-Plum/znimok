@@ -256,14 +256,15 @@ pub(crate) const TOOLS: &[Tool] = &[
     Tool {
         name: "ocr",
         title: "Recognise text",
-        description: "Text of a library document, on this computer (nothing leaves it), with line boxes in pixels.",
+        description: "Text of a library document, on this computer (nothing leaves it), with line boxes in pixels. A recording: the frame at at_ms.",
         scope: Some(Scope::LibraryRead),
         read_only: true,
         schema: || {
             obj(
                 json!({
                     "document": doc_arg(),
-                    "languages": {"type": "array", "items": {"type": "string"}, "description": "BCP 47 tags in order of preference, e.g. [\"uk\", \"en\"]"}
+                    "languages": {"type": "array", "items": {"type": "string"}, "description": "BCP 47 tags in order of preference, e.g. [\"uk\", \"en\"]"},
+                    "at_ms": {"type": "integer", "description": "A recording: the time of the frame to read, in ms as recorded (0 when left out)"}
                 }),
                 &["document"],
             )
@@ -837,7 +838,7 @@ impl Agent {
                 ))
             }
             "ocr" => {
-                let (doc, _) = self.doc(args)?;
+                let (doc, path) = self.doc(args)?;
                 let langs: Vec<String> = args["languages"]
                     .as_array()
                     .map(|a| {
@@ -847,7 +848,7 @@ impl Agent {
                     })
                     .unwrap_or_default();
                 let langs: Vec<&str> = langs.iter().map(String::as_str).collect();
-                let r = library::render(&doc, 1.0);
+                let r = crate::vexport::picture(&doc, &path, args)?;
                 let img = Rgba::new(r.width, r.height, r.rgba).ok_or("empty picture")?;
                 let engine =
                     znimok_models::ocr::system().ok_or("no text recognition on this system")?;
