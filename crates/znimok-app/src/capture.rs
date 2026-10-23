@@ -400,11 +400,25 @@ pub fn content_rect(
     Ok(znimok_win::content_rect(id))
 }
 
-#[cfg(not(windows))]
+/// macOS: the Accessibility API's `AXWebArea` of the window (the system asks for the
+/// Accessibility permission the first time).
+#[cfg(target_os = "macos")]
+pub fn content_rect(
+    id: znimok_platform::WindowId,
+) -> Result<Option<znimok_platform::Rect>, String> {
+    let w = targets()
+        .1
+        .into_iter()
+        .find(|w| w.id == id)
+        .ok_or("the window is gone")?;
+    znimok_mac::content_rect(w.pid, w.bounds)
+}
+
+#[cfg(not(any(windows, target_os = "macos")))]
 pub fn content_rect(
     _id: znimok_platform::WindowId,
 ) -> Result<Option<znimok_platform::Rect>, String> {
-    Err("content_only is not available on macOS yet".into())
+    Err("content_only is not available on this system".into())
 }
 
 #[cfg(windows)]

@@ -17,6 +17,8 @@ mod autostart;
 #[cfg(target_os = "macos")]
 mod clipboard;
 #[cfg(target_os = "macos")]
+mod content;
+#[cfg(target_os = "macos")]
 mod fileassoc;
 #[cfg(target_os = "macos")]
 mod mac;
@@ -31,6 +33,8 @@ pub mod sparkle;
 pub use autostart::MacAutostart;
 #[cfg(target_os = "macos")]
 pub use clipboard::MacClipboard;
+#[cfg(target_os = "macos")]
+pub use content::{accessibility_trusted, content_rect};
 #[cfg(target_os = "macos")]
 pub use fileassoc::{BUNDLE_ID, DOCUMENT_UTI, MacFileAssoc};
 #[cfg(target_os = "macos")]
