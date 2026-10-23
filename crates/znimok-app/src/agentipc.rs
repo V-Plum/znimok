@@ -70,7 +70,9 @@ pub fn handle(method: &str, params: &Value) -> Option<Result<Value, znimok_ipc::
         // ZK-274: an agent sends a document to a connected service.
         "agents.share" => share(params),
         // ZK-242: screenshots for an agent — on macOS only the app may capture.
-        "capture.displays" | "capture.windows" | "capture.take" => capture(method, params),
+        "capture.displays" | "capture.windows" | "capture.take" | "capture.content_rect" => {
+            capture(method, params)
+        }
         "agents.activity" => {
             let on = params
                 .get("active")
@@ -586,6 +588,15 @@ fn capture(method: &str, params: &Value) -> Result<Value, znimok_ipc::RpcError> 
     match method {
         "capture.displays" => serde_json::to_value(crate::capture::targets().0).map_err(to),
         "capture.windows" => serde_json::to_value(crate::capture::targets().1).map_err(to),
+        "capture.content_rect" => {
+            let id = params
+                .get("window")
+                .and_then(Value::as_u64)
+                .ok_or_else(|| znimok_ipc::RpcError::invalid_params(String::from("window")))?;
+            crate::capture::content_rect(znimok_platform::WindowId(id))
+                .map(|r| serde_json::to_value(r).unwrap_or(Value::Null))
+                .map_err(fail)
+        }
         _ => {
             let target: znimok_platform::CaptureTarget =
                 serde_json::from_value(params.get("target").cloned().unwrap_or(Value::Null))

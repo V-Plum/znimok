@@ -139,6 +139,7 @@ pub(crate) const TOOLS: &[Tool] = &[
         schema: || {
             obj(
                 json!({"window": {"type": "integer", "description": "Window id from list_windows"},
+                       "content_only": {"type": "boolean", "description": "Only the window's page area — a browser's page without the tabs, the address bar and the side panels (an editor's text) — as the window shows it now; the answer's «content» gives where it was"},
                        "delay_seconds": crate::apptools::delay_arg(),
                        "wait_until_stable": crate::apptools::stable_arg()}),
                 &["window"],
@@ -633,6 +634,58 @@ impl Agent {
         Ok((doc, path))
     }
 
+    /// The page alone of a window (ZK-310): its page area cut out of the window's own capture
+    /// (which sees the window even under others — a screen region would see what covers it).
+    fn content_shot(&self, id: WindowId, args: &Value) -> Result<Output, String> {
+        let rect = self.capture.content_rect(id)?.ok_or(
+            "this window has no page area (not a browser or a document window?) — capture it whole",
+        )?;
+        let frame = self
+            .capture
+            .windows()?
+            .into_iter()
+            .find(|w| w.id == id)
+            .map(|w| w.bounds)
+            .ok_or("the window is gone")?;
+        let (shot, stable) =
+            crate::apptools::take(self.capture.as_ref(), &CaptureTarget::Window { id }, args)?;
+        let whole = match shot {
+            Shot::Pixels(r) => r,
+            // The app saved the whole window as a document of its own; the page is cut out of
+            // its picture into another.
+            Shot::Saved(p) => library::render(&library::load(&p)?, 1.0),
+        };
+        // The capture is the window's frame at its own scale.
+        let kx = whole.width as f64 / frame.width.max(1) as f64;
+        let ky = whole.height as f64 / frame.height.max(1) as f64;
+        let x0 = (((rect.x - frame.x) as f64) * kx).round().max(0.0) as u32;
+        let y0 = (((rect.y - frame.y) as f64) * ky).round().max(0.0) as u32;
+        let x1 = (((rect.x - frame.x + rect.width as i32) as f64) * kx).round() as u32;
+        let y1 = (((rect.y - frame.y + rect.height as i32) as f64) * ky).round() as u32;
+        let (x1, y1) = (x1.min(whole.width), y1.min(whole.height));
+        if x1 <= x0 + 8 || y1 <= y0 + 8 {
+            return Err("the page area lies outside the window's picture".into());
+        }
+        let (w, h) = (x1 - x0, y1 - y0);
+        let mut rgba = Vec::with_capacity((w * h * 4) as usize);
+        for y in y0..y1 {
+            let from = ((y * whole.width + x0) * 4) as usize;
+            rgba.extend_from_slice(&whole.rgba[from..from + (w * 4) as usize]);
+        }
+        let (doc, path) = self.new_doc(Raster::new(w, h, rgba), "window")?;
+        let r = library::render(&doc, 1.0);
+        let mut s = summary(&doc, &path);
+        s["content"] =
+            json!({"x": rect.x, "y": rect.y, "width": rect.width, "height": rect.height});
+        if let Some(stable) = stable {
+            s["stable"] = json!(stable);
+        }
+        Ok(Output::ok(
+            s,
+            image(&r).into_iter().chain([link(&doc)]).collect(),
+        ))
+    }
+
     fn shot(&self, target: CaptureTarget, source: &str, args: &Value) -> Result<Output, String> {
         let (shot, stable) = crate::apptools::take(self.capture.as_ref(), &target, args)?;
         let (doc, path) = match shot {
@@ -705,6 +758,9 @@ impl Agent {
                 let id = u64::try_from(arg_int(args, "window")?)
                     .map_err(|_| "«window» must be an id from list_windows".to_string())?;
                 crate::apptools::delay(args);
+                if args["content_only"].as_bool().unwrap_or(false) {
+                    return self.content_shot(WindowId(id), args);
+                }
                 self.shot(CaptureTarget::Window { id: WindowId(id) }, "window", args)
             }
             "capture_region" => {
