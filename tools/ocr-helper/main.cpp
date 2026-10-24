@@ -385,6 +385,30 @@ std::vector<Box> panels(const Gray& g) {
   return out;
 }
 
+// A recognised word, box in the picture's pixels; `line_end`: the last of its text line.
+struct RWord {
+  int x0 = 0, y0 = 0, x1 = 0, y1 = 0;
+  float conf = 0;
+  std::string text;
+  bool line_end = false;
+};
+
+// Cyrillic letters in UTF-8 text (U+0400…U+04FF).
+int count_cyrillic(const char* s) {
+  int n = 0;
+  for (const unsigned char* p = reinterpret_cast<const unsigned char*>(s); *p; ++p)
+    if ((p[0] == 0xD0 || p[0] == 0xD1 || p[0] == 0xD2 || p[0] == 0xD3) && (p[1] & 0xC0) == 0x80) {
+      ++n;
+      ++p;
+    }
+  return n;
+}
+
+float env_float(const char* name, float dflt) {
+  const char* v = getenv(name);
+  return v && *v ? float(atof(v)) : dflt;
+}
+
 // Tesseract's thresholding_method: a global Otsu, or Sauvola's local one.
 enum class Thresh { Otsu = 0, Sauvola = 2 };
 
@@ -457,6 +481,19 @@ class Engine {
     }
     api_->SetVariable("debug_file", "NUL");
     langs_ = langs;
+    // ZK-314: Ukrainian first reads Latin words of an English page as their Cyrillic twins
+    // (Ноте, Ргісіпд); such lines are read again with English alone. Only when Ukrainian
+    // leads — with English first (masking) or one language, nothing to correct.
+    eng_.reset();
+    if (langs.rfind("ukr", 0) == 0 && langs.find("eng") != std::string::npos) {
+      eng_ = std::make_unique<tesseract::TessBaseAPI>();
+      if (eng_->Init(tessdata_.c_str(), "eng", tesseract::OEM_LSTM_ONLY) != 0) {
+        eng_.reset();
+      } else {
+        eng_->SetVariable("debug_file", "NUL");
+        eng_->SetVariable("thresholding_method", "0");
+      }
+    }
     return true;
   }
 
@@ -638,12 +675,19 @@ class Engine {
       Gray part = crop(g, l, t, r, b);
       float k = lh < kSmallLine ? 2.0f : lh > 2 * kLineHeight ? float(kLineHeight) / lh : 1.0f;
       if (k != 1.0f) part = rescale(part, k);
-      api_->SetImage(part.px.data(), part.w, part.h, 1, part.w);
-      api_->SetSourceResolution(70);  // as the evaluation saw it; higher drops dots as noise
-      api_->SetPageSegMode(whole ? tesseract::PSM_SINGLE_BLOCK : tesseract::PSM_SINGLE_LINE);
-      if (api_->Recognize(nullptr) != 0) continue;
-      std::unique_ptr<tesseract::ResultIterator> ri(api_->GetIterator());
-      if (!ri) continue;
+      const tesseract::PageSegMode psm =
+          whole ? tesseract::PSM_SINGLE_BLOCK : tesseract::PSM_SINGLE_LINE;
+      std::vector<RWord> got = read_words(*api_, part, psm, l, t, k);
+      if (eng_) {
+        std::vector<RWord> en = read_words_if_cyrillic(got, part, psm, l, t, k);
+        if (getenv("ZNIMOK_OCR_DEBUG") && !en.empty()) {
+          std::string a, b;
+          for (const RWord& w : got) a += w.text + "(" + std::to_string(int(w.conf)) + ") ";
+          for (const RWord& w : en) b += w.text + "(" + std::to_string(int(w.conf)) + ") ";
+          fprintf(stderr, "  twins ukr: %s\n  twins eng: %s\n", a.c_str(), b.c_str());
+        }
+        prefer_latin(got, en);
+      }
       // One output line per recognised text line (a "block" may hold several).
       std::string words, text;
       int lx0 = 1 << 30, ly0 = 1 << 30, lx1 = -1, ly1 = -1;
@@ -661,38 +705,199 @@ class Engine {
         nwords = 0;
         letters = 0;
       };
-      do {
-        std::unique_ptr<char[]> w(ri->GetUTF8Text(tesseract::RIL_WORD));
-        if (!w || !*w.get()) continue;
-        int a, c, e, f;
-        ri->BoundingBox(tesseract::RIL_WORD, &a, &c, &e, &f);
-        int x0 = l + int(std::floor(a / k)), y0 = t + int(std::floor(c / k));
-        int x1 = l + int(std::ceil(e / k)), y1 = t + int(std::ceil(f / k));
-        if (strcmp(w.get(), "|") == 0) continue;  // a button's or a card's border, not text
-        float cf = ri->Confidence(tesseract::RIL_WORD);
+      for (const RWord& w : got) {
         char head[128];
         snprintf(head, sizeof head, "%s{\"x\":%d,\"y\":%d,\"w\":%d,\"h\":%d,\"conf\":%.1f,",
-                 nwords ? "," : "", x0, y0, x1 - x0, y1 - y0, cf);
+                 nwords ? "," : "", w.x0, w.y0, w.x1 - w.x0, w.y1 - w.y0, w.conf);
         words += head;
-        words += "\"text\":\"" + esc(w.get()) + "\"}";
+        words += "\"text\":\"" + esc(w.text.c_str()) + "\"}";
         if (nwords) text += ' ';
-        text += w.get();
-        letters += count_letters(w.get());
-        lx0 = std::min(lx0, x0);
-        ly0 = std::min(ly0, y0);
-        lx1 = std::max(lx1, x1);
-        ly1 = std::max(ly1, y1);
-        conf_sum += cf;
+        text += w.text;
+        letters += count_letters(w.text.c_str());
+        lx0 = std::min(lx0, w.x0);
+        ly0 = std::min(ly0, w.y0);
+        lx1 = std::max(lx1, w.x1);
+        ly1 = std::max(ly1, w.y1);
+        conf_sum += w.conf;
         ++nwords;
-        if (ri->IsAtFinalElement(tesseract::RIL_TEXTLINE, tesseract::RIL_WORD)) flush();
-      } while (ri->Next(tesseract::RIL_WORD));
+        if (w.line_end) flush();
+      }
       flush();
     }
     api_->Clear();
+    if (eng_) eng_->Clear();
+  }
+
+  // The words of `part` read by `api`, boxes in the picture's pixels (`part` is the crop at
+  // (l, t) scaled by k).
+  static std::vector<RWord> read_words(tesseract::TessBaseAPI& api, const Gray& part,
+                                       tesseract::PageSegMode psm, int l, int t, float k) {
+    std::vector<RWord> out;
+    api.SetImage(part.px.data(), part.w, part.h, 1, part.w);
+    api.SetSourceResolution(70);  // as the evaluation saw it; higher drops dots as noise
+    api.SetPageSegMode(psm);
+    if (api.Recognize(nullptr) != 0) return out;
+    std::unique_ptr<tesseract::ResultIterator> ri(api.GetIterator());
+    if (!ri) return out;
+    do {
+      std::unique_ptr<char[]> w(ri->GetUTF8Text(tesseract::RIL_WORD));
+      if (!w || !*w.get()) continue;
+      int a, c, e, f;
+      ri->BoundingBox(tesseract::RIL_WORD, &a, &c, &e, &f);
+      bool end = ri->IsAtFinalElement(tesseract::RIL_TEXTLINE, tesseract::RIL_WORD);
+      if (strcmp(w.get(), "|") == 0) {  // a button's or a card's border, not text
+        if (end && !out.empty()) out.back().line_end = true;
+        continue;
+      }
+      RWord rw;
+      rw.x0 = l + int(std::floor(a / k));
+      rw.y0 = t + int(std::floor(c / k));
+      rw.x1 = l + int(std::ceil(e / k));
+      rw.y1 = t + int(std::ceil(f / k));
+      rw.conf = ri->Confidence(tesseract::RIL_WORD);
+      rw.text = w.get();
+      rw.line_end = end;
+      out.push_back(std::move(rw));
+    } while (ri->Next(tesseract::RIL_WORD));
+    return out;
+  }
+
+  // English alone over the same crop, when the reading holds a Cyrillic word.
+  std::vector<RWord> read_words_if_cyrillic(const std::vector<RWord>& got, const Gray& part,
+                                            tesseract::PageSegMode psm, int l, int t, float k) {
+    bool any = false;
+    for (const RWord& w : got)
+      if (count_cyrillic(w.text.c_str()) > 0) any = true;
+    if (!any) return {};
+    return read_words(*eng_, part, psm, l, t, k);
+  }
+
+  // The Cyrillic words of a line take the English reading of the same place (the English
+  // words whose centres fall inside each). On a line mostly in Latin, each word on its own
+  // whenever English is not noise (the two models' confidences do not compare: «Phone» reads at
+  // 48 in English, «Рпопе» at 79 in Ukrainian); on a line mostly in Cyrillic, all together when
+  // English is surer over them in sum by `margin`. A capital inside an English
+  // word (paxyHok, KapTka: Ukrainian read as Latin twins) makes that word count as unsure; a
+  // word mixing both scripts takes English on its own whenever there is a reading.
+  static void prefer_latin(std::vector<RWord>& got, const std::vector<RWord>& eng) {
+    if (eng.empty()) return;
+    int latin = 0, cyr = 0;
+    for (const RWord& w : got) {
+      cyr += count_cyrillic(w.text.c_str());
+      latin += count_letters(w.text.c_str()) - count_cyrillic(w.text.c_str());
+    }
+    const float margin = env_float("ZNIMOK_OCR_ENG_MARGIN", 4.0f);
+    // On a line mostly in Latin the English reading of a word is taken unless it is noise.
+    const float floor_latin = env_float("ZNIMOK_OCR_ENG_FLOOR", 35.0f);
+    // A word with a letter Latin has no look-alike for proves real Ukrainian on the line.
+    bool ukrainian = false;
+    for (const RWord& w : got)
+      if (has_unique_cyrillic(w.text)) ukrainian = true;
+    const bool latin_line = latin > 2 * cyr && !ukrainian;
+    struct Cand {
+      size_t i;
+      std::string text;
+      float conf;
+    };
+    std::vector<Cand> cands;
+    float sum_ukr = 0, sum_eng = 0;
+    int n_words = 0;
+    for (size_t i = 0; i < got.size(); ++i) {
+      const RWord& w = got[i];
+      int c = count_cyrillic(w.text.c_str());
+      if (c == 0) continue;
+      std::string text;
+      float conf = 101.0f;
+      int n = 0;
+      for (const RWord& e : eng) {
+        int cx = (e.x0 + e.x1) / 2;
+        if (cx < w.x0 || cx > w.x1) continue;
+        if (n++) text += ' ';
+        text += e.text;
+        conf = std::min(conf, e.conf);
+      }
+      if (n == 0 || count_letters(text.c_str()) == 0) {
+        // English sees no letters here: an icon or an arrow read as «А», «м» — it does not
+        // decide the line; a real Ukrainian word (3 letters or more) keeps the line Ukrainian.
+        if (count_letters(w.text.c_str()) >= 3) return;
+        continue;
+      }
+      ++n_words;
+      sum_ukr += w.conf;
+      if (inner_capital(text)) conf = std::min(conf, 30.0f);
+      sum_eng += conf;
+      // A word mixing both scripts is wrong either way: English, if it is not plainly worse.
+      if (count_letters(w.text.c_str()) > c && conf + 15.0f >= w.conf) {
+        got[i].text = text;
+        got[i].conf = conf;
+        sum_ukr -= w.conf;
+        sum_eng -= conf;
+        --n_words;
+        continue;
+      }
+      if (latin_line) {
+        if (conf >= floor_latin) {
+          got[i].text = std::move(text);
+          got[i].conf = conf;
+        }
+        continue;
+      }
+      cands.push_back({i, std::move(text), conf});
+    }
+    if (latin_line || n_words == 0 || cands.empty()) return;
+    if (sum_eng < sum_ukr + margin * float(n_words)) return;
+    for (Cand& c : cands) {
+      got[c.i].text = std::move(c.text);
+      got[c.i].conf = c.conf;
+    }
+  }
+
+  // Whether the text holds a Cyrillic letter that no Latin letter is read as (б ж и й л ф
+  // ц ч ш щ ь ю я є ї ґ and their capitals) — the twins (а е і о р с у х, н т в м, п г д з) do not
+  // count: Tesseract reads Latin n, r, g, s as п, г, д, з as well.
+  static bool has_unique_cyrillic(const std::string& t) {
+    static const char32_t kUnique[] = U"бжийлфцчшщьюяєїґБЖИЙЛФЦЧШЩЬЮЯЄЇҐ";
+    const unsigned char* p = reinterpret_cast<const unsigned char*>(t.c_str());
+    while (*p) {
+      char32_t cp;
+      int len;
+      if (p[0] < 0x80) {
+        cp = p[0];
+        len = 1;
+      } else if ((p[0] & 0xE0) == 0xC0 && p[1]) {
+        cp = char32_t(((p[0] & 0x1F) << 6) | (p[1] & 0x3F));
+        len = 2;
+      } else {
+        len = (p[0] & 0xF0) == 0xE0 ? 3 : 4;
+        cp = 0;
+        for (int i = 0; i < len && p[i]; ++i) {}
+      }
+      for (const char32_t* u = kUnique; *u; ++u)
+        if (*u == cp) return true;
+      for (int i = 0; i < len && *p; ++i) ++p;
+    }
+    return false;
+  }
+
+  // A capital after a small letter inside a word (paxyHok, KapTka, 3BIT_BepeceHb) — how
+  // Ukrainian comes out of the English model; English words have it only in names like
+  // iPhone, rare on a screen.
+  static bool inner_capital(const std::string& t) {
+    bool lower_seen = false;
+    for (unsigned char ch : t) {
+      if (ch == ' ') {
+        lower_seen = false;
+        continue;
+      }
+      if (islower(ch)) lower_seen = true;
+      else if (isupper(ch) && lower_seen) return true;
+    }
+    return false;
   }
 
   std::string tessdata_;
   std::unique_ptr<tesseract::TessBaseAPI> api_;
+  std::unique_ptr<tesseract::TessBaseAPI> eng_;  // English alone, for the twins (ZK-314)
   std::string langs_;
 };
 
