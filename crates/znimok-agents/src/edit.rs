@@ -44,7 +44,8 @@ fn mark_schema() -> Value {
             "stamp": {"type": "integer", "minimum": 0, "description": "stamp: 0–5 are the vector stamps, 100+ emoji"},
             "name": {"type": "string", "description": "A name for the layers list"},
             "around_text": {"type": "string", "description": "Place the mark by this text on the picture (read on this device, as ocr does) instead of giving coordinates: a box around it (rect, ellipse, hide, highlighter), an arrow's head at its left, a counter or a stamp beside it, a text below it. The first line that contains the text, top to bottom; on a recording the frame at from_ms."},
-            "padding": {"type": "integer", "minimum": 0, "description": "around_text: room around the text in pixels (6)"},
+            "padding": {"type": "integer", "minimum": 0, "description": "around_text: room around what is framed, in pixels (6 around a text, 4 around an element)"},
+            "fit": {"type": "string", "enum": ["element", "text"], "description": "around_text, boxes: frame the element that holds the text — a button, a field, a chip (element: the default for rect, ellipse and hide; the text's box when there is no such element) — or the text alone (text: the default for highlighter)"},
             "from_ms": {"type": "integer", "minimum": 0, "description": "Recording only: when the mark appears, ms as recorded (the whole recording without times)"},
             "to_ms": {"type": "integer", "minimum": 1, "description": "Recording only: when it goes (not included)"}
         },
@@ -528,18 +529,19 @@ pub(crate) fn phrase_box(lines: &[znimok_models::ocr::Line], needle: &str) -> Op
 /// The marks with `around_text` get their place (ZK-309): the text of the picture (the frame at
 /// the mark's from_ms on a recording) read once per frame, the phrase found, the mark put around
 /// it as its kind wants. The others pass as they are.
-fn around_text(agent: &Agent, args: &Value) -> Result<Value, String> {
+fn around_text(agent: &Agent, args: &Value) -> Result<(Value, Vec<Value>), String> {
     let mut out = args.clone();
+    let mut placed = Vec::new();
     let Some(marks) = out["marks"].as_array_mut() else {
-        return Ok(out);
+        return Ok((out, placed));
     };
     if !marks.iter().any(|m| m.get("around_text").is_some()) {
-        return Ok(out);
+        return Ok((out, placed));
     }
     let (doc, path) = agent.doc(args)?;
     let engine = znimok_models::ocr::system().ok_or("no text recognition on this system")?;
-    let mut read: std::collections::HashMap<i64, znimok_models::ocr::OcrResult> =
-        Default::default();
+    type Read = (znimok_core::Raster, znimok_models::ocr::OcrResult);
+    let mut read: std::collections::HashMap<i64, Read> = Default::default();
     for (i, m) in marks.iter_mut().enumerate() {
         let Some(needle) = m["around_text"]
             .as_str()
@@ -552,25 +554,52 @@ fn around_text(agent: &Agent, args: &Value) -> Result<Value, String> {
         let ms = m["from_ms"].as_i64().unwrap_or(0);
         if let std::collections::hash_map::Entry::Vacant(e) = read.entry(ms) {
             let r = crate::vexport::picture(&doc, &path, &json!({"at_ms": ms}))?;
-            let img = znimok_models::Rgba::new(r.width, r.height, r.rgba).ok_or("empty picture")?;
-            e.insert(engine.recognize(&img, &[]).map_err(|e| e.to_string())?);
+            let img = znimok_models::Rgba::new(r.width, r.height, r.rgba.clone())
+                .ok_or("empty picture")?;
+            let res = engine.recognize(&img, &[]).map_err(|e| e.to_string())?;
+            e.insert((r, res));
         }
-        let res = &read[&ms];
+        let (pic, res) = &read[&ms];
         let Some(b) = phrase_box(&res.lines, &needle) else {
             return Err(format!(
                 "mark {i}: «{needle}» is not on the picture ({} lines read; ocr shows them)",
                 res.lines.len()
             ));
         };
-        let pad = opt_int(m, "padding")?.unwrap_or(6).max(0) as f32;
-        let (x0, y0) = ((b.x - pad).floor() as i64, (b.y - pad).floor() as i64);
-        let (x1, y1) = (
-            (b.x + b.w + pad).ceil() as i64,
-            (b.y + b.h + pad).ceil() as i64,
+        let kind = arg_str(m, "kind").unwrap_or("").to_string();
+        let boxy = matches!(kind.as_str(), "rect" | "ellipse" | "hide");
+        let fit = match arg_str(m, "fit") {
+            Some("text") => false,
+            Some("element") => true,
+            Some(other) => return Err(format!("mark {i}: fit is element or text, not «{other}»")),
+            None => boxy,
+        };
+        let text_box = (
+            b.x.floor() as i64,
+            b.y.floor() as i64,
+            (b.x + b.w).ceil() as i64,
+            (b.y + b.h).ceil() as i64,
         );
+        let element = if fit {
+            element_box(pic, text_box)
+        } else {
+            None
+        };
+        let (bx0, by0, bx1, by1) = element.unwrap_or(text_box);
+        let pad = opt_int(m, "padding")?
+            .unwrap_or(if element.is_some() { 4 } else { 6 })
+            .max(0) as i64;
+        let (x0, y0, x1, y1) = (bx0 - pad, by0 - pad, bx1 + pad, by1 + pad);
+        placed.push(json!({
+            "mark": i,
+            "around_text": needle,
+            "framed": if element.is_some() { "element" } else { "text" },
+            "text": {"x": text_box.0, "y": text_box.1, "width": text_box.2 - text_box.0, "height": text_box.3 - text_box.1},
+            "box": {"x": bx0, "y": by0, "width": bx1 - bx0, "height": by1 - by0},
+        }));
         let cy = (b.y + b.h / 2.0).round() as i64;
         let size = opt_int(m, "size")?.unwrap_or(36).max(6) as i64;
-        match arg_str(m, "kind").unwrap_or("") {
+        match kind.as_str() {
             "rect" | "ellipse" | "hide" | "highlighter" => {
                 m["x"] = json!(x0);
                 m["y"] = json!(y0);
@@ -598,7 +627,141 @@ fn around_text(agent: &Agent, args: &Value) -> Result<Value, String> {
             }
         }
     }
-    Ok(out)
+    Ok((out, placed))
+}
+
+/// The element that holds a text (ZK-315): a filled button, an outlined one, a field, a chip —
+/// as (x0, y0, x1, y1), exclusive ends, in the picture's pixels. From the background just around
+/// the text the box grows a row or a column at a time while it stays that background; it stops
+/// at an edge — a row or column that differs nearly all along (a fill ends, a border line). Other
+/// text met on the way (a row or column partly different), the picture's edge, or growing
+/// further than an element around a label would: no element, `None`.
+pub(crate) fn element_box(
+    pic: &znimok_core::Raster,
+    text: (i64, i64, i64, i64),
+) -> Option<(i64, i64, i64, i64)> {
+    let (w, h) = (pic.width as i64, pic.height as i64);
+    let (tx0, ty0, tx1, ty1) = (
+        text.0.clamp(0, w),
+        text.1.clamp(0, h),
+        text.2.clamp(0, w),
+        text.3.clamp(0, h),
+    );
+    let (tw, th) = (tx1 - tx0, ty1 - ty0);
+    if tw < 2 || th < 2 {
+        return None;
+    }
+    let px = |x: i64, y: i64| -> [u8; 3] {
+        let i = ((y * w + x) * 4) as usize;
+        [pic.rgba[i], pic.rgba[i + 1], pic.rgba[i + 2]]
+    };
+    let near = |a: [u8; 3], b: [u8; 3]| -> bool {
+        a.iter()
+            .zip(b)
+            .map(|(p, q)| p.abs_diff(q) as u32)
+            .sum::<u32>()
+            <= 36
+    };
+    // The background: the commonest colour on a ring 3 px around the text; it must be most of it.
+    let ring = |d: i64| -> Vec<[u8; 3]> {
+        let (x0, y0, x1, y1) = (tx0 - d, ty0 - d, tx1 + d, ty1 + d);
+        let mut v = Vec::new();
+        for x in x0..x1 {
+            for y in [y0, y1 - 1] {
+                if (0..w).contains(&x) && (0..h).contains(&y) {
+                    v.push(px(x, y));
+                }
+            }
+        }
+        for y in y0..y1 {
+            for x in [x0, x1 - 1] {
+                if (0..w).contains(&x) && (0..h).contains(&y) {
+                    v.push(px(x, y));
+                }
+            }
+        }
+        v
+    };
+    let around = ring(3);
+    if around.is_empty() {
+        return None;
+    }
+    let bg = *around
+        .iter()
+        .max_by_key(|c| around.iter().filter(|o| near(**o, **c)).count())?;
+    if around.iter().filter(|c| near(**c, bg)).count() * 10 < around.len() * 8 {
+        return None; // the text sits on a picture, not on a flat element
+    }
+    // A line of pixels: the share that is background.
+    let share = |pts: &mut dyn Iterator<Item = (i64, i64)>| -> f32 {
+        let (mut n, mut same) = (0u32, 0u32);
+        for (x, y) in pts {
+            n += 1;
+            if near(px(x, y), bg) {
+                same += 1;
+            }
+        }
+        if n == 0 { 1.0 } else { same as f32 / n as f32 }
+    };
+    // Walk outwards: background (≥ 90 %) — go on; an edge (≤ 30 %) — stop there; else content.
+    enum Step {
+        Edge(i64),
+        Fail,
+    }
+    let walk = |from: i64, dir: i64, limit: i64, line: &dyn Fn(i64) -> f32| -> Step {
+        let mut at = from;
+        for _ in 0..limit {
+            at += dir;
+            let s = line(at);
+            if s >= 0.9 {
+                continue;
+            }
+            return if s <= 0.3 { Step::Edge(at) } else { Step::Fail };
+        }
+        Step::Fail
+    };
+    let (vlim, hlim) = (3 * th + 8, (4 * th).max(tw) + 8);
+    // Up and down over the text's width (and a little more), then left and right over the
+    // element's height found so far.
+    let row = |y: i64| -> f32 {
+        if !(0..h).contains(&y) {
+            return 0.5; // the picture's edge: no element
+        }
+        share(
+            &mut (tx0 - 2..tx1 + 2)
+                .filter(|x| (0..w).contains(x))
+                .map(|x| (x, y)),
+        )
+    };
+    let top = match walk(ty0 - 1, -1, vlim, &row) {
+        Step::Edge(y) => y + 1,
+        Step::Fail => return None,
+    };
+    let bottom = match walk(ty1, 1, vlim, &row) {
+        Step::Edge(y) => y,
+        Step::Fail => return None,
+    };
+    let col = |x: i64| -> f32 {
+        if !(0..w).contains(&x) {
+            return 0.5;
+        }
+        // Inside the element's height, off its rounded corners.
+        let inset = ((bottom - top) / 4).min(6);
+        share(&mut (top + inset..bottom - inset).map(|y| (x, y)))
+    };
+    let left = match walk(tx0 - 1, -1, hlim, &col) {
+        Step::Edge(x) => x + 1,
+        Step::Fail => return None,
+    };
+    let right = match walk(tx1, 1, hlim, &col) {
+        Step::Edge(x) => x,
+        Step::Fail => return None,
+    };
+    // A label fills an element, it does not float in one far bigger.
+    if (right - left) > 4 * tw.max(th) || (bottom - top) > 6 * th {
+        return None;
+    }
+    Some((left, top, right, bottom))
 }
 
 /// [`apply`], then the times of marks on a recording (ZK-239): `times` gets the ids of the
@@ -642,8 +805,9 @@ pub(crate) fn run(agent: &Agent, name: &str, args: &Value) -> Option<Result<Outp
             Output::ok(s, vec![])
         }),
         "add_marks" => (|| {
-            let args = &around_text(agent, args)?;
-            apply_timed(
+            let (placed_args, placed) = around_text(agent, args)?;
+            let args = &placed_args;
+            let mut out = apply_timed(
                 agent,
                 args,
                 |_| {
@@ -670,7 +834,13 @@ pub(crate) fn run(agent: &Agent, name: &str, args: &Value) -> Option<Result<Outp
                         .zip(args["marks"].as_array().into_iter().flatten().cloned())
                         .collect()
                 },
-            )
+            )?;
+            if !placed.is_empty()
+                && let Some(s) = out.structured.as_mut()
+            {
+                s["placed"] = json!(placed);
+            }
+            Ok(out)
         })(),
         "update_marks" => apply_timed(
             agent,
@@ -853,6 +1023,48 @@ pub(crate) fn run(agent: &Agent, name: &str, args: &Value) -> Option<Result<Outp
         }),
         _ => return None,
     })
+}
+
+#[cfg(test)]
+mod element_tests {
+    use super::element_box;
+    use znimok_core::{Raster, Rgb};
+
+    fn fill(r: &mut Raster, x0: u32, y0: u32, x1: u32, y1: u32, c: [u8; 3]) {
+        for y in y0..y1 {
+            for x in x0..x1 {
+                let i = ((y * r.width + x) * 4) as usize;
+                r.rgba[i..i + 3].copy_from_slice(&c);
+            }
+        }
+    }
+
+    /// A label on a filled button frames the button; on an outlined one, up to the outline;
+    /// a label on the page itself has no element (ZK-315).
+    #[test]
+    fn the_element_around_a_label() {
+        let blue = [10, 74, 173];
+        let mut r = Raster::solid(400, 200, Rgb::new(10, 74, 173));
+        // A filled yellow button 122×56 at (20, 40), its dark label 84×13 inside.
+        fill(&mut r, 20, 40, 142, 96, [254, 184, 55]);
+        fill(&mut r, 39, 61, 123, 74, [30, 30, 30]);
+        assert_eq!(element_box(&r, (39, 61, 123, 74)), Some((20, 40, 142, 96)));
+        // An outlined button: a 1 px white frame 160×40 at (200, 50), a white label inside.
+        fill(&mut r, 200, 50, 360, 51, [255, 255, 255]);
+        fill(&mut r, 200, 89, 360, 90, [255, 255, 255]);
+        fill(&mut r, 200, 50, 201, 90, [255, 255, 255]);
+        fill(&mut r, 359, 50, 360, 90, [255, 255, 255]);
+        fill(&mut r, 230, 63, 330, 77, [255, 255, 255]);
+        assert_eq!(
+            element_box(&r, (230, 63, 330, 77)),
+            Some((201, 51, 359, 89))
+        );
+        // A label on the page: grows to the picture's edge or far too wide — no element.
+        let mut p = Raster::solid(400, 200, Rgb::new(10, 74, 173));
+        fill(&mut p, 100, 150, 200, 164, [255, 255, 255]);
+        let _ = blue;
+        assert_eq!(element_box(&p, (100, 150, 200, 164)), None);
+    }
 }
 
 #[cfg(test)]
