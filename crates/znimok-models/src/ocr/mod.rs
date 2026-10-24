@@ -195,6 +195,55 @@ pub fn match_languages(wanted: &[&str], available: &[String]) -> (Vec<String>, V
     (use_, missing)
 }
 
+/// Text folded for finding a phrase among lines read (ZK-314): lower case, and the Cyrillic
+/// letters Tesseract reads Latin ones as (Ноте for Home, Ргісіпд for Pricing, «а» in Find а Job)
+/// as those Latin letters — one character for one, so positions in the folded text are
+/// positions in the original. Applied to both the phrase and the line, a Ukrainian phrase still
+/// finds Ukrainian text.
+pub fn fold_for_find(s: &str) -> String {
+    s.chars()
+        .map(|c| match c {
+            // Capitals as their Latin capitals' small letters.
+            'А' => 'a',
+            'В' => 'b',
+            'Е' | 'Ё' | 'Є' => 'e',
+            'К' => 'k',
+            'М' => 'm',
+            'Н' => 'h',
+            'О' => 'o',
+            'Р' => 'p',
+            'С' => 'c',
+            'Т' => 't',
+            'У' => 'y',
+            'Х' => 'x',
+            'І' | 'Ї' => 'i',
+            'Ј' => 'j',
+            'Ѕ' => 's',
+            // Small letters as the Latin ones they are read for.
+            'а' => 'a',
+            'в' => 'b',
+            'г' => 'r',
+            'д' => 'g',
+            'е' | 'ё' | 'є' => 'e',
+            'з' => 's',
+            'і' | 'ї' => 'i',
+            'ј' => 'j',
+            'к' => 'k',
+            'м' => 'm',
+            'н' => 'h',
+            'о' => 'o',
+            'п' => 'n',
+            'р' => 'p',
+            'с' => 'c',
+            'т' => 'm',
+            'у' => 'y',
+            'х' => 'x',
+            'ѕ' => 's',
+            c => c.to_lowercase().next().unwrap_or(c),
+        })
+        .collect()
+}
+
 /// Russian by primary subtag — never offered or used (owner, 29.09.2026).
 pub fn is_russian(tag: &str) -> bool {
     tag.split(['-', '_'])
@@ -222,6 +271,24 @@ pub(crate) fn winrt_thread() {
         };
     }
     JOINED.with(|_| {});
+}
+
+#[cfg(test)]
+mod fold_tests {
+    use super::fold_for_find;
+
+    /// Latin read as Cyrillic twins folds to the Latin; Ukrainian folds the same on both sides;
+    /// one character for one (ZK-314).
+    #[test]
+    fn twins_fold_to_latin() {
+        assert_eq!(fold_for_find("Find а Job"), fold_for_find("Find a Job"));
+        assert_eq!(fold_for_find("Ноте"), "home");
+        assert_eq!(fold_for_find("Ргісіпд"), "pricing");
+        assert_eq!(fold_for_find("АРІ"), "api");
+        let ua = "Надіслати на пошту";
+        assert!(fold_for_find(ua).contains(&fold_for_find("надіслати")));
+        assert_eq!(fold_for_find(ua).chars().count(), ua.chars().count());
+    }
 }
 
 #[cfg(test)]

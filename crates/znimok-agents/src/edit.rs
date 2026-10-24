@@ -481,13 +481,14 @@ pub(crate) fn apply(
 /// contains it (case folded); the union of the words' boxes that cover it when the engine gives
 /// words, else the line's box cut by the phrase's share of the characters.
 pub(crate) fn phrase_box(lines: &[znimok_models::ocr::Line], needle: &str) -> Option<OcrRect> {
-    let needle = needle.trim().to_lowercase();
+    let needle = znimok_models::ocr::fold_for_find(needle.trim());
     if needle.is_empty() {
         return None;
     }
     let n_chars = needle.chars().count();
     for line in lines {
-        let text = line.text.to_lowercase();
+        // Twins and case folded one character for one (ZK-314): positions still match.
+        let text = znimok_models::ocr::fold_for_find(&line.text);
         let Some(byte) = text.find(&needle) else {
             continue;
         };
@@ -915,6 +916,21 @@ mod around_tests {
         assert!((b.x - (20.0 + 300.0 * 11.0 / 17.0)).abs() < 0.01, "{b:?}");
         assert!((b.w - 300.0 * 6.0 / 17.0).abs() < 0.01);
         assert!(phrase_box(&lines, "Find a Job").is_none());
+        // Latin read as its Cyrillic twins is still found (ZK-314).
+        let twins = vec![Line {
+            text: "Ноте Ргісіпд Find а Job".into(),
+            rect: Rect {
+                x: 0.0,
+                y: 0.0,
+                w: 230.0,
+                h: 16.0,
+            },
+            confidence: None,
+            words: vec![],
+        }];
+        assert!(phrase_box(&twins, "Find a Job").is_some());
+        assert!(phrase_box(&twins, "home").is_some());
+        assert!(phrase_box(&twins, "Pricing").is_some());
         assert!(phrase_box(&lines, "  ").is_none());
     }
 }

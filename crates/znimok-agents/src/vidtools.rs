@@ -337,11 +337,12 @@ pub(crate) fn run(agent: &Agent, name: &str, args: &Value) -> Option<Result<Outp
             let img = znimok_models::Rgba::new(r.width, r.height, r.rgba).ok_or("empty picture")?;
             let engine = znimok_models::ocr::system().ok_or("no text recognition on this system")?;
             let res = engine.recognize(&img, &langs).map_err(|e| e.to_string())?;
-            let n = needle.to_lowercase();
+            // Twins folded on both sides (ZK-314): «Find a Job» finds «Find а Job».
+            let n = znimok_models::ocr::fold_for_find(needle);
             let found: Vec<Value> = res
                 .lines
                 .iter()
-                .filter(|l| l.text.to_lowercase().contains(&n))
+                .filter(|l| znimok_models::ocr::fold_for_find(&l.text).contains(&n))
                 .map(|l| json!({"text": l.text, "x": l.rect.x, "y": l.rect.y, "width": l.rect.w, "height": l.rect.h}))
                 .collect();
             Ok(Output::ok(json!({"found": found, "lines_read": res.lines.len()}), vec![]))
