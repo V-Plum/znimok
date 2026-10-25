@@ -244,6 +244,100 @@ pub fn fold_for_find(s: &str) -> String {
         .collect()
 }
 
+/// Where `needle` stands in `text` (ZK-316): `(start, end, misread)` in characters of `text`,
+/// end exclusive. Compared folded (case, Cyrillic twins — [`fold_for_find`]) and without
+/// spaces, so «QA Test 1» finds «QATest1». When `fuzzy`, a few characters may differ — OCR
+/// misreads a letter (Тезі1 for Test1, ОА for QA) — at most one in three, only for phrases of
+/// five characters or more; `misread` counts them, 0 for an exact match.
+pub fn find_phrase(text: &str, needle: &str, fuzzy: bool) -> Option<(usize, usize, usize)> {
+    // The text without spaces, and where each of its characters stands in the original.
+    let mut hay: Vec<char> = Vec::new();
+    let mut at: Vec<usize> = Vec::new();
+    for (i, c) in fold_for_find(text).chars().enumerate() {
+        if !c.is_whitespace() {
+            hay.push(c);
+            at.push(i);
+        }
+    }
+    let pat: Vec<char> = fold_for_find(needle)
+        .chars()
+        .filter(|c| !c.is_whitespace())
+        .collect();
+    if pat.is_empty() || hay.is_empty() {
+        return None;
+    }
+    let span = |s: usize, e: usize| (at[s], at[e - 1] + 1);
+    // Exact first.
+    if let Some(s) = hay.windows(pat.len()).position(|w| w == pat.as_slice()) {
+        let (a, b) = span(s, s + pat.len());
+        return Some((a, b, 0));
+    }
+    if !fuzzy || pat.len() < 5 {
+        return None;
+    }
+    let limit = pat.len() / 3;
+    // Approximate substring (Sellers): the least edits of `pat` against any substring of `hay`,
+    // with where that substring starts.
+    let (m, n) = (pat.len(), hay.len());
+    let indel = |c: char| if c.is_ascii_digit() { limit + 1 } else { 1 };
+    let mut prev: Vec<(usize, usize)> = (0..=n).map(|j| (0, j)).collect();
+    for i in 1..=m {
+        let mut cur = vec![(prev[0].0 + indel(pat[i - 1]), 0usize); n + 1];
+        for j in 1..=n {
+            let sub = prev[j - 1].0 + sub_cost(pat[i - 1], hay[j - 1], limit);
+            let del = prev[j].0 + indel(pat[i - 1]);
+            let ins = cur[j - 1].0 + indel(hay[j - 1]);
+            cur[j] = if sub <= del && sub <= ins {
+                (sub, prev[j - 1].1)
+            } else if del <= ins {
+                (del, prev[j].1)
+            } else {
+                (ins, cur[j - 1].1)
+            };
+        }
+        prev = cur;
+    }
+    let (end, &(cost, start)) = prev
+        .iter()
+        .enumerate()
+        .skip(1)
+        .min_by_key(|(j, (c, _))| (*c, *j))?;
+    if cost > limit || start >= end {
+        return None;
+    }
+    let (a, b) = span(start, end);
+    Some((a, b, cost))
+}
+
+/// What one character read for another costs in [`find_phrase`]: nothing when the same; one
+/// for a letter misread, or a digit for its look-alike letter (l/1, o/0); any other change to a
+/// digit — Test 1 is not Test 2 — more than any allowance, as is a digit missing or added.
+fn sub_cost(a: char, b: char, limit: usize) -> usize {
+    // A digit is read only as its look-alike letter (and back).
+    const LOOK: &[(char, char)] = &[
+        ('1', 'l'),
+        ('1', 'i'),
+        ('0', 'o'),
+        ('5', 's'),
+        ('8', 'b'),
+        ('2', 'z'),
+    ];
+    if a == b {
+        0
+    } else if a.is_ascii_digit() || b.is_ascii_digit() {
+        if LOOK
+            .iter()
+            .any(|&(d, l)| (a, b) == (d, l) || (a, b) == (l, d))
+        {
+            1
+        } else {
+            limit + 1
+        }
+    } else {
+        1
+    }
+}
+
 /// Russian by primary subtag — never offered or used (owner, 29.09.2026).
 pub fn is_russian(tag: &str) -> bool {
     tag.split(['-', '_'])
@@ -288,6 +382,33 @@ mod fold_tests {
         let ua = "Надіслати на пошту";
         assert!(fold_for_find(ua).contains(&fold_for_find("надіслати")));
         assert_eq!(fold_for_find(ua).chars().count(), ua.chars().count());
+    }
+
+    /// Spaces do not count; a misread letter or two is allowed only when asked and nothing is
+    /// exact (ZK-316).
+    #[test]
+    fn phrases_are_found_without_spaces_and_with_a_misread_letter() {
+        use super::find_phrase;
+        assert_eq!(
+            find_phrase("QATest1 QATest2 Events", "QA Test 1", false),
+            Some((0, 7, 0))
+        );
+        assert_eq!(
+            find_phrase("Home Find а Job", "find a job", false),
+            Some((5, 15, 0))
+        );
+        assert_eq!(find_phrase("ОА Тезі1 QATest2", "QA Test 1", false), None);
+        let (a, b, miss) = find_phrase("ОА Тезі1 QATest2", "QA Test 1", true).unwrap();
+        assert_eq!((a, b), (0, 8));
+        assert!((1..=2).contains(&miss), "{miss}");
+        // Another digit is another thing: «QATest2» is not «QA Test 1».
+        assert_eq!(find_phrase("QATest2 Events", "QA Test 1", true), None);
+        // Short phrases stay exact; far-off text is not «found».
+        assert_eq!(find_phrase("Hone", "Home", true), None);
+        assert_eq!(
+            find_phrase("Events Theme Migration", "Find a Job", true),
+            None
+        );
     }
 }
 

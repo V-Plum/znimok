@@ -337,15 +337,30 @@ pub(crate) fn run(agent: &Agent, name: &str, args: &Value) -> Option<Result<Outp
             let img = znimok_models::Rgba::new(r.width, r.height, r.rgba).ok_or("empty picture")?;
             let engine = znimok_models::ocr::system().ok_or("no text recognition on this system")?;
             let res = engine.recognize(&img, &langs).map_err(|e| e.to_string())?;
-            // Twins folded on both sides (ZK-314): «Find a Job» finds «Find а Job».
-            let n = znimok_models::ocr::fold_for_find(needle);
-            let found: Vec<Value> = res
-                .lines
-                .iter()
-                .filter(|l| znimok_models::ocr::fold_for_find(&l.text).contains(&n))
-                .map(|l| json!({"text": l.text, "x": l.rect.x, "y": l.rect.y, "width": l.rect.w, "height": l.rect.h}))
-                .collect();
-            Ok(Output::ok(json!({"found": found, "lines_read": res.lines.len()}), vec![]))
+            // Twins and spaces folded on both sides (ZK-314, ZK-316): «Find a Job» finds «Find а
+            // Job», «QA Test 1» finds «QATest1». Nothing exact: the lines that hold it with a
+            // misread letter or two, marked so.
+            let find = |fuzzy: bool| -> Vec<Value> {
+                let mut hits: Vec<(usize, Value)> = res
+                    .lines
+                    .iter()
+                    .filter_map(|l| {
+                        let (_, _, miss) = znimok_models::ocr::find_phrase(&l.text, needle, fuzzy)?;
+                        Some((miss, json!({"text": l.text, "x": l.rect.x, "y": l.rect.y, "width": l.rect.w, "height": l.rect.h, "misread": miss})))
+                    })
+                    .collect();
+                if fuzzy {
+                    let best = hits.iter().map(|h| h.0).min().unwrap_or(0);
+                    hits.retain(|h| h.0 == best);
+                }
+                hits.into_iter().map(|h| h.1).collect()
+            };
+            let mut found = find(false);
+            let exact = !found.is_empty();
+            if !exact {
+                found = find(true);
+            }
+            Ok(Output::ok(json!({"found": found, "exact": exact || found.is_empty(), "lines_read": res.lines.len()}), vec![]))
         })(),
         _ => return None,
     })
