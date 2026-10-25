@@ -495,9 +495,7 @@ pub(crate) fn phrase_box(lines: &[znimok_models::ocr::Line], needle: &str) -> Op
             })
             .min_by_key(|h| h.3)
     });
-    let Some((line, start, end, _)) = hit else {
-        return None;
-    };
+    let (line, start, end, _) = hit?;
     let n_chars = end - start;
     {
         let text = &line.text;
