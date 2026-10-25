@@ -482,19 +482,25 @@ pub(crate) fn apply(
 /// contains it (case folded); the union of the words' boxes that cover it when the engine gives
 /// words, else the line's box cut by the phrase's share of the characters.
 pub(crate) fn phrase_box(lines: &[znimok_models::ocr::Line], needle: &str) -> Option<OcrRect> {
-    let needle = znimok_models::ocr::fold_for_find(needle.trim());
-    if needle.is_empty() {
+    if needle.trim().is_empty() {
         return None;
     }
-    let n_chars = needle.chars().count();
-    for line in lines {
-        // Twins and case folded one character for one (ZK-314): positions still match.
-        let text = znimok_models::ocr::fold_for_find(&line.text);
-        let Some(byte) = text.find(&needle) else {
-            continue;
-        };
-        let start = text[..byte].chars().count();
-        let end = start + n_chars;
+    // Exact (twins, case and spaces folded) on any line first; then a misread letter or two.
+    let hit = [false, true].into_iter().find_map(|fuzzy| {
+        lines
+            .iter()
+            .filter_map(|l| {
+                znimok_models::ocr::find_phrase(&l.text, needle, fuzzy)
+                    .map(|(s, e, m)| (l, s, e, m))
+            })
+            .min_by_key(|h| h.3)
+    });
+    let Some((line, start, end, _)) = hit else {
+        return None;
+    };
+    let n_chars = end - start;
+    {
+        let text = &line.text;
         if !line.words.is_empty() {
             // The words joined by one space are the line's text; a word is in when its characters
             // overlap the phrase's.
@@ -516,14 +522,13 @@ pub(crate) fn phrase_box(lines: &[znimok_models::ocr::Line], needle: &str) -> Op
         }
         let total = text.chars().count().max(1) as f32;
         let r = line.rect;
-        return Some(OcrRect {
+        Some(OcrRect {
             x: r.x + r.w * start as f32 / total,
             y: r.y,
             w: (r.w * n_chars as f32 / total).max(1.0),
             h: r.h,
-        });
+        })
     }
-    None
 }
 
 /// The marks with `around_text` get their place (ZK-309): the text of the picture (the frame at
@@ -590,12 +595,15 @@ fn around_text(agent: &Agent, args: &Value) -> Result<(Value, Vec<Value>), Strin
             .unwrap_or(if element.is_some() { 4 } else { 6 })
             .max(0) as i64;
         let (x0, y0, x1, y1) = (bx0 - pad, by0 - pad, bx1 + pad, by1 + pad);
+        let rect = |a: i64, b: i64, c: i64, d: i64| json!({"x": a, "y": b, "width": c - a, "height": d - b});
         placed.push(json!({
             "mark": i,
             "around_text": needle,
             "framed": if element.is_some() { "element" } else { "text" },
-            "text": {"x": text_box.0, "y": text_box.1, "width": text_box.2 - text_box.0, "height": text_box.3 - text_box.1},
-            "box": {"x": bx0, "y": by0, "width": bx1 - bx0, "height": by1 - by0},
+            "text": rect(text_box.0, text_box.1, text_box.2, text_box.3),
+            "element": element.map(|e| rect(e.0, e.1, e.2, e.3)),
+            // What is drawn (padding included) — for a box mark, its own box (ZK-316).
+            "box": rect(x0, y0, x1, y1),
         }));
         let cy = (b.y + b.h / 2.0).round() as i64;
         let size = opt_int(m, "size")?.unwrap_or(36).max(6) as i64;
@@ -703,12 +711,14 @@ pub(crate) fn element_box(
         }
         if n == 0 { 1.0 } else { same as f32 / n as f32 }
     };
-    // Walk outwards: background (≥ 90 %) — go on; an edge (≤ 30 %) — stop there; else content.
+    // Walk outwards: background (≥ 90 %) — go on. The first line that is not: an edge when,
+    // within a few more lines, it drops to ≤ 30 % (a fill ends — at once for a square button,
+    // over the curve of a pill's end); content (other text) when the background comes back.
     enum Step {
         Edge(i64),
         Fail,
     }
-    let walk = |from: i64, dir: i64, limit: i64, line: &dyn Fn(i64) -> f32| -> Step {
+    let walk = |from: i64, dir: i64, limit: i64, look: i64, line: &dyn Fn(i64) -> f32| -> Step {
         let mut at = from;
         for _ in 0..limit {
             at += dir;
@@ -716,7 +726,21 @@ pub(crate) fn element_box(
             if s >= 0.9 {
                 continue;
             }
-            return if s <= 0.3 { Step::Edge(at) } else { Step::Fail };
+            if s <= 0.3 {
+                return Step::Edge(at);
+            }
+            let mut ahead = at;
+            for _ in 0..look {
+                ahead += dir;
+                let a = line(ahead);
+                if a <= 0.3 {
+                    return Step::Edge(at);
+                }
+                if a >= 0.9 {
+                    return Step::Fail;
+                }
+            }
+            return Step::Fail;
         }
         Step::Fail
     };
@@ -733,11 +757,11 @@ pub(crate) fn element_box(
                 .map(|x| (x, y)),
         )
     };
-    let top = match walk(ty0 - 1, -1, vlim, &row) {
+    let top = match walk(ty0 - 1, -1, vlim, 3, &row) {
         Step::Edge(y) => y + 1,
         Step::Fail => return None,
     };
-    let bottom = match walk(ty1, 1, vlim, &row) {
+    let bottom = match walk(ty1, 1, vlim, 3, &row) {
         Step::Edge(y) => y,
         Step::Fail => return None,
     };
@@ -745,15 +769,17 @@ pub(crate) fn element_box(
         if !(0..w).contains(&x) {
             return 0.5;
         }
-        // Inside the element's height, off its rounded corners.
-        let inset = ((bottom - top) / 4).min(6);
+        // The middle half of the element's height: off rounded corners and a pill's curve.
+        let inset = (bottom - top) / 4;
         share(&mut (top + inset..bottom - inset).map(|y| (x, y)))
     };
-    let left = match walk(tx0 - 1, -1, hlim, &col) {
+    // A pill's end curves over half its height.
+    let look = ((bottom - top) / 2).max(3);
+    let left = match walk(tx0 - 1, -1, hlim, look, &col) {
         Step::Edge(x) => x + 1,
         Step::Fail => return None,
     };
-    let right = match walk(tx1, 1, hlim, &col) {
+    let right = match walk(tx1, 1, hlim, look, &col) {
         Step::Edge(x) => x,
         Step::Fail => return None,
     };
@@ -1058,6 +1084,35 @@ mod element_tests {
         assert_eq!(
             element_box(&r, (230, 63, 330, 77)),
             Some((201, 51, 359, 89))
+        );
+        // A pill 120×36 (ends: half-discs of radius 18) at (40, 140), its label inside.
+        for y in 140..176u32 {
+            for x in 40..160u32 {
+                let (cx, cy) = (
+                    if x < 58 {
+                        58.0
+                    } else if x >= 142 {
+                        141.0
+                    } else {
+                        x as f32
+                    },
+                    157.5,
+                );
+                let (dx, dy) = (x as f32 - cx, y as f32 - cy);
+                if dx * dx + dy * dy <= 18.0 * 18.0 {
+                    fill(&mut r, x, y, x + 1, y + 1, [40, 180, 120]);
+                }
+            }
+        }
+        fill(&mut r, 62, 152, 138, 164, [20, 20, 20]);
+        let pill = element_box(&r, (62, 152, 138, 164)).expect("a pill is an element");
+        assert!(
+            (pill.0 - 40).abs() <= 4 && (pill.2 - 160).abs() <= 4,
+            "{pill:?}"
+        );
+        assert!(
+            (pill.1 - 140).abs() <= 2 && (pill.3 - 176).abs() <= 2,
+            "{pill:?}"
         );
         // A label on the page: grows to the picture's edge or far too wide — no element.
         let mut p = Raster::solid(400, 200, Rgb::new(10, 74, 173));

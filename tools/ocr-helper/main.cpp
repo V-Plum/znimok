@@ -793,7 +793,9 @@ class Engine {
     bool ukrainian = false;
     for (const RWord& w : got)
       if (has_unique_cyrillic(w.text)) ukrainian = true;
-    const bool latin_line = latin > 2 * cyr && !ukrainian;
+    // Mostly Latin — or a word or two (a menu item, a link): nothing there tells Ukrainian, and
+    // a short Latin label is what is read as twins most (Ноте, ОА Тезі1).
+    const bool latin_line = !ukrainian && (latin > 2 * cyr || got.size() <= 2);
     struct Cand {
       size_t i;
       std::string text;
