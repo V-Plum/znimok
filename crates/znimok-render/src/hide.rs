@@ -4,14 +4,25 @@
 
 use znimok_core::Raster;
 
+/// How hard a hide works (ZK-343): a share of the tile's smaller side, with a floor in pixels so a
+/// line of text is never merely softened, and no ceiling but the side itself — the old formulas
+/// (side × strength / 500, 4…64 px) left a 20 px line of text readable and big areas guessable.
+/// At 100 % a tile is two or three blocks across its smaller side: nothing to read or guess.
+fn strength_px(w: u32, h: u32, strength: u8, floor: f32, share: (f32, f32)) -> u32 {
+    let t = strength.clamp(10, 100) as f32 / 100.0;
+    let side = w.min(h).max(1) as f32;
+    let px = (side * (share.0 + share.1 * t)).max(floor + 8.0 * t);
+    (px.round() as u32).clamp(2, (side as u32).max(2))
+}
+
 /// Blur radius in pixels for a tile of this size and strength (10..100 %).
 pub fn blur_radius(w: u32, h: u32, strength: u8) -> u32 {
-    (w.min(h) * strength.clamp(10, 100) as u32 / 600).clamp(3, 60)
+    strength_px(w, h, strength, 3.0, (0.06, 0.40)).max(3)
 }
 
 /// Pixel block size for a tile of this size and strength.
 pub fn block_size(w: u32, h: u32, strength: u8) -> u32 {
-    (w.min(h) * strength.clamp(10, 100) as u32 / 500).clamp(4, 64)
+    strength_px(w, h, strength, 4.0, (0.06, 0.40)).max(4)
 }
 
 /// Pixelate: every block becomes its average colour.
@@ -206,12 +217,28 @@ mod tests {
         assert_eq!(out.rgba, r.rgba);
     }
 
+    /// ZK-343: a line of text is hidden hard (Little Helpers' formulas gave a 44 px field 4 px
+    /// blocks); big areas go past the old 64 px ceiling; stronger is never weaker; never wider
+    /// than the tile.
     #[test]
-    fn formulas_match_little_helpers() {
-        assert_eq!(blur_radius(330, 44, 60), 4);
-        assert_eq!(block_size(170, 44, 50), 4);
-        assert_eq!(block_size(400, 400, 100), 64);
-        assert_eq!(blur_radius(10, 10, 10), 3);
+    fn strength_hides_text_and_big_areas() {
+        assert_eq!(blur_radius(330, 44, 60), 13);
+        assert_eq!(block_size(170, 44, 50), 11);
+        assert_eq!(block_size(400, 400, 100), 184);
+        assert_eq!(blur_radius(10, 10, 10), 4);
+        // A 16 px line of text at the lowest strength still gets blocks of 5 px.
+        assert!(block_size(300, 16, 10) >= 5);
+        for side in [8u32, 16, 44, 200, 900] {
+            let mut last = 0;
+            for s in (10..=100).step_by(10) {
+                let b = block_size(side * 3, side, s as u8);
+                assert!(
+                    b >= last && b <= side.max(4),
+                    "side {side}, strength {s}: {b}"
+                );
+                last = b;
+            }
+        }
     }
 
     #[test]

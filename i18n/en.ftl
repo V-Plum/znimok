@@ -946,6 +946,36 @@ insp-corners-soft = Soft
 # @max: 10
 insp-corners-round = Round
 
+# @where: Section: how a hide mark hides (ZK-343)
+# @kind: label
+# @max: 16
+insp-hide = Hide
+
+# @where: Hide: the way (pixels / blur / plate)
+# @kind: label
+# @max: 16
+insp-hide-way = Way
+
+# @where: Hide way option
+# @kind: option
+# @max: 10
+insp-hide-pixels = Pixels
+
+# @where: Hide way option
+# @kind: option
+# @max: 10
+insp-hide-blur = Blur
+
+# @where: Hide way option: a solid plate
+# @kind: option
+# @max: 10
+insp-hide-plate = Plate
+
+# @where: Hide: strength slider
+# @kind: label
+# @max: 16
+insp-hide-strength = Strength
+
 # @where: Section: opacity slider
 # @kind: label
 # @max: 16

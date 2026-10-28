@@ -1574,6 +1574,12 @@ fn wire(ui: &AppWindow, app: &Shared) {
     on!(ui, app, on_set_alpha, |a, w, v, last| {
         a.set_alpha(&w, v, last);
     });
+    on!(ui, app, on_set_hide_mode, |a, w, v| {
+        a.set_hide_mode(&w, v);
+    });
+    on!(ui, app, on_set_hide_strength, |a, w, v, last| {
+        a.set_hide_strength(&w, v, last);
+    });
     on!(ui, app, on_set_geom, |a, w, field, text| {
         a.set_geom(&w, &field, &text);
         w.invoke_focus_canvas();
