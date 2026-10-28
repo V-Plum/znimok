@@ -315,6 +315,10 @@ pub struct App {
     text_outline: Option<Rgb>,
     dash: Dash,
     corners: Corners,
+    /// «Hide»: the way and the strength (10…100) for new hide marks (ZK-343).
+    hide_mode: HideMode,
+    hide_strength: u8,
+    hide_merge: Option<MergeKey>,
     head_start: Head,
     head_end: Head,
     /// Pen trails have their own heads, none by default (ZK-48).
@@ -576,6 +580,9 @@ impl App {
             text_outline: None,
             dash: Dash::Solid,
             corners: Corners::Sharp,
+            hide_mode: HideMode::Pixelate,
+            hide_strength: 60,
+            hide_merge: None,
             head_start: Head::None,
             head_end: Head::Triangle,
             pen_head_start: Head::None,
@@ -4986,12 +4993,16 @@ impl App {
                 head_size: 1,
             },
             tool::HIDE => Data::Hide {
-                mode: HideMode::Pixelate,
-                strength: 50,
+                mode: self.hide_mode,
+                strength: self.hide_strength,
             },
             _ => Data::Mark,
         };
-        Object::new(rect, data).with_style(self.style_for(t))
+        let mut o = Object::new(rect, data).with_style(self.style_for(t));
+        if t == tool::HIDE && self.hide_mode == HideMode::Plate {
+            o.style.color = PLATE_HIDE;
+        }
+        o
     }
 
     // ------------------------------------------------------------------ canvas input
@@ -7814,6 +7825,97 @@ impl App {
     }
 
     /// Opacity slider: one undo step per drag (`last` = the knob was released).
+    /// «Hide»: the way (0 pixels, 1 blur, 2 plate) of the selected hide marks and of new ones
+    /// (ZK-343). A plate is near black — the colour row is not shown for hide marks.
+    pub fn set_hide_mode(&mut self, ui: &AppWindow, v: i32) {
+        self.hide_mode = match v {
+            1 => HideMode::Blur,
+            2 => HideMode::Plate,
+            _ => HideMode::Pixelate,
+        };
+        let mode = self.hide_mode;
+        let plate = mode == HideMode::Plate;
+        self.patch_hides(
+            ui,
+            |strength| Data::Hide {
+                mode,
+                strength: strength.0,
+            },
+            plate,
+            None,
+        );
+        self.sync(ui);
+        ui.window().request_redraw();
+    }
+
+    /// «Hide»: the strength slider (0…1 → 10…100 %), live while dragged, one undo step (ZK-343).
+    pub fn set_hide_strength(&mut self, ui: &AppWindow, v: f32, last: bool) {
+        self.hide_strength = (10.0 + v.clamp(0.0, 1.0) * 90.0).round() as u8;
+        let merge = match &self.hide_merge {
+            Some(m) => m.clone(),
+            None => {
+                let m = self.merge_key();
+                self.hide_merge = Some(m.clone());
+                m
+            }
+        };
+        let s = self.hide_strength;
+        self.patch_hides(
+            ui,
+            |(_, mode)| Data::Hide { mode, strength: s },
+            false,
+            Some(merge),
+        );
+        if last {
+            self.hide_merge = None;
+        }
+        self.sync(ui);
+        ui.window().request_redraw();
+    }
+
+    /// Each selected hide mark gets `data` made from its (strength, mode); `plate` also makes it
+    /// near black. One undo step for all (or `merge`).
+    fn patch_hides(
+        &mut self,
+        ui: &AppWindow,
+        data: impl Fn((u8, HideMode)) -> Data,
+        plate: bool,
+        merge: Option<MergeKey>,
+    ) {
+        let hides: Vec<(ObjectId, Data)> = {
+            let Some(s) = self.s.as_ref() else { return };
+            s.ed.selection()
+                .iter()
+                .filter_map(|id| s.ed.doc.get(*id))
+                .filter_map(|o| match o.data {
+                    Data::Hide { mode, strength } => Some((o.id, data((strength, mode)))),
+                    _ => None,
+                })
+                .collect()
+        };
+        if hides.is_empty() {
+            return;
+        }
+        let merge = merge.or_else(|| (hides.len() > 1).then(|| self.merge_key()));
+        for (id, d) in hides {
+            self.apply(
+                ui,
+                Command::UpdateObjects {
+                    ids: vec![id],
+                    patch: ObjectPatch {
+                        data: Some(d),
+                        style: plate.then(|| StylePatch {
+                            color: Some(PLATE_HIDE),
+                            ..Default::default()
+                        }),
+                        ..Default::default()
+                    },
+                    merge: merge.clone(),
+                },
+            );
+        }
+    }
+
     pub fn set_alpha(&mut self, ui: &AppWindow, v: f32, last: bool) {
         self.alpha = ((v * 100.0).round() as i32).clamp(10, 100) as u8;
         let merge = match &self.alpha_merge {
@@ -10407,6 +10509,10 @@ impl App {
                 ui.set_dash_index(dash_index(st.dash));
                 ui.set_corners_index(corners_index(st.corners));
                 ui.set_alpha(st.alpha as f32 / 100.0);
+                if let Data::Hide { mode, strength } = o.data {
+                    ui.set_hide_mode_index(hide_mode_index(mode));
+                    ui.set_hide_strength(strength_slider(strength));
+                }
                 if let Data::Line {
                     head_front,
                     head_back,
@@ -10513,6 +10619,8 @@ impl App {
                 ui.set_dash_index(dash_index(self.dash));
                 ui.set_corners_index(corners_index(self.corners));
                 ui.set_alpha(self.alpha as f32 / 100.0);
+                ui.set_hide_mode_index(hide_mode_index(self.hide_mode));
+                ui.set_hide_strength(strength_slider(self.hide_strength));
                 if self.tool == tool::PEN {
                     ui.set_head_start(head_index(self.pen_head_start));
                     ui.set_head_end(head_index(self.pen_head_end));
@@ -11823,6 +11931,23 @@ fn dash_index(d: Dash) -> i32 {
         Dash::Dashed => 1,
         Dash::DashDot => 2,
     }
+}
+
+/// A hide plate's colour: near black, as redaction looks (ZK-343).
+const PLATE_HIDE: Rgb = Rgb::new(24, 24, 27);
+
+/// The inspector's «Hide» way: 0 pixels, 1 blur, 2 plate.
+fn hide_mode_index(m: HideMode) -> i32 {
+    match m {
+        HideMode::Pixelate => 0,
+        HideMode::Blur => 1,
+        HideMode::Plate => 2,
+    }
+}
+
+/// A hide strength (10…100) on the 0…1 slider.
+fn strength_slider(s: u8) -> f32 {
+    (s.clamp(10, 100) as f32 - 10.0) / 90.0
 }
 
 fn corners_index(c: Corners) -> i32 {

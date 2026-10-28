@@ -2040,6 +2040,9 @@ export component AppWindow inherits Window {
     in property <int> fill-index: -1;
     in property <int> dash-index;
     in property <int> corners-index;
+    // «Hide» (ZK-343): the way (0 pixels, 1 blur, 2 plate) and the strength, 0…1 (10…100 %).
+    in property <int> hide-mode-index;
+    in-out property <float> hide-strength: 0.55;
     in property <int> head-start;
     in property <int> head-end: 1;
     in property <int> text-size-index: 1;
@@ -2160,6 +2163,8 @@ export component AppWindow inherits Window {
     callback zoom-to(float);
     callback set-prop(string, int);
     callback set-alpha(float, bool);
+    callback set-hide-mode(int);
+    callback set-hide-strength(float, bool);
     callback set-geom(string, string);
     callback set-text-size(string);
     callback layer-click(int, bool);
@@ -4813,6 +4818,32 @@ export component AppWindow inherits Window {
                                             SegOption { text: @tr("common-off" => "Off"); on: root.glow-index == 0; clicked => { root.set-prop("glow", 0); } }
                                             SegOption { text: @tr("insp-effect-light" => "Light"); on: root.glow-index == 1; clicked => { root.set-prop("glow", 1); } }
                                             SegOption { text: @tr("insp-effect-strong" => "Strong"); on: root.glow-index == 2; clicked => { root.set-prop("glow", 2); } }
+                                        }
+                                    }
+                                }
+                                // ---- Hide (ZK-343): the way and, for pixels and blur, the strength
+                                if root.prop-kind == 5: PropSection {
+                                    title: @tr("insp-hide" => "Hide");
+                                    PropRow {
+                                        label: @tr("insp-hide-way" => "Way");
+                                        HorizontalLayout {
+                                            spacing: 2px;
+                                            SegOption { text: @tr("insp-hide-pixels" => "Pixels"); on: root.hide-mode-index == 0; clicked => { root.set-hide-mode(0); } }
+                                            SegOption { text: @tr("insp-hide-blur" => "Blur"); on: root.hide-mode-index == 1; clicked => { root.set-hide-mode(1); } }
+                                            SegOption { text: @tr("insp-hide-plate" => "Plate"); on: root.hide-mode-index == 2; clicked => { root.set-hide-mode(2); } }
+                                        }
+                                    }
+                                    if root.hide-mode-index != 2: PropRow {
+                                        label: @tr("insp-hide-strength" => "Strength");
+                                        HorizontalLayout {
+                                            spacing: 8px;
+                                            MiniSlider {
+                                                value <=> root.hide-strength;
+                                                tip: @tr("insp-hide-strength" => "Strength");
+                                                moved(v) => { root.set-hide-strength(v, false); }
+                                                released => { root.set-hide-strength(root.hide-strength, true); }
+                                            }
+                                            Text { text: round(10 + root.hide-strength * 90) + " %"; color: Theme.text2; font-size: 11px; vertical-alignment: center; horizontal-alignment: right; width: 36px; }
                                         }
                                     }
                                 }

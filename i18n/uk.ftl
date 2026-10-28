@@ -948,6 +948,36 @@ insp-corners-soft = М'які
 # @max: 10
 insp-corners-round = Круглі
 
+# @where: Section: how a hide mark hides (ZK-343)
+# @kind: label
+# @max: 16
+insp-hide = Приховати
+
+# @where: Hide: the way (pixels / blur / plate)
+# @kind: label
+# @max: 16
+insp-hide-way = Спосіб
+
+# @where: Hide way option
+# @kind: option
+# @max: 10
+insp-hide-pixels = Пікселі
+
+# @where: Hide way option
+# @kind: option
+# @max: 10
+insp-hide-blur = Розмиття
+
+# @where: Hide way option: a solid plate
+# @kind: option
+# @max: 10
+insp-hide-plate = Плашка
+
+# @where: Hide: strength slider
+# @kind: label
+# @max: 16
+insp-hide-strength = Сила
+
 # @where: Section: opacity slider
 # @kind: label
 # @max: 16
