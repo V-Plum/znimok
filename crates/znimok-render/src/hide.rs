@@ -232,7 +232,10 @@ mod tests {
             let mut last = 0;
             for s in (10..=100).step_by(10) {
                 let b = block_size(side * 3, side, s as u8);
-                assert!(b >= last && b <= side.max(4), "side {side}, strength {s}: {b}");
+                assert!(
+                    b >= last && b <= side.max(4),
+                    "side {side}, strength {s}: {b}"
+                );
                 last = b;
             }
         }
