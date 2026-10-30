@@ -234,7 +234,7 @@ pub fn wrap_into_library(
     {
         use std::io::Write;
         // An export is already in streaming order; an imported MP4 gets its `moov` first here.
-        let src = znimok_video::faststart::FastStart::open(std::io::BufReader::new(
+        let src = znimok_video::faststart::FastStart::open_or_as_is(std::io::BufReader::new(
             std::fs::File::open(mp4).map_err(|e| e.to_string())?,
         ))
         .map_err(|e| e.to_string())?;

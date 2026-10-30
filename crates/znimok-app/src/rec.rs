@@ -725,7 +725,7 @@ fn wrap(
     let part = path.with_extension("part");
     {
         // Embedded in streaming order — `moov` first (ZK-345); the bytes are copied anyway.
-        let src = znimok_video::faststart::FastStart::open(std::io::BufReader::new(
+        let src = znimok_video::faststart::FastStart::open_or_as_is(std::io::BufReader::new(
             std::fs::File::open(mp4).map_err(|e| e.to_string())?,
         ))
         .map_err(|e| e.to_string())?;

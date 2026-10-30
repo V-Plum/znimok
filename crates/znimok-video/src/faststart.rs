@@ -218,6 +218,88 @@ fn push_box(out: &mut Vec<u8>, kind: &[u8; 4], body: &[u8]) {
     out.extend_from_slice(body);
 }
 
+/// The rearranged order of `src` as segments; `None` when nothing has to move (`moov` already
+/// precedes every `mdat`, or there is no `moov` or no `mdat`).
+fn plan<R: Read + Seek>(src: &mut R, force_wide: bool) -> io::Result<Option<Vec<Seg>>> {
+    let (top, len) = scan(src)?;
+    let Some(mi) = top.iter().position(|b| &b.kind == b"moov") else {
+        return Ok(None);
+    };
+    let Some(di) = top.iter().position(|b| &b.kind == b"mdat") else {
+        return Ok(None);
+    };
+    if mi < di {
+        return Ok(None);
+    }
+    let moov = top[mi];
+    let n = moov.size - moov.header;
+    if n > MAX_MOOV {
+        return Err(bad(format!("moov of {n} bytes is too large to rearrange")));
+    }
+    src.seek(SeekFrom::Start(moov.offset + moov.header))?;
+    let mut raw = vec![0u8; n as usize];
+    src.read_exact(&mut raw)?;
+
+    // New order: top[..di], moov, top[di..] without moov. First the length of the new moov
+    // (it may grow by widening), then the shifts, then the real patch.
+    let zero = vec![0i64; top.len()];
+    let mut stco_n = 0u64;
+    let probe = rebuild(
+        &raw,
+        &Shift {
+            top: &top,
+            delta: &zero,
+        },
+        false,
+        &mut stco_n,
+    )?;
+    let wide = force_wide || len + 4 * stco_n > u32::MAX as u64;
+    let new_len = probe.len() as u64 + 8 + if wide { 4 * stco_n } else { 0 };
+    let mut delta = vec![0i64; top.len()];
+    let mut at = 0u64;
+    let mut order = Vec::with_capacity(top.len());
+    for (i, b) in top.iter().enumerate() {
+        if i == di {
+            at += new_len;
+        }
+        if i == mi {
+            continue;
+        }
+        delta[i] = at as i64 - b.offset as i64;
+        at += b.size;
+        order.push(i);
+    }
+    let mut n2 = 0;
+    let body = rebuild(
+        &raw,
+        &Shift {
+            top: &top,
+            delta: &delta,
+        },
+        wide,
+        &mut n2,
+    )?;
+    let mut moov_new = Vec::with_capacity(body.len() + 8);
+    push_box(&mut moov_new, b"moov", &body);
+    debug_assert_eq!(moov_new.len() as u64, new_len);
+
+    let mut segs: Vec<Seg> = Vec::new();
+    let push_src = |segs: &mut Vec<Seg>, b: &Top| match segs.last_mut() {
+        Some(Seg::Src { from, len }) if *from + *len == b.offset => *len += b.size,
+        _ => segs.push(Seg::Src {
+            from: b.offset,
+            len: b.size,
+        }),
+    };
+    for &i in &order {
+        if i == di {
+            segs.push(Seg::Mem(std::mem::take(&mut moov_new)));
+        }
+        push_src(&mut segs, &top[i]);
+    }
+    Ok(Some(segs))
+}
+
 /// A piece of the rearranged stream.
 enum Seg {
     /// Bytes of the source, as they are.
@@ -253,103 +335,42 @@ impl<R: Read + Seek> FastStart<R> {
         Self::open_with(src, false)
     }
 
+    /// [`open`](Self::open), but bytes that are not an MP4 this module can rearrange (a damaged
+    /// recording, a foreign file) are passed through as they are instead of failing: the order
+    /// is an improvement, never a reason to refuse a save or an export.
+    pub fn open_or_as_is(mut src: R) -> io::Result<Self> {
+        let planned = plan(&mut src, false);
+        let len = src.seek(SeekFrom::End(0))?;
+        Ok(match planned {
+            Ok(Some(segs)) => Self::of(src, segs),
+            Ok(None) | Err(_) => Self::of(src, vec![Seg::Src { from: 0, len }]),
+        })
+    }
+
     /// [`open`](Self::open) with `co64` forced (what a file over 4 GiB gets; for tests).
     pub fn open_with(mut src: R, force_wide: bool) -> io::Result<Self> {
-        let (top, len) = scan(&mut src)?;
-        let pass = |src, changed| FastStart {
-            src,
-            segs: vec![Seg::Src { from: 0, len }],
-            seg: 0,
-            pos: 0,
-            len,
-            changed,
+        let segs = match plan(&mut src, force_wide)? {
+            Some(segs) => segs,
+            None => {
+                let len = src.seek(SeekFrom::End(0))?;
+                vec![Seg::Src { from: 0, len }]
+            }
         };
-        let Some(mi) = top.iter().position(|b| &b.kind == b"moov") else {
-            return Ok(pass(src, false));
-        };
-        let Some(di) = top.iter().position(|b| &b.kind == b"mdat") else {
-            return Ok(pass(src, false));
-        };
-        if mi < di {
-            return Ok(pass(src, false));
-        }
-        let moov = top[mi];
-        let n = moov.size - moov.header;
-        if n > MAX_MOOV {
-            return Err(bad(format!("moov of {n} bytes is too large to rearrange")));
-        }
-        src.seek(SeekFrom::Start(moov.offset + moov.header))?;
-        let mut raw = vec![0u8; n as usize];
-        src.read_exact(&mut raw)?;
+        Ok(Self::of(src, segs))
+    }
 
-        // New order: top[..di], moov, top[di..] without moov. First the length of the new moov
-        // (it may grow by widening), then the shifts, then the real patch.
-        let zero = vec![0i64; top.len()];
-        let mut stco_n = 0u64;
-        let probe = rebuild(
-            &raw,
-            &Shift {
-                top: &top,
-                delta: &zero,
-            },
-            false,
-            &mut stco_n,
-        )?;
-        let wide = force_wide || len + 4 * stco_n > u32::MAX as u64;
-        let new_len = probe.len() as u64 + 8 + if wide { 4 * stco_n } else { 0 };
-        let mut delta = vec![0i64; top.len()];
-        let mut at = 0u64;
-        let mut order = Vec::with_capacity(top.len());
-        for (i, b) in top.iter().enumerate() {
-            if i == di {
-                at += new_len;
-            }
-            if i == mi {
-                continue;
-            }
-            delta[i] = at as i64 - b.offset as i64;
-            at += b.size;
-            order.push(i);
-        }
-        let mut n2 = 0;
-        let body = rebuild(
-            &raw,
-            &Shift {
-                top: &top,
-                delta: &delta,
-            },
-            wide,
-            &mut n2,
-        )?;
-        let mut moov_new = Vec::with_capacity(body.len() + 8);
-        push_box(&mut moov_new, b"moov", &body);
-        debug_assert_eq!(moov_new.len() as u64, new_len);
-
-        let mut segs: Vec<Seg> = Vec::new();
-        let push_src = |segs: &mut Vec<Seg>, b: &Top| match segs.last_mut() {
-            Some(Seg::Src { from, len }) if *from + *len == b.offset => *len += b.size,
-            _ => segs.push(Seg::Src {
-                from: b.offset,
-                len: b.size,
-            }),
-        };
-        for &i in &order {
-            if i == di {
-                segs.push(Seg::Mem(std::mem::take(&mut moov_new)));
-            }
-            push_src(&mut segs, &top[i]);
-        }
-        let total = segs.iter().map(Seg::len).sum();
-        Ok(FastStart {
+    fn of(src: R, segs: Vec<Seg>) -> Self {
+        let changed = !matches!(segs[..], [Seg::Src { from: 0, .. }]);
+        let len = segs.iter().map(Seg::len).sum();
+        FastStart {
             src,
             segs,
             seg: 0,
             pos: 0,
-            len: total,
-            changed: true,
-        })
+            len,
+            changed,
+        }
     }
-
     /// Length of the rearranged stream (the source's, plus 4 bytes per widened chunk offset).
     pub fn len(&self) -> u64 {
         self.len

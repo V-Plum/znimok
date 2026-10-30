@@ -233,3 +233,23 @@ fn hostile_input_is_an_error_not_a_panic() {
     let cut = &moov_last(2, 1, 8)[..40];
     assert!(FastStart::open(std::io::Cursor::new(cut)).is_err());
 }
+
+#[test]
+fn not_an_mp4_passes_through_as_is() {
+    // What a test or a damaged file hands the embedders: any bytes, copied as they are.
+    let junk: Vec<u8> = (0..2048u32).map(|i| (i * 7) as u8).collect();
+    assert!(FastStart::open(std::io::Cursor::new(&junk)).is_err());
+    let mut fs = FastStart::open_or_as_is(std::io::Cursor::new(&junk)).unwrap();
+    assert!(!fs.changed());
+    assert_eq!(fs.len(), junk.len() as u64);
+    let mut out = Vec::new();
+    fs.read_to_end(&mut out).unwrap();
+    assert_eq!(out, junk);
+    // A real one still gets rearranged through the lenient door.
+    let src = moov_last(3, 2, 20);
+    let mut fs = FastStart::open_or_as_is(std::io::Cursor::new(&src)).unwrap();
+    assert!(fs.changed());
+    let mut out = Vec::new();
+    fs.read_to_end(&mut out).unwrap();
+    chunks_hold(&out);
+}

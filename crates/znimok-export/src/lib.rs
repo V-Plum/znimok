@@ -314,7 +314,7 @@ pub fn run(job: &Job, gpu: &Gpu, progress: &Progress) -> Result<Outcome, String>
 fn copy_mp4(source: &Source, to: &Path) -> Result<u64, String> {
     let from = source.as_file()?;
     let io = |e: std::io::Error| e.to_string();
-    let mut src = znimok_video::faststart::FastStart::open(std::io::BufReader::new(
+    let mut src = znimok_video::faststart::FastStart::open_or_as_is(std::io::BufReader::new(
         std::fs::File::open(&from).map_err(io)?,
     ))
     .map_err(io)?;
