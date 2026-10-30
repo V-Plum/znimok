@@ -19,6 +19,8 @@
 //! - [`edit`] — the edit model of the video editor (ZK-93, §6.2): parts over `[0, N)`, in/out,
 //!   split, cut, the kept segments the export consumes, playback that skips cuts, timeline
 //!   geometry (§6.5) and the undo queue shared with the marks (CAPS-80).
+//! - [`faststart`] — `moov` before `mdat` (ZK-345): a view of a written MP4 in streaming order,
+//!   for embedding a recording and for finishing an export.
 //! - [`settings`] — frame rate, bitrate, even sizes and the like (§1, §2.6, §7 items 2, 3, 7, 15).
 //! - [`stride`] — row pitch of decoded buffers and copying by rows (§7 items 5, 6).
 //! - [`events`] — timed input events (clicks) gated by `t0` and pauses (§2.4, §4).
@@ -36,6 +38,7 @@ pub mod clock;
 pub mod edit;
 pub mod events;
 pub mod export;
+pub mod faststart;
 pub mod gifenc;
 pub mod pause;
 pub mod recorder;

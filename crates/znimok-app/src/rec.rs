@@ -723,9 +723,13 @@ fn wrap(
     std::fs::create_dir_all(lib).map_err(|e| e.to_string())?;
     let path = crate::library::new_path(lib, &doc.id.simple().to_string());
     let part = path.with_extension("part");
-    let len = std::fs::metadata(mp4).map_err(|e| e.to_string())?.len();
     {
-        let src = std::io::BufReader::new(std::fs::File::open(mp4).map_err(|e| e.to_string())?);
+        // Embedded in streaming order — `moov` first (ZK-345); the bytes are copied anyway.
+        let src = znimok_video::faststart::FastStart::open_or_as_is(std::io::BufReader::new(
+            std::fs::File::open(mp4).map_err(|e| e.to_string())?,
+        ))
+        .map_err(|e| e.to_string())?;
+        let len = src.len();
         let mut out =
             std::io::BufWriter::new(std::fs::File::create(&part).map_err(|e| e.to_string())?);
         let r = {
