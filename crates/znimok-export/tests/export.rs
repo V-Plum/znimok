@@ -421,9 +421,21 @@ fn exports_cut_marked_framed_and_as_gif() {
     )
     .unwrap();
     assert!(o.copied);
-    assert_eq!(
-        std::fs::read(dir.join("same.mp4")).unwrap(),
-        std::fs::read(&mp4).unwrap()
+    // The copy is the recording in streaming order (ZK-345): `moov` first, the rest as it was.
+    let mut want = Vec::new();
+    std::io::Read::read_to_end(
+        &mut znimok_video::faststart::FastStart::open(std::io::Cursor::new(
+            std::fs::read(&mp4).unwrap(),
+        ))
+        .unwrap(),
+        &mut want,
+    )
+    .unwrap();
+    assert_eq!(std::fs::read(dir.join("same.mp4")).unwrap(), want);
+    assert!(
+        !znimok_video::check::mp4::read_mp4_file(&dir.join("same.mp4"))
+            .unwrap()
+            .moov_last()
     );
 
     // Cancelled: no file is left.
@@ -501,6 +513,7 @@ fn the_sound_follows_the_cuts() {
         read_mp4_file(&dest).unwrap()
     };
     let i = run_to("sound.mp4", &video, true);
+    assert!(!i.moov_last(), "an export starts with moov (ZK-345)");
     let a = i.audio().expect("an audio track");
     let ad = a.duration_s(i.timescale);
     assert!((ad - 2.0).abs() < 0.35, "audio {ad} s for 2 s kept");

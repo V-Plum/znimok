@@ -309,10 +309,28 @@ pub fn run(job: &Job, gpu: &Gpu, progress: &Progress) -> Result<Outcome, String>
     }
 }
 
-/// The MP4 as it lies in the document.
+/// The MP4 as it lies in the document — in streaming order (ZK-345): a recording made before
+/// 0.0.31 still has its `moov` last, and the copy is where it gets rearranged.
 fn copy_mp4(source: &Source, to: &Path) -> Result<u64, String> {
     let from = source.as_file()?;
-    std::fs::copy(&from, to).map_err(|e| e.to_string())
+    let io = |e: std::io::Error| e.to_string();
+    let mut src = znimok_video::faststart::FastStart::open(std::io::BufReader::new(
+        std::fs::File::open(&from).map_err(io)?,
+    ))
+    .map_err(io)?;
+    let mut out = std::io::BufWriter::new(std::fs::File::create(to).map_err(io)?);
+    let n = std::io::copy(&mut src, &mut out).map_err(io)?;
+    std::io::Write::flush(&mut out).map_err(io)?;
+    Ok(n)
+}
+
+/// Puts `moov` before `mdat` in a finished `.part` (ZK-345) and returns its size. The sink
+/// writers of both platforms write `moov` last.
+fn stream_order(part: &Path) -> Result<u64, String> {
+    znimok_video::faststart::rewrite_file(part).map_err(|e| e.to_string())?;
+    std::fs::metadata(part)
+        .map(|m| m.len())
+        .map_err(|e| e.to_string())
 }
 
 /// Bits per second for an export of `out` from a recording of `bytes` over `secs`: the source's
@@ -440,7 +458,7 @@ fn mp4(
     writer.finish()?;
     Ok(Outcome {
         frames: written,
-        bytes: std::fs::metadata(part).map(|m| m.len()).unwrap_or(0),
+        bytes: stream_order(part)?,
         copied: false,
         hardware,
     })
@@ -608,7 +626,7 @@ fn mp4(
     writer.finish()?;
     Ok(Outcome {
         frames: written,
-        bytes: std::fs::metadata(part).map(|m| m.len()).unwrap_or(0),
+        bytes: stream_order(part)?,
         copied: false,
         hardware: true,
     })
