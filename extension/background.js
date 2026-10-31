@@ -70,6 +70,8 @@ function connect() {
   port.onMessage.addListener((m) => {
     if (m.cmd === "start") startRecording();
     else if (m.cmd === "stop") stopRecording();
+    else if (m.cmd === "arm") armRecording();
+    else if (m.cmd === "disarm") disarmRecording();
     else if (m.state) onAppState(m);
     else if (m.rec) onRecReply(m);
   });
@@ -250,6 +252,26 @@ async function stopRecording() {
   current = null;
   for (const id of [...attached]) await detach(id);
   reqs.clear();
+}
+
+// ZK-352: the app is about to open its recording overlay over this browser. The debugger goes on
+// now, so Chrome's «is debugging» bar — which pushes the page down — is already there when the
+// region is chosen; `start` then finds the tab attached. Only when this browser is in front, as
+// a start (ZK-306).
+async function armRecording() {
+  if (recording) return;
+  let w = null;
+  try { w = await chrome.windows.getLastFocused(); } catch (e) { /* no window */ }
+  if (!w || !w.focused) return;
+  const tab = await activeTab();
+  if (!tab || !debuggable(tab.url) || attached.has(tab.id)) return;
+  try { await chrome.debugger.attach({ tabId: tab.id }, "1.3"); attached.add(tab.id); } catch (e) { /* the log tries again */ }
+}
+
+// The overlay was cancelled, or what is recorded is not this browser: the debugger goes.
+async function disarmRecording() {
+  if (recording) return;
+  for (const id of [...attached]) await detach(id);
 }
 
 chrome.tabs.onActivated.addListener(({ tabId }) => { if (recording) follow(tabId); });

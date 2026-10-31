@@ -187,6 +187,7 @@ fn cancel_countdown() {
     };
     // A recording's countdown: the next overlay is not a recording's.
     crate::rec::set_video_mode(false);
+    crate::devlog::disarm_browser();
     crate::commands::emit("captureCancel");
     c.timer.stop();
     let _ = c.ui.hide();
@@ -894,6 +895,8 @@ fn finish(frozen: Frozen, outcome: Outcome, editor_was_visible: bool) {
             });
             return;
         }
+        // Cancelled: the browser's debugger, attached for the bar (ZK-352), goes.
+        crate::devlog::disarm_browser();
         if editor_was_visible {
             let _ = slint::invoke_from_event_loop(crate::wins::come_back);
         }

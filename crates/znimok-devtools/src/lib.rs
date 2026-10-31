@@ -155,6 +155,31 @@ impl Hub {
         self.cv.notify_all();
     }
 
+    /// The recording overlay is about to open over a browser (ZK-352): the extension attaches
+    /// its debugger now, so the browser's «is debugging» bar — which pushes the page down — is
+    /// on screen before the region is chosen. Nothing while a recording runs or with the log
+    /// off; returns whether the extension was asked.
+    pub fn arm(&self) -> bool {
+        let mut st = self.lock();
+        if !st.log || st.rec.is_some() {
+            return false;
+        }
+        Self::post(&mut st, json!({"cmd": "arm"}));
+        self.cv.notify_all();
+        true
+    }
+
+    /// The overlay was cancelled, or what is recorded is not the browser: the debugger goes
+    /// (ZK-352). Nothing while a recording runs — `stop` detaches then.
+    pub fn disarm(&self) {
+        let mut st = self.lock();
+        if st.rec.is_some() {
+            return;
+        }
+        Self::post(&mut st, json!({"cmd": "disarm"}));
+        self.cv.notify_all();
+    }
+
     /// A recording started; its first frame was at `wall0` (Unix ms).
     pub fn start(&self, wall0: i64) {
         let mut st = self.lock();
@@ -408,6 +433,31 @@ mod tests {
         let (_, msgs) = hub.wait(seq2, Duration::from_millis(10));
         assert!(msgs.iter().any(|m| m["cmd"] == "stop"));
         assert!(hub.handle("other", &json!({})).is_none());
+    }
+
+    /// ZK-352: arming before the overlay reaches the extension only with the log on and no
+    /// recording running; disarming never interrupts a recording.
+    #[test]
+    fn arming_before_the_overlay() {
+        let hub = Hub::new();
+        let r = hub.handle("devtools.hello", &json!({})).unwrap().unwrap();
+        let seq = r["seq"].as_u64().unwrap();
+        assert!(hub.arm());
+        let (seq, msgs) = hub.wait(seq, Duration::from_millis(10));
+        assert!(msgs.iter().any(|m| m["cmd"] == "arm"), "{msgs:?}");
+        hub.disarm();
+        let (seq, msgs) = hub.wait(seq, Duration::from_millis(10));
+        assert!(msgs.iter().any(|m| m["cmd"] == "disarm"), "{msgs:?}");
+        hub.start(now_ms());
+        assert!(!hub.arm());
+        hub.disarm();
+        let (seq, msgs) = hub.wait(seq, Duration::from_millis(10));
+        assert!(msgs.iter().all(|m| m["cmd"] != "disarm"), "{msgs:?}");
+        hub.stop();
+        hub.set_options(false, true);
+        assert!(!hub.arm());
+        let (_, msgs) = hub.wait(seq, Duration::from_millis(10));
+        assert!(msgs.iter().all(|m| m["cmd"] != "arm"), "{msgs:?}");
     }
 
     /// ZK-296: a browser is connected while its host polls — however the host ends.

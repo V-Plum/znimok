@@ -263,6 +263,33 @@ pub(crate) fn log_belongs(source: &str, window: Option<u64>, frame: znimok_platf
     }
 }
 
+/// Before the recording overlay (ZK-352): a browser in front gets its debugger attached now, so
+/// its «is debugging» bar, which pushes the page down, is on screen before the region is
+/// chosen. Returns whether the extension was asked — the overlay then waits for the bar.
+pub(crate) fn arm_browser() -> bool {
+    if !crate::with_prefs(|p| p.video.devtools_log).unwrap_or(false) {
+        return false;
+    }
+    #[cfg(any(windows, target_os = "macos"))]
+    {
+        let app = foreground_app(znimok_platform::Rect::default());
+        let browser = app.as_deref().is_some_and(is_browser);
+        tracing::info!(
+            ?app,
+            browser,
+            "recording overlay: the browser's debugger goes first"
+        );
+        browser && hub().arm()
+    }
+    #[cfg(not(any(windows, target_os = "macos")))]
+    false
+}
+
+/// The overlay was cancelled, or the recording is not the browser's (ZK-352).
+pub(crate) fn disarm_browser() {
+    hub().disarm();
+}
+
 /// A browser the extension runs in (Chromium's family), by its executable or bundle name.
 pub(crate) fn is_browser(app: &str) -> bool {
     let a = app.to_lowercase();

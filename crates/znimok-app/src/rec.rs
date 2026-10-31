@@ -195,7 +195,11 @@ pub fn sound_text(mode: i32) -> String {
 
 /// The recording hotkey / tray item: stop the running recording, or open the overlay to choose
 /// what to record.
-pub fn toggle(start_overlay: impl FnOnce()) {
+/// After asking the browser's extension to attach (ZK-352): the time Chrome takes to show its
+/// bar and lay the page out again, before the screen is frozen.
+const BAR_WAIT: Duration = Duration::from_millis(450);
+
+pub fn toggle(start_overlay: impl FnOnce() + 'static) {
     if is_recording() {
         stop();
         return;
@@ -212,7 +216,13 @@ pub fn toggle(start_overlay: impl FnOnce()) {
         return;
     }
     set_video_mode(true);
-    start_overlay();
+    // ZK-352: a browser in front gets its «is debugging» bar before the screen is frozen, so the
+    // region is chosen over the page as it will be recorded.
+    if crate::devlog::arm_browser() {
+        slint::Timer::single_shot(BAR_WAIT, start_overlay);
+    } else {
+        start_overlay();
+    }
 }
 
 /// Starts recording what the overlay chose.
@@ -224,6 +234,7 @@ pub fn start(choice: Choice) {
         Ok(()) => crate::commands::emit("recordStart"),
         Err(reason) => {
             crate::commands::emit("failed");
+            crate::devlog::disarm_browser();
             crate::wins::come_back();
             crate::with_ctx(|a, ui| {
                 let msg =
@@ -365,6 +376,8 @@ fn start_inner(choice: &Choice) -> Result<(), String> {
     // only for a recording of a browser, never a program in the background (ZK-306).
     if agent_opts().is_none_or(|o| o.log) && log_ok {
         crate::devlog::hub().start(znimok_devtools::now_ms());
+    } else {
+        crate::devlog::disarm_browser();
     }
     tick();
     Ok(())
@@ -476,6 +489,8 @@ fn start_inner(choice: &Choice) -> Result<(), String> {
     // only for a recording of a browser, never a program in the background (ZK-306).
     if agent_opts().is_none_or(|o| o.log) && log_ok {
         crate::devlog::hub().start(znimok_devtools::now_ms());
+    } else {
+        crate::devlog::disarm_browser();
     }
     // Clicks on the bar (Pause, Stop) are not the recording's.
     REC.with(|r| {
