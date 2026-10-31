@@ -408,9 +408,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let app = app.clone();
             let weak = ui.as_weak();
             t.on_record(move || {
-                if let Some(ui) = weak.upgrade() {
-                    rec::toggle(|| new_shot(&app, &ui));
-                }
+                let (app, weak) = (app.clone(), weak.clone());
+                rec::toggle(move || {
+                    if let Some(ui) = weak.upgrade() {
+                        new_shot(&app, &ui);
+                    }
+                });
             });
         }
         rec::TRAY.with(|r| *r.borrow_mut() = Some(t.as_weak()));
@@ -665,7 +668,12 @@ fn perform(app: &Shared, ui: &AppWindow, a: hotkeys::Action) {
         }
         // ZK-180: the overlay chooses what to record; the same key stops it.
         hotkeys::Action::Video => {
-            rec::toggle(|| new_shot(app, ui));
+            let (app, weak) = (app.clone(), ui.as_weak());
+            rec::toggle(move || {
+                if let Some(ui) = weak.upgrade() {
+                    new_shot(&app, &ui);
+                }
+            });
         }
     }
 }
@@ -746,7 +754,12 @@ pub(crate) fn run_command(method: &str, params: &serde_json::Value) {
                 }
                 _ => {
                     overlay::set_next(n);
-                    rec::toggle(|| new_shot(&app, &ui));
+                    let (app, weak) = (app.clone(), ui.as_weak());
+                    rec::toggle(move || {
+                        if let Some(ui) = weak.upgrade() {
+                            new_shot(&app, &ui);
+                        }
+                    });
                 }
             }
         }
@@ -763,7 +776,14 @@ pub(crate) fn run_command(method: &str, params: &serde_json::Value) {
             app.borrow_mut().setting(&ui, "rec-sound", mode);
             overlay::sound_changed(mode);
         }
-        "record.toggle" => rec::toggle(|| new_shot(&app, &ui)),
+        "record.toggle" => {
+            let (app, weak) = (app.clone(), ui.as_weak());
+            rec::toggle(move || {
+                if let Some(ui) = weak.upgrade() {
+                    new_shot(&app, &ui);
+                }
+            });
+        }
         "record.pause" if rec::is_recording() && !rec::is_paused() => rec::toggle_pause(),
         "record.resume" if rec::is_paused() => rec::toggle_pause(),
         "record.stop" if rec::is_recording() => rec::stop(),
