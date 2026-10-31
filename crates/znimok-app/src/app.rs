@@ -5039,6 +5039,9 @@ impl App {
         shift: bool,
         ctrl: bool,
     ) {
+        // As held now, not as a stale table says (ZK-350).
+        let shift = crate::mods::held(crate::mods::Key::Shift, shift);
+        let ctrl = crate::mods::held(crate::mods::Key::Ctrl, ctrl);
         // A press on the canvas takes the keys back from the timeline (ZK-181).
         if kind == 0
             && let Some(v) = self.s.as_mut().and_then(|s| s.vid.as_mut())
@@ -5189,8 +5192,7 @@ impl App {
                 }
                 Some(id) => {
                     // Alt (⌥)+click: this one member alone, the group stays (ZK-169).
-                    let alt = self.test_alt
-                        || crate::overlay::held_modifiers().is_some_and(|(_, alt)| alt);
+                    let alt = self.test_alt || crate::mods::held(crate::mods::Key::Alt, false);
                     if alt {
                         if sel != [id] {
                             self.apply(
@@ -5542,8 +5544,7 @@ impl App {
                 );
                 // Shift — proportional, Alt (⌥) — about the centre (ZK-167). Alt is read from the
                 // system: the canvas pointer event does not carry it.
-                let alt =
-                    self.test_alt || crate::overlay::held_modifiers().is_some_and(|(_, alt)| alt);
+                let alt = self.test_alt || crate::mods::held(crate::mods::Key::Alt, false);
                 self.apply(
                     ui,
                     Command::ResizeObject {

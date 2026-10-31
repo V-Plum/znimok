@@ -28,6 +28,7 @@ mod hotkeys;
 mod integrations;
 mod io;
 mod library;
+mod mods;
 mod ocrindex;
 mod over;
 mod overlay;
@@ -1036,6 +1037,9 @@ fn start_capture(app: &Shared, _ui: &AppWindow, pick: Pick) {
     if wins::over_active() {
         return;
     }
+    // Modifiers down right now are the hotkey's own (or stuck from an RDP client): they do not
+    // count as gestures until seen moving (ZK-350).
+    mods::arm();
     // The windows step aside so the frozen screen does not contain them — all, the focused one
     // or none, as set (ZK-351); the ones that stay are capturable like any other window (on
     // macOS the capture filter would drop them otherwise).
@@ -1181,6 +1185,7 @@ fn wire(ui: &AppWindow, app: &Shared) {
             let Some(ui) = weak.upgrade() else {
                 return EventResult::Propagate;
             };
+            mods::observe(ev);
             if let winit::event::WindowEvent::Resized(_) = ev {
                 frame::on_resized(&ui);
             }

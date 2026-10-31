@@ -498,6 +498,7 @@ pub fn open(frozen: Frozen, editor_was_visible: bool) -> Result<(), slint::Platf
             let had = std::rc::Rc::new(std::cell::Cell::new(false));
             let selftest = std::env::var_os("ZNIMOK_SELFTEST").is_some();
             ui.window().on_winit_window_event(move |_, ev| {
+                crate::mods::observe(ev);
                 if let winit::event::WindowEvent::Focused(f) = ev {
                     if *f {
                         had.set(true);
@@ -514,12 +515,9 @@ pub fn open(frozen: Frozen, editor_was_visible: bool) -> Result<(), slint::Platf
         }
         ui.on_pointer(move |kind, x, y, shift, alt| {
             // The choice is made on release: the modifiers held at that moment count, however
-            // early or late they were pressed (ZK-154).
-            let (shift, alt) = if kind == 2 {
-                with_held(shift, alt)
-            } else {
-                (shift, alt)
-            };
+            // early or late they were pressed (ZK-154) — but not the hotkey's own, still held or
+            // stuck (ZK-350). Every move too, so the hint strip shows what the release will do.
+            let (shift, alt) = with_held(shift, alt);
             with_session(|s| {
                 s.active = i;
                 s.pointer(kind, x, y, chosen(shift, alt))
@@ -645,39 +643,11 @@ fn overlay_has_focus() -> bool {
     })
 }
 
-/// Shift and Alt (⌥) as the OS has them right now (ZK-154). The overlay's window hears only
-/// the key changes that happen while it has the focus: a Shift pressed before the overlay came
-/// up (or before its first click) never reached it, so its own modifier state said «no Shift».
-#[cfg(windows)]
-pub(crate) fn held_modifiers() -> Option<(bool, bool)> {
-    use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_MENU, VK_SHIFT};
-    // SAFETY: plain state queries.
-    let down = |k: windows::Win32::UI::Input::KeyboardAndMouse::VIRTUAL_KEY| unsafe {
-        GetAsyncKeyState(k.0 as i32)
-    } < 0;
-    Some((down(VK_SHIFT), down(VK_MENU)))
-}
-
-#[cfg(target_os = "macos")]
-pub(crate) fn held_modifiers() -> Option<(bool, bool)> {
-    use objc2_app_kit::{NSEvent, NSEventModifierFlags};
-    let f = NSEvent::modifierFlags_class();
-    Some((
-        f.contains(NSEventModifierFlags::Shift),
-        f.contains(NSEventModifierFlags::Option),
-    ))
-}
-
-#[cfg(not(any(windows, target_os = "macos")))]
-pub(crate) fn held_modifiers() -> Option<(bool, bool)> {
-    None
-}
-
-/// Held if the OS says so or the event does: the OS knows a key pressed before the overlay had
-/// the focus; the event carries the self-test's (and any synthetic) modifiers.
+/// Shift and Alt (⌥) as they count right now: the window's event or the OS, less the modifiers
+/// quarantined since the capture started (`crate::mods`, ZK-154 / ZK-350).
 fn with_held(shift: bool, alt: bool) -> (bool, bool) {
-    let (os_shift, os_alt) = held_modifiers().unwrap_or((false, false));
-    (shift || os_shift, alt || os_alt)
+    use crate::mods::{Key, held};
+    (held(Key::Shift, shift), held(Key::Alt, alt))
 }
 
 thread_local! {
