@@ -335,6 +335,8 @@ pub struct Capture {
     pub gestures: Gestures,
     /// The hint strip at the bottom of the capture overlay (ZK-156).
     pub show_hints: bool,
+    /// Which of Znimok's own windows step aside while a shot is taken (ZK-351).
+    pub hide_windows: HideWindows,
 }
 
 impl Default for Capture {
@@ -346,8 +348,21 @@ impl Default for Capture {
             overlay_esc_saves: false,
             gestures: Gestures::default(),
             show_hints: true,
+            hide_windows: HideWindows::Always,
         }
     }
+}
+
+/// Which of Znimok's own windows step aside while a shot is taken (ZK-351): all of them (so a
+/// shot never contains the editor), only the one with the focus (the other editors can be
+/// captured — a shot of Znimok for a report), or none.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum HideWindows {
+    #[default]
+    Always,
+    Active,
+    Never,
 }
 
 /// Where a capture goes when the choice is made in the overlay.

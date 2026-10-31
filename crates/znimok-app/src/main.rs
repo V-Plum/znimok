@@ -1031,14 +1031,20 @@ pub(crate) enum Pick {
 }
 
 /// Freezes the display under the pointer, then `pick`.
-fn start_capture(_app: &Shared, _ui: &AppWindow, pick: Pick) {
+fn start_capture(app: &Shared, _ui: &AppWindow, pick: Pick) {
     // Already editing over the screen (ZK-58): finish that first.
     if wins::over_active() {
         return;
     }
-    // Every window steps aside so the frozen screen does not contain them (on macOS the capture
-    // filter would drop them anyway, but the overlay should not sit on top of them either).
-    let was_visible = wins::step_aside();
+    // The windows step aside so the frozen screen does not contain them — all, the focused one
+    // or none, as set (ZK-351); the ones that stay are capturable like any other window (on
+    // macOS the capture filter would drop them otherwise).
+    let mode = app
+        .try_borrow()
+        .map(|a| a.prefs().capture.hide_windows)
+        .unwrap_or_default();
+    capture::keep_own(mode != znimok_settings::HideWindows::Always);
+    let was_visible = wins::step_aside(mode);
     // Windows: give DWM time to take the editor off the screen before the frame is grabbed.
     let delay = Duration::from_millis(if was_visible && cfg!(windows) { 250 } else { 0 });
     std::thread::spawn(move || {

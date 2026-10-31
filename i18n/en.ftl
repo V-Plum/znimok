@@ -3074,6 +3074,26 @@ shots-gesture-option = ⌥ + release
 # @max: 48
 shots-show-hints = Show the hint strip while capturing
 
+# @where: Settings, Screenshots: title of the segments — which of Znimok's own windows step aside for a shot (ZK-351)
+# @kind: label
+# @max: 60
+shots-hide-title = Znimok's own windows while a shot is taken
+
+# @where: Settings, Screenshots: segment — every Znimok window is hidden for the shot
+# @kind: label
+# @max: 20
+shots-hide-all = Hide all
+
+# @where: Settings, Screenshots: segment — only the focused Znimok window is hidden
+# @kind: label
+# @max: 20
+shots-hide-active = Only the active one
+
+# @where: Settings, Screenshots: segment — no Znimok window is hidden, they can be captured
+# @kind: label
+# @max: 20
+shots-hide-never = Keep them
+
 # @where: Settings, Screenshots: segment — the capture opens in the editor window
 # @kind: label
 # @max: 16

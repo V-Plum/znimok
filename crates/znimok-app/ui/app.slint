@@ -2233,6 +2233,8 @@ export component AppWindow inherits Window {
     in property <int> pref-gesture-shift: 2;
     in property <int> pref-gesture-alt: 1;
     in property <bool> pref-show-hints: true;
+    // ZK-351: 0 hide every Znimok window for a shot, 1 only the focused one, 2 none.
+    in property <int> pref-shots-hide;
     // The «For developers» page is revealed for this build (ZK-140).
     in property <bool> pref-dev-page;
     in property <bool> pref-keep-tool;
@@ -2918,6 +2920,14 @@ export component AppWindow inherits Window {
                                     SegOption { text: @tr("shots-seg-clipboard" => "Clipboard"); on: row.act == 2; clicked => { root.setting(row.key, 2); } }
                                 }
                                 SwitchRow { text: @tr("shots-show-hints" => "Show the hint strip while capturing"); checked: root.pref-show-hints; toggled => { root.setting("show-hints", self.checked ? 1 : 0); } }
+                                // ZK-351: which of Znimok's own windows step aside for a shot
+                                Text { text: @tr("shots-hide-title" => "Znimok's own windows while a shot is taken"); color: Theme.text2; font-size: 12px; }
+                                HorizontalLayout {
+                                    spacing: 4px;
+                                    SegOption { text: @tr("shots-hide-all" => "Hide all"); on: root.pref-shots-hide == 0; clicked => { root.setting("shots-hide", 0); } }
+                                    SegOption { text: @tr("shots-hide-active" => "Only the active one"); on: root.pref-shots-hide == 1; clicked => { root.setting("shots-hide", 1); } }
+                                    SegOption { text: @tr("shots-hide-never" => "Keep them"); on: root.pref-shots-hide == 2; clicked => { root.setting("shots-hide", 2); } }
+                                }
                                 SwitchRow { text: @tr("shots-quick-library" => "Quick captures go to the library too"); checked: root.pref-quick-library; toggled => { root.setting("quick-library", self.checked ? 1 : 0); } }
                                 SwitchRow { text: @tr("shots-tool-stays" => "The tool stays active after drawing"); checked: root.pref-keep-tool; toggled => { root.setting("keep-tool", self.checked ? 1 : 0); } }
                                 SwitchRow { text: @tr("shots-autosave" => "Save automatically (also in the editor title bar)"); checked: root.pref-autosave; toggled => { root.setting("autosave", self.checked ? 1 : 0); } }

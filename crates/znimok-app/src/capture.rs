@@ -15,6 +15,18 @@ pub enum Fail {
     Other(String),
 }
 
+/// Whether Znimok's own windows stay on screen for this capture (ZK-351): then they are in the
+/// frame and in the lists like any other window. Set by `start_capture`; read on worker threads.
+static KEEP_OWN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+pub fn keep_own(keep: bool) {
+    KEEP_OWN.store(keep, std::sync::atomic::Ordering::Relaxed);
+}
+
+fn own_kept() -> bool {
+    KEEP_OWN.load(std::sync::atomic::Ordering::Relaxed)
+}
+
 pub fn available() -> bool {
     cfg!(any(windows, target_os = "macos"))
 }
@@ -227,7 +239,9 @@ fn freeze_with(
         .windows()
         .unwrap_or_default()
         .into_iter()
-        .filter(|w| !w.minimized && !w.own && w.bounds.width > 0 && w.bounds.height > 0)
+        .filter(|w| {
+            !w.minimized && (!w.own || own_kept()) && w.bounds.width > 0 && w.bounds.height > 0
+        })
         .filter_map(|w| {
             let r = w.bounds.intersect(&bounds)?;
             let px = PxRect {
@@ -276,7 +290,9 @@ fn freeze_all(
         .windows()
         .unwrap_or_default()
         .into_iter()
-        .filter(|w| !w.minimized && !w.own && w.bounds.width > 0 && w.bounds.height > 0)
+        .filter(|w| {
+            !w.minimized && (!w.own || own_kept()) && w.bounds.width > 0 && w.bounds.height > 0
+        })
         .filter_map(|w| {
             let r = w.bounds.intersect(&union)?;
             let px = PxRect {
@@ -375,7 +391,7 @@ pub fn freeze_display(same: Option<Rect>) -> Result<Frozen, Fail> {
 #[cfg(target_os = "macos")]
 pub fn freeze_display(same: Option<Rect>) -> Result<Frozen, Fail> {
     use znimok_platform::{Permission, PermissionState, Permissions};
-    let cap = znimok_mac::MacCapture::new();
+    let cap = znimok_mac::MacCapture::new().keeping_own(own_kept());
     match freeze_with(&cap, same) {
         Ok(f) => Ok(f),
         Err(PlatformError::PermissionDenied(_)) => {
@@ -489,7 +505,7 @@ pub fn targets() -> (
         cap.windows()
             .unwrap_or_default()
             .into_iter()
-            .filter(|w| !w.own && !w.minimized)
+            .filter(|w| (!w.own || own_kept()) && !w.minimized)
             .collect(),
     )
 }
@@ -505,7 +521,7 @@ pub fn targets() -> (
         cap.windows()
             .unwrap_or_default()
             .into_iter()
-            .filter(|w| !w.own && !w.minimized)
+            .filter(|w| (!w.own || own_kept()) && !w.minimized)
             .collect(),
     )
 }

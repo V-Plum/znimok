@@ -100,11 +100,21 @@ fn has_screen_access() -> bool {
 
 /// ScreenCaptureKit capture, pointer and permission — one value, like `WinCapture`.
 #[derive(Default)]
-pub struct MacCapture;
+pub struct MacCapture {
+    /// Own windows stay in a display frame (ZK-351) instead of being filtered out.
+    keep_own: bool,
+}
 
 impl MacCapture {
     pub fn new() -> Self {
-        Self
+        Self { keep_own: false }
+    }
+
+    /// A capture that keeps this process's own windows in the frame (the setting «never hide»,
+    /// ZK-351); the recording keeps filtering them (its bar and frame).
+    pub fn keeping_own(mut self, keep: bool) -> Self {
+        self.keep_own = keep;
+        self
     }
 
     fn content(&self) -> Result<SCShareableContent> {
@@ -115,16 +125,22 @@ impl MacCapture {
             .map_err(|e| PlatformError::Other(format!("SCShareableContent: {e}")))
     }
 
-    /// Filter for a whole display without this process's own windows (the editor, overlays).
-    fn filter(content: &SCShareableContent, display: &SCDisplay) -> Result<SCContentFilter> {
+    /// Filter for a whole display without this process's own windows (the editor, overlays) —
+    /// or with them, when they are to stay in the shot (ZK-351).
+    fn filter(
+        content: &SCShareableContent,
+        display: &SCDisplay,
+        keep_own: bool,
+    ) -> Result<SCContentFilter> {
         let me = std::process::id() as i32;
         let own: Vec<SCWindow> = content
             .windows()
             .into_iter()
             .filter(|w| {
-                w.owning_application()
-                    .map(|a| a.process_id() == me)
-                    .unwrap_or(false)
+                !keep_own
+                    && w.owning_application()
+                        .map(|a| a.process_id() == me)
+                        .unwrap_or(false)
             })
             .collect();
         let own_refs: Vec<&SCWindow> = own.iter().collect();
@@ -143,7 +159,7 @@ impl MacCapture {
             width: f.size.width.round().max(1.0) as u32,
             height: f.size.height.round().max(1.0) as u32,
         };
-        let ppu = Self::filter(content, d)
+        let ppu = Self::filter(content, d, false)
             .ok()
             .and_then(|flt| SCShareableContentInfo::for_filter(&flt))
             .map(|i| i.pixel_size().0 as f32 / bounds.width as f32)
@@ -164,7 +180,7 @@ impl MacCapture {
 
     fn shoot(&self, content: &SCShareableContent, d: &SCDisplay) -> Result<Frame> {
         let info = Self::info(content, d);
-        let filter = Self::filter(content, d)?;
+        let filter = Self::filter(content, d, self.keep_own)?;
         let (pw, ph) = SCShareableContentInfo::for_filter(&filter)
             .map(|i| i.pixel_size())
             .unwrap_or((
