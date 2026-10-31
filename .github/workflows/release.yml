@@ -389,6 +389,8 @@ jobs:
           python3 packaging/stores/make_manifests.py --version "$v" --files stores-in --dest stores --only homebrew
           export HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_INSTALL_CLEANUP=1
           brew tap-new --no-git local/znimok
+          # Homebrew 6 loads casks only from trusted taps (HOMEBREW_REQUIRE_TAP_TRUST, ZK-353).
+          if brew commands | grep -qx trust; then brew trust local/znimok; fi
           tap="$(brew --repository)/Library/Taps/local/homebrew-znimok"
           mkdir -p "$tap/Casks" && cp stores/homebrew/Casks/znimok.rb "$tap/Casks/"
           brew style "$tap/Casks/znimok.rb"
