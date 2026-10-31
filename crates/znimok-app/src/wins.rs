@@ -219,12 +219,22 @@ pub fn maybe_quit() {
     }
 }
 
-/// Hides every visible window before a capture, so the frozen screen does not contain them;
-/// returns whether any was visible. `come_back` shows them again.
-pub fn step_aside() -> bool {
+/// Hides windows before a capture, so the frozen screen does not contain them — every visible
+/// one, only the one with the focus, or none (the setting, ZK-351); returns whether any was
+/// hidden. `come_back` shows them again.
+pub fn step_aside(mode: znimok_settings::HideWindows) -> bool {
+    use slint::winit_030::WinitWindowAccessor;
     let mut hidden = Vec::new();
     for (_, ui) in all() {
-        if ui.window().is_visible() {
+        let take = match mode {
+            znimok_settings::HideWindows::Always => true,
+            znimok_settings::HideWindows::Active => ui
+                .window()
+                .with_winit_window(|w| w.has_focus())
+                .unwrap_or(false),
+            znimok_settings::HideWindows::Never => false,
+        };
+        if take && ui.window().is_visible() {
             let _ = ui.hide();
             hidden.push(ui.as_weak());
         }

@@ -325,7 +325,9 @@ always or never, and the list of keys, comma-separated. In your files the log st
 
 The gear in the title bar. Every change applies and is saved at once.
 
-- **Screenshots** — what each release gesture does, the hint strip, quick saving to the library.
+- **Screenshots** — what each release gesture does, the hint strip, quick saving to the library;
+  which of Znimok's own windows step aside for a shot: all (the default), only the active one or
+  none — to capture a Znimok editor for a guide or a report.
 - **Hotkeys** — click a field and press the combination. Keys are physical: they work on any
   layout. One already taken by another app is not grabbed; the previous one stays.
 - **Library** — the folder and how many shots to keep.

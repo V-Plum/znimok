@@ -1404,6 +1404,11 @@ impl App {
         ui.set_pref_gesture_shift(code(g.shift));
         ui.set_pref_gesture_alt(code(g.alt));
         ui.set_pref_show_hints(p.capture.show_hints);
+        ui.set_pref_shots_hide(match p.capture.hide_windows {
+            znimok_settings::HideWindows::Always => 0,
+            znimok_settings::HideWindows::Active => 1,
+            znimok_settings::HideWindows::Never => 2,
+        });
         ui.set_pref_dev_page(p.general.developer_page.as_deref() == Some(build_id().as_str()));
         ui.set_pref_keep_tool(p.editor.keep_tool);
         ui.set_pref_autosave(p.editor.autosave);
@@ -2941,6 +2946,14 @@ impl App {
             }
             "quick-library" => self.save_prefs(ui, |p| p.capture.quick_save_to_library = on),
             "show-hints" => self.save_prefs(ui, |p| p.capture.show_hints = on),
+            // ZK-351: which of Znimok's own windows step aside for a shot.
+            "shots-hide" => self.save_prefs(ui, |p| {
+                p.capture.hide_windows = match value {
+                    1 => znimok_settings::HideWindows::Active,
+                    2 => znimok_settings::HideWindows::Never,
+                    _ => znimok_settings::HideWindows::Always,
+                }
+            }),
             // Ten clicks on «Changes apply immediately» (ZK-140): the developer page shows for
             // this build, or hides again.
             // The About page (ZK-198): its links, and the version for a bug report.
