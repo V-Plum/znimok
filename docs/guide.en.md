@@ -10,6 +10,7 @@ Everything stays on your computer, in the library, in the open `.znimok` format.
 - [Capturing](#capturing)
 - [The editor](#the-editor)
 - [The library](#the-library)
+- [Video](#video-preview)
 - [Sharing the result](#sharing-the-result)
 - [Settings](#settings)
 - [Agents](#agents)
@@ -30,13 +31,13 @@ installed for your user only. Until the installer is signed with a certificate, 
 not let an unsigned program in at all — until Znimok is signed it cannot be installed there.
 
 **macOS 15+ (Apple silicon).** Open `Znimok-…-macos-arm64.dmg` and drag Znimok to Applications.
-Until Znimok is notarised by Apple, the first start is blocked: try to open it, then go to
-System Settings → Privacy & Security → "Open Anyway" and enter your password. Znimok then asks for
+Znimok is signed with an Apple Developer ID certificate and notarised by Apple, so it opens
+without warnings. Znimok then asks for
 the Screen Recording permission — without it a screenshot can only be taken through the system
 window picker (the shot then shows the sharing indicator).
 
-After the first release Znimok can also be installed with `winget install VPlum.Znimok` on
-Windows and `brew install --cask v-plum/znimok/znimok` on macOS.
+Later Znimok can also be installed with `winget install VPlum.Znimok` on Windows and
+`brew install --cask v-plum/znimok/znimok` on macOS — these packages are not published yet.
 
 On the first start a short guide shows the hotkeys, the library folder, start at login and (on a
 Mac) the screen recording permission. Znimok lives in the tray (on a Mac, in the menu bar):
@@ -317,6 +318,13 @@ always or never, and the list of keys, comma-separated. In your files the log st
   scale 50 / 100 / 200 % or a width in px, metadata, transparent → white, the name and where to: the
   clipboard, a file or a flat copy in the library. "Remember" keeps the choice; Ctrl+Shift+E (and
   Enter after an export) repeats the last export without the sheet.
+- **Send to…** (experimental) — a screenshot, a recording, a report with the log or a `.znimok`
+  document straight to Google Drive (the link is copied) or a Gmail draft, a Telegram chat, a Jira
+  or Redmine issue, a Slack channel or a webhook (n8n, Zapier, Make, your own server). A target is
+  set up in Settings → Extensions and integrations and shows up in "Send to…" on the card after a
+  shot and in the export sheets; you can pick where exactly (channel, project, issue) and add a
+  comment. When a service cannot be reached, Znimok tries again later. Tokens and keys stay in the
+  system's secret store; Google sees only the files Znimok itself made.
 - The system Share, "Save as…" — a copy of the `.znimok` document anywhere.
 - Exported files carry the title, description, author, rights, tags and the time of the shot —
   no window titles or paths; this can be turned off in Other ways. The file time equals the shot
@@ -331,7 +339,12 @@ The gear in the title bar. Every change applies and is saved at once.
   none — to capture a Znimok editor for a guide or a report.
 - **Hotkeys** — click a field and press the combination. Keys are physical: they work on any
   layout. One already taken by another app is not grabbed; the previous one stays.
+- **Recording** — frame rate, quality, sound, the pointer and clicks, the browser and its DevTools
+  log, hiding sensitive values in a report.
 - **Library** — the folder and how many shots to keep.
+- **Sharing** — what the main Copy button does, the format, metadata, the file name.
+- **Extensions and integrations** — the browser extension, the Logi Options+ plugin and the
+  "Send to…" targets.
 - **Agents and models** — access for agents (MCP), clients and their permissions, the log of what
   they did.
 - **Appearance and language** — Ukrainian or English, light, dark or system theme, start at login.

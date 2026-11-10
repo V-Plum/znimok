@@ -42,8 +42,8 @@ Only in these cases:
 1. **Update check** (can be switched off in Settings → Privacy). Znimok asks GitHub Releases for the number
    of the latest version and downloads the update if you install it. GitHub sees your IP address and the
    request itself, as with opening any web page. Nothing about you or your screenshots is sent.
-2. **You share a result yourself**: copy to the clipboard, save a file, use the system Share menu or (later)
-   the Slack, Jira, Telegram, Redmine integrations. You decide what goes where.
+2. **You share a result yourself**: copy to the clipboard, save a file, use the system Share menu or "Send to…" —
+   Google Drive, Gmail, Telegram, Jira, Slack, Redmine or your webhook (only the targets you set up yourself). You decide what goes where.
 3. **A cloud model with your own key** (the Ctrl+K assistant and other features you turned on). Without a
    key the cloud is unavailable. With a key:
    - without a separate question, only the text of your command and the document structure without pixels

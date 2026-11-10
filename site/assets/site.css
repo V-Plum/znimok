@@ -107,7 +107,7 @@ img { max-width: 100%; height: auto; display: block; }
 /* ---- features */
 section { padding: 56px 0 8px; }
 section h2 { font: 700 28px/1.2 "Onest", sans-serif; letter-spacing: -0.01em; margin: 0 0 22px; }
-.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 16px; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
 .card {
   background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 20px;
 }
