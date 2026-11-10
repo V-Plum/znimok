@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Znimok — screenshots with marks that stay editable</title>
-<meta name="description" content="Znimok — screenshots for Windows and macOS with an editor that keeps marks editable. No telemetry; everything stays on your computer.">
+<meta name="description" content="Znimok — screenshots and screen recording for Windows and macOS with an editor that keeps marks editable, and a developer report with the DevTools log. No telemetry; everything stays on your computer.">
 <link rel="icon" type="image/png" href="../assets/img/favicon.png">
 <link rel="alternate" hreflang="uk" href="../">
 <link rel="stylesheet" href="../assets/site.css">
@@ -26,7 +26,8 @@
       <span class="status">Preview · Windows 11 and macOS 15+</span>
       <h1>Screenshots whose marks stay alive</h1>
       <p class="lead">An arrow, a caption or a hidden area can be fixed a week later. Shots live in a library
-        on your computer; the result goes to the clipboard, to a file, or straight to a person or an AI agent.</p>
+        on your computer; the result goes to the clipboard, to a file, to a chat or an issue, or straight to an AI agent.
+        And a screen recording with the browser's DevTools log shows a developer what exactly went wrong.</p>
       <div class="downloads">
         <a class="btn primary" id="dl-windows" href="https://github.com/V-Plum/znimok/releases/latest">
           <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M3 5.5 10.5 4.5v7H3zM11.5 4.4 21 3v8.5h-9.5zM3 12.5h7.5v7L3 18.5zM11.5 12.5H21V21l-9.5-1.4z"/></svg>
@@ -45,12 +46,15 @@
     <section>
       <h2>What it does</h2>
       <div class="grid">
-        <div class="card"><h3>The right capture</h3><p>A region, a window without what covers it, or the whole screen — across several displays, with a loupe, a 3-2-1 countdown and scrolling capture of long pages.</p></div>
+        <div class="card"><h3>The right capture</h3><p>A region, a window without what covers it, or the whole screen — across several displays, with a loupe, a 3-2-1 countdown and scrolling capture of long pages. Also QR codes, and the text on screen to the clipboard, recognised on the device.</p></div>
         <div class="card"><h3>Three actions on release</h3><p>Open in the editor, straight to the clipboard and the library, or edit right over the screen. You decide what each gesture does.</p></div>
         <div class="card"><h3>An editor that loses nothing</h3><p>Boxes, arrows, text, counters, stamps, highlighter, hiding, turning marks, any colour with an eyedropper. Everything undoes.</p></div>
-        <div class="card"><h3>Library</h3><p>Thumbnails, search, a trash. The folder is yours: put it on a cloud drive and Znimok sees the changes.</p></div>
-        <div class="card"><h3>For people and agents</h3><p>Copy, drag into a chat, export to PNG/JPEG/WebP with metadata. For AI agents — an MCP server and the <code>znimok</code> command.</p></div>
-        <div class="card"><h3>Calls no one</h3><p>No telemetry, no ads. By itself Znimok goes online only to check for updates — and that can be turned off.</p></div>
+        <div class="card"><h3>Screen recording</h3><p>A region, a window or the screen with system sound and the microphone, the pointer and clicks. Trimming, marks in their own time, export to MP4, GIF or HTML. In preview.</p></div>
+        <div class="card"><h3>Developer report</h3><p>The extension for Chrome and Edge writes the console, network, errors and dataLayer while you record. The report is the video with the log beside it; tokens and cookies are hidden on export.</p></div>
+        <div class="card"><h3>Library</h3><p>Thumbnails, search — by the text on screenshots too, if you like — pins, a trash. The folder is yours: put it on a cloud drive and Znimok sees the changes.</p></div>
+        <div class="card"><h3>Send to…</h3><p>Copy, drag into a chat, export to PNG/JPEG/WebP. And straight to Google Drive or Gmail, Telegram, Jira, Slack, Redmine or a webhook — experimental.</p></div>
+        <div class="card"><h3>For agents</h3><p>An MCP server, the <code>znimok</code> command and a "Hand to agent" button: capture, read the library, edit. Off until you turn it on; permissions and a journal per client.</p></div>
+        <div class="card"><h3>Calls no one</h3><p>No telemetry, no ads. By itself Znimok goes online only to check for updates — and that can be turned off. Services get only what you send.</p></div>
       </div>
     </section>
 
@@ -69,15 +73,15 @@
         <div class="card"><h3>Windows 11</h3>
           <ol>
             <li>Run the <code>.msi</code> — no administrator rights needed.</li>
-            <li>Until the installer is signed, SmartScreen says "Windows protected your PC": "More info" → "Run anyway".</li>
-            <li>Take a shot with <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>4</kbd> or "New screenshot" in the tray.</li>
+            <li>Until the installer is signed, SmartScreen says "Windows protected your PC": "More info" → "Run anyway". Smart App Control, when on, does not let Znimok in yet.</li>
+            <li>Take a shot with <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>4</kbd>, record with <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>5</kbd>, or from the tray.</li>
           </ol>
         </div>
         <div class="card"><h3>macOS 15+</h3>
           <ol>
             <li>Open the <code>.dmg</code> and drag Znimok to Applications.</li>
-            <li>Until Znimok is notarised: try to open it, then System Settings → Privacy &amp; Security → "Open Anyway".</li>
-            <li>Allow Screen Recording; take a shot with <kbd>⌃</kbd><kbd>⇧</kbd><kbd>4</kbd>.</li>
+            <li>Znimok is signed with an Apple Developer ID and notarised — it opens without warnings.</li>
+            <li>Allow Screen Recording; take a shot with <kbd>⌃</kbd><kbd>⇧</kbd><kbd>4</kbd>, record with <kbd>⌃</kbd><kbd>⇧</kbd><kbd>5</kbd>.</li>
           </ol>
         </div>
       </div>
