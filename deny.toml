@@ -16,8 +16,12 @@ targets = [
 [advisories]
 version = 2
 yanked = "deny"
-# Each ignore needs a reason and a ticket; none yet.
-ignore = []
+# Each ignore needs a reason and a ticket.
+ignore = [
+    # pin-utils is unmaintained (no vulnerability); only slint-macros → spin_on uses it, at build
+    # time; no Slint without it yet (1.18.1 is the newest). ZK-356.
+    { id = "RUSTSEC-2026-0441", reason = "build-time only via slint-macros → spin_on; no fixed Slint yet (ZK-356)" },
+]
 
 [licenses]
 version = 2
