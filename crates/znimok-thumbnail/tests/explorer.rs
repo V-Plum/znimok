@@ -4,6 +4,8 @@
 //! isolated surrogate process.
 #![cfg(windows)]
 
+mod common;
+
 use windows::Win32::Foundation::SIZE;
 use windows::Win32::Graphics::Gdi::{BITMAP, DeleteObject, GetObjectW};
 use windows::Win32::System::Com::{COINIT_APARTMENTTHREADED, CoInitializeEx};
@@ -19,14 +21,7 @@ fn explorer_shows_the_stored_thumbnail() {
         eprintln!("skipped: registers a shell extension; runs on CI or with ZNIMOK_LIVE_SHELL=1");
         return;
     }
-    // `cargo test` leaves the cdylib in target/<profile>/deps; `cargo build` in target/<profile>.
-    let exe = std::env::current_exe().unwrap();
-    let deps = exe.parent().unwrap();
-    let dll = [deps, deps.parent().unwrap()]
-        .iter()
-        .map(|d| d.join("znimok_thumbnail.dll"))
-        .find(|p| p.exists())
-        .unwrap_or_else(|| panic!("znimok_thumbnail.dll not built next to {}", exe.display()));
+    let dll = common::thumbnail_dll();
     // COM ignores per-user class registrations in an elevated process (CI runners are): there
     // the test registers for the machine; a normal Explorer reads the per-user one.
     // SAFETY: plain query.

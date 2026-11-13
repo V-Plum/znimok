@@ -34,6 +34,7 @@ CHROME = r"C:\Program Files\Google\Chrome\Application\chrome.exe"
 HOST = "com.znimok.devtools"
 KEY = r"Software\Google\Chrome\NativeMessagingHosts" + "\\" + HOST
 CDP = 9341
+SECS = 9   # the recording: the main tab, another window's tab activated, its focus, back (ZK-355)
 SUFFIX = "e2e-" + str(os.getpid())
 
 PAGE = """<!doctype html><html><head><meta charset="utf-8"><title>Znimok devtools test</title></head>
@@ -73,12 +74,23 @@ setInterval(() => {
 </script></body></html>"""
 
 
+# ZK-355: a page in ANOTHER window of the same browser. Nothing of it may reach the log.
+OTHER = """<!doctype html><html><head><meta charset="utf-8"><title>Other window</title></head>
+<body><script>
+setInterval(() => {
+  console.log("OTHER tick");
+  fetch("/api/other", {method: "POST", body: "{}"}).catch(() => {});
+  (window.dataLayer = window.dataLayer || []).push({event: "other_dl"});
+}, 250);
+</script></body></html>"""
+
+
 class Handler(http.server.BaseHTTPRequestHandler):
     def log_message(self, *a):
         pass
 
     def do_GET(self):
-        body = PAGE.encode("utf-8")
+        body = (OTHER if self.path.startswith("/other") else PAGE).encode("utf-8")
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
@@ -129,8 +141,10 @@ def main():
     httpd = socketserver.TCPServer(("127.0.0.1", 0), Handler)
     port = httpd.server_address[1]
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
-    env = dict(os.environ, ZNIMOK_IPC_SUFFIX=SUFFIX, ZNIMOK_HOST_LOG=os.path.join(tmp, "host.log"))
-    probe_p = subprocess.Popen([probe, "6"], cwd=ROOT, env=env, stdout=subprocess.PIPE, text=True, encoding="utf-8")
+    go_file = os.path.join(tmp, "go")
+    env = dict(os.environ, ZNIMOK_IPC_SUFFIX=SUFFIX, ZNIMOK_HOST_LOG=os.path.join(tmp, "host.log"),
+               ZNIMOK_PROBE_GO=go_file)
+    probe_p = subprocess.Popen([probe, str(SECS)], cwd=ROOT, env=env, stdout=subprocess.PIPE, text=True, encoding="utf-8")
     flags = subprocess.CREATE_NEW_PROCESS_GROUP
     ch = subprocess.Popen([CHROME, f"--user-data-dir={os.path.join(tmp, 'profile')}", f"--remote-debugging-port={CDP}",
                            "--enable-unsafe-extension-debugging", "--no-first-run", "--no-default-browser-check",
@@ -195,6 +209,50 @@ def main():
                             break
                 # Our own CDP session is let go: the extension's debugger attaches to the tab.
                 await ws.send(json.dumps({"id": 6, "method": "Target.detachFromTarget", "params": {"sessionId": sid}}))
+                nid = [100]
+
+                async def call(method, params=None, session=None):
+                    nid[0] += 1
+                    msg = {"id": nid[0], "method": method, "params": params or {}}
+                    if session:
+                        msg["sessionId"] = session
+                    await ws.send(json.dumps(msg))
+                    while True:
+                        m = json.loads(await ws.recv())
+                        if m.get("id") == nid[0]:
+                            return m
+
+                async def in_sw(expr):
+                    if not sw:
+                        return None
+                    m = await call("Runtime.evaluate", {"expression": expr, "awaitPromise": True, "returnByValue": True}, swid)
+                    return m.get("result", {}).get("result", {}).get("value")
+
+                # ZK-355: another window of the same browser, with its own busy page; then the
+                # recorded window back in front, and the recording starts.
+                other = await call("Target.createTarget", {"url": f"http://127.0.0.1:{port}/other", "newWindow": True})
+                other_id = other["result"]["targetId"]
+                await asyncio.sleep(1.5)
+                await call("Target.activateTarget", {"targetId": page["targetId"]})
+                await asyncio.sleep(1.0)
+                print("in front before the start:", await in_sw("chrome.windows.getLastFocused({populate: true}).then(w => w.focused + ' ' + w.tabs.map(t => t.url).join(' '))"))
+                open(go_file, "w").close()
+                await asyncio.sleep(2.0)
+                # A tab activated in the window behind (the case of 13.11: Jira and a news site).
+                made = await in_sw(f"""(async () => {{
+                    const ws = await chrome.windows.getAll({{populate: true}});
+                    const o = ws.find(w => w.tabs.some(t => t.url.includes('/other')));
+                    await chrome.tabs.create({{windowId: o.id, url: 'http://127.0.0.1:{port}/other?second', active: true}});
+                    return o.id; }})()""")
+                print("a tab activated in the other window:", made)
+                await asyncio.sleep(1.5)
+                # The other window takes the focus for a while, then the recorded one is back.
+                await call("Target.activateTarget", {"targetId": other_id})
+                await asyncio.sleep(0.5)
+                print("in front:", await in_sw("chrome.windows.getLastFocused({populate: true}).then(w => w.focused + ' ' + w.tabs.map(t => t.url).join(' '))"))
+                await asyncio.sleep(1.5)
+                await call("Target.activateTarget", {"targetId": page["targetId"]})
+                print("back:", await in_sw("chrome.windows.getLastFocused({populate: true}).then(w => w.focused + ' ' + w.tabs.map(t => t.url).join(' '))"))
         asyncio.run(go())
         out, _ = probe_p.communicate(timeout=120)
         hl = os.path.join(tmp, "host.log")
@@ -219,6 +277,10 @@ def main():
             "uncaught errors with a stack": len(errors) >= 1,
             "times in order on the video": all(a["ms"] <= b["ms"] for a, b in zip(log["events"], log["events"][1:])),
             "a POST": len(posts) >= 1,
+            # ZK-355: only the active tab of the recorded window — not a word of another window.
+            "nothing of another window": not any("/other" in json.dumps(e) or "OTHER" in json.dumps(e) or "other_dl" in json.dumps(e) for e in ev),
+            "tab rows only of the recorded tab": all(f"127.0.0.1:{port}/" == e.get("url", "").split("?")[0].replace("http://", "") for e in ev if e.get("k") == "tab"),
+            "the log goes on after the focus is back": any(e["ms"] >= (SECS - 1.5) * 1000 for e in log["events"] if e["json"].get("k") == "console"),
             # ZK-195
             "dataLayer: what the page held before the recording, marked": any(e.get("ev") == "gtm.js" and e.get("pre") for e in dl),
             "dataLayer: pushes after GTM wrapped push, each once": len(dl_ticks) >= 5 and len(seen) == len(set(seen)),

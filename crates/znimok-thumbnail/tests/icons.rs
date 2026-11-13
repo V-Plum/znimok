@@ -3,6 +3,8 @@
 //! `.ico` of its kind — a screenshot, a video, a video with a DevTools log.
 #![cfg(windows)]
 
+mod common;
+
 use windows::Win32::System::Com::{
     CLSCTX_INPROC_SERVER, COINIT_APARTMENTTHREADED, CoCreateInstance, CoInitializeEx, IPersistFile,
     STGM_READ,
@@ -50,13 +52,7 @@ fn each_kind_gets_its_icon() {
         eprintln!("skipped: registers a shell extension; runs on CI or with ZNIMOK_LIVE_SHELL=1");
         return;
     }
-    let exe = std::env::current_exe().unwrap();
-    let deps = exe.parent().unwrap();
-    let dll = [deps, deps.parent().unwrap()]
-        .iter()
-        .map(|d| d.join("znimok_thumbnail.dll"))
-        .find(|p| p.exists())
-        .unwrap_or_else(|| panic!("znimok_thumbnail.dll not built next to {}", exe.display()));
+    let dll = common::thumbnail_dll();
     // SAFETY: plain query.
     let scope = if unsafe { windows::Win32::UI::Shell::IsUserAnAdmin() }.as_bool() {
         znimok_thumbnail::Scope::Machine

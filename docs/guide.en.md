@@ -258,7 +258,9 @@ what the page's DevTools panels show: the console (with objects and stacks), err
 request and response headers, the request's payload, the response, timings — navigations and
 dataLayer (every GTM or gtag event as full JSON, with what the array held before the recording), in sync
 with the video (both take their time from the system clock; the recording's pauses are cut out of the
-log). The log lies in the recording's document. It is debugging data, so it is written in full;
+log). Only the active tab of the browser window that was in front when the recording started is
+written: switch tabs in it and the log follows; other browser windows never get into the log, and
+while one of them has the focus the log waits. The log lies in the recording's document. It is debugging data, so it is written in full;
 sensitive parts can be hidden on export. While the log is written the browser shows its
 "extension is debugging this browser" bar; it pushes the page down, so Znimok attaches the
 extension before you choose the region — you choose it over the page as it is pushed. The extension's "Record this window" starts recording the

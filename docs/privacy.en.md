@@ -77,7 +77,8 @@ The extension for Chrome and Edge exists for one thing: while Znimok records the
 browser tab's developer log next to the video, so a bug can be watched together with what the page did.
 
 - **When it works.** Only while a Znimok recording is running (or you start one from the extension's
-  button). Outside a recording it reads nothing. It attaches to the active tab only; Chrome shows its own
+  button). Outside a recording it reads nothing. It attaches only to the active tab of the browser window that was in front when the recording
+  started; it does not read other windows and tabs, nor mention even their addresses and titles. Chrome shows its own
   bar "Znimok started debugging this browser" for exactly that time.
 - **What it reads in that tab.** What the browser's DevTools show: console messages and errors with their
   stack, network requests and responses (addresses, headers including cookies and authorization, request
