@@ -186,22 +186,52 @@ function dlName(v) {
 
 // ---- recording ----
 
-async function activeTab() {
-  const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
-  return tab || null;
-}
-
 const debuggable = (url) => !!url && !/^(chrome|edge|about|chrome-extension|devtools|view-source|chrome-search):/i.test(url)
   && !/^https:\/\/(chrome\.google\.com\/webstore|chromewebstore\.google\.com|microsoftedge\.microsoft\.com\/addons)/i.test(url);
 
-async function follow(tabId) {
-  if (!recording || tabId == null || tabId === current) return;
+// ZK-355: a recording writes ONLY the active tab of ONE window — the browser window that was in
+// front when it started (`recWindow`). A tab switched in another window, a window that takes the
+// focus, even for a moment as the overlay closes: nothing of it goes into the log, not its address,
+// not its title. While another window of this browser has the focus the log waits (`away`) — the
+// debugger stays on the recorded tab, so its «is debugging» bar does not move the page. Every
+// change goes through one queue (`sync`): concurrent follows raced and let other tabs in.
+let recWindow = null;
+let away = false;
+let armWindow = null;            // the window `arm` saw in front (ZK-352)…
+let armAt = 0;                   // …and when: an overlay is not open for longer than this counts
+const ARM_FOR = 10 * 60 * 1000;
+let ownWindow = null;            // the window «Record this window» was asked from
+let queue = Promise.resolve();
+
+function sync() {
+  queue = queue.then(syncNow, syncNow);
+  return queue;
+}
+
+async function syncNow() {
+  if (!recording || recWindow == null) return;
+  let w = null;
+  try { w = await chrome.windows.getLastFocused(); } catch (e) { /* no window */ }
+  // Another window of this browser in front: not ours, wait. Focus on another program (the
+  // recorded one, Znimok's overlay) keeps the recorded window's tab.
+  away = !!(w && w.focused && w.id !== recWindow);
+  if (away) return;
+  let tab = null;
+  try { [tab] = await chrome.tabs.query({ active: true, windowId: recWindow }); } catch (e) { /* closed */ }
+  if (!tab) {
+    if (current != null) { const id = current; current = null; await detach(id); }
+    return;
+  }
+  await follow(tab);
+}
+
+async function follow(tab) {
+  if (!recording || !tab || tab.id === current || tab.windowId !== recWindow) return;
+  const tabId = tab.id;
   // The log follows the screen: only the active tab is written — the old one is let go.
   if (current != null) await detach(current);
   current = tabId;
-  let tab = null;
-  try { tab = await chrome.tabs.get(tabId); } catch (e) { /* closed */ }
-  if (tab && !debuggable(tab.url)) {
+  if (!debuggable(tab.url)) {
     emit({ t: Date.now(), k: "tab", s: 0, url: tab.url, title: clip(tab.title), note: "not-debuggable" });
     return;
   }
@@ -218,7 +248,7 @@ async function follow(tabId) {
     try {
       await chrome.debugger.sendCommand({ tabId }, "Runtime.evaluate", { expression: dlHook(true) });
     } catch (e) { /* a page that cannot run scripts */ }
-    emit({ t: Date.now(), k: "tab", s: 0, url: tab ? tab.url : "", title: tab ? clip(tab.title) : "" });
+    emit({ t: Date.now(), k: "tab", s: 0, url: tab.url || "", title: clip(tab.title || "") });
   } catch (e) {
     emit({ t: Date.now(), k: "info", s: 1, text: "attach failed: " + clip(e && e.message) });
   }
@@ -237,18 +267,29 @@ let ownStart = 0;
 
 async function startRecording() {
   if (recording) return;
-  if (Date.now() - ownStart > 15000) {
+  let win = null;
+  if (Date.now() - ownStart <= 15000 && ownWindow != null) win = ownWindow;
+  else if (armWindow != null && Date.now() - armAt <= ARM_FOR) win = armWindow;   // the overlay was over it
+  else {
     let w = null;
     try { w = await chrome.windows.getLastFocused(); } catch (e) { /* no window */ }
     if (!w || !w.focused) return;
+    win = w.id;
   }
   recording = true;
-  const tab = await activeTab();
-  if (tab) await follow(tab.id);
+  recWindow = win;
+  away = false;
+  armWindow = null;
+  await sync();
 }
 
 async function stopRecording() {
   recording = false;
+  recWindow = null;
+  away = false;
+  armWindow = null;
+  ownWindow = null;
+  await queue;
   current = null;
   for (const id of [...attached]) await detach(id);
   reqs.clear();
@@ -257,13 +298,15 @@ async function stopRecording() {
 // ZK-352: the app is about to open its recording overlay over this browser. The debugger goes on
 // now, so Chrome's «is debugging» bar — which pushes the page down — is already there when the
 // region is chosen; `start` then finds the tab attached. Only when this browser is in front, as
-// a start (ZK-306).
+// a start (ZK-306); the window in front is the one the recording will write (ZK-355).
 async function armRecording() {
   if (recording) return;
   let w = null;
   try { w = await chrome.windows.getLastFocused(); } catch (e) { /* no window */ }
   if (!w || !w.focused) return;
-  const tab = await activeTab();
+  armWindow = w.id;
+  armAt = Date.now();
+  const [tab] = await chrome.tabs.query({ active: true, windowId: w.id });
   if (!tab || !debuggable(tab.url) || attached.has(tab.id)) return;
   try { await chrome.debugger.attach({ tabId: tab.id }, "1.3"); attached.add(tab.id); } catch (e) { /* the log tries again */ }
 }
@@ -271,17 +314,17 @@ async function armRecording() {
 // The overlay was cancelled, or what is recorded is not this browser: the debugger goes.
 async function disarmRecording() {
   if (recording) return;
+  armWindow = null;
   for (const id of [...attached]) await detach(id);
 }
 
-chrome.tabs.onActivated.addListener(({ tabId }) => { if (recording) follow(tabId); });
-chrome.windows.onFocusChanged.addListener(async (winId) => {
-  if (!recording || winId === chrome.windows.WINDOW_ID_NONE) return;
-  const [tab] = await chrome.tabs.query({ active: true, windowId: winId });
-  if (tab) follow(tab.id);
-});
+chrome.tabs.onActivated.addListener(({ windowId }) => { if (recording && windowId === recWindow) sync(); });
+chrome.windows.onFocusChanged.addListener(() => { if (recording) sync(); });
+chrome.windows.onRemoved.addListener((winId) => { if (recording && winId === recWindow) sync(); });
+chrome.tabs.onAttached.addListener(() => { if (recording) sync(); });
+chrome.tabs.onDetached.addListener(() => { if (recording) sync(); });
 chrome.tabs.onUpdated.addListener((tabId, info) => {
-  if (recording && tabId === current && info.status === "complete" && !attached.has(tabId)) { current = null; follow(tabId); }
+  if (recording && tabId === current && info.status === "complete" && !attached.has(tabId)) { current = null; sync(); }
 });
 chrome.debugger.onDetach.addListener((src, reason) => {
   attached.delete(src.tabId);
@@ -354,7 +397,7 @@ async function finishRequest(tabId, p, failed) {
 }
 
 chrome.debugger.onEvent.addListener((src, method, p) => {
-  if (!recording || src.tabId !== current) return;
+  if (!recording || away || src.tabId !== current) return;   // ZK-355: only the recorded window's tab
   const tabId = src.tabId;
   switch (method) {
   case "Runtime.consoleAPICalled": {
@@ -550,6 +593,7 @@ async function startRec(tabId, windowId, pageOnly) {
   if (app.state !== "idle") return { ok: false, why: "busy" };
   let tab, win;
   try { tab = await chrome.tabs.get(tabId); win = await chrome.windows.get(windowId); } catch (e) { return { ok: false, why: "not-found" }; }
+  ownWindow = windowId;
   const rid = (Date.now() % 1000000) * 100 + (++ridSeq % 100);
   const marker = "ZN-" + [...crypto.getRandomValues(new Uint8Array(4))].map((b) => b.toString(16).padStart(2, "0")).join("");
   const p = { tabId, suffix: " ⏺ " + marker, marked: false, preAttached: false, timer: 0, resolve: null };

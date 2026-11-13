@@ -33,6 +33,17 @@ fn main() {
         }
         std::thread::sleep(Duration::from_millis(100));
     }
+    // ZNIMOK_PROBE_GO: the test sets its windows up first and says «go» with this file (ZK-355).
+    if let Ok(go) = std::env::var("ZNIMOK_PROBE_GO") {
+        let t1 = Instant::now();
+        while !std::path::Path::new(&go).exists() {
+            if t1.elapsed() > Duration::from_secs(60) {
+                println!("{}", json!({"error": "no go from the test"}));
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        }
+    }
     eprintln!("probe: recording {secs} s");
     hub.start(now_ms());
     std::thread::sleep(Duration::from_secs(secs));
