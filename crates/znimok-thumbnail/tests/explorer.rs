@@ -20,12 +20,31 @@ fn explorer_shows_the_stored_thumbnail() {
         return;
     }
     // `cargo test` leaves the cdylib in target/<profile>/deps; `cargo build` in target/<profile>.
+    // Cargo 1.100's build-dir layout keeps each unit apart: the test in
+    // build/znimok-thumbnail/<hash>/out, the cdylib in a sibling build/znimok-thumbnail/<hash2>/out.
     let exe = std::env::current_exe().unwrap();
     let deps = exe.parent().unwrap();
-    let dll = [deps, deps.parent().unwrap()]
+    let mut found: Vec<std::path::PathBuf> = [deps, deps.parent().unwrap()]
         .iter()
         .map(|d| d.join("znimok_thumbnail.dll"))
-        .find(|p| p.exists())
+        .filter(|p| p.exists())
+        .collect();
+    if found.is_empty()
+        && let Some(units) = deps.parent().and_then(|h| h.parent())
+        && let Ok(rd) = std::fs::read_dir(units)
+    {
+        found = rd
+            .flatten()
+            .map(|e| e.path().join("out").join("znimok_thumbnail.dll"))
+            .filter(|p| p.exists())
+            .collect();
+        // The newest: an older hash is a build of another configuration.
+        found.sort_by_key(|p| std::fs::metadata(p).and_then(|m| m.modified()).ok());
+        found.reverse();
+    }
+    let dll = found
+        .into_iter()
+        .next()
         .unwrap_or_else(|| panic!("znimok_thumbnail.dll not built next to {}", exe.display()));
     // COM ignores per-user class registrations in an elevated process (CI runners are): there
     // the test registers for the machine; a normal Explorer reads the per-user one.
