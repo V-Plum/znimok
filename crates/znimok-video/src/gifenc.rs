@@ -54,7 +54,7 @@ pub fn build_palette(probes: &[&[u8]], colors: usize) -> Vec<[u8; 3]> {
                 continue;
             }
             let weight: u64 = b.iter().map(|i| bins[*i].0).sum();
-            for axis in 0..3 {
+            for axis in [0usize, 1, 2] {
                 let (mut lo, mut hi) = (f64::MAX, f64::MIN);
                 for i in b {
                     lo = lo.min(bins[*i].1[axis]);
