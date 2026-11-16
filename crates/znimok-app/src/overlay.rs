@@ -606,7 +606,8 @@ pub fn open(frozen: Frozen, editor_was_visible: bool) -> Result<(), slint::Platf
     }
     if let Some(p) = parts.first() {
         use slint::winit_030::WinitWindowAccessor;
-        p.ui.window().with_winit_window(|w| w.focus_window());
+        p.ui.window()
+            .with_winit_window(crate::frame::bring_to_front);
         p.ui.invoke_grab_focus();
     }
     let session = Session {

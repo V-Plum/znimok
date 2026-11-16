@@ -108,6 +108,45 @@ mod win {
     };
     use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
 
+    pub fn bring_to_front(w: &winit::window::Window) {
+        use windows::Win32::System::Threading::{AttachThreadInput, GetCurrentThreadId};
+        use windows::Win32::UI::WindowsAndMessaging::{
+            BringWindowToTop, GetForegroundWindow, GetWindowThreadProcessId, IsIconic,
+            IsWindowVisible, SW_RESTORE, SetForegroundWindow, ShowWindow,
+        };
+        let Ok(h) = w.window_handle() else { return };
+        let RawWindowHandle::Win32(h) = h.as_raw() else {
+            return;
+        };
+        let hwnd = HWND(h.hwnd.get() as *mut core::ffi::c_void);
+        // SAFETY: a live top-level window of this process; plain window-manager calls, and the
+        // input queues are detached again before returning.
+        unsafe {
+            if !IsWindowVisible(hwnd).as_bool() {
+                return;
+            }
+            if IsIconic(hwnd).as_bool() {
+                let _ = ShowWindow(hwnd, SW_RESTORE);
+            }
+            let fg = GetForegroundWindow();
+            if fg == hwnd {
+                return;
+            }
+            if SetForegroundWindow(hwnd).as_bool() && GetForegroundWindow() == hwnd {
+                return;
+            }
+            let me = GetCurrentThreadId();
+            let theirs = GetWindowThreadProcessId(fg, None);
+            let joined =
+                theirs != 0 && theirs != me && AttachThreadInput(me, theirs, true).as_bool();
+            let _ = BringWindowToTop(hwnd);
+            let _ = SetForegroundWindow(hwnd);
+            if joined {
+                let _ = AttachThreadInput(me, theirs, false);
+            }
+        }
+    }
+
     /// Windows 11 rounds the corners of framed windows only; a frameless one has to ask
     /// (owner 28.09: "every program here has rounded corners"). No effect on Windows 10.
     pub fn round_corners(w: &winit::window::Window) {
@@ -128,6 +167,18 @@ mod win {
             )
         };
     }
+}
+
+/// The window to the front with the keyboard focus. winit's `focus_window` on Windows injects a
+/// synthetic Alt press and release to steal the foreground (`force_window_active`); when the two
+/// land in different windows an Alt stays «down» in one of them — captures opened over the
+/// screen as if Alt were held (ZK-358). The process that just got the hotkey may take the
+/// foreground plainly; if Windows still refuses, the input queues are joined for a moment.
+pub fn bring_to_front(w: &winit::window::Window) {
+    #[cfg(windows)]
+    win::bring_to_front(w);
+    #[cfg(not(windows))]
+    w.focus_window();
 }
 
 /// Windows 11 rounded corners for any of our frameless windows (the card after a capture).
