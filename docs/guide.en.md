@@ -66,10 +66,9 @@ pointer. Then:
 - **the wheel** turns the loupe on and changes its zoom; **Esc** cancels.
 
 Only the keys held at the moment the button is released count — whether they went down before the
-click or after it: a Shift held since Alt+Shift+4 counts too. The exception is a hotkey pressed in a
-Remote Desktop client's window: there a Shift or Alt you never let go of is not a gesture — release
-it and press it again (such a client swallows key releases, and a stuck key would open the wrong
-thing every time). What each gesture does (release / Shift / Alt) can be reassigned in Settings →
+click or after it: a Shift held since Alt+Shift+4 counts too — also when the hotkey was pressed in a
+Remote Desktop client's window: such a client swallows key releases, so while the overlay is open
+Znimok watches Shift, Alt and Ctrl itself and does not take a stuck key for a held one. What each gesture does (release / Shift / Alt) can be reassigned in Settings →
 Screenshots, as in Little Helpers. The hint strip at the bottom of the overlay shows the current
 assignment; it can be turned off there too. The overlay covers every display at once — a region
 can be dragged across the seam between screens; switching to another app closes the overlay.
