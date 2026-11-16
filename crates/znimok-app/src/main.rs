@@ -621,7 +621,7 @@ fn show_window(ui: &AppWindow) {
     }
     ui.window().with_winit_window(|w| {
         w.set_minimized(false);
-        w.focus_window();
+        frame::bring_to_front(w);
     });
 }
 
