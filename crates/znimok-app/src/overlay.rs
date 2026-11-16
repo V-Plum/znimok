@@ -828,6 +828,8 @@ fn with_session(f: impl FnOnce(&mut Session) -> Option<Outcome>) {
 /// The choice as the request for this overlay shapes it (ZK-214): its intent, the clipboard,
 /// the countdown — then what it becomes.
 fn settle(frozen: Frozen, outcome: Outcome, editor_was_visible: bool) {
+    // The modifiers are read: the hook watching them for a Remote Desktop capture goes (ZK-359).
+    crate::mods::settle();
     let next = NEXT.with(|m| m.take());
     let outcome = match outcome {
         Outcome::Keep(rect, ..) if next.intent == Intent::Text => Outcome::Text(rect),
